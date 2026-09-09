@@ -482,7 +482,7 @@ class _SyncConfirmState extends State<_SyncConfirm> {
                           style: TextStyle(color: _accent, fontSize: 15, fontWeight: FontWeight.w900),
                         ),
                         Text(
-                          ' من $widget.total',
+                          ' من ${widget.total}',
                           style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11),
                         ),
                       ],
@@ -511,6 +511,66 @@ class _SyncConfirmState extends State<_SyncConfirm> {
           ),
           const SizedBox(height: 14),
 
+          // أسباب التعثّر تُعرض في مكان العملية نفسها
+          if (result != null && !result!.success) ...[
+            for (final entry in widget.store.sync.failureReasons().entries)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Container(
+                  padding: const EdgeInsets.all(11),
+                  decoration: BoxDecoration(
+                    color: AppColors.danger.withValues(alpha: 0.12),
+                    border: Border.all(color: AppColors.danger.withValues(alpha: 0.35)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.report_gmailerrorred, size: 16, color: Color(0xFFFDA4AF)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${entry.value} سجل: ${entry.key}',
+                          style: const TextStyle(color: Color(0xFFFECDD3), fontSize: 11.5, height: 1.6),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            if (widget.store.sync.getFailedActions().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: PressableScale(
+                  onTap: () {
+                    widget.store.sync.retryFailedActions();
+                    setState(() => result = null);
+                  },
+                  child: Container(
+                    height: 38,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.06),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.refresh, size: 15, color: Colors.white.withValues(alpha: 0.8)),
+                        const SizedBox(width: 6),
+                        Text(
+                          'إعادة المحاولة للمتعثرة',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.8),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
           if (result != null)
             Container(
               padding: const EdgeInsets.all(11),
@@ -547,8 +607,8 @@ class _SyncConfirmState extends State<_SyncConfirm> {
               widget.total == 0
                   ? (widget.push ? 'لا توجد تعديلات محلية معلّقة للرفع' : 'لا توجد تعديلات جديدة في السحابة')
                   : (widget.push
-                      ? 'سيتم رفع $widget.total تعديلاً إلى السحابة.'
-                      : 'سيتم سحب $widget.total تعديلاً وتحديث الشاشة.'),
+                      ? 'سيتم رفع ${widget.total} تعديلاً إلى السحابة.'
+                      : 'سيتم سحب ${widget.total} تعديلاً وتحديث الشاشة.'),
               style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12, height: 1.6),
             ),
             if (widget.rows.isNotEmpty) ...[

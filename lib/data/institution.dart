@@ -13,6 +13,7 @@ const institutionLogoKey = 'institution_logo';
 const institutionColorsKey = 'institution_colors';
 const seatReservationFeeKey = 'seat_reservation_fee';
 const receiptMigrationKey = 'receipt_numbers_migrated_v1';
+const attendanceIdMigrationKey = 'attendance_ids_migrated_v1';
 
 /// علامة إتمام التهيئة الأولية لهذا الجهاز — المقابل لـ `initial_setup_done_<tenantId>`.
 String initialSetupKey(String tenantId) => 'initial_setup_done_$tenantId';

@@ -559,6 +559,22 @@ class SyncService {
     return local.pendingSyncs.where((a) => a.retryCount >= maxSyncRetries).toList();
   }
 
+  /// كل عملية معلّقة سجّلت خطأً، سواء استنفدت محاولاتها أم لا.
+  List<PendingSync> getStuckActions() {
+    return local.pendingSyncs.where((a) => a.lastError != null).toList();
+  }
+
+  /// أسباب التعثّر مجمّعة: السبب → عدد السجلات المتأثرة به.
+  Map<String, int> failureReasons() {
+    final out = <String, int>{};
+    for (final a in getStuckActions()) {
+      final key = a.lastError ?? '';
+      if (key.isEmpty) continue;
+      out[key] = (out[key] ?? 0) + 1;
+    }
+    return out;
+  }
+
   Future<SyncResult> push() async {
     if (_syncing) return SyncResult(success: false, message: 'عملية مزامنة أخرى جارية');
     if (local.isMaster) {
@@ -578,10 +594,12 @@ class SyncService {
       local.notifySync();
       String message;
       if (result.failed > 0) {
-        final firstError = getFailedActions().firstOrNull?.lastError;
+        // السبب يُذكر هنا مباشرةً: تبويب الإعدادات قد يكون محجوباً عن صلاحية
+        // المستخدم، فإحالته إليه تتركه بلا تفسير لما جرى.
+        final stuck = local.pendingSyncs.where((a) => a.lastError != null).toList();
+        final reason = stuck.firstOrNull?.lastError;
         message = 'تم رفع ${result.pushed} تعديلاً، وتعذّر رفع ${result.failed}.'
-            '${firstError != null ? ' السبب: $firstError' : ''}'
-            ' التفاصيل في «الإعدادات ← حالة المزامنة».';
+            '${reason != null ? '\nالسبب: $reason' : ''}';
       } else {
         message = 'تم رفع ${result.pushed} تعديلاً بنجاح';
       }

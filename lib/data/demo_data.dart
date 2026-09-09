@@ -163,12 +163,12 @@ void injectDemoData(AppStore store) {
       final d0 = isoDate(today);
       final d1 = isoDate(today.subtract(const Duration(days: 1)));
       if (i % 5 == 0) {
-        store.attendance.add(AttendanceMark(studentId: id, date: d0, status: 'absent'));
+        store.attendance.add(AttendanceMark(id: store.newId(), studentId: id, date: d0, status: 'absent'));
       } else if (i % 2 == 0) {
-        store.attendance.add(AttendanceMark(studentId: id, date: d0, status: 'present'));
+        store.attendance.add(AttendanceMark(id: store.newId(), studentId: id, date: d0, status: 'present'));
       }
       if (i % 3 != 0) {
-        store.attendance.add(AttendanceMark(studentId: id, date: d1, status: 'present'));
+        store.attendance.add(AttendanceMark(id: store.newId(), studentId: id, date: d1, status: 'present'));
       }
     }
 

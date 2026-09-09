@@ -113,6 +113,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   final _studentIndex = <String, Student>{};
   final _attendanceIndex = <String, AttendanceMark>{};
   final _sessionIndex = <String, ClassSession>{};
+  final _sessionOwners = <String, Set<String>>{};
 
   int _dueRev = -1;
   List<DueItem> _dueCache = const [];
@@ -144,9 +145,18 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
 
     _sessionIndex.clear();
+    _sessionOwners.clear();
     for (final sess in sessions) {
-      if (sess.groupId.isNotEmpty) _sessionIndex[sessionKey(sess.groupId, sess.sessionDate)] = sess;
-      if (sess.roomId.isNotEmpty) _sessionIndex[sessionKey(sess.roomId, sess.sessionDate)] = sess;
+      final owners = <String>{};
+      if (sess.groupId.isNotEmpty) {
+        owners.add(sess.groupId);
+        _sessionIndex[sessionKey(sess.groupId, sess.sessionDate)] = sess;
+      }
+      if (sess.roomId.isNotEmpty) {
+        owners.add(sess.roomId);
+        _sessionIndex[sessionKey(sess.roomId, sess.sessionDate)] = sess;
+      }
+      _sessionOwners[sess.id] = owners;
     }
   }
 
@@ -530,6 +540,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (!loggedIn || isMasterAdmin) return;
     cleanupBogusDemoUserSyncs(pendingSyncs);
     await migrateReceiptNumbers();
+    await migrateAttendanceIds();
     if (!networkEnabled) return;
     await primeReceiptCounter();
     await sync.checkRemoteChanges();
@@ -679,11 +690,14 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _rebuildIndexes();
     final rec = _attendanceIndex[attendanceKey(studentId, date)];
     if (rec == null) return null;
-    final session = _sessionIndex[sessionKey(ownerId, date)];
-    // بلا جلسة مسجّلة نكتفي بمطابقة التاريخ، كما تفعل النسخة المكتبية
-    if (session == null) return rec.status;
-    if (rec.sessionId.isEmpty || rec.sessionId == session.id) return rec.status;
-    return null;
+    if (rec.sessionId.isEmpty) return rec.status;
+
+    // الجلسة التي يتبعها السجل. إن كانت مجهولة محلياً — سجل قادم من جهاز آخر
+    // أنشأ جلسته الخاصة — فالمطابقة على الطالب والتاريخ تكفي. رفضُه كان
+    // يُخفي رصداً موجوداً فيبدو اليوم غير مرصود حتى يُضغط عليه من جديد.
+    final owners = _sessionOwners[rec.sessionId];
+    if (owners == null) return rec.status;
+    return owners.contains(ownerId) ? rec.status : null;
   }
 
   String _nowIso() => DateTime.now().toUtc().toIso8601String();
@@ -728,6 +742,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
 
     final mark = AttendanceMark(
+      id: newId(),
       studentId: studentId,
       date: date,
       status: status,
@@ -770,6 +785,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         continue;
       }
       final mark = AttendanceMark(
+        id: newId(),
         studentId: s.id,
         date: date,
         status: 'present',
@@ -991,6 +1007,52 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   ///
   /// تعمل مرة واحدة فقط لكل جهاز خلف علامة في الإعدادات. تشغيلها عند كل عرض
   /// للشاشة المالية كان يُنتج تأرجحاً دائماً: الجهاز يغيّر الرقم، والسحب يعيده.
+  /// استبدال معرّفات الحضور النصية القديمة بمعرّفات UUID.
+  ///
+  /// كانت تُولَّد بصيغة `att-<studentId>-<date>`، وعمود `id` في السحابة من نوع
+  /// uuid فيرفضها بـ «invalid input syntax for type uuid». السجلات المكتوبة
+  /// بها تظل عالقة في طابور الرفع مهما أُعيدت المحاولة، فتُعاد كتابتها هنا
+  /// بمعرّف صالح مرة واحدة لكل جهاز.
+  Future<int> migrateAttendanceIds() async {
+    if (db.settings[attendanceIdMigrationKey] == 'true') return 0;
+
+    final stale = attendance.where((a) => a.id.startsWith('att-')).toList();
+    for (final old in stale) {
+      // إسقاط أي عملية معلّقة تشير إلى المعرّف القديم: لن يقبله الخادم أبداً
+      pendingSyncs.removeWhere((p) => p.tableName == 'attendance' && p.recordId == old.id);
+
+      final fresh = AttendanceMark(
+        id: newId(),
+        studentId: old.studentId,
+        date: old.date,
+        status: old.status,
+        sessionId: old.sessionId,
+        markedByUserId: old.markedByUserId,
+        notes: old.notes,
+        syncStatus: 'pending',
+        createdAt: old.createdAt ?? _nowIso(),
+        updatedAt: _nowIso(),
+      );
+      final i = attendance.indexOf(old);
+      attendance[i] = fresh;
+      queuePendingSync(
+        pendingSyncs,
+        tableName: 'attendance',
+        recordId: fresh.id,
+        action: 'INSERT',
+        payload: fresh.toCloud(),
+      );
+    }
+
+    await db.setSetting(attendanceIdMigrationKey, 'true');
+    if (stale.isNotEmpty) {
+      markDirty('attendance');
+      markDirty(_pendingTable);
+      notifyListeners();
+    }
+    return stale.length;
+  }
+
   /// مطابق لـ `migrateReceiptNumbers`.
   Future<int> migrateReceiptNumbers({bool force = false}) async {
     if (!force && db.settings[receiptMigrationKey] == 'true') return 0;
@@ -1375,7 +1437,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final group = school ? null : groupById(ownerId);
     final created = ClassSession(
       id: newId(),
-      groupId: ownerId,
+      groupId: school ? '' : ownerId,
       sessionDate: dateStr,
       startTime: group?.startTime ?? '08:00',
       endTime: group?.endTime ?? '10:00',
