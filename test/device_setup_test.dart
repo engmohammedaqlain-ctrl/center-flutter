@@ -23,9 +23,48 @@ void main() {
     expect(s.needsInitialSetup, isTrue);
   });
 
-  test('a device that already carries data is treated as set up', () async {
+  test('every fresh login goes through the identity screen', () async {
+    // من يسجّل الخروج غالباً يسلّم الجهاز لغيره، فلا يصحّ أن يرث صلاحية سابقه
     final s = await loggedIn(FakeDisk());
-    expect(s.needsInitialSetup, isFalse, reason: 'جهاز يعمل من قبل لا يُطالَب بإعادة التهيئة');
+    expect(s.needsInitialSetup, isTrue);
+  });
+
+  test('restarting on a stored session skips the identity screen', () async {
+    final disk = FakeDisk();
+    final first = await loggedIn(disk);
+    await first.completeInitialSetup(first.setupCandidates.first);
+    await first.flush();
+    expect(first.needsInitialSetup, isFalse);
+
+    final second = AppStore.forTesting();
+    await second.bootstrap(disk);
+    expect(second.loggedIn, isTrue);
+    expect(second.needsInitialSetup, isFalse, reason: 'إعادة التشغيل ليست دخولاً جديداً');
+  });
+
+  test('a device carrying data from before this feature is grandfathered in', () async {
+    final disk = FakeDisk();
+    final first = await loggedIn(disk);
+    await first.flush();
+
+    // إقلاع بجلسة قائمة وبيانات محلية وبلا علامة تهيئة
+    final second = AppStore.forTesting();
+    await second.bootstrap(disk);
+    expect(second.students, isNotEmpty);
+    expect(second.needsInitialSetup, isFalse);
+  });
+
+  test('logging out and back in asks for the identity again', () async {
+    final disk = FakeDisk();
+    final s = await loggedIn(disk);
+    await s.completeInitialSetup(s.setupCandidates.first);
+    expect(s.needsInitialSetup, isFalse);
+
+    await s.logout();
+    expect(s.needsInitialSetup, isFalse, reason: 'لا شاشة تهيئة خارج الجلسة');
+
+    await s.login('amal', 'amal2026');
+    expect(s.needsInitialSetup, isTrue);
   });
 
   test('the developer portal never sees the setup screen', () async {

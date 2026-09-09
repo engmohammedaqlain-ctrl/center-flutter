@@ -501,7 +501,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     roleName = me == null ? 'مدير النظام' : roleLabel(me.role);
     await _saveSession();
     await hydrateInstitution();
-    await _resolveSetupGate();
+    await _resolveSetupGate(freshLogin: true);
     await afterEnter();
     notifyListeners();
   }
@@ -1432,20 +1432,27 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   bool get needsInitialSetup => _setupPending && loggedIn && !isMasterAdmin;
 
-  /// حسم الحاجة إلى التهيئة. يُستدعى مرة عند الدخول أو استعادة الجلسة.
+  /// حسم الحاجة إلى التهيئة.
   ///
-  /// الجهاز الذي يحمل بيانات محلية أصلاً يُعتبر مهيَّأً — لا نطالب جهازاً
-  /// يعمل منذ ما قبل هذه الميزة بإعادة تهيئة بلا سبب.
-  Future<void> _resolveSetupGate() async {
+  /// [freshLogin] يعني أن المستخدم أدخل بياناته للتو، لا أن الجلسة استُعيدت
+  /// بعد إقلاع. كل دخول جديد يمرّ على شاشة تحديد المستخدم والصلاحية، لأن من
+  /// يسجّل الخروج غالباً يسلّم الجهاز لغيره — ولا يصحّ أن يرث صلاحية سابقه.
+  /// أما إعادة تشغيل التطبيق بجلسة قائمة فتدخل مباشرةً.
+  Future<void> _resolveSetupGate({bool freshLogin = false}) async {
     final tid = tenantId;
     if (!loggedIn || isMasterAdmin || tid == null) {
       _setupPending = false;
+      return;
+    }
+    if (freshLogin) {
+      _setupPending = true;
       return;
     }
     if (db.settings[initialSetupKey(tid)] == 'true') {
       _setupPending = false;
       return;
     }
+    // جهاز يحمل بيانات محلية من قبل هذه الميزة يُعتبر مهيَّأً
     if (students.isNotEmpty) {
       await db.setSetting(initialSetupKey(tid), 'true');
       _setupPending = false;

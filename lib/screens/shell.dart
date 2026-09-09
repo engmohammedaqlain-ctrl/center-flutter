@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../data/store.dart';
-import '../data/sync.dart';
-import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../widgets/animated_count.dart';
 import '../widgets/widgets.dart';
 import 'attendance_screen.dart';
 import 'classes_screen.dart';
@@ -11,6 +10,7 @@ import 'finance_screen.dart';
 import 'schedule_screen.dart';
 import 'settings_screen.dart';
 import 'students_screen.dart';
+import 'sync_sheet.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -20,8 +20,8 @@ class AppShell extends StatefulWidget {
 }
 
 /// قسم في شريط التنقّل — مطابق لـ `MobileBottomNav` مع حراسة الصلاحيات.
-class _Section {
-  const _Section(this.id, this.title, this.label, this.icon, this.activeIcon, this.screen);
+class Section {
+  const Section(this.id, this.title, this.label, this.icon, this.activeIcon, this.screen);
   final String id;
   final String title;
   final String label;
@@ -37,17 +37,17 @@ class _AppShellState extends State<AppShell> {
   ///
   /// القسم الرابع يتبع نوع المنشأة: «الصفوف» للمدرسة و«الجدول» للمركز —
   /// تثبيته على الصفوف كان يخفي قسم المجموعات كلياً عن المراكز التعليمية.
-  List<_Section> _sections(AppStore store) {
+  List<Section> _sections(AppStore store) {
     final school = store.isSchool;
     final all = [
-      const _Section('students', 'الطلاب والتسجيل', 'الطلاب', Icons.groups_outlined, Icons.groups, StudentsScreen()),
-      const _Section('attendance', 'الحضور والغياب', 'الحضور', Icons.fact_check_outlined, Icons.fact_check, AttendanceScreen()),
-      const _Section('finance', 'المالية والصندوق', 'المالية', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet, FinanceScreen()),
+      const Section('students', 'الطلاب والتسجيل', 'الطلاب', Icons.groups_outlined, Icons.groups, StudentsScreen()),
+      const Section('attendance', 'الحضور والغياب', 'الحضور', Icons.fact_check_outlined, Icons.fact_check, AttendanceScreen()),
+      const Section('finance', 'المالية والصندوق', 'المالية', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet, FinanceScreen()),
       if (school)
-        const _Section('classes', 'الصفوف والشعب', 'الصفوف', Icons.apartment_outlined, Icons.apartment, ClassesScreen())
+        const Section('classes', 'الصفوف والشعب', 'الصفوف', Icons.apartment_outlined, Icons.apartment, ClassesScreen())
       else
-        const _Section('schedule', 'الجداول والحصص', 'الجدول', Icons.calendar_month_outlined, Icons.calendar_month, ScheduleScreen()),
-      const _Section('settings', 'الإعدادات العامة', 'الإعدادات', Icons.settings_outlined, Icons.settings, SettingsScreen()),
+        const Section('schedule', 'الجداول والحصص', 'الجدول', Icons.calendar_month_outlined, Icons.calendar_month, ScheduleScreen()),
+      const Section('settings', 'الإعدادات العامة', 'الإعدادات', Icons.settings_outlined, Icons.settings, SettingsScreen()),
     ];
     final allowed = all.where((s) => store.canOpenSection(s.id)).toList();
     return allowed.isEmpty ? [all.first] : allowed;
@@ -88,6 +88,8 @@ class _AppShellState extends State<AppShell> {
   }
 }
 
+/// ترويسة الهاتف — مطابقة لـ `MobileHeader`: شعار المنشأة، ثم عنوان القسم
+/// واسم المنشأة، ثم حبّة المزامنة الذكية، ثم زر القائمة السريعة.
 class _Header extends StatelessWidget {
   const _Header({required this.title});
   final String title;
@@ -96,217 +98,186 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final top = MediaQuery.paddingOf(context).top;
+
     return Container(
-      padding: EdgeInsets.fromLTRB(14, top + 10, 12, 12),
+      padding: EdgeInsets.fromLTRB(14, top + 10, 14, 10),
       decoration: const BoxDecoration(
         color: AppColors.navy,
         border: Border(bottom: BorderSide(color: AppColors.navyMid)),
+        boxShadow: [BoxShadow(color: Color(0x14000000), blurRadius: 8, offset: Offset(0, 2))],
       ),
       child: Row(
         children: [
           InstitutionBadge(logo: store.institutionLogo, size: 32),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  store.institutionName.isEmpty ? title : store.institutionName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12),
-                ),
                 Text(
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.amber, fontSize: 10),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  store.institutionName.isEmpty ? 'إدارة المدارس' : store.institutionName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFFF39C12),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    height: 1.2,
+                  ),
                 ),
               ],
             ),
           ),
-          _SyncPair(
-            push: store.pendingPush,
-            pull: store.pendingPull,
-            onPush: () => _syncSheet(context, push: true),
-            onPull: () => _syncSheet(context, push: false),
-          ),
-          const SizedBox(width: 6),
-          InkWell(
-            onTap: () async {
-              final ok = await confirmSheet(
-                context,
-                title: 'تسجيل الخروج',
-                message: 'هل ترغب في تسجيل الخروج والعودة لبوابة الدخول؟',
-                confirmLabel: 'خروج',
-              );
-              if (ok && context.mounted) store.logout();
-            },
+          const SizedBox(width: 8),
+          _SyncPill(store: store),
+          const SizedBox(width: 8),
+          PressableScale(
+            onTap: () => showActionSheet(context, store),
             child: Container(
+              width: 32,
               height: 32,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: const Color(0xFF4C0519).withValues(alpha: 0.6),
-                border: Border.all(color: const Color(0xFFF43F5E).withValues(alpha: 0.4)),
+                color: Colors.white.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
               ),
-              child: const Row(
-                children: [
-                  Icon(Icons.logout, size: 14, color: Color(0xFFFB7185)),
-                  SizedBox(width: 4),
-                  Text('خروج', style: TextStyle(color: Color(0xFFFECDD3), fontSize: 10, fontWeight: FontWeight.w800)),
-                ],
-              ),
+              child: const Icon(Icons.more_vert, size: 17, color: Colors.white),
             ),
           ),
         ],
       ),
     );
   }
-
-  Future<void> _syncSheet(BuildContext context, {required bool push}) async {
-    final store = StoreScope.of(context);
-    if (!push) {
-      await store.sync.checkRemoteChanges();
-      if (context.mounted) store.notifySync();
-    }
-    if (!context.mounted) return;
-    final summary = push ? store.sync.getPendingSummary() : null;
-    final remote = push ? null : await store.sync.checkRemoteChanges();
-    if (!context.mounted) return;
-    final total = push ? summary!.total : (remote?.total ?? store.pendingPull);
-    final rows = push ? summary!.rows : (remote?.rows ?? const <SyncRow>[]);
-    final items = push ? summary!.items : (remote?.items ?? const <PendingSummaryItem>[]);
-
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.white,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-      builder: (ctx) {
-        var busy = false;
-        return StatefulBuilder(
-          builder: (ctx, setSt) {
-            return Padding(
-              padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.paddingOf(ctx).bottom),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    push ? 'رفع التعديلات المحلية' : 'سحب التعديلات من السحابة',
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    total == 0
-                        ? (push ? 'لا توجد تعديلات محلية معلقة للرفع' : 'لا توجد تعديلات جديدة في السحابة')
-                        : (push ? 'سيتم رفع $total تعديلاً إلى السحابة.' : 'سيتم سحب $total تعديلاً وتحديث الشاشة.'),
-                    style: const TextStyle(color: AppColors.muted, fontSize: 12.5),
-                  ),
-                  if (rows.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    for (final r in rows)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(
-                          '${tableLabelsAr[r.table] ?? r.table}${r.action.isNotEmpty ? ' · ${r.action}' : ''}: ${r.count}',
-                          style: const TextStyle(fontSize: 12, color: AppColors.heading),
-                        ),
-                      ),
-                  ],
-                  if (items.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    for (final item in items.take(8))
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 3),
-                        child: Text('• ${item.label}', style: const TextStyle(fontSize: 11.5, color: AppColors.muted)),
-                      ),
-                  ],
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(child: GhostButton(label: 'إغلاق', onPressed: () { if (!busy) Navigator.pop(ctx); })),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: PrimaryButton(
-                          label: push ? 'تأكيد الرفع' : 'تأكيد السحب',
-                          color: push ? AppColors.amber : AppColors.info,
-                          busy: busy,
-                          onPressed: total == 0 || busy
-                              ? null
-                              : () async {
-                                  setSt(() => busy = true);
-                                  final result = push ? await store.sync.push() : await store.sync.pull();
-                                  if (!ctx.mounted) return;
-                                  Navigator.pop(ctx);
-                                  if (context.mounted) showAppSnack(context, result.message, error: !result.success);
-                                },
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
 }
 
-class _SyncPair extends StatelessWidget {
-  const _SyncPair({required this.push, required this.pull, required this.onPush, required this.onPull});
-  final int push;
-  final int pull;
-  final VoidCallback onPush;
-  final VoidCallback onPull;
+/// حبّة المزامنة الذكية: حالة واحدة فقط بحسب الأولوية — رفع معلّق، ثم سحب
+/// متاح، ثم «متزامن». الرقم يتحرّك بدل أن يقفز، فيُرى أثر العملية.
+class _SyncPill extends StatelessWidget {
+  const _SyncPill({required this.store});
+  final AppStore store;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        color: AppColors.navyMid.withValues(alpha: 0.8),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: Row(
-        children: [
-          _chip('رفع', Icons.arrow_upward, push > 0, push, AppColors.amber, onPush),
-          const SizedBox(width: 2),
-          _chip('سحب', Icons.arrow_downward, pull > 0, pull, AppColors.info, onPull),
-        ],
+    final push = store.pendingPush;
+    final pull = store.pendingPull;
+    final busy = store.sync.isSyncing;
+
+    if (push > 0) {
+      return _pill(
+        context,
+        color: AppColors.amber,
+        icon: Icons.arrow_upward,
+        label: 'رفع',
+        count: push,
+        busy: busy,
+        onTap: () => openSyncSheet(context, store, push: true),
+      );
+    }
+    if (pull > 0) {
+      return _pill(
+        context,
+        color: AppColors.info,
+        icon: Icons.arrow_downward,
+        label: 'سحب',
+        count: pull,
+        busy: busy,
+        onTap: () => openSyncSheet(context, store, push: false),
+      );
+    }
+    return PressableScale(
+      onTap: () => showActionSheet(context, store),
+      child: Container(
+        height: 28,
+        padding: const EdgeInsets.symmetric(horizontal: 9),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.check_circle, size: 13, color: Color(0xFF34D399)),
+            const SizedBox(width: 5),
+            Text(
+              'متزامن',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.85),
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _chip(String label, IconData icon, bool on, int count, Color color, VoidCallback tap) {
-    return InkWell(
-      onTap: tap,
-      child: Container(
-        height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        color: on ? color : Colors.white.withValues(alpha: 0.08),
-        child: Row(
-          children: [
-            Icon(icon, size: 12, color: on ? Colors.white : color),
-            const SizedBox(width: 3),
-            Text(label, style: TextStyle(color: on ? Colors.white : Colors.white.withValues(alpha: 0.8), fontSize: 10, fontWeight: FontWeight.w800)),
-            if (count > 0) ...[
+  Widget _pill(
+    BuildContext context, {
+    required Color color,
+    required IconData icon,
+    required String label,
+    required int count,
+    required bool busy,
+    required VoidCallback onTap,
+  }) {
+    return PulsingBadge(
+      trigger: count,
+      child: PressableScale(
+        onTap: busy ? null : onTap,
+        child: Container(
+          height: 28,
+          padding: const EdgeInsets.symmetric(horizontal: 11),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(999),
+            boxShadow: [
+              BoxShadow(color: color.withValues(alpha: 0.35), blurRadius: 8, offset: const Offset(0, 2)),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (busy)
+                const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(strokeWidth: 1.8, color: Colors.white),
+                )
+              else
+                Icon(icon, size: 13, color: Colors.white),
+              const SizedBox(width: 5),
+              Text(label, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
               const SizedBox(width: 4),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                color: Colors.white,
-                child: Text('$count', style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.w900)),
+              AnimatedCount(
+                count,
+                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900),
               ),
             ],
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
+/// شريط التنقّل السفلي — مطابق لـ `MobileBottomNav`: خط كهرماني فوق القسم
+/// المفتوح وحبّة خلف أيقونته.
 class _BottomNav extends StatelessWidget {
   const _BottomNav({
     required this.sections,
@@ -315,7 +286,7 @@ class _BottomNav extends StatelessWidget {
     required this.dueCount,
   });
 
-  final List<_Section> sections;
+  final List<Section> sections;
   final int index;
   final ValueChanged<int> onSelect;
   final int dueCount;
@@ -323,60 +294,122 @@ class _BottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.paddingOf(context).bottom;
-    final items = [for (final s in sections) (s.icon, s.activeIcon, s.label, s.id)];
-
     return Container(
-      height: 56 + (bottom > 0 ? bottom : 6),
-      padding: EdgeInsets.only(bottom: bottom > 0 ? bottom : 6),
+      padding: EdgeInsets.only(top: 4, bottom: bottom > 0 ? bottom : 4),
       decoration: const BoxDecoration(
         color: Colors.white,
-        border: Border(top: BorderSide(color: AppColors.lineStrong)),
+        border: Border(top: BorderSide(color: AppColors.line)),
+        boxShadow: [BoxShadow(color: Color(0x0A000000), blurRadius: 16, offset: Offset(0, -4))],
       ),
       child: Row(
         children: [
-          for (var i = 0; i < items.length; i++)
+          for (var i = 0; i < sections.length; i++)
             Expanded(
-              child: InkWell(
+              child: _NavItem(
+                section: sections[i],
+                active: index == i,
+                badge: sections[i].id == 'finance' ? dueCount : 0,
                 onTap: () => onSelect(i),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      height: 2,
-                      width: index == i ? 28 : 0,
-                      margin: const EdgeInsets.only(bottom: 4),
-                      color: AppColors.amber,
-                    ),
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Icon(index == i ? items[i].$2 : items[i].$1, size: 18, color: index == i ? AppColors.amber : AppColors.muted),
-                        if (items[i].$4 == 'finance' && dueCount > 0)
-                          Positioned(
-                            left: -10,
-                            top: -5,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                              color: AppColors.danger,
-                              child: Text('$dueCount', style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900)),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      items[i].$3,
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: index == i ? FontWeight.w800 : FontWeight.w500,
-                        color: index == i ? AppColors.amber : AppColors.muted,
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  const _NavItem({
+    required this.section,
+    required this.active,
+    required this.badge,
+    required this.onTap,
+  });
+
+  final Section section;
+  final bool active;
+  final int badge;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return PressableScale(
+      scale: 0.92,
+      onTap: onTap,
+      child: SizedBox(
+        height: 50,
+        child: Stack(
+          alignment: Alignment.topCenter,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              height: 2,
+              width: active ? 34 : 0,
+              decoration: BoxDecoration(
+                color: AppColors.amber,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      width: 38,
+                      height: 27,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: active ? AppColors.amberSoft : Colors.transparent,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Icon(
+                        active ? section.activeIcon : section.icon,
+                        size: 19,
+                        color: active ? AppColors.amber : AppColors.muted,
+                      ),
+                    ),
+                    if (badge > 0)
+                      Positioned(
+                        left: -4,
+                        top: -3,
+                        child: PulsingBadge(
+                          trigger: badge,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            constraints: const BoxConstraints(minWidth: 15),
+                            decoration: BoxDecoration(
+                              color: AppColors.danger,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: Colors.white, width: 1.2),
+                            ),
+                            child: Text(
+                              '$badge',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Colors.white, fontSize: 8.5, fontWeight: FontWeight.w900),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  section.label,
+                  style: TextStyle(
+                    fontSize: 10,
+                    height: 1,
+                    fontWeight: active ? FontWeight.w800 : FontWeight.w500,
+                    color: active ? AppColors.amber : AppColors.muted,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

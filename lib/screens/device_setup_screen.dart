@@ -24,6 +24,9 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
   String? passwordError;
   int pulledCount = 0;
 
+  /// أُكملت التهيئة ببيانات محلية لأن السحابة تعذّرت.
+  bool offline = false;
+
   String? selectedUserId;
   final password = TextEditingController();
 
@@ -53,20 +56,27 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
       final candidates = store.setupCandidates;
       setState(() {
         pulledCount = pulled;
+        offline = false;
         selectedUserId = candidates.first.id;
         loading = false;
       });
-    } on StoreException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        loading = false;
-        syncError = e.message;
-      });
     } catch (e) {
       if (!mounted) return;
+      final message = e is StoreException ? e.message : 'تعذر الاتصال بالسحابة لجلب البيانات.';
+      // جهاز يحمل بيانات محلية أصلاً يكمل بها: تعذّر السحب لا يمنع تحديد
+      // هوية الجهاز، وإلا انحبس من يعيد الدخول بلا اتصال.
+      if (store.users.isNotEmpty || store.students.isNotEmpty) {
+        setState(() {
+          offline = true;
+          pulledCount = 0;
+          selectedUserId = store.setupCandidates.first.id;
+          loading = false;
+        });
+        return;
+      }
       setState(() {
         loading = false;
-        syncError = 'تعذر الاتصال بالسحابة لجلب البيانات.';
+        syncError = message;
       });
     }
   }
@@ -274,17 +284,28 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: AppColors.successSoft,
-            border: Border.all(color: AppColors.successBorder),
+            color: offline ? AppColors.amberSoft : AppColors.successSoft,
+            border: Border.all(color: offline ? AppColors.amberBorder : AppColors.successBorder),
           ),
           child: Row(
             children: [
-              const Icon(Icons.check_circle_outline, size: 16, color: AppColors.success),
+              Icon(
+                offline ? Icons.cloud_off : Icons.check_circle_outline,
+                size: 16,
+                color: offline ? AppColors.amber : AppColors.success,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'تم تنزيل البيانات بنجاح ($pulledCount سجل).',
-                  style: const TextStyle(color: Color(0xFF166534), fontSize: 12, fontWeight: FontWeight.w700),
+                  offline
+                      ? 'تعذّر الاتصال بالسحابة — سيتم المتابعة بالبيانات المحفوظة على الجهاز.'
+                      : 'تم تنزيل البيانات بنجاح ($pulledCount سجل).',
+                  style: TextStyle(
+                    color: offline ? const Color(0xFF9A4F05) : const Color(0xFF166534),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    height: 1.5,
+                  ),
                 ),
               ),
             ],

@@ -227,34 +227,54 @@ class GhostButton extends StatelessWidget {
 }
 
 /// شعار المنشأة، أو أيقونة افتراضية إن لم يُرفع شعار.
+/// فكّ شعار المنشأة المخزّن كـ Base64 (مع بادئة data: أو بدونها).
+Uint8List? decodeLogo(String logo) {
+  if (logo.isEmpty) return null;
+  try {
+    final comma = logo.indexOf(',');
+    return base64Decode(comma >= 0 ? logo.substring(comma + 1) : logo);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// شعار المنشأة داخل إطار أبيض — مطابق لصندوق الشعار في `MobileHeader`.
 class InstitutionBadge extends StatelessWidget {
-  const InstitutionBadge({super.key, required this.logo, this.size = 32});
+  const InstitutionBadge({
+    super.key,
+    required this.logo,
+    this.size = 32,
+    this.radius = 9,
+    this.onDark = true,
+  });
 
   final String logo;
   final double size;
+  final double radius;
+
+  /// على خلفية داكنة يكون الإطار أبيض؛ على فاتحة يبقى كهرمانياً.
+  final bool onDark;
 
   @override
   Widget build(BuildContext context) {
-    Uint8List? bytes;
-    if (logo.isNotEmpty) {
-      try {
-        final comma = logo.indexOf(',');
-        bytes = base64Decode(comma >= 0 ? logo.substring(comma + 1) : logo);
-      } catch (_) {
-        bytes = null;
-      }
-    }
+    final bytes = decodeLogo(logo);
     return Container(
       width: size,
       height: size,
-      padding: const EdgeInsets.all(1),
+      padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
-        color: AppColors.amberSoft,
-        border: Border.all(color: AppColors.amber),
+        color: onDark ? Colors.white : AppColors.amberSoft,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(
+          color: onDark ? Colors.white.withValues(alpha: 0.25) : AppColors.amberBorder,
+        ),
       ),
-      child: bytes == null
-          ? Icon(Icons.school, color: AppColors.amber, size: size * 0.62)
-          : Image.memory(bytes, fit: BoxFit.contain, gaplessPlayback: true),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(radius > 2 ? radius - 2 : 0),
+        child: bytes == null
+            ? Icon(Icons.school, color: AppColors.amber, size: size * 0.58)
+            : Image.memory(bytes, fit: BoxFit.contain, gaplessPlayback: true),
+      ),
     );
   }
 }
