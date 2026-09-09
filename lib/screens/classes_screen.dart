@@ -393,7 +393,7 @@ class _ClassDetailState extends State<_ClassDetail> {
             children: [
               Row(
                 children: [
-                  GhostButton(label: 'العودة للصفوف', icon: Icons.arrow_forward, onPressed: widget.onBack),
+                  GhostButton(label: 'العودة للصفوف', icon: Icons.arrow_back, onPressed: widget.onBack),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(

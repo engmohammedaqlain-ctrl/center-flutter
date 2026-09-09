@@ -237,7 +237,7 @@ class _StudentCard extends StatelessWidget {
                 color: AppColors.success,
               ),
               const SizedBox(width: 4),
-              const Icon(Icons.chevron_left, color: AppColors.muted, size: 18),
+              const Icon(Icons.chevron_right, color: AppColors.muted, size: 18),
             ],
           ),
         ],

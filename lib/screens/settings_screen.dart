@@ -1439,7 +1439,7 @@ class _RoomsTab extends StatelessWidget {
                           style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.muted),
                         ),
                         const SizedBox(width: 6),
-                        const Icon(Icons.chevron_left, size: 18, color: AppColors.muted),
+                        const Icon(Icons.chevron_right, size: 18, color: AppColors.muted),
                       ],
                     ),
                   ),

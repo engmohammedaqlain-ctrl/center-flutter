@@ -356,7 +356,7 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
           height: 42,
           busy: submitting,
           color: AppColors.navy,
-          icon: Icons.arrow_back,
+          icon: Icons.arrow_forward,
           label: submitting ? 'جاري التثبيت...' : 'تأكيد وبدء العمل على الجهاز',
           onPressed: submitting ? null : () => _finish(store, selected),
         ),

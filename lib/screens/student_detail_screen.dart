@@ -257,7 +257,7 @@ class StudentDetailScreen extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         child: Row(
           children: [
-            SquareIconButton(icon: Icons.arrow_forward, onTap: () => Navigator.pop(context)),
+            SquareIconButton(icon: Icons.arrow_back, onTap: () => Navigator.pop(context)),
             const SizedBox(width: 8),
             Expanded(
               child: Column(

@@ -209,7 +209,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             const SizedBox(height: 8),
             Row(
               children: [
-                SquareIconButton(icon: Icons.chevron_right, onTap: () => setState(() => weekOffset--)),
+                SquareIconButton(icon: Icons.chevron_left, onTap: () => setState(() => weekOffset--)),
                 Expanded(
                   child: Center(
                     child: Text(
@@ -220,7 +220,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     ),
                   ),
                 ),
-                SquareIconButton(icon: Icons.chevron_left, onTap: () => setState(() => weekOffset++)),
+                SquareIconButton(icon: Icons.chevron_right, onTap: () => setState(() => weekOffset++)),
                 if (weekOffset != 0) ...[
                   const SizedBox(width: 6),
                   GhostButton(label: 'اليوم', onPressed: () => setState(() => weekOffset = 0)),
