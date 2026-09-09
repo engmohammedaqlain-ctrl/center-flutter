@@ -38,6 +38,17 @@ void main() {
     expect(s.needsInitialSetup, isFalse);
   });
 
+  test('the gate stays shut once the initial pull fills the local store', () async {
+    final s = await loggedIn(FakeDisk(), withStudents: false);
+    expect(s.needsInitialSetup, isTrue);
+
+    // نجاح السحب الأولي يملأ الطلاب. لو كانت البوابة تُقرأ لحظياً لانقلبت هنا
+    // وقفز التطبيق إلى شاشة العمل قبل أن يختار المستخدم هوية الجهاز.
+    injectDemoData(s);
+    expect(s.students, isNotEmpty);
+    expect(s.needsInitialSetup, isTrue, reason: 'البوابة مثبَّتة حتى إتمام الاختيار');
+  });
+
   test('completing setup pins the device identity and clears the gate', () async {
     final disk = FakeDisk();
     final s = await loggedIn(disk, withStudents: false);

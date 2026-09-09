@@ -248,6 +248,17 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
           label: 'إعادة المحاولة',
           onPressed: _performInitialSync,
         ),
+        const SizedBox(height: 8),
+        // مخرج من الشاشة: بلا اتصال تتعذّر التهيئة، وبلا هذا الزر يبقى
+        // المستخدم محبوساً فيها بلا وسيلة للعودة إلى بوابة الدخول.
+        SizedBox(
+          width: double.infinity,
+          child: GhostButton(
+            label: 'العودة لتسجيل الدخول',
+            icon: Icons.arrow_back,
+            onPressed: () => StoreScope.of(context).logout(),
+          ),
+        ),
       ],
     );
   }

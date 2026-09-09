@@ -210,6 +210,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     } finally {
       _loading = false;
     }
+    await _resolveSetupGate();
     notifyListeners();
   }
 
@@ -500,6 +501,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     roleName = me == null ? 'مدير النظام' : roleLabel(me.role);
     await _saveSession();
     await hydrateInstitution();
+    await _resolveSetupGate();
     await afterEnter();
     notifyListeners();
   }
@@ -523,6 +525,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     loggedIn = false;
     isMasterAdmin = false;
     currentTenant = null;
+    _setupPending = false;
     await _saveSession();
     notifyListeners();
   }
@@ -1422,14 +1425,33 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   /// هل يحتاج هذا الجهاز إلى تهيئة أولية قبل السماح بالعمل؟
   ///
-  /// جهاز لم يُهيَّأ بعد **ولا يحمل أي بيانات محلية**. الجهاز الذي يعمل منذ ما
-  /// قبل هذه الميزة يُعتبر مهيَّأً حتى لا نطالبه بإعادة التهيئة بلا سبب.
-  bool get needsInitialSetup {
-    if (!loggedIn || isMasterAdmin) return false;
+  /// **مثبَّتة**: تُحسم مرة واحدة عند الدخول ولا تُعاد قراءتها مع كل رسم. لو
+  /// اعتمدت على `students.isEmpty` لحظياً لانقلبت إلى `false` بمجرد نجاح
+  /// السحب الأولي، فتُغلق الشاشة قبل أن يختار المستخدم هوية الجهاز وصلاحيته.
+  bool _setupPending = false;
+
+  bool get needsInitialSetup => _setupPending && loggedIn && !isMasterAdmin;
+
+  /// حسم الحاجة إلى التهيئة. يُستدعى مرة عند الدخول أو استعادة الجلسة.
+  ///
+  /// الجهاز الذي يحمل بيانات محلية أصلاً يُعتبر مهيَّأً — لا نطالب جهازاً
+  /// يعمل منذ ما قبل هذه الميزة بإعادة تهيئة بلا سبب.
+  Future<void> _resolveSetupGate() async {
     final tid = tenantId;
-    if (tid == null) return false;
-    if (db.settings[initialSetupKey(tid)] == 'true') return false;
-    return students.isEmpty;
+    if (!loggedIn || isMasterAdmin || tid == null) {
+      _setupPending = false;
+      return;
+    }
+    if (db.settings[initialSetupKey(tid)] == 'true') {
+      _setupPending = false;
+      return;
+    }
+    if (students.isNotEmpty) {
+      await db.setSetting(initialSetupKey(tid), 'true');
+      _setupPending = false;
+      return;
+    }
+    _setupPending = true;
   }
 
   /// حساب مدير المنشأة الأول.
@@ -1507,6 +1529,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     await setDeviceIdentity(user, user.name);
     final tid = tenantId;
     if (tid != null) await db.setSetting(initialSetupKey(tid), 'true');
+    _setupPending = false;
     await flush();
     notifyListeners();
   }
@@ -1515,6 +1538,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   Future<void> resetInitialSetup() async {
     final tid = tenantId;
     if (tid != null) await db.setSetting(initialSetupKey(tid), null);
+    _setupPending = loggedIn && !isMasterAdmin && tid != null;
     notifyListeners();
   }
 
