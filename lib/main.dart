@@ -1,12 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
-
+import 'data/db_platform.dart';
 import 'data/local_db.dart';
 import 'data/store.dart';
 import 'data/supabase.dart';
@@ -21,10 +18,7 @@ import 'widgets/widgets.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // sqflite لا يعمل على الويب افتراضياً — نستخدم تنفيذ WASM عبر IndexedDB.
-  if (kIsWeb) {
-    databaseFactory = databaseFactoryFfiWeb;
-  }
+  configureDatabaseFactory();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,

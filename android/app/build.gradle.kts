@@ -35,6 +35,30 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+
+            // تصغير كود جافا/كوتلن وحذف الموارد غير المشار إليها.
+            // بلا هذين يخرج الإصدار بكامل شيفرة الإضافات ومواردها.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+        }
+    }
+
+    packaging {
+        resources {
+            // ملفات ترخيص وبيانات وصفية لا يحتاجها التطبيق وقت التشغيل
+            excludes += setOf(
+                "META-INF/*.kotlin_module",
+                "META-INF/AL2.0",
+                "META-INF/LGPL2.1",
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE*",
+                "META-INF/NOTICE*",
+                "**/*.version",
+            )
         }
     }
 }
