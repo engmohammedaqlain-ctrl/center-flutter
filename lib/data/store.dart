@@ -111,14 +111,23 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   int _rev = 0;
   int _indexRev = -1;
   final _studentIndex = <String, Student>{};
-  final _attendanceIndex = <String, AttendanceMark>{};
   final _sessionIndex = <String, ClassSession>{};
   final _sessionOwners = <String, Set<String>>{};
+
+  /// الرصد المملوك لصف محدد: 'صف|طالب|يوم'.
+  final _markOwned = <String, AttendanceMark>{};
+
+  /// الرصد بلا جلسة معروفة: 'طالب|يوم'. يتبنّاه أول صف يُرصد منه.
+  final _markLoose = <String, AttendanceMark>{};
+
+  /// أي رصد للطالب في اليوم مهما كان صفه — للقراءة المحايدة تجاه الصف.
+  final _markAny = <String, AttendanceMark>{};
 
   int _dueRev = -1;
   List<DueItem> _dueCache = const [];
 
-  static String attendanceKey(String studentId, String date) => '$studentId|$date';
+  static String looseKey(String studentId, String date) => '$studentId|$date';
+  static String ownedKey(String ownerId, String studentId, String date) => '$ownerId|$studentId|$date';
   static String sessionKey(String ownerId, String date) => '$ownerId|$date';
 
   void _touch() => _rev++;
@@ -139,11 +148,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       ..clear()
       ..addEntries(students.map((s) => MapEntry(s.id, s)));
 
-    _attendanceIndex.clear();
-    for (final a in attendance) {
-      _attendanceIndex[attendanceKey(a.studentId, a.date)] = a;
-    }
-
+    // الجلسات أولاً: منها يُعرف مالك كل رصد
     _sessionIndex.clear();
     _sessionOwners.clear();
     for (final sess in sessions) {
@@ -157,6 +162,21 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         _sessionIndex[sessionKey(sess.roomId, sess.sessionDate)] = sess;
       }
       _sessionOwners[sess.id] = owners;
+    }
+
+    _markOwned.clear();
+    _markLoose.clear();
+    _markAny.clear();
+    for (final a in attendance) {
+      _markAny[looseKey(a.studentId, a.date)] = a;
+      final owners = a.sessionId.isEmpty ? null : _sessionOwners[a.sessionId];
+      if (owners == null || owners.isEmpty) {
+        _markLoose[looseKey(a.studentId, a.date)] = a;
+        continue;
+      }
+      for (final owner in owners) {
+        _markOwned[ownedKey(owner, a.studentId, a.date)] = a;
+      }
     }
   }
 
@@ -225,16 +245,25 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       await db.deleteRecords(entry.key, entry.value.toList());
     }
     for (final entry in records.entries) {
-      final rows = _rowsForPersist(entry.key).where((r) => entry.value.contains('${r['id']}')).toList();
-      await db.saveRecords(entry.key, rows);
+      await db.saveRecords(entry.key, _rowsForPersist(entry.key, only: entry.value));
     }
   }
 
-  List<Map<String, dynamic>> _rowsForPersist(String table) {
+  /// صفوف جدول للكتابة على القرص. [only] يقصرها على معرّفات بعينها، فلا
+  /// يُسلسَل الجدول كله — ثمانية آلاف سجل حضور — لأجل رصدٍ واحد.
+  List<Map<String, dynamic>> _rowsForPersist(String table, {Set<String>? only}) {
     if (table == _pendingTable) {
       return [
         for (var i = 0; i < pendingSyncs.length; i++) {'id': '$i', ...pendingSyncs[i].toJson()},
       ];
+    }
+    if (only != null && only.isNotEmpty) {
+      final out = <Map<String, dynamic>>[];
+      for (final id in only) {
+        final row = recordOf(table, id);
+        if (row != null) out.add(row);
+      }
+      return out;
     }
     if (table == 'tenants') return tenants.map((e) => e.toCloud()).toList();
     return allOf(table);
@@ -541,6 +570,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     cleanupBogusDemoUserSyncs(pendingSyncs);
     await migrateReceiptNumbers();
     await migrateAttendanceIds();
+    dedupeAttendance();
     if (!networkEnabled) return;
     await primeReceiptCounter();
     await sync.checkRemoteChanges();
@@ -674,31 +704,35 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }).toList();
   }
 
-  String? attendanceOf(String studentId, String date) {
-    _rebuildIndexes();
-    return _attendanceIndex[attendanceKey(studentId, date)]?.status;
-  }
+  String? attendanceOf(String studentId, String date) => attendanceRecord(studentId, date)?.status;
 
+  /// أي رصد للطالب في هذا اليوم، بصرف النظر عن الصف — للتقارير وكشف الطالب.
   AttendanceMark? attendanceRecord(String studentId, String date) {
     _rebuildIndexes();
-    return _attendanceIndex[attendanceKey(studentId, date)];
+    return _markAny[looseKey(studentId, date)];
+  }
+
+  /// السجل الذي يخصّ هذا الصف وهذا الطالب في هذا اليوم — **المرجع الوحيد**
+  /// للقراءة والكتابة معاً.
+  ///
+  /// اختلافهما كان أصل العطل: القارئ يأخذ آخر سجل بمفتاح (طالب، يوم)
+  /// والكاتب يأخذ أوله. فحين يحمل الطالب سجلين لليوم نفسه — واحد وصل من
+  /// السحابة لصف آخر — كان كلٌّ منهما يعمل على سجل مختلف، فتبدو النقرة
+  /// كأنها لم تحدث.
+  AttendanceMark? markFor(String? ownerId, String studentId, String date) {
+    _rebuildIndexes();
+    if (ownerId != null && ownerId.isNotEmpty) {
+      final owned = _markOwned[ownedKey(ownerId, studentId, date)];
+      if (owned != null) return owned;
+    }
+    // سجل بلا جلسة معروفة: يتبنّاه الصف الذي يُرصد منه
+    return _markLoose[looseKey(studentId, date)];
   }
 
   /// حالة الحضور لطالب في تاريخ ضمن صف/مجموعة محددة.
   /// يمر عبر الجلسة كما في النسخة المكتبية بدل مطابقة التاريخ وحده.
-  String? attendanceInSession(String ownerId, String studentId, String date) {
-    _rebuildIndexes();
-    final rec = _attendanceIndex[attendanceKey(studentId, date)];
-    if (rec == null) return null;
-    if (rec.sessionId.isEmpty) return rec.status;
-
-    // الجلسة التي يتبعها السجل. إن كانت مجهولة محلياً — سجل قادم من جهاز آخر
-    // أنشأ جلسته الخاصة — فالمطابقة على الطالب والتاريخ تكفي. رفضُه كان
-    // يُخفي رصداً موجوداً فيبدو اليوم غير مرصود حتى يُضغط عليه من جديد.
-    final owners = _sessionOwners[rec.sessionId];
-    if (owners == null) return rec.status;
-    return owners.contains(ownerId) ? rec.status : null;
-  }
+  String? attendanceInSession(String ownerId, String studentId, String date) =>
+      markFor(ownerId, studentId, date)?.status;
 
   String _nowIso() => DateTime.now().toUtc().toIso8601String();
 
@@ -718,20 +752,24 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// رصد حالة محددة لطالب في يوم. `null` يمسح الرصد.
   /// [ownerId] هو معرّف الصف (نظام مدرسة) أو المجموعة (نظام مركز).
   void setAttendance(String studentId, String date, String? status, {String? ownerId}) {
-    final sessionId = ownerId == null ? '' : sessionFor(ownerId, date, school: isSchool).id;
-    final existing = attendance
-        .where((a) => a.studentId == studentId && (a.date == date))
-        .firstOrNull;
+    final existing = markFor(ownerId, studentId, date);
 
     if (status == null) {
-      if (existing != null) {
-        attendance.remove(existing);
-        _queue('attendance', existing.id, 'DELETE', null);
-      }
+      if (existing == null) return;
+      attendance.remove(existing);
+      _queue('attendance', existing.id, 'DELETE', null);
       return;
     }
 
+    // الجلسة تُنشأ عند الحاجة فقط، بعد التأكد من وجود ما يُرصد
+    final sessionId = ownerId == null || ownerId.isEmpty
+        ? ''
+        : sessionFor(ownerId, date, school: isSchool).id;
+
     if (existing != null) {
+      if (existing.status == status && (sessionId.isEmpty || existing.sessionId == sessionId)) {
+        return; // لا تغيير: لا داعي لإخطار الشاشات ولا لكتابة القرص
+      }
       existing.status = status;
       existing.markedByUserId = currentUserId;
       if (sessionId.isNotEmpty) existing.sessionId = sessionId;
@@ -759,9 +797,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// دورة النقر: غير مرصود ← غائب ← حاضر ← غير مرصود.
   /// مطابقة لـ `toggleAttendanceCell` — النقرة الأولى للرصد السريع للغياب.
   void cycleAttendance(String studentId, String date, {String? ownerId}) {
-    final current = ownerId == null
-        ? attendanceOf(studentId, date)
-        : attendanceInSession(ownerId, studentId, date);
+    final current = markFor(ownerId, studentId, date)?.status;
     final next = switch (current) {
       null => 'absent',
       'absent' => 'present',
@@ -770,20 +806,37 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     setAttendance(studentId, date, next, ownerId: ownerId);
   }
 
-  void markAllPresent(String date, List<Student> list, {String? ownerId}) {
-    if (list.isEmpty) return;
-    final sessionId = ownerId == null ? '' : sessionFor(ownerId, date, school: isSchool).id;
+  /// رصد كل طلاب الصف حاضرين ليوم واحد.
+  ///
+  /// يمرّ على نفس مفتاح [markFor] لكل طالب، فلا يتخلّف أحد لأن سجله مرتبط
+  /// بجلسة أخرى — وهو ما كان يجعل الزر يُغيّر البعض دون البعض.
+  int markAllPresent(String date, List<Student> list, {String? ownerId}) {
+    if (list.isEmpty) return 0;
+    final sessionId = ownerId == null || ownerId.isEmpty
+        ? ''
+        : sessionFor(ownerId, date, school: isSchool).id;
+
+    final now = _nowIso();
+    var changed = 0;
+
     for (final s in list) {
-      final existing = attendance.where((a) => a.studentId == s.id && a.date == date).firstOrNull;
+      final existing = markFor(ownerId, s.id, date);
       if (existing != null) {
+        if (existing.status == 'present' && (sessionId.isEmpty || existing.sessionId == sessionId)) {
+          continue;
+        }
         existing.status = 'present';
         existing.markedByUserId = currentUserId;
         if (sessionId.isNotEmpty) existing.sessionId = sessionId;
-        existing.updatedAt = _nowIso();
+        existing.updatedAt = now;
         existing.syncStatus = 'pending';
-        queuePendingSync(pendingSyncs, tableName: 'attendance', recordId: existing.id, action: 'UPDATE', payload: existing.toCloud());
+        queuePendingSync(pendingSyncs,
+            tableName: 'attendance', recordId: existing.id, action: 'UPDATE', payload: existing.toCloud());
+        markRecord('attendance', existing.id);
+        changed++;
         continue;
       }
+
       final mark = AttendanceMark(
         id: newId(),
         studentId: s.id,
@@ -792,15 +845,56 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         sessionId: sessionId,
         markedByUserId: currentUserId,
         syncStatus: 'pending',
-        createdAt: _nowIso(),
-        updatedAt: _nowIso(),
+        createdAt: now,
+        updatedAt: now,
       );
       attendance.add(mark);
-      queuePendingSync(pendingSyncs, tableName: 'attendance', recordId: mark.id, action: 'INSERT', payload: mark.toCloud());
+      queuePendingSync(pendingSyncs,
+          tableName: 'attendance', recordId: mark.id, action: 'INSERT', payload: mark.toCloud());
+      markRecord('attendance', mark.id);
+      changed++;
+      // الفهرس يسقط مع كل markRecord، فيُعاد بناؤه لطالب التالي
+    }
+
+    if (changed > 0) {
+      markDirty(_pendingTable);
+      notifyListeners();
+    }
+    return changed;
+  }
+
+  /// إزالة أي رصد مكرّر لنفس (الجلسة، الطالب) — القيد الفريد في السحابة.
+  /// يُبقي الأحدث ويُسقط الباقي، فلا تصطدم الدفعة بنفسها عند الرفع.
+  int dedupeAttendance() {
+    final seen = <String, AttendanceMark>{};
+    final drop = <AttendanceMark>[];
+
+    for (final a in attendance) {
+      final key = a.sessionId.isEmpty ? looseKey(a.studentId, a.date) : '${a.sessionId}|${a.studentId}';
+      final kept = seen[key];
+      if (kept == null) {
+        seen[key] = a;
+        continue;
+      }
+      final keptAt = kept.updatedAt ?? '';
+      final thisAt = a.updatedAt ?? '';
+      if (thisAt.compareTo(keptAt) >= 0) {
+        seen[key] = a;
+        drop.add(kept);
+      } else {
+        drop.add(a);
+      }
+    }
+
+    if (drop.isEmpty) return 0;
+    for (final a in drop) {
+      attendance.remove(a);
+      pendingSyncs.removeWhere((p) => p.tableName == 'attendance' && p.recordId == a.id);
     }
     markDirty('attendance');
     markDirty(_pendingTable);
     notifyListeners();
+    return drop.length;
   }
 
   /// أيام الأسبوع المدرسي (السبت → الخميس) بإزاحة أسابيع.
@@ -1773,11 +1867,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     } else {
       tenants.add(t);
     }
+    markDirty('tenants');
     notifyListeners();
   }
 
   void deleteTenant(String id) {
     tenants.removeWhere((t) => t.id == id);
+    markDirty('tenants');
     notifyListeners();
   }
 
@@ -1804,6 +1900,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         return installments.where((e) => e.id == id).firstOrNull?.toCloud();
       case 'attendance':
         return attendance.where((e) => e.id == id).firstOrNull?.toCloud();
+      case 'tenants':
+        return tenants.where((e) => e.id == id).firstOrNull?.toCloud();
       case 'groups':
         return groups.where((e) => e.id == id).firstOrNull?.toCloud();
       case 'enrollments':

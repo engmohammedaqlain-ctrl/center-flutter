@@ -149,7 +149,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 7),
                           child: _StudentRow(
-                            key: ValueKey(student.id),
+                            // مفتاح يشمل اليوم والحالة: الصف يُعاد بناؤه عند
+                            // تغيّر رصده وحده، لا مع كل إخطار من المخزن
+                            key: ValueKey('${student.id}|${day.dateStr}'),
                             index: i,
                             student: student,
                             status: store.attendanceInSession(currentOwner, student.id, day.dateStr),
@@ -423,7 +425,7 @@ class _DayChip extends StatelessWidget {
 }
 
 /// صف الطالب: رقمه واسمه وهاتفه، وزرّا رصد كبيران للّمس.
-class _StudentRow extends StatelessWidget {
+class _StudentRow extends StatefulWidget {
   const _StudentRow({
     super.key,
     required this.index,
@@ -440,7 +442,34 @@ class _StudentRow extends StatelessWidget {
   final ValueChanged<String?> onSet;
 
   @override
+  State<_StudentRow> createState() => _StudentRowState();
+}
+
+class _StudentRowState extends State<_StudentRow> {
+  /// الحالة المعروضة. تُضبط فور اللمس ثم يلحق بها المخزن، فلا ينتظر المستخدم
+  /// دورة إخطار وإعادة بناء ليرى أن ضغطته وصلت.
+  String? _shown;
+
+  String? get _status => _shown ?? widget.status;
+
+  @override
+  void didUpdateWidget(covariant _StudentRow old) {
+    super.didUpdateWidget(old);
+    // وصلت حالة المخزن: نتخلّى عن الحالة المتفائلة
+    if (old.status != widget.status) _shown = null;
+  }
+
+  void _tap(String? next) {
+    setState(() => _shown = next);
+    widget.onSet(next);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final student = widget.student;
+    final index = widget.index;
+    final canEdit = widget.canEdit;
+    final status = _status;
     final present = status == 'present' || status == 'late';
     final absent = status == 'absent';
 
@@ -488,7 +517,7 @@ class _StudentRow extends StatelessWidget {
             fg: AppColors.success,
             softBg: const Color(0xFFF0FDF4),
             softBorder: AppColors.successBorder,
-            onTap: canEdit ? () => onSet(present ? null : 'present') : null,
+            onTap: canEdit ? () => _tap(present ? null : 'present') : null,
           ),
           const SizedBox(width: 7),
           _markButton(
@@ -497,7 +526,7 @@ class _StudentRow extends StatelessWidget {
             fg: AppColors.danger,
             softBg: const Color(0xFFFEF2F2),
             softBorder: AppColors.dangerBorder,
-            onTap: canEdit ? () => onSet(absent ? null : 'absent') : null,
+            onTap: canEdit ? () => _tap(absent ? null : 'absent') : null,
           ),
         ],
       ),

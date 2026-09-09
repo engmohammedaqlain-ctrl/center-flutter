@@ -82,7 +82,8 @@ void main() {
     final s = await school();
     final a = s.rooms[0];
     final b = s.rooms[1];
-    final date = isoDate(DateTime.now());
+    // يوم لا تحمل البيانات التجريبية رصداً فيه، حتى يُختبر الفصل وحده
+    const date = '2026-04-15';
     final student = s.studentsOf(a).first;
 
     final other = s.sessionFor(b.id, date, school: true);
@@ -226,6 +227,105 @@ void main() {
     s.setAttendance(student.id, day, 'present', ownerId: room.id);
     expect(s.attendanceRecord(student.id, day)!.id, 'cloud-att-1');
     expect(s.attendance.where((a) => a.studentId == student.id && a.date == day), hasLength(1));
+  });
+
+  test('a tap lands on the same record the screen is reading', () async {
+    final s = await school();
+    final room = s.rooms.first;
+    final student = s.studentsOf(room).first;
+    const date = '2026-04-20';
+
+    // سجلان لنفس الطالب واليوم: واحد يخص صفاً آخر. القارئ كان يأخذ الأخير
+    // والكاتب الأول، فتبدو النقرة بلا أثر.
+    final other = s.sessionFor(s.rooms[1].id, date, school: true);
+    s.attendance.add(AttendanceMark(
+      id: s.newId(),
+      studentId: student.id,
+      date: date,
+      status: 'absent',
+      sessionId: other.id,
+    ));
+    s.notifySync();
+
+    expect(s.attendanceInSession(room.id, student.id, date), isNull);
+
+    s.setAttendance(student.id, date, 'present', ownerId: room.id);
+    expect(
+      s.attendanceInSession(room.id, student.id, date),
+      'present',
+      reason: 'النقرة تظهر فوراً في الصف الذي رُصد منه',
+    );
+    // ولا تمسّ رصد الصف الآخر
+    expect(s.attendanceInSession(s.rooms[1].id, student.id, date), 'absent');
+  });
+
+  test('mark-all-present reaches every student, even ones tied elsewhere', () async {
+    final s = await school();
+    final room = s.rooms.first;
+    final list = s.studentsOf(room);
+    const date = '2026-04-21';
+    expect(list.length, greaterThan(1));
+
+    // طالب سجله مرتبط بجلسة صف آخر، وآخر مرصود غائباً هنا
+    final other = s.sessionFor(s.rooms[1].id, date, school: true);
+    s.attendance.add(AttendanceMark(
+      id: s.newId(),
+      studentId: list.first.id,
+      date: date,
+      status: 'absent',
+      sessionId: other.id,
+    ));
+    s.setAttendance(list.last.id, date, 'absent', ownerId: room.id);
+
+    s.markAllPresent(date, list, ownerId: room.id);
+
+    for (final student in list) {
+      expect(
+        s.attendanceInSession(room.id, student.id, date),
+        'present',
+        reason: 'لم يتخلّف ${student.fullName} عن «الكل حاضر»',
+      );
+    }
+  });
+
+  test('marking the same status twice does nothing', () async {
+    final s = await school();
+    final room = s.rooms.first;
+    final student = s.studentsOf(room).first;
+    const date = '2026-04-22';
+
+    s.setAttendance(student.id, date, 'present', ownerId: room.id);
+    final queued = s.pendingSyncs.length;
+
+    s.setAttendance(student.id, date, 'present', ownerId: room.id);
+    expect(s.pendingSyncs.length, queued, reason: 'لا كتابة ولا إخطار بلا تغيير');
+  });
+
+  test('duplicate marks for one session and student are collapsed', () async {
+    final s = await school();
+    final room = s.rooms.first;
+    final student = s.studentsOf(room).first;
+    const date = '2026-04-23';
+    final session = s.sessionFor(room.id, date, school: true);
+
+    for (final status in ['present', 'absent', 'present']) {
+      s.attendance.add(AttendanceMark(
+        id: s.newId(),
+        studentId: student.id,
+        date: date,
+        status: status,
+        sessionId: session.id,
+        updatedAt: '2026-04-23T0${['1', '2', '3'][['present', 'absent', 'present'].indexOf(status)]}:00:00Z',
+      ));
+    }
+    s.notifySync();
+
+    final dropped = s.dedupeAttendance();
+    expect(dropped, 2, reason: 'القيد الفريد يقبل صفاً واحداً لكل (جلسة، طالب)');
+    expect(
+      s.attendance.where((a) => a.sessionId == session.id && a.studentId == student.id),
+      hasLength(1),
+    );
   });
 
   test('switching days keeps each day independent', () async {
