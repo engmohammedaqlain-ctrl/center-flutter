@@ -80,6 +80,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   // ── التخزين المحلي: تتبّع الجداول المتغيّرة وكتابتها بعد التعديل ────────────
   final _dirty = <String>{};
+  final _dirtyRecords = <String, Set<String>>{};
+  final _deletedRecords = <String, Set<String>>{};
   Timer? _flushTimer;
   bool _loading = false;
 
@@ -101,18 +103,84 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     'sessions',
   ];
 
+  // ── الفهارس ────────────────────────────────────────────────────────────────
+  //
+  // البحث الخطي في القوائم كان يجعل كل إعادة رسم لكشف الحضور تمرّ على كل
+  // سجلات الحضور والجلسات مرتين لكل طالب. تُبنى الفهارس عند أول استعمال بعد
+  // أي تعديل، فتصبح القراءة في زمن ثابت.
+  int _rev = 0;
+  int _indexRev = -1;
+  final _studentIndex = <String, Student>{};
+  final _attendanceIndex = <String, AttendanceMark>{};
+  final _sessionIndex = <String, ClassSession>{};
+
+  int _dueRev = -1;
+  List<DueItem> _dueCache = const [];
+
+  static String attendanceKey(String studentId, String date) => '$studentId|$date';
+  static String sessionKey(String ownerId, String date) => '$ownerId|$date';
+
+  void _touch() => _rev++;
+
+  /// أي إخطار للشاشات يعني أن شيئاً تغيّر، فتسقط الفهارس والنتائج المحفوظة.
+  /// ربطها بالإخطار وحده يمنع نسيان إبطالها في أي مسار تعديل جديد.
+  @override
+  void notifyListeners() {
+    _rev++;
+    super.notifyListeners();
+  }
+
+  void _rebuildIndexes() {
+    if (_indexRev == _rev) return;
+    _indexRev = _rev;
+
+    _studentIndex
+      ..clear()
+      ..addEntries(students.map((s) => MapEntry(s.id, s)));
+
+    _attendanceIndex.clear();
+    for (final a in attendance) {
+      _attendanceIndex[attendanceKey(a.studentId, a.date)] = a;
+    }
+
+    _sessionIndex.clear();
+    for (final sess in sessions) {
+      if (sess.groupId.isNotEmpty) _sessionIndex[sessionKey(sess.groupId, sess.sessionDate)] = sess;
+      if (sess.roomId.isNotEmpty) _sessionIndex[sessionKey(sess.roomId, sess.sessionDate)] = sess;
+    }
+  }
+
   void markDirty(String table) {
+    _touch();
     if (_loading) return;
     _dirty.add(table);
     _scheduleFlush();
   }
 
+  /// تعليم سجل واحد للكتابة بدل الجدول كله.
+  void markRecord(String table, String id, {bool deleted = false}) {
+    _touch();
+    if (_loading) return;
+    if (_dirty.contains(table)) return; // الجدول كله سيُكتب على أي حال
+    if (deleted) {
+      _dirtyRecords.putIfAbsent(table, () => {}).remove(id);
+      _deletedRecords.putIfAbsent(table, () => {}).add(id);
+    } else {
+      _deletedRecords[table]?.remove(id);
+      _dirtyRecords.putIfAbsent(table, () => {}).add(id);
+    }
+    _scheduleFlush();
+  }
+
   void markAllDirty() {
+    _touch();
     if (_loading) return;
     _dirty
       ..addAll(ownedTables)
       ..addAll(extraCloud.keys)
       ..add(_pendingTable);
+    _dirtyRecords.clear();
+    _deletedRecords.clear();
     _scheduleFlush();
   }
 
@@ -129,11 +197,26 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   Future<void> flush() async {
     _flushTimer?.cancel();
     _flushTimer = null;
-    if (_dirty.isEmpty) return;
+    if (_dirty.isEmpty && _dirtyRecords.isEmpty && _deletedRecords.isEmpty) return;
+
     final tables = _dirty.toList();
+    final records = Map<String, Set<String>>.from(_dirtyRecords);
+    final deletes = Map<String, Set<String>>.from(_deletedRecords);
     _dirty.clear();
+    _dirtyRecords.clear();
+    _deletedRecords.clear();
+
     for (final t in tables) {
       await db.saveTable(t, _rowsForPersist(t));
+      records.remove(t);
+      deletes.remove(t);
+    }
+    for (final entry in deletes.entries) {
+      await db.deleteRecords(entry.key, entry.value.toList());
+    }
+    for (final entry in records.entries) {
+      final rows = _rowsForPersist(entry.key).where((r) => entry.value.contains('${r['id']}')).toList();
+      await db.saveRecords(entry.key, rows);
     }
   }
 
@@ -536,10 +619,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   Student? studentById(String id) {
-    for (final s in students) {
-      if (s.id == id) return s;
-    }
-    return null;
+    _rebuildIndexes();
+    return _studentIndex[id];
   }
 
   Teacher? teacherById(String id) {
@@ -583,23 +664,26 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   String? attendanceOf(String studentId, String date) {
-    for (final a in attendance) {
-      if (a.studentId == studentId && a.date == date) return a.status;
-    }
-    return null;
+    _rebuildIndexes();
+    return _attendanceIndex[attendanceKey(studentId, date)]?.status;
+  }
+
+  AttendanceMark? attendanceRecord(String studentId, String date) {
+    _rebuildIndexes();
+    return _attendanceIndex[attendanceKey(studentId, date)];
   }
 
   /// حالة الحضور لطالب في تاريخ ضمن صف/مجموعة محددة.
   /// يمر عبر الجلسة كما في النسخة المكتبية بدل مطابقة التاريخ وحده.
   String? attendanceInSession(String ownerId, String studentId, String date) {
-    final session = sessions
-        .where((s) => s.sessionDate == date && (s.groupId == ownerId || s.roomId == ownerId))
-        .firstOrNull;
-    if (session == null) return attendanceOf(studentId, date);
-    final rec = attendance
-        .where((a) => a.studentId == studentId && (a.sessionId == session.id || a.date == date))
-        .firstOrNull;
-    return rec?.status;
+    _rebuildIndexes();
+    final rec = _attendanceIndex[attendanceKey(studentId, date)];
+    if (rec == null) return null;
+    final session = _sessionIndex[sessionKey(ownerId, date)];
+    // بلا جلسة مسجّلة نكتفي بمطابقة التاريخ، كما تفعل النسخة المكتبية
+    if (session == null) return rec.status;
+    if (rec.sessionId.isEmpty || rec.sessionId == session.id) return rec.status;
+    return null;
   }
 
   String _nowIso() => DateTime.now().toUtc().toIso8601String();
@@ -612,7 +696,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       action: action,
       payload: payload,
     );
-    markDirty(table);
+    markRecord(table, recordId, deleted: action == 'DELETE');
     markDirty(_pendingTable);
     notifyListeners();
   }
@@ -1060,6 +1144,15 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   List<DueItem> dueItems() {
+    // تُستدعى من شريط التنقّل في كل إعادة رسم، وحسابها يمرّ على كل الأقساط
+    // والطلاب. النتيجة تُحفظ حتى التعديل التالي.
+    if (_dueRev == _rev) return _dueCache;
+    _dueRev = _rev;
+    _dueCache = _computeDueItems();
+    return _dueCache;
+  }
+
+  List<DueItem> _computeDueItems() {
     final today = dateOnly(DateTime.now());
     final list = <DueItem>[];
     final withInst = <String>{};

@@ -23,7 +23,7 @@ Future<T?> _darkSheet<T>(BuildContext context, WidgetBuilder builder) {
       decoration: const BoxDecoration(
         color: _sheetBg,
         border: Border(top: BorderSide(color: Color(0xFF1E3A5F))),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+        borderRadius: BorderRadius.zero,
       ),
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
       child: SafeArea(
@@ -40,7 +40,7 @@ Future<T?> _darkSheet<T>(BuildContext context, WidgetBuilder builder) {
                   height: 4,
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.22),
-                    borderRadius: BorderRadius.circular(999),
+                    borderRadius: BorderRadius.zero,
                   ),
                 ),
                 Flexible(child: builder(ctx)),
@@ -99,7 +99,7 @@ Future<void> showActionSheet(BuildContext context, AppStore store) {
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.10),
-                        borderRadius: BorderRadius.circular(999),
+                        borderRadius: BorderRadius.zero,
                       ),
                       child: Icon(Icons.close, size: 16, color: Colors.white.withValues(alpha: 0.7)),
                     ),
@@ -156,7 +156,7 @@ Widget _identityChip({required bool isAdmin, required String name}) {
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
     decoration: BoxDecoration(
       color: bg,
-      borderRadius: BorderRadius.circular(999),
+      borderRadius: BorderRadius.zero,
       border: Border.all(color: border),
     ),
     child: Row(
@@ -175,7 +175,7 @@ Widget _syncPanel(BuildContext ctx, AppStore store) {
     padding: const EdgeInsets.all(13),
     decoration: BoxDecoration(
       color: _sheetPanel,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.zero,
       border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
     ),
     child: Column(
@@ -257,7 +257,7 @@ Widget _syncButton(
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: on ? color : Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(13),
+        borderRadius: BorderRadius.zero,
         border: Border.all(color: on ? color : Colors.white.withValues(alpha: 0.10)),
       ),
       child: Row(
@@ -303,7 +303,7 @@ Widget _menuTile({
       padding: const EdgeInsets.all(11),
       decoration: BoxDecoration(
         color: danger ? const Color(0x1AF43F5E) : Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.zero,
         border: Border.all(
           color: danger ? const Color(0x4DF43F5E) : Colors.white.withValues(alpha: 0.10),
         ),
@@ -316,7 +316,7 @@ Widget _menuTile({
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: iconColor.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(9),
+              borderRadius: BorderRadius.zero,
             ),
             child: Icon(icon, size: 15, color: iconColor),
           ),
@@ -443,7 +443,7 @@ class _SyncConfirmState extends State<_SyncConfirm> {
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: (done ? AppColors.success : _accent).withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.zero,
                 ),
                 child: busy
                     ? SizedBox(
@@ -496,7 +496,7 @@ class _SyncConfirmState extends State<_SyncConfirm> {
 
           // شريط تقدّم يمتلئ كلما نقص المتبقي
           ClipRRect(
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: BorderRadius.zero,
             child: TweenAnimationBuilder<double>(
               tween: Tween(end: widget.total == 0 ? 1 : 1 - (remaining / widget.total)),
               duration: const Duration(milliseconds: 900),
@@ -516,7 +516,7 @@ class _SyncConfirmState extends State<_SyncConfirm> {
               padding: const EdgeInsets.all(11),
               decoration: BoxDecoration(
                 color: (result!.success ? AppColors.success : AppColors.danger).withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.zero,
                 border: Border.all(
                   color: (result!.success ? AppColors.success : AppColors.danger).withValues(alpha: 0.4),
                 ),
@@ -562,7 +562,7 @@ class _SyncConfirmState extends State<_SyncConfirm> {
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.06),
-                        borderRadius: BorderRadius.circular(999),
+                        borderRadius: BorderRadius.zero,
                         border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
                       ),
                       child: Text(
@@ -599,7 +599,7 @@ class _SyncConfirmState extends State<_SyncConfirm> {
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(13),
+                      borderRadius: BorderRadius.zero,
                       border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
                     ),
                     child: Text(
@@ -622,7 +622,7 @@ class _SyncConfirmState extends State<_SyncConfirm> {
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: done ? AppColors.success : _accent,
-                        borderRadius: BorderRadius.circular(13),
+                        borderRadius: BorderRadius.zero,
                         boxShadow: [
                           BoxShadow(
                             color: (done ? AppColors.success : _accent).withValues(alpha: 0.35),

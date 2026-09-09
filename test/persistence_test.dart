@@ -36,6 +36,34 @@ class FakeDisk implements Persistence {
   }
 
   @override
+  Future<void> saveRecords(String table, List<Map<String, dynamic>> rows) async {
+    writes++;
+    final current = _tables[table] == null
+        ? <Map<String, dynamic>>[]
+        : (jsonDecode(_tables[table]!) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    for (final row in rows) {
+      final i = current.indexWhere((e) => '${e['id']}' == '${row['id']}');
+      if (i >= 0) {
+        current[i] = row;
+      } else {
+        current.add(row);
+      }
+    }
+    _tables[table] = jsonEncode(current);
+  }
+
+  @override
+  Future<void> deleteRecords(String table, List<String> ids) async {
+    if (_tables[table] == null) return;
+    writes++;
+    final current = (jsonDecode(_tables[table]!) as List)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .where((e) => !ids.contains('${e['id']}'))
+        .toList();
+    _tables[table] = jsonEncode(current);
+  }
+
+  @override
   Future<void> setSetting(String key, String? value) async {
     if (value == null) {
       settings.remove(key);

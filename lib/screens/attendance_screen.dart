@@ -104,52 +104,65 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       padding: EdgeInsets.all(14),
                       child: EmptyState(message: 'لا يوجد طلاب مسجلون في هذا الصف/المجموعة'),
                     )
-                  : ListView(
+                  // بناء كسول: صفّ واحد لكل ما يظهر على الشاشة فقط.
+                  // بناء القائمة كاملةً كان يُنشئ مئات الصفوف عند كل تعديل،
+                  // فيتأخر التبديل بين الأيام والصفوف تأخراً محسوساً.
+                  : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(14, 0, 14, 18),
-                      children: [
-                        _dayStats(
-                          store: store,
-                          day: day,
-                          list: list,
-                          owner: currentOwner,
-                          present: present,
-                          absent: absent,
-                          unmarked: unmarked,
-                          canEdit: canEdit,
-                        ),
-                        const SizedBox(height: 10),
-                        for (var i = 0; i < list.length; i++)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 7),
-                            child: _StudentRow(
-                              index: i + 1,
-                              student: list[i],
-                              status: store.attendanceInSession(currentOwner, list[i].id, day.dateStr),
+                      itemCount: list.length + 2,
+                      itemBuilder: (context, i) {
+                        if (i == 0) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _dayStats(
+                              store: store,
+                              day: day,
+                              list: list,
+                              owner: currentOwner,
+                              present: present,
+                              absent: absent,
+                              unmarked: unmarked,
                               canEdit: canEdit,
-                              onSet: (status) => store.setAttendance(
-                                list[i].id,
-                                day.dateStr,
-                                status,
-                                ownerId: currentOwner,
-                              ),
+                            ),
+                          );
+                        }
+                        if (i == list.length + 1) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 5),
+                            child: GhostButton(
+                              label: 'طباعة كشف الأسبوع',
+                              icon: Icons.print_outlined,
+                              onPressed: currentOwner.isEmpty
+                                  ? null
+                                  : () => printWeeklyAttendance(
+                                        context,
+                                        store: store,
+                                        title: ownerName,
+                                        week: week,
+                                        students: list,
+                                        ownerId: currentOwner,
+                                      ),
+                            ),
+                          );
+                        }
+                        final student = list[i - 1];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 7),
+                          child: _StudentRow(
+                            key: ValueKey(student.id),
+                            index: i,
+                            student: student,
+                            status: store.attendanceInSession(currentOwner, student.id, day.dateStr),
+                            canEdit: canEdit,
+                            onSet: (status) => store.setAttendance(
+                              student.id,
+                              day.dateStr,
+                              status,
+                              ownerId: currentOwner,
                             ),
                           ),
-                        const SizedBox(height: 12),
-                        GhostButton(
-                          label: 'طباعة كشف الأسبوع',
-                          icon: Icons.print_outlined,
-                          onPressed: currentOwner.isEmpty
-                              ? null
-                              : () => printWeeklyAttendance(
-                                    context,
-                                    store: store,
-                                    title: ownerName,
-                                    week: week,
-                                    students: list,
-                                    ownerId: currentOwner,
-                                  ),
-                        ),
-                      ],
+                        );
+                      },
                     ),
             ),
           ],
@@ -244,7 +257,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.zero,
           border: Border.all(color: AppColors.line),
         ),
         child: Icon(icon, size: 17, color: AppColors.heading),
@@ -306,7 +319,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: AppColors.success,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.zero,
                   boxShadow: [
                     BoxShadow(
                       color: AppColors.success.withValues(alpha: 0.3),
@@ -378,7 +391,7 @@ class _DayChip extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: bg,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.zero,
           border: Border.all(color: border),
           boxShadow: selected
               ? [BoxShadow(color: AppColors.amber.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 2))]
@@ -412,6 +425,7 @@ class _DayChip extends StatelessWidget {
 /// صف الطالب: رقمه واسمه وهاتفه، وزرّا رصد كبيران للّمس.
 class _StudentRow extends StatelessWidget {
   const _StudentRow({
+    super.key,
     required this.index,
     required this.student,
     required this.status,
@@ -507,7 +521,7 @@ class _StudentRow extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: on ? fg : softBg,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.zero,
           border: Border.all(color: on ? fg : softBorder),
           boxShadow: on ? [BoxShadow(color: fg.withValues(alpha: 0.3), blurRadius: 7, offset: const Offset(0, 2))] : null,
         ),

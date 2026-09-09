@@ -41,15 +41,19 @@ abstract final class Gap {
   static const screen = EdgeInsets.symmetric(horizontal: 14);
 }
 
-/// نصف قطر الزوايا — موحّد عبر البطاقات والحقول والأزرار.
+/// نصف قطر الزوايا — صفر في كل مكان، تماماً كنظام التصميم في Center
+/// (`borderRadius: 0` لكل المقاسات في tailwind.config.ts).
+///
+/// الحداثة هنا من المسافة والتباين والظل الخفيف، لا من تدوير الحواف:
+/// الحافة المستقيمة هوية النظام الإداري وتُبقي الجداول والبطاقات متراصّة.
 abstract final class Corner {
-  static const card = 12.0;
-  static const field = 12.0;
-  static const chip = 999.0;
-  static const sheet = 26.0;
+  static const card = 0.0;
+  static const field = 0.0;
+  static const chip = 0.0;
+  static const sheet = 0.0;
 }
 
-/// ظل خفيف يفصل البطاقة عن الخلفية بلا ثقل.
+/// ظل خفيف يفصل البطاقة عن الخلفية بلا ثقل — بديل التدوير في إعطاء العمق.
 const cardShadow = [
   BoxShadow(color: Color(0x0D0B2545), blurRadius: 10, offset: Offset(0, 2)),
 ];

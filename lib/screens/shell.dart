@@ -71,7 +71,10 @@ class _AppShellState extends State<AppShell> {
               Expanded(
                 child: IndexedStack(
                   index: index,
-                  children: [for (final s in sections) s.screen],
+                  children: [
+                    for (var i = 0; i < sections.length; i++)
+                      _FrozenWhenHidden(visible: i == index, child: sections[i].screen),
+                  ],
                 ),
               ),
             ],
@@ -152,7 +155,7 @@ class _Header extends StatelessWidget {
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(9),
+                borderRadius: BorderRadius.zero,
                 border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
               ),
               child: const Icon(Icons.more_vert, size: 17, color: Colors.white),
@@ -205,7 +208,7 @@ class _SyncPill extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 9),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.zero,
           border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
         ),
         child: Row(
@@ -245,7 +248,7 @@ class _SyncPill extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 11),
           decoration: BoxDecoration(
             color: color,
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: BorderRadius.zero,
             boxShadow: [
               BoxShadow(color: color.withValues(alpha: 0.35), blurRadius: 8, offset: const Offset(0, 2)),
             ],
@@ -348,7 +351,7 @@ class _NavItem extends StatelessWidget {
               width: active ? 34 : 0,
               decoration: BoxDecoration(
                 color: AppColors.amber,
-                borderRadius: BorderRadius.circular(999),
+                borderRadius: BorderRadius.zero,
               ),
             ),
             Column(
@@ -364,7 +367,7 @@ class _NavItem extends StatelessWidget {
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: active ? AppColors.amberSoft : Colors.transparent,
-                        borderRadius: BorderRadius.circular(999),
+                        borderRadius: BorderRadius.zero,
                       ),
                       child: Icon(
                         active ? section.activeIcon : section.icon,
@@ -383,7 +386,7 @@ class _NavItem extends StatelessWidget {
                             constraints: const BoxConstraints(minWidth: 15),
                             decoration: BoxDecoration(
                               color: AppColors.danger,
-                              borderRadius: BorderRadius.circular(999),
+                              borderRadius: BorderRadius.zero,
                               border: Border.all(color: Colors.white, width: 1.2),
                             ),
                             child: Text(
@@ -412,5 +415,34 @@ class _NavItem extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// يُجمّد الشاشة المخفية بدل إعادة بنائها.
+///
+/// `IndexedStack` يُبقي الأقسام الخمسة في الشجرة، وكلٌّ منها يستمع للمخزن،
+/// فأي رصد حضور كان يُعيد بناء الطلاب والمالية والصفوف والإعدادات معه.
+/// حفظ الشجرة المبنية وإعادتها كما هي يُبقي الحالة ويُلغي ذلك العمل.
+class _FrozenWhenHidden extends StatefulWidget {
+  const _FrozenWhenHidden({required this.visible, required this.child});
+
+  final bool visible;
+  final Widget child;
+
+  @override
+  State<_FrozenWhenHidden> createState() => _FrozenWhenHiddenState();
+}
+
+class _FrozenWhenHiddenState extends State<_FrozenWhenHidden> {
+  Widget? _frozen;
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.visible) {
+      _frozen = null;
+      return widget.child;
+    }
+    // أول إخفاء بعد الظهور: نحتفظ بآخر شجرة ونعيدها دون إعادة بناء
+    return _frozen ??= widget.child;
   }
 }

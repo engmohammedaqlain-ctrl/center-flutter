@@ -134,7 +134,7 @@ class SplashScreen extends StatelessWidget {
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(22),
+                  borderRadius: BorderRadius.zero,
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.35),
@@ -244,7 +244,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.circular(22),
+                        borderRadius: BorderRadius.zero,
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withValues(alpha: 0.35),
@@ -254,7 +254,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ],
                       ),
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.zero,
                         child: logo == null
                             ? const Icon(Icons.school, color: AppColors.amber, size: 56)
                             : Image.memory(logo, fit: BoxFit.contain, gaplessPlayback: true),
@@ -281,7 +281,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.zero,
                         border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
                         boxShadow: [
                           BoxShadow(
@@ -328,7 +328,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       padding: const EdgeInsets.all(11),
                                       decoration: BoxDecoration(
                                         color: const Color(0xFF4C0519).withValues(alpha: 0.75),
-                                        borderRadius: BorderRadius.circular(12),
+                                        borderRadius: BorderRadius.zero,
                                         border: Border.all(
                                           color: const Color(0xFFF43F5E).withValues(alpha: 0.45),
                                         ),
@@ -360,7 +360,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
                                 color: AppColors.amber,
-                                borderRadius: BorderRadius.circular(14),
+                                borderRadius: BorderRadius.zero,
                                 boxShadow: [
                                   BoxShadow(
                                     color: AppColors.amber.withValues(alpha: 0.4),
@@ -422,7 +422,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   InputDecoration _deco(String hint, IconData icon) {
     OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
-          borderRadius: BorderRadius.circular(13),
+          borderRadius: BorderRadius.zero,
           borderSide: BorderSide(color: c, width: w),
         );
 

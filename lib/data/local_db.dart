@@ -22,6 +22,15 @@ abstract class Persistence {
   /// استبدال محتوى جدول كامل (حذف ثم إدراج دفعة واحدة).
   Future<void> saveTable(String table, List<Map<String, dynamic>> rows);
 
+  /// كتابة سجلات محددة فقط دون المساس ببقية الجدول.
+  ///
+  /// إعادة كتابة الجدول كله عند تعديل سجل واحد كانت تُنفّذ ألف عملية لرصد
+  /// حضور واحد، فيتأخر التبديل بين الأيام تأخراً محسوساً.
+  Future<void> saveRecords(String table, List<Map<String, dynamic>> rows);
+
+  /// حذف سجلات محددة.
+  Future<void> deleteRecords(String table, List<String> ids);
+
   /// قيم الإعدادات والجلسة (المقابل لـ localStorage في النسخة المكتبية).
   Map<String, String> get settings;
 
@@ -46,6 +55,12 @@ class NoPersistence implements Persistence {
 
   @override
   Future<void> saveTable(String table, List<Map<String, dynamic>> rows) async {}
+
+  @override
+  Future<void> saveRecords(String table, List<Map<String, dynamic>> rows) async {}
+
+  @override
+  Future<void> deleteRecords(String table, List<String> ids) async {}
 
   @override
   Future<void> setSetting(String key, String? value) async {
@@ -140,6 +155,32 @@ class SqflitePersistence implements Persistence {
       }
       await batch.commit(noResult: true);
     });
+  }
+
+  @override
+  Future<void> saveRecords(String table, List<Map<String, dynamic>> rows) async {
+    if (rows.isEmpty) return;
+    final batch = _require.batch();
+    for (final row in rows) {
+      final id = row['id'];
+      if (id == null) continue;
+      batch.insert(
+        'records',
+        {'table_name': table, 'id': '$id', 'data': jsonEncode(row)},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  @override
+  Future<void> deleteRecords(String table, List<String> ids) async {
+    if (ids.isEmpty) return;
+    final batch = _require.batch();
+    for (final id in ids) {
+      batch.delete('records', where: 'table_name = ? AND id = ?', whereArgs: [table, id]);
+    }
+    await batch.commit(noResult: true);
   }
 
   @override
