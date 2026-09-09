@@ -4,15 +4,64 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'app_colors.dart';
 
-/// أقرب ما يمكن لواجهة الجوال في البرنامج الأصلي: حواف حادة، بلا ظل، كثافة إدارية.
+/// مقياس النص — قيمة واحدة لكل دور، لا أرقام متناثرة في الشاشات.
+///
+/// المقاسات مأخوذة من واجهة الهاتف في Center: العناوين 13، والنص 12،
+/// والثانوي 11.5، والتسميات 10.5. اختلافها من شاشة لأخرى كان يجعل
+/// البطاقات تبدو غير منتمية لبعضها.
+abstract final class AppText {
+  /// عنوان شاشة أو قسم.
+  static const title = TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.heading, height: 1.35);
+
+  /// عنوان بطاقة أو صف في قائمة.
+  static const cardTitle = TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.heading, height: 1.3);
+
+  /// نص أساسي.
+  static const body = TextStyle(fontSize: 12.5, color: AppColors.text, height: 1.5);
+
+  /// نص ثانوي وشروح.
+  static const muted = TextStyle(fontSize: 11.5, color: AppColors.muted, height: 1.5);
+
+  /// تسمية حقل أو شارة.
+  static const label = TextStyle(fontSize: 10.5, color: AppColors.muted, height: 1.35, fontWeight: FontWeight.w600);
+
+  /// رقم بارز.
+  static const figure = TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: AppColors.heading, height: 1.2);
+}
+
+/// مقياس المسافات — مضاعفات ثابتة بدل قيم عشوائية.
+abstract final class Gap {
+  static const xs = 4.0;
+  static const sm = 7.0;
+  static const md = 10.0;
+  static const lg = 14.0;
+  static const xl = 18.0;
+
+  /// الهامش الأفقي الموحّد لمحتوى الشاشات.
+  static const screen = EdgeInsets.symmetric(horizontal: 14);
+}
+
+/// نصف قطر الزوايا — موحّد عبر البطاقات والحقول والأزرار.
+abstract final class Corner {
+  static const card = 12.0;
+  static const field = 12.0;
+  static const chip = 999.0;
+  static const sheet = 26.0;
+}
+
+/// ظل خفيف يفصل البطاقة عن الخلفية بلا ثقل.
+const cardShadow = [
+  BoxShadow(color: Color(0x0D0B2545), blurRadius: 10, offset: Offset(0, 2)),
+];
+
 abstract final class AppTheme {
-  static const radius = BorderRadius.zero;
+  static final radius = BorderRadius.circular(Corner.field);
 
   static ThemeData build() {
     final base = GoogleFonts.ibmPlexSansArabicTextTheme();
-    OutlineInputBorder border([Color c = AppColors.line]) => OutlineInputBorder(
+    OutlineInputBorder border([Color c = AppColors.line, double w = 1]) => OutlineInputBorder(
           borderRadius: radius,
-          borderSide: BorderSide(color: c),
+          borderSide: BorderSide(color: c, width: w),
         );
 
     return ThemeData(
@@ -42,11 +91,24 @@ abstract final class AppTheme {
         filled: true,
         fillColor: Colors.white,
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
         hintStyle: const TextStyle(color: AppColors.faint, fontSize: 12),
+        labelStyle: AppText.muted,
         border: border(),
         enabledBorder: border(),
-        focusedBorder: border(AppColors.amber),
+        focusedBorder: border(AppColors.amber, 1.4),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: Colors.white,
+        surfaceTintColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Corner.card)),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet)),
+        ),
       ),
     );
   }

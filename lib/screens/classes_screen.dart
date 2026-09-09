@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/widgets.dart';
 import 'attendance_print.dart';
 import 'student_detail_screen.dart';
@@ -305,7 +306,7 @@ class _RoomCard extends StatelessWidget {
     final debtors = students.where((s) => s.isDebtor).length;
     return AppCard(
       onTap: onOpen,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(Gap.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -315,14 +316,22 @@ class _RoomCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(room.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading)),
-                    const SizedBox(height: 4),
+                    Text(
+                      room.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.cardTitle,
+                    ),
+                    const SizedBox(height: Gap.xs),
                     StatusChip.amber(room.gradeLevel),
                   ],
                 ),
               ),
               PopupMenuButton<String>(
                 padding: EdgeInsets.zero,
+                tooltip: 'خيارات الصف',
+                icon: const Icon(Icons.more_vert, size: 18, color: AppColors.muted),
+                constraints: const BoxConstraints(minWidth: 180),
                 onSelected: (v) {
                   if (v == 'print') {
                     printClassRoster(context, store: StoreScope.of(context), room: room, students: students);
@@ -340,17 +349,46 @@ class _RoomCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(teacher == null ? '+ تعيين مربي' : 'المربي: ${teacher!.name}', style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
-          const SizedBox(height: 4),
-          Text('الطلاب: ${students.length} / ${room.capacity}', style: const TextStyle(fontSize: 11.5, color: AppColors.muted)),
-          if (debtors > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text('$debtors طلاب عليهم مستحقات', style: const TextStyle(color: AppColors.danger, fontSize: 11, fontWeight: FontWeight.w700)),
-            ),
+          const SizedBox(height: Gap.md),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          const SizedBox(height: Gap.md),
+          // سطر لكل معلومة بأيقونتها، فتُقرأ البطاقة بلمحة واحدة
+          _line(
+            Icons.school_outlined,
+            teacher == null ? 'تعيين مربي الصف' : teacher!.name,
+            faded: teacher == null,
+          ),
+          const SizedBox(height: Gap.sm),
+          _line(Icons.groups_outlined, 'الطلاب: ${students.length} / ${room.capacity}'),
+          if (debtors > 0) ...[
+            const SizedBox(height: Gap.sm),
+            _line(Icons.error_outline, '$debtors طلاب عليهم مستحقات', color: AppColors.danger),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _line(IconData icon, String text, {Color? color, bool faded = false}) {
+    final fg = color ?? (faded ? AppColors.faint : AppColors.muted);
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: fg),
+        const SizedBox(width: Gap.sm),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: fg,
+              fontSize: 11.5,
+              height: 1.4,
+              fontWeight: color != null ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

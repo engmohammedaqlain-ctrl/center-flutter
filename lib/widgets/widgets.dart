@@ -8,8 +8,9 @@ import '../data/permissions.dart';
 import '../data/phone.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 
-const _r = BorderRadius.zero;
+final _r = BorderRadius.circular(Corner.field);
 
 class AppCard extends StatelessWidget {
   const AppCard({super.key, required this.child, this.padding, this.onTap, this.color, this.margin});
@@ -22,20 +23,24 @@ class AppCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final shape = BorderRadius.circular(Corner.card);
     final body = Container(
       width: double.infinity,
       margin: margin,
-      padding: padding ?? const EdgeInsets.all(14),
+      padding: padding ?? const EdgeInsets.all(Gap.lg),
       decoration: BoxDecoration(
         color: color ?? AppColors.surface,
+        borderRadius: shape,
         border: Border.all(color: AppColors.line),
+        boxShadow: cardShadow,
       ),
       child: child,
     );
     if (onTap == null) return body;
     return Material(
       color: Colors.transparent,
-      child: InkWell(onTap: onTap, child: body),
+      borderRadius: shape,
+      child: InkWell(onTap: onTap, borderRadius: shape, child: body),
     );
   }
 }
@@ -79,12 +84,16 @@ class StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(
         color: bg,
+        borderRadius: BorderRadius.circular(Corner.chip),
         border: Border.all(color: border ?? bg),
       ),
-      child: Text(label, style: TextStyle(color: fg, fontSize: 10, fontWeight: FontWeight.w800)),
+      child: Text(
+        label,
+        style: TextStyle(color: fg, fontSize: 10.5, fontWeight: FontWeight.w800, height: 1.3),
+      ),
     );
   }
 }
@@ -116,7 +125,7 @@ class SearchField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 36,
+      height: 40,
       child: TextField(
         controller: controller,
         onChanged: onChanged,
@@ -151,7 +160,7 @@ class PrimaryButton extends StatelessWidget {
     this.expand = false,
     this.color,
     this.busy = false,
-    this.height = 36,
+    this.height = 40,
   });
 
   final String label;
@@ -175,7 +184,7 @@ class PrimaryButton extends StatelessWidget {
           disabledForegroundColor: AppColors.faint,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 12),
-          shape: const RoundedRectangleBorder(borderRadius: _r),
+          shape: RoundedRectangleBorder(borderRadius: _r),
           textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
         ),
         child: busy
@@ -204,14 +213,14 @@ class GhostButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 32,
+      height: 36,
       child: OutlinedButton(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.heading,
           side: const BorderSide(color: AppColors.lineStrong),
           padding: const EdgeInsets.symmetric(horizontal: 10),
-          shape: const RoundedRectangleBorder(borderRadius: _r),
+          shape: RoundedRectangleBorder(borderRadius: _r),
           textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5),
         ),
         child: Row(
@@ -468,7 +477,7 @@ void showAppSnack(BuildContext context, String msg, {bool error = false}) {
       backgroundColor: error ? AppColors.danger : AppColors.navy,
       behavior: SnackBarBehavior.floating,
       margin: const EdgeInsets.all(12),
-      shape: const RoundedRectangleBorder(borderRadius: _r),
+      shape: RoundedRectangleBorder(borderRadius: _r),
     ),
   );
 }
@@ -483,7 +492,7 @@ Future<bool> confirmSheet(
   final result = await showModalBottomSheet<bool>(
     context: context,
     backgroundColor: Colors.white,
-    shape: const RoundedRectangleBorder(borderRadius: _r),
+    shape: RoundedRectangleBorder(borderRadius: _r),
     builder: (ctx) {
       return Padding(
         padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.paddingOf(ctx).bottom),

@@ -38,6 +38,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// التخزين المحلي الدائم. يبقى [NoPersistence] في الاختبارات.
   Persistence db = NoPersistence();
 
+  /// اكتمل تحميل التخزين المحلي واستعادة الجلسة.
+  /// قبله تُعرض شاشة الإقلاع بدل واجهة فارغة أو شاشة دخول خاطئة.
+  bool ready = false;
+
   bool loggedIn = false;
   bool isMasterAdmin = false;
   String institutionName = '';
@@ -211,6 +215,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       _loading = false;
     }
     await _resolveSetupGate();
+    ready = true;
     notifyListeners();
   }
 

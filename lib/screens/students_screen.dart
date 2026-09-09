@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/widgets.dart';
 import 'student_detail_screen.dart';
 import 'student_form_screen.dart';
@@ -167,56 +168,64 @@ class _StudentCard extends StatelessWidget {
       },
       child: Column(
         children: [
+          // الصف العلوي: الهوية والمرحلة، والرصيد وحده في الطرف
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 36,
-                height: 36,
+                width: 38,
+                height: 38,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: AppColors.amberSoft,
+                  borderRadius: BorderRadius.circular(Corner.card),
                   border: Border.all(color: AppColors.amberBorder),
                 ),
-                child: Text(student.initial, style: const TextStyle(color: AppColors.amber, fontWeight: FontWeight.w800, fontSize: 14)),
+                child: Text(
+                  student.initial,
+                  style: const TextStyle(color: AppColors.amber, fontWeight: FontWeight.w800, fontSize: 15),
+                ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: Gap.md),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       student.fullName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: AppColors.heading),
+                      style: AppText.cardTitle,
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: Gap.xs),
                     Row(
                       children: [
-                        Text(student.gradeLevel, style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-                        const SizedBox(width: 6),
-                        StatusChip.muted('شعبة ${student.section}'),
+                        Flexible(
+                          child: Text(
+                            student.gradeLevel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.label,
+                          ),
+                        ),
+                        if (student.section.trim().isNotEmpty) ...[
+                          const SizedBox(width: Gap.sm),
+                          StatusChip.muted('شعبة ${student.section}'),
+                        ],
                       ],
                     ),
                   ],
                 ),
               ),
+              const SizedBox(width: Gap.sm),
               MoneyChip(balance: student.balance),
-              if (onEdit != null || onDelete != null)
-                PopupMenuButton<String>(
-                  padding: EdgeInsets.zero,
-                  icon: const Icon(Icons.more_vert, size: 16, color: AppColors.muted),
-                  onSelected: (v) => v == 'edit' ? onEdit?.call() : onDelete?.call(),
-                  itemBuilder: (_) => [
-                    if (onEdit != null) const PopupMenuItem(value: 'edit', child: Text('تعديل بيانات الطالب')),
-                    if (onDelete != null) const PopupMenuItem(value: 'delete', child: Text('حذف الطالب')),
-                  ],
-                ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: Gap.md),
           const Divider(height: 1, color: Color(0xFFF1F5F9)),
-          const SizedBox(height: 8),
+          const SizedBox(height: Gap.md),
+          // الصف السفلي: ولي الأمر وكل إجراءات البطاقة مجتمعة
           Row(
             children: [
               Expanded(
@@ -224,11 +233,12 @@ class _StudentCard extends StatelessWidget {
                   student.parentName.isNotEmpty ? 'ولي الأمر: ${student.parentName}' : student.phone,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                  style: AppText.muted,
                 ),
               ),
+              const SizedBox(width: Gap.sm),
               SquareIconButton(icon: Icons.call, onTap: () => launchTel(student.phone)),
-              const SizedBox(width: 6),
+              const SizedBox(width: Gap.sm),
               SquareIconButton(
                 icon: Icons.chat,
                 onTap: () => launchWa(student.parentPhone.isNotEmpty ? student.parentPhone : student.phone),
@@ -236,8 +246,23 @@ class _StudentCard extends StatelessWidget {
                 border: const Color(0xFF86EFAC),
                 color: AppColors.success,
               ),
-              const SizedBox(width: 4),
-              const Icon(Icons.chevron_right, color: AppColors.muted, size: 18),
+              if (onEdit != null || onDelete != null)
+                PopupMenuButton<String>(
+                  padding: EdgeInsets.zero,
+                  tooltip: 'خيارات الطالب',
+                  icon: const Icon(Icons.more_vert, size: 18, color: AppColors.muted),
+                  constraints: const BoxConstraints(minWidth: 170),
+                  onSelected: (v) => v == 'edit' ? onEdit?.call() : onDelete?.call(),
+                  itemBuilder: (_) => [
+                    if (onEdit != null) const PopupMenuItem(value: 'edit', child: Text('تعديل بيانات الطالب')),
+                    if (onDelete != null) const PopupMenuItem(value: 'delete', child: Text('حذف الطالب')),
+                  ],
+                )
+              else
+                const Padding(
+                  padding: EdgeInsets.only(right: Gap.xs),
+                  child: Icon(Icons.chevron_right, color: AppColors.muted, size: 18),
+                ),
             ],
           ),
         ],

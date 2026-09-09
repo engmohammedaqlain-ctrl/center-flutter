@@ -19,7 +19,7 @@ import 'theme/app_theme.dart';
 import 'widgets/animated_count.dart';
 import 'widgets/widgets.dart';
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
   // sqflite لا يعمل على الويب افتراضياً — نستخدم تنفيذ WASM عبر IndexedDB.
   if (kIsWeb) {
@@ -30,15 +30,25 @@ Future<void> main() async {
     statusBarIconBrightness: Brightness.light,
   ));
 
+  // الرسم يبدأ فوراً بشاشة إقلاع، والتحميل يجري خلفها.
+  // انتظار فتح قاعدة البيانات قبل `runApp` كان يترك الشاشة بيضاء تماماً حتى
+  // تنتهي تهيئة SQLite — وهي بطيئة على الويب — فيبدو التطبيق معطّلاً.
+  runApp(StoreScope(store: AppStore.instance, child: const CenterApp()));
+
+  unawaited(_bootstrap());
+}
+
+Future<void> _bootstrap() async {
   final store = AppStore.instance;
-  // تحميل قاعدة البيانات المحلية قبل رسم أي شاشة، وإلا ظهر التطبيق فارغاً
-  // للحظة ثم امتلأ — وهو ما كان يبدو كأن البيانات ضاعت.
-  await store.bootstrap(SqflitePersistence());
+  try {
+    await store.bootstrap(SqflitePersistence());
+  } catch (_) {
+    // تعذّر فتح التخزين الدائم: نُكمل في الذاكرة بدل أن يتوقف التطبيق
+    await store.bootstrap(NoPersistence());
+  }
   SupabaseConfig.applyOverrides(store.db.settings);
   // جلسة مستعادة: نفس ما يجري بعد تسجيل الدخول
   unawaited(store.afterEnter());
-
-  runApp(StoreScope(store: store, child: const CenterApp()));
 }
 
 class CenterApp extends StatelessWidget {
@@ -74,12 +84,90 @@ class _Root extends StatelessWidget {
     return ListenableBuilder(
       listenable: store,
       builder: (context, _) {
-        if (!store.loggedIn) return const LoginScreen();
-        if (store.isMasterAdmin) return const DeveloperScreen();
-        // جهاز جديد: التهيئة وتحديد الصلاحية تسبقان أي شاشة عمل
-        if (store.needsInitialSetup) return const DeviceSetupScreen();
-        return const AppShell();
+        final Widget screen;
+        if (!store.ready) {
+          screen = const SplashScreen();
+        } else if (!store.loggedIn) {
+          screen = const LoginScreen();
+        } else if (store.isMasterAdmin) {
+          screen = const DeveloperScreen();
+        } else if (store.needsInitialSetup) {
+          // جهاز جديد: التهيئة وتحديد الصلاحية تسبقان أي شاشة عمل
+          screen = const DeviceSetupScreen();
+        } else {
+          screen = const AppShell();
+        }
+
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 260),
+          switchInCurve: Curves.easeOut,
+          child: KeyedSubtree(key: ValueKey(screen.runtimeType), child: screen),
+        );
       },
+    );
+  }
+}
+
+/// شاشة الإقلاع — تظهر فوراً بينما تُفتح قاعدة البيانات المحلية وتُقرأ الجلسة.
+class SplashScreen extends StatelessWidget {
+  const SplashScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF0D2A50), AppColors.navyDark, Color(0xFF05162A)],
+            stops: [0, 0.55, 1],
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 92,
+                height: 92,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(22),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      blurRadius: 26,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.school, color: AppColors.amber, size: 50),
+              ),
+              const SizedBox(height: 22),
+              Text(
+                appName,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.3,
+                ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.2,
+                  color: AppColors.amber.withValues(alpha: 0.9),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
