@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
+import 'supabase.dart';
 
 /// مطابق لـ TABLE_ALLOWED_COLUMNS في sync.ts
 const tableAllowedColumns = <String, List<String>>{
@@ -194,8 +195,8 @@ const pushChunk = 50;
 const pullPageSize = 500;
 const stampToleranceMs = 1000;
 
-const supabaseUrl = 'https://tmybbunguiurisdcvrqo.supabase.co';
-const supabaseKey = 'sb_publishable_TowjoMRcd5BJtaUqmCs6Sw_IHhVd3Jj';
+String get supabaseUrl => SupabaseConfig.url;
+String get supabaseKey => SupabaseConfig.key;
 
 String localDateStr([DateTime? d]) {
   final x = d ?? DateTime.now();
@@ -352,6 +353,20 @@ String describeRecord(String table, Map<String, dynamic>? payload, Map<String, d
       return '—';
   }
 }
+
+/// أخطاء النقل: انقطاع شبكة أو تعذّر وصول، لا عيب في البيانات.
+final _transientError = RegExp(
+  r'Failed to fetch|NetworkError|fetch failed|SocketException|ClientException|'
+  r'Connection (closed|refused|reset|timed out)|HandshakeException|TimeoutException|'
+  r'HTTP 5\d\d|HTTP 429|Broken pipe|Software caused connection abort',
+  caseSensitive: false,
+);
+
+/// هل هذا الخطأ عابر (شبكة/خادم) بحيث لا يُحتسب على رصيد المحاولات؟
+///
+/// احتسابه كان يحرق المحاولات الخمس على جهاز بشبكة ضعيفة، فتُركن سجلات
+/// سليمة تماماً في «المتعثرة» ولا يُعاد رفعها تلقائياً أبداً.
+bool isTransientSyncError(Object error) => _transientError.hasMatch(error.toString());
 
 String describeSupabaseError(Object error, String tableName) {
   final raw = error.toString();
@@ -591,6 +606,18 @@ class SyncService {
       final result = await pullFromCloud(tenantId);
       final removedNote = result.removed > 0 ? ' وحُذف ${result.removed} سجلاً محذوفاً من السحابة' : '';
       local.notifySync();
+
+      if (!result.isComplete) {
+        final names = result.failedTables.keys.map((t) => tableLabelsAr[t] ?? t).join('، ');
+        return SyncResult(
+          success: false,
+          message: 'سحب ناقص: تم سحب ${result.pulled} سجلاً$removedNote، '
+              'وتعذّر جلب ($names). ${result.failedTables.values.first}',
+          pulled: result.pulled,
+          removed: result.removed,
+        );
+      }
+
       return SyncResult(
         success: true,
         message: 'تم سحب ${result.pulled} سجلاً$removedNote',
@@ -602,6 +629,26 @@ class SyncService {
     } finally {
       _syncing = false;
     }
+  }
+
+  /// مزامنة كاملة: رفع ثم سحب — المقابل لـ `syncAll` في النسخة المكتبية.
+  ///
+  /// الرفع يسبق السحب دائماً: السحب أولاً كان يجلب النسخة السحابية الأقدم
+  /// فوق تعديل محلي لم يُرفع بعد، فيبدو للمستخدم أن تعديله «رجع».
+  Future<SyncResult> syncAll() async {
+    final pushResult = await push();
+    if (!pushResult.success && pushResult.pushed == 0 && getPendingCount() > 0) {
+      return pushResult;
+    }
+    final pullResult = await pull();
+    return SyncResult(
+      success: pushResult.success && pullResult.success,
+      message: '${pushResult.message} · ${pullResult.message}',
+      pushed: pushResult.pushed,
+      pulled: pullResult.pulled,
+      failed: pushResult.failed,
+      removed: pullResult.removed,
+    );
   }
 
   Future<({int pushed, int failed})> pushPendingChanges(String tenantId) async {
@@ -619,26 +666,41 @@ class SyncService {
       bucket.putIfAbsent(a.tableName, () => []).add(a);
     }
 
-    for (final entry in deletesByTable.entries) {
-      final list = entry.value;
+    // ترتيب الجداول حسب تبعية المفاتيح الأجنبية.
+    //
+    // `syncedTables` مرتّبة من الأصل إلى الفرع (المعلمون ثم المجموعات ثم
+    // الطلاب ثم الدفعات). ترك الترتيب على ترتيب الطابور كان يرفع الدفعة قبل
+    // صاحبها فيرفضها القيد الأجنبي، ويُحتسب ذلك فشلاً على سجل سليم.
+    // الحذف يسير عكس ذلك: الفروع أولاً حتى لا نحذف أصلاً ما زال مرتبطاً.
+    List<String> ordered(Iterable<String> names, {required bool reverse}) {
+      final list = names.toList()
+        ..sort((a, b) {
+          final ia = syncedTables.indexOf(a);
+          final ib = syncedTables.indexOf(b);
+          return (ia < 0 ? syncedTables.length : ia).compareTo(ib < 0 ? syncedTables.length : ib);
+        });
+      return reverse ? list.reversed.toList() : list;
+    }
+
+    for (final tableName in ordered(deletesByTable.keys, reverse: true)) {
+      final list = deletesByTable[tableName]!;
       for (var i = 0; i < list.length; i += pushChunk) {
         final chunk = list.sublist(i, (i + pushChunk).clamp(0, list.length));
         final ids = chunk.map((a) => a.recordId).where((id) => id.isNotEmpty).toList();
         if (ids.isEmpty) continue;
         try {
-          await _deleteIds(entry.key, tenantId, ids);
+          await _deleteIds(tableName, tenantId, ids);
           pushed += chunk.length;
           local.pendingSyncs.removeWhere((p) => chunk.any((c) => c.id == p.id));
         } catch (err) {
           failed += chunk.length;
-          _markFailed(chunk, err.toString());
+          _markFailed(chunk, describeSupabaseError(err, tableName), transient: isTransientSyncError(err));
         }
       }
     }
 
-    for (final entry in writesByTable.entries) {
-      final tableName = entry.key;
-      final list = entry.value;
+    for (final tableName in ordered(writesByTable.keys, reverse: false)) {
+      final list = writesByTable[tableName]!;
       for (var i = 0; i < list.length; i += pushChunk) {
         final chunk = list.sublist(i, (i + pushChunk).clamp(0, list.length));
         final rows = <Map<String, dynamic>>[];
@@ -666,6 +728,16 @@ class SyncService {
             local.markSynced(tableName, a.recordId);
           }
         } catch (err) {
+          // الشبكة مقطوعة: إعادة المحاولة صفاً صفاً تعني 50 نداءً فاشلاً بلا
+          // فائدة. نُسجّل السبب بلا استهلاك محاولات ونتوقف — الطابور سليم
+          // وسيُرفع كما هو عند عودة الاتصال.
+          if (isTransientSyncError(err)) {
+            _markFailed(kept, describeSupabaseError(err, tableName), transient: true);
+            failed += kept.length;
+            return (pushed: pushed, failed: failed + (all.length - actions.length));
+          }
+
+          // صف واحد معطوب يُسقط الدفعة كلها، فتُعاد صفاً صفاً لعزله وحده
           var rowFailed = 0;
           for (var k = 0; k < rows.length; k++) {
             try {
@@ -675,7 +747,11 @@ class SyncService {
               local.markSynced(tableName, kept[k].recordId);
             } catch (rowErr) {
               rowFailed++;
-              _markFailed([kept[k]], describeSupabaseError(rowErr, tableName));
+              _markFailed(
+                [kept[k]],
+                describeSupabaseError(rowErr, tableName),
+                transient: isTransientSyncError(rowErr),
+              );
             }
           }
           failed += rowFailed;
@@ -686,20 +762,45 @@ class SyncService {
     return (pushed: pushed, failed: failed + (all.length - actions.length));
   }
 
-  void _markFailed(List<PendingSync> actions, String message) {
+  /// تسجيل فشل محاولة رفع.
+  ///
+  /// [transient] يعني خطأ نقل (شبكة أو خادم): تُحفظ الرسالة ولا يُستهلك رصيد
+  /// المحاولات، لأن السجل سليم ولا ذنب له في انقطاع الاتصال.
+  void _markFailed(List<PendingSync> actions, String message, {bool transient = false}) {
     final now = DateTime.now().toUtc().toIso8601String();
     for (final a in actions) {
-      a.retryCount = (a.retryCount) + 1;
+      if (!transient) a.retryCount = a.retryCount + 1;
       a.lastError = message;
       a.lastAttemptAt = now;
     }
   }
 
-  Future<({int pulled, int removed})> pullFromCloud(String tenantId) async {
+  /// إعادة السجلات المتعثرة إلى الطابور النشط — المقابل لزر إعادة المحاولة
+  /// في `FailedSyncPanel`. يعيد عدد ما أُعيد تفعيله.
+  int retryFailedActions() {
+    final failed = getFailedActions();
+    for (final a in failed) {
+      a.retryCount = 0;
+      a.lastError = null;
+    }
+    if (failed.isNotEmpty) local.notifySync();
+    return failed.length;
+  }
+
+  /// إسقاط سجل متعثر نهائياً بعد أن يقرر المستخدم التخلي عنه.
+  void discardAction(PendingSync action) {
+    local.pendingSyncs.removeWhere((a) => a.id == action.id);
+    local.notifySync();
+  }
+
+  Future<PullOutcome> pullFromCloud(String tenantId) async {
     var totalPulled = 0;
     var totalRemoved = 0;
     final lastPullAt = await getLastPullAt();
     final safeToReconcileDeletes = lastPullAt != null;
+    // الجداول التي تعذّر جلبها. ابتلاع الخطأ بصمت كان يُظهر «تم سحب 0 سجلاً»
+    // على أنه نجاح، فلا يعرف المستخدم أن جدولاً كاملاً لم يصل.
+    final failedTables = <String, String>{};
 
     for (final cloud in syncedTables) {
       try {
@@ -729,7 +830,10 @@ class SyncService {
           }
         }
 
-        if (!fetchComplete) continue;
+        if (!fetchComplete) {
+          failedTables[cloud] = 'تعذّر جلب بيانات ${tableLabelsAr[cloud] ?? cloud} من السحابة.';
+          continue;
+        }
 
         final pendingIds = local.pendingSyncs.where((p) => p.tableName == cloud).map((p) => p.recordId).toSet();
         final localRecords = local.allOf(cloud);
@@ -793,12 +897,18 @@ class SyncService {
             );
           }
         }
-      } catch (_) {}
+      } catch (err) {
+        failedTables[cloud] = describeSupabaseError(err, cloud);
+      }
     }
 
     remotePendingIds.clear();
-    await _setLastPullAt(tenantId, DateTime.now().toUtc().toIso8601String());
-    return (pulled: totalPulled, removed: totalRemoved);
+    // ختم آخر سحب لا يتقدّم إلا بعد سحب كامل ناجح: تقديمه بعد سحب ناقص كان
+    // يجعل تغييرات الجدول الفاشل تقع قبل الختم فلا تُحسب في «السحب» أبداً.
+    if (failedTables.isEmpty) {
+      await _setLastPullAt(tenantId, DateTime.now().toUtc().toIso8601String());
+    }
+    return PullOutcome(pulled: totalPulled, removed: totalRemoved, failedTables: failedTables);
   }
 
   Map<String, String> get _headers => {

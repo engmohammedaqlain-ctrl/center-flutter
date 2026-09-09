@@ -30,16 +30,21 @@ class _StudentsScreenState extends State<StudentsScreen> {
     return ListenableBuilder(
       listenable: store,
       builder: (context, _) {
-        final q = search.text.trim();
+        if (!store.canOpenSection('students')) {
+          return NoAccess(section: 'students', roleName: store.roleName);
+        }
+        final q = search.text.trim().toLowerCase();
         final list = store.students.where((s) {
-          if (grade.isNotEmpty && s.gradeLevel != grade) return false;
+          if (grade.isNotEmpty && s.gradeLevel.trim() != grade) return false;
           if (q.isEmpty) return true;
-          return s.fullName.contains(q) ||
+          return s.fullName.toLowerCase().contains(q) ||
               s.phone.contains(q) ||
-              s.parentName.contains(q) ||
+              s.parentName.toLowerCase().contains(q) ||
               s.parentPhone.contains(q) ||
               s.nationalId.contains(q);
-        }).toList();
+        }).toList()
+          // الأحدث تسجيلاً أولاً — مطابق لفرز Students.tsx
+          ..sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
 
         return Column(
           children: [
@@ -55,13 +60,14 @@ class _StudentsScreenState extends State<StudentsScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  PrimaryButton(
-                    label: 'طالب جديد',
-                    icon: Icons.add,
-                    onPressed: () {
-                      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const StudentFormScreen()));
-                    },
-                  ),
+                  if (store.can('students.edit'))
+                    PrimaryButton(
+                      label: 'طالب جديد',
+                      icon: Icons.add,
+                      onPressed: () {
+                        Navigator.of(context).push(MaterialPageRoute(builder: (_) => const StudentFormScreen()));
+                      },
+                    ),
                 ],
               ),
             ),
@@ -108,7 +114,17 @@ class _StudentsScreenState extends State<StudentsScreen> {
                       itemCount: list.length,
                       itemBuilder: (_, i) => Padding(
                         padding: const EdgeInsets.only(bottom: 8),
-                        child: _StudentCard(student: list[i]),
+                        child: _StudentCard(
+                          student: list[i],
+                          onEdit: store.can('students.edit')
+                              ? () => Navigator.of(context).push(
+                                    MaterialPageRoute(builder: (_) => StudentFormScreen(student: list[i])),
+                                  )
+                              : null,
+                          onDelete: store.can('students.delete')
+                              ? () => _confirmDelete(context, store, list[i])
+                              : null,
+                        ),
                       ),
                     ),
             ),
@@ -117,11 +133,30 @@ class _StudentsScreenState extends State<StudentsScreen> {
       },
     );
   }
+
+  /// تأكيد الحذف — مطابق لنافذة التأكيد في Students.tsx.
+  Future<void> _confirmDelete(BuildContext context, AppStore store, Student student) async {
+    final ok = await confirmSheet(
+      context,
+      title: 'تأكيد حذف الطالب',
+      message: 'هل تريد حذف «${student.fullName}» نهائياً من النظام؟',
+      confirmLabel: 'حذف',
+    );
+    if (!ok || !context.mounted) return;
+    try {
+      store.deleteStudent(student.id);
+      showAppSnack(context, 'تم حذف الطالب');
+    } on StoreException catch (e) {
+      showAppSnack(context, e.message, error: true);
+    }
+  }
 }
 
 class _StudentCard extends StatelessWidget {
-  const _StudentCard({required this.student});
+  const _StudentCard({required this.student, this.onEdit, this.onDelete});
   final Student student;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -167,6 +202,16 @@ class _StudentCard extends StatelessWidget {
                 ),
               ),
               MoneyChip(balance: student.balance),
+              if (onEdit != null || onDelete != null)
+                PopupMenuButton<String>(
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.more_vert, size: 16, color: AppColors.muted),
+                  onSelected: (v) => v == 'edit' ? onEdit?.call() : onDelete?.call(),
+                  itemBuilder: (_) => [
+                    if (onEdit != null) const PopupMenuItem(value: 'edit', child: Text('تعديل بيانات الطالب')),
+                    if (onDelete != null) const PopupMenuItem(value: 'delete', child: Text('حذف الطالب')),
+                  ],
+                ),
             ],
           ),
           const SizedBox(height: 10),

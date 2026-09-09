@@ -4,6 +4,7 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../widgets/widgets.dart';
+import 'attendance_print.dart';
 import 'student_detail_screen.dart';
 
 class ClassesScreen extends StatefulWidget {
@@ -23,6 +24,9 @@ class _ClassesScreenState extends State<ClassesScreen> {
     return ListenableBuilder(
       listenable: store,
       builder: (context, _) {
+        if (!store.canOpenSection('classes')) {
+          return NoAccess(section: 'classes', roleName: store.roleName);
+        }
         if (selectedId != null) {
           final room = store.rooms.where((r) => r.id == selectedId).firstOrNull;
           if (room != null) {
@@ -34,7 +38,7 @@ class _ClassesScreenState extends State<ClassesScreen> {
           }
         }
 
-        final filtered = store.rooms.where((r) => tier == 'all' || r.tier == tier).toList();
+        final filtered = store.rooms.where((r) => tier == 'all' || _roomTier(store, r) == tier).toList();
         return ListView(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
           children: [
@@ -69,7 +73,10 @@ class _ClassesScreenState extends State<ClassesScreen> {
                 scrollDirection: Axis.horizontal,
                 children: [
                   _chip('all', 'جميع الصفوف', store.rooms.length),
-                  _chip('secondary', 'الثانوية (10-12)', store.rooms.where((r) => r.tier == 'secondary').length),
+                  _chip('secondary', 'الثانوية (10-12)', store.rooms.where((r) => _roomTier(store, r) == 'secondary').length),
+                  _chip('middle', 'الإعدادية (5-9)', store.rooms.where((r) => _roomTier(store, r) == 'middle').length),
+                  _chip('primary', 'الابتدائية (1-4)', store.rooms.where((r) => _roomTier(store, r) == 'primary').length),
+                  _chip('kindergarten', 'رياض الأطفال', store.rooms.where((r) => _roomTier(store, r) == 'kindergarten').length),
                 ],
               ),
             ),
@@ -99,6 +106,17 @@ class _ClassesScreenState extends State<ClassesScreen> {
     );
   }
 
+  String _roomTier(AppStore store, Classroom room) {
+    if (room.tier.isNotEmpty && educationalStageTiers.containsKey(room.tier)) return room.tier;
+    final matched = store.gradeFees.where((f) => f.gradeName.trim().toLowerCase() == room.gradeLevel.trim().toLowerCase()).firstOrNull;
+    if (matched != null && educationalStageTiers.containsKey(matched.tier)) return matched.tier;
+    final g = room.gradeLevel.toLowerCase();
+    if (g.contains('ثاني عشر') || g.contains('حادي عشر') || g.contains('عاشر') || g.contains('ثانوي')) return 'secondary';
+    if (g.contains('تاسع') || g.contains('ثامن') || g.contains('سابع') || g.contains('سادس') || g.contains('خامس') || g.contains('إعداد')) return 'middle';
+    if (g.contains('روضة') || g.contains('رياض') || g.contains('تمهيدي') || g.contains('بستان')) return 'kindergarten';
+    return 'other';
+  }
+
   Widget _chip(String id, String label, int count) {
     final on = tier == id;
     return Padding(
@@ -117,9 +135,11 @@ class _ClassesScreenState extends State<ClassesScreen> {
   Future<void> _editRoom(BuildContext context, Classroom? room) async {
     final store = StoreScope.of(context);
     final name = TextEditingController(text: room?.name ?? '');
-    String grade = room?.gradeLevel ?? gradeLevelsFilter.first;
+    String grade = room?.gradeLevel ?? (store.gradeFees.isNotEmpty ? store.gradeFees.first.gradeName : gradeLevelsFilter.first);
     String teacherId = room?.teacherId ?? (store.teachers.isNotEmpty ? store.teachers.first.id : '');
-    final cap = TextEditingController(text: '${room?.capacity ?? 25}');
+    String stageTier = room?.tier.isNotEmpty == true ? room!.tier : (store.gradeFees.where((g) => g.gradeName == grade).firstOrNull?.tier ?? 'secondary');
+    final cap = TextEditingController(text: '${room?.capacity ?? 30}');
+    final notes = TextEditingController(text: room?.notes ?? '');
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -130,36 +150,57 @@ class _ClassesScreenState extends State<ClassesScreen> {
           padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
           child: StatefulBuilder(
             builder: (ctx, setSt) {
-              return Column(
+              return SingleChildScrollView(
+                child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(room == null ? 'إضافة صف / شعبة جديدة' : 'تعديل: ${room.name}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
                   const SizedBox(height: 12),
-                  const FieldLabel('اسم الصف / الشعبة *'),
-                  TextField(controller: name, decoration: const InputDecoration(hintText: 'مثال: الشعبة (أ)...')),
+                  const FieldLabel('اسم الصف / الشعبة', requiredField: true),
+                  TextField(controller: name, decoration: const InputDecoration(hintText: 'مثال: شعبة 1، شعبة أ، عاشر أ...')),
                   const SizedBox(height: 10),
-                  const FieldLabel('المرحلة الدراسية *'),
+                  const FieldLabel('المرحلة التعليمية الكبرى', requiredField: true),
                   AppDropdown<String>(
-                    value: grade,
-                    items: gradeLevelsFilter.map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
-                    onChanged: (v) => setSt(() => grade = v ?? grade),
+                    value: educationalStageTiers.containsKey(stageTier) ? stageTier : 'secondary',
+                    items: educationalStageTiers.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
+                    onChanged: (v) => setSt(() => stageTier = v ?? stageTier),
                   ),
                   const SizedBox(height: 10),
-                  const FieldLabel('المربي'),
+                  const FieldLabel('المرحلة الدراسية التابعة لها', requiredField: true),
+                  AppDropdown<String>(
+                    value: store.gradeFees.any((g) => g.gradeName == grade) ? grade : (store.gradeFees.isNotEmpty ? store.gradeFees.first.gradeName : grade),
+                    items: (store.gradeFees.isEmpty ? gradeLevelsFilter : store.gradeFees.map((g) => g.gradeName).toList())
+                        .map((g) => DropdownMenuItem(value: g, child: Text(g)))
+                        .toList(),
+                    onChanged: (v) => setSt(() {
+                      grade = v ?? grade;
+                      final match = store.gradeFees.where((g) => g.gradeName == grade).firstOrNull;
+                      if (match != null) stageTier = match.tier;
+                    }),
+                  ),
+                  const SizedBox(height: 10),
+                  const FieldLabel('المربي / مشرف الصف'),
                   AppDropdown<String>(
                     value: teacherId.isEmpty ? null : teacherId,
                     items: store.teachers.map((t) => DropdownMenuItem(value: t.id, child: Text(t.name))).toList(),
                     onChanged: (v) => setSt(() => teacherId = v ?? teacherId),
                   ),
                   const SizedBox(height: 10),
-                  const FieldLabel('السعة'),
+                  const FieldLabel('السعة الاستيعابية (طالب)', requiredField: true),
                   TextField(controller: cap, keyboardType: TextInputType.number),
+                  const SizedBox(height: 10),
+                  const FieldLabel('ملاحظات حول الصف'),
+                  TextField(controller: notes, decoration: const InputDecoration(hintText: 'ملاحظات اختيارية...')),
                   const SizedBox(height: 14),
                   PrimaryButton(
                     expand: true,
-                    label: 'حفظ',
+                    label: room == null ? 'إضافة الشعبة' : 'حفظ التعديلات',
                     onPressed: () {
+                      if (grade.trim().isEmpty) {
+                        showAppSnack(context, 'يرجى تحديد المرحلة الدراسية التابعة لها هذه الشعبة', error: true);
+                        return;
+                      }
                       try {
                         store.upsertRoom(
                           Classroom(
@@ -167,8 +208,9 @@ class _ClassesScreenState extends State<ClassesScreen> {
                             name: name.text.trim(),
                             gradeLevel: grade,
                             teacherId: teacherId,
-                            capacity: int.tryParse(cap.text) ?? 25,
-                            notes: room?.notes ?? '',
+                            capacity: int.tryParse(cap.text) ?? 30,
+                            notes: notes.text.trim(),
+                            tier: stageTier,
                           ),
                         );
                         Navigator.pop(ctx);
@@ -178,6 +220,7 @@ class _ClassesScreenState extends State<ClassesScreen> {
                     },
                   ),
                 ],
+                ),
               );
             },
           ),
@@ -281,11 +324,15 @@ class _RoomCard extends StatelessWidget {
               PopupMenuButton<String>(
                 padding: EdgeInsets.zero,
                 onSelected: (v) {
+                  if (v == 'print') {
+                    printClassRoster(context, store: StoreScope.of(context), room: room, students: students);
+                  }
                   if (v == 'edit') onEdit();
                   if (v == 'assign') onAssign();
                   if (v == 'delete') onDelete();
                 },
                 itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'print', child: Text('طباعة كشف الصف')),
                   PopupMenuItem(value: 'edit', child: Text('تعديل بيانات الصف')),
                   PopupMenuItem(value: 'assign', child: Text('تعيين مربي')),
                   PopupMenuItem(value: 'delete', child: Text('حذف الصف')),
@@ -357,11 +404,32 @@ class _ClassDetailState extends State<_ClassDetail> {
                       ],
                     ),
                   ),
+                  SquareIconButton(
+                    icon: Icons.print_outlined,
+                    onTap: () => printClassRoster(
+                      context,
+                      store: StoreScope.of(context),
+                      room: widget.room,
+                      students: list,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
                   SquareIconButton(icon: Icons.edit_outlined, onTap: widget.onEdit),
                   const SizedBox(width: 6),
                   StatusChip.muted('${list.length} / ${widget.room.capacity}'),
                 ],
               ),
+              if (widget.room.notes.trim().isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      'ملاحظات: ${widget.room.notes}',
+                      style: const TextStyle(color: AppColors.muted, fontSize: 11),
+                    ),
+                  ),
+                ),
               const SizedBox(height: 8),
               SearchField(controller: search, hint: 'ابحث باسم الطالب أو الهاتف...', onChanged: (_) => setState(() {})),
             ],

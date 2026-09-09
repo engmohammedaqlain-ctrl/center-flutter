@@ -2,7 +2,7 @@ import '../data/phone.dart';
 
 const currency = '₪';
 const appName = 'نظام الإدارة المدرسي';
-const appVersion = '1.2.2';
+const appVersion = '1.2.3';
 
 /// مطابق لـ GRADE_LEVELS في types/student.ts
 const gradeLevels = [
@@ -86,6 +86,7 @@ const paymentMethodNames = {
   'jawwal_pay': 'محفظة جوال بي',
   'palpay': 'محفظة بال بي',
   'bop': 'بنك فلسطين',
+  'bank_transfer': 'تحويل بنكي',
   'other': 'أخرى',
 };
 
@@ -97,11 +98,22 @@ const paymentPurposeNames = {
   'other': 'أخرى',
 };
 
+/// مطابق لـ Teacher.payment_type في types/common.ts
 const teacherPaymentTypes = {
-  'monthly': 'راتب شهري',
-  'hourly': 'أجر بالحصة',
-  'percentage': 'نسبة من الرسوم',
+  'percentage': 'نسبة مئوية (%)',
+  'per_student': 'مبلغ ثابت لكل طالب (₪)',
+  'per_hour': 'أجر بالساعة (₪)',
+  'fixed_monthly': 'راتب شهري مقطوع (₪)',
 };
+
+const educationalStageTiers = {
+  'secondary': 'المرحلة الثانوية (10 - 12)',
+  'middle': 'المرحلة الإعدادية (5 - 9)',
+  'primary': 'المرحلة الابتدائية (1 - 4)',
+  'kindergarten': 'رياض الأطفال',
+};
+
+String stageTierLabel(String id) => educationalStageTiers[id] ?? 'المرحلة الثانوية (10 - 12)';
 
 String money(num value) {
   final abs = value.abs();
@@ -143,6 +155,23 @@ bool isValidStudentPhone(String raw, [String prefix = '059']) {
   final parsed = parsePhoneAndPrefix(raw);
   final active = raw.trim().startsWith('05') || raw.trim().startsWith('+') ? parsed.prefix : prefix;
   return isPhoneComplete(parsed.number, active);
+}
+
+/// ترتيب الدفعات: الأحدث أولاً، ثم بالرقم التسلسلي تنازلياً.
+/// مطابق لـ `sortPayments` في finance.service.ts.
+void sortPayments(List<Payment> list) {
+  int serial(String receipt) {
+    final parts = receipt.split('/');
+    if (parts.length != 2) return 0;
+    return int.tryParse(parts[1]) ?? 0;
+  }
+
+  list.sort((a, b) {
+    final ta = DateTime.tryParse(a.createdAt ?? '')?.millisecondsSinceEpoch ?? a.date.millisecondsSinceEpoch;
+    final tb = DateTime.tryParse(b.createdAt ?? '')?.millisecondsSinceEpoch ?? b.date.millisecondsSinceEpoch;
+    if (ta != tb) return tb.compareTo(ta);
+    return serial(b.receiptNumber).compareTo(serial(a.receiptNumber));
+  });
 }
 
 class StoreException implements Exception {
@@ -483,9 +512,9 @@ class Teacher {
     required this.name,
     required this.phone,
     required this.subject,
-    this.rate = 3000,
+    this.rate = 70,
     this.email = '',
-    this.paymentType = 'monthly',
+    this.paymentType = 'percentage',
     this.notes = '',
     this.subjectIds = const [],
     this.syncStatus = 'synced',
@@ -534,7 +563,7 @@ class Teacher {
       subject: '${m['subject'] ?? ''}',
       rate: (m['payment_rate'] as num?)?.toDouble() ?? 0,
       email: '${m['email'] ?? ''}',
-      paymentType: '${m['payment_type'] ?? 'monthly'}',
+      paymentType: '${m['payment_type'] ?? 'percentage'}',
       notes: '${m['notes'] ?? ''}',
       subjectIds: ids,
       syncStatus: '${m['sync_status'] ?? 'synced'}',
@@ -650,6 +679,9 @@ class Payment {
     this.transferDate = '',
     this.customMethodNotes = '',
     this.installmentId,
+    this.groupId,
+    this.enrollmentId,
+    this.receivedByUserId = '',
     this.remainingAfter = 0,
     this.totalDueAtPayment = 0,
     this.cancelled = false,
@@ -660,7 +692,7 @@ class Payment {
   });
 
   final String id;
-  final String receiptNumber;
+  String receiptNumber;
   final String studentId;
   final double amount;
   final String method;
@@ -673,6 +705,11 @@ class Payment {
   String transferDate;
   String customMethodNotes;
   final String? installmentId;
+  final String? groupId;
+  final String? enrollmentId;
+
+  /// من قبض الدفعة — مطابق لـ `received_by_user_id`.
+  String receivedByUserId;
   double remainingAfter;
   double totalDueAtPayment;
   bool cancelled;
@@ -686,6 +723,9 @@ class Payment {
         'receipt_number': receiptNumber,
         'student_id': studentId,
         'installment_id': installmentId,
+        'group_id': groupId,
+        'enrollment_id': enrollmentId,
+        'received_by_user_id': receivedByUserId.isEmpty ? null : receivedByUserId,
         'amount': amount,
         'payment_method': method,
         'payment_date': isoDate(date),
@@ -719,6 +759,9 @@ class Payment {
         transferDate: '${m['transfer_date'] ?? ''}'.split('T').first,
         customMethodNotes: '${m['custom_method_notes'] ?? ''}',
         installmentId: m['installment_id']?.toString(),
+        groupId: m['group_id']?.toString(),
+        enrollmentId: m['enrollment_id']?.toString(),
+        receivedByUserId: '${m['received_by_user_id'] ?? ''}',
         remainingAfter: (m['remaining_balance_after'] as num?)?.toDouble() ?? 0,
         totalDueAtPayment: (m['total_due_at_payment'] as num?)?.toDouble() ?? 0,
         cancelled: m['is_cancelled'] == true,
@@ -739,7 +782,7 @@ class Installment {
     this.paidAmount = 0,
     this.exception = false,
     this.exceptionNotes = '',
-    this.status = 'pending',
+    this.status = 'unpaid',
     this.syncStatus = 'synced',
     this.createdAt,
     this.updatedAt,
@@ -747,9 +790,9 @@ class Installment {
 
   final String id;
   final String studentId;
-  final String title;
-  final double amount;
-  final DateTime dueDate;
+  String title;
+  double amount;
+  DateTime dueDate;
   double paidAmount;
   bool exception;
   String exceptionNotes;
@@ -766,6 +809,17 @@ class Installment {
 
   bool get isPaid => remaining <= 0;
 
+  /// الحالة المعتمدة المشتقّة من المبالغ — لا تعتمد على قيمة مخزّنة قد تكون قديمة.
+  String get _effectiveStatus {
+    if (paidAmount <= 0) return 'unpaid';
+    if (paidAmount >= amount) return 'paid';
+    return 'partially_paid';
+  }
+
+  /// إعادة حساب الحالة بعد أي تغيّر في المسدَّد.
+  /// القيم المعتمدة هي `unpaid | partially_paid | paid` فقط.
+  void refreshStatus() => status = _effectiveStatus;
+
   Map<String, dynamic> toCloud() => {
         'id': id,
         'student_id': studentId,
@@ -773,7 +827,7 @@ class Installment {
         'amount': amount,
         'due_date': isoDate(dueDate),
         'paid_amount': paidAmount,
-        'status': isPaid ? 'paid' : status,
+        'status': _effectiveStatus,
         'has_flexible_exception': exception,
         'exception_notes': exceptionNotes,
         'created_at': createdAt,
@@ -902,6 +956,7 @@ class AppUser {
   }
 }
 
+/// مطابق لـ `types/tenant.ts` في النسخة المكتبية.
 class Tenant {
   Tenant({
     required this.id,
@@ -910,9 +965,13 @@ class Tenant {
     required this.username,
     required this.password,
     required this.expiresAt,
+    this.ownerName = '',
     this.ownerPhone = '',
-    this.plan = 'rental',
+    this.notes = '',
+    this.planType = 'rental',
     this.active = true,
+    this.createdAt,
+    this.updatedAt,
   });
 
   final String id;
@@ -921,9 +980,309 @@ class Tenant {
   String username;
   String password;
   DateTime expiresAt;
+  String ownerName;
   String ownerPhone;
-  String plan;
+  String notes;
+
+  /// `rental` = محدد المدة، `lifetime` = دائم.
+  String planType;
   bool active;
+  String? createdAt;
+  String? updatedAt;
+
+  String get plan => planType;
+  set plan(String v) => planType = v;
+
+  bool get isLifetime => planType == 'lifetime';
+
+  String get status => active ? 'active' : 'suspended';
+
+  Map<String, dynamic> toCloud() => {
+        'id': id,
+        'code': code,
+        'name': name,
+        'app_username': username,
+        'app_password': password,
+        'plan_type': planType,
+        'status': status,
+        'expires_at': planType == 'lifetime' ? null : expiresAt.toUtc().toIso8601String(),
+        'owner_name': ownerName,
+        'owner_phone': ownerPhone,
+        'notes': notes,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+      };
+
+  factory Tenant.fromCloud(Map<String, dynamic> m) => Tenant(
+        id: '${m['id']}',
+        name: '${m['name'] ?? ''}',
+        code: '${m['code'] ?? ''}',
+        username: '${m['app_username'] ?? ''}',
+        password: '${m['app_password'] ?? ''}',
+        expiresAt: parseIsoDate(m['expires_at']) ?? DateTime.now().add(const Duration(days: 365)),
+        ownerName: '${m['owner_name'] ?? ''}',
+        ownerPhone: '${m['owner_phone'] ?? ''}',
+        notes: '${m['notes'] ?? ''}',
+        planType: '${m['plan_type'] ?? 'rental'}',
+        active: '${m['status'] ?? 'active'}' != 'suspended',
+        createdAt: m['created_at']?.toString(),
+        updatedAt: m['updated_at']?.toString(),
+      );
+}
+
+/// يوم في الأسبوع المدرسي — مطابق لـ `WeekDayInfo` في Attendance.tsx.
+class SchoolDay {
+  const SchoolDay({
+    required this.date,
+    required this.dateStr,
+    required this.dayName,
+    required this.shortDate,
+    required this.isToday,
+  });
+
+  final DateTime date;
+  final String dateStr;
+  final String dayName;
+  final String shortDate;
+  final bool isToday;
+}
+
+/// حالات الحضور — مطابق لـ `AttendanceStatus` في types/attendance.ts.
+const attendanceStatusNames = {
+  'present': 'حاضر',
+  'absent': 'غائب',
+  'late': 'متأخر',
+  'excused': 'معذور',
+};
+
+/// أيام الأسبوع — مطابق لـ DAYS_OF_WEEK في shared/constants.ts (0 = الأحد).
+const daysOfWeek = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+
+String daysNames(List<int> days) {
+  if (days.isEmpty) return 'غير محدد';
+  final sorted = [...days]..sort();
+  return sorted.map((d) => daysOfWeek[d % 7]).join('، ');
+}
+
+/// المجموعة الدراسية — مطابق لـ `Group` في types/common.ts.
+class Group {
+  Group({
+    required this.id,
+    required this.name,
+    required this.subjectId,
+    required this.teacherId,
+    this.roomId = '',
+    this.gradeLevel = '',
+    this.pricePerMonth = 0,
+    this.maxStudents,
+    List<int>? days,
+    this.startTime = '16:00',
+    this.endTime = '18:00',
+    this.status = 'active',
+    this.syncStatus = 'synced',
+    this.createdAt,
+    this.updatedAt,
+  }) : days = days ?? <int>[];
+
+  final String id;
+  String name;
+  String subjectId;
+  String teacherId;
+  String roomId;
+  String gradeLevel;
+  double pricePerMonth;
+  int? maxStudents;
+  List<int> days;
+  String startTime;
+  String endTime;
+
+  /// `active | archived | pending`
+  String status;
+  String syncStatus;
+  String? createdAt;
+  String? updatedAt;
+
+  bool get isActive => status == 'active';
+
+  String get daysLabel => daysNames(days);
+
+  String get timeLabel => '$startTime - $endTime';
+
+  Map<String, dynamic> toCloud() => {
+        'id': id,
+        'name': name,
+        'subject_id': subjectId.isEmpty ? null : subjectId,
+        'teacher_id': teacherId.isEmpty ? null : teacherId,
+        'room_id': roomId.isEmpty ? null : roomId,
+        'grade_level': gradeLevel,
+        'price_per_month': pricePerMonth,
+        'max_students': maxStudents,
+        'days': days,
+        'start_time': startTime,
+        'end_time': endTime,
+        'status': status,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+      };
+
+  factory Group.fromCloud(Map<String, dynamic> m) {
+    final rawDays = m['days'];
+    final days = <int>[];
+    if (rawDays is List) {
+      for (final d in rawDays) {
+        final n = int.tryParse('$d');
+        if (n != null) days.add(n);
+      }
+    }
+    return Group(
+      id: '${m['id']}',
+      name: '${m['name'] ?? ''}',
+      subjectId: '${m['subject_id'] ?? ''}',
+      teacherId: '${m['teacher_id'] ?? ''}',
+      roomId: '${m['room_id'] ?? ''}',
+      gradeLevel: '${m['grade_level'] ?? ''}',
+      pricePerMonth: (m['price_per_month'] as num?)?.toDouble() ?? 0,
+      maxStudents: (m['max_students'] as num?)?.toInt(),
+      days: days,
+      startTime: '${m['start_time'] ?? '16:00'}'.substring(0, 5),
+      endTime: '${m['end_time'] ?? '18:00'}'.substring(0, 5),
+      status: '${m['status'] ?? 'active'}',
+      syncStatus: '${m['sync_status'] ?? 'synced'}',
+      createdAt: m['created_at']?.toString(),
+      updatedAt: m['updated_at']?.toString(),
+    );
+  }
+}
+
+/// تسجيل طالب في مجموعة — مطابق لـ `StudentEnrollment` في types/student.ts.
+class StudentEnrollment {
+  StudentEnrollment({
+    required this.id,
+    required this.studentId,
+    required this.groupId,
+    DateTime? enrolledAt,
+    this.status = 'active',
+    this.customPrice,
+    this.appliedPrice,
+    this.discountReason = '',
+    this.syncStatus = 'synced',
+    this.createdAt,
+    this.updatedAt,
+  }) : enrolledAt = enrolledAt ?? DateTime.now();
+
+  final String id;
+  final String studentId;
+  final String groupId;
+  DateTime enrolledAt;
+
+  /// `active | withdrawn | completed | paused`
+  String status;
+  double? customPrice;
+
+  /// السعر المطبَّق فعلياً لحظة التسجيل — يُثبَّت حتى لا يتغيّر عكس القيد المالي
+  /// إذا عُدّل سعر المجموعة لاحقاً.
+  double? appliedPrice;
+  String discountReason;
+  String syncStatus;
+  String? createdAt;
+  String? updatedAt;
+
+  bool get isActive => status == 'active';
+
+  Map<String, dynamic> toCloud() => {
+        'id': id,
+        'student_id': studentId,
+        'group_id': groupId,
+        'enrolled_at': enrolledAt.toUtc().toIso8601String(),
+        'status': status,
+        'custom_price': customPrice,
+        'applied_price': appliedPrice,
+        'discount_reason': discountReason,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+      };
+
+  factory StudentEnrollment.fromCloud(Map<String, dynamic> m) => StudentEnrollment(
+        id: '${m['id']}',
+        studentId: '${m['student_id'] ?? ''}',
+        groupId: '${m['group_id'] ?? ''}',
+        enrolledAt: parseIsoDate('${m['enrolled_at'] ?? m['enrollment_date'] ?? ''}') ?? DateTime.now(),
+        status: '${m['status'] ?? 'active'}',
+        customPrice: (m['custom_price'] as num?)?.toDouble(),
+        appliedPrice: (m['applied_price'] as num?)?.toDouble(),
+        discountReason: '${m['discount_reason'] ?? ''}',
+        syncStatus: '${m['sync_status'] ?? 'synced'}',
+        createdAt: m['created_at']?.toString(),
+        updatedAt: m['updated_at']?.toString(),
+      );
+}
+
+/// جلسة دراسية — مطابق لـ `ClassSession` في types/attendance.ts.
+class ClassSession {
+  ClassSession({
+    required this.id,
+    required this.groupId,
+    required this.sessionDate,
+    this.startTime = '08:00',
+    this.endTime = '10:00',
+    this.teacherId = '',
+    this.roomId = '',
+    this.status = 'scheduled',
+    this.substituteTeacherId = '',
+    this.notes = '',
+    this.syncStatus = 'synced',
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  final String id;
+  String groupId;
+
+  /// `YYYY-MM-DD`
+  String sessionDate;
+  String startTime;
+  String endTime;
+  String teacherId;
+  String roomId;
+
+  /// `completed | scheduled | cancelled | substituted`
+  String status;
+  String substituteTeacherId;
+  String notes;
+  String syncStatus;
+  String? createdAt;
+  String? updatedAt;
+
+  Map<String, dynamic> toCloud() => {
+        'id': id,
+        'group_id': groupId.isEmpty ? null : groupId,
+        'session_date': sessionDate,
+        'start_time': startTime,
+        'end_time': endTime,
+        'teacher_id': teacherId.isEmpty ? null : teacherId,
+        'substitute_teacher_id': substituteTeacherId.isEmpty ? null : substituteTeacherId,
+        'room_id': roomId.isEmpty ? null : roomId,
+        'status': status,
+        'notes': notes,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+      };
+
+  factory ClassSession.fromCloud(Map<String, dynamic> m) => ClassSession(
+        id: '${m['id']}',
+        groupId: '${m['group_id'] ?? ''}',
+        sessionDate: '${m['session_date'] ?? ''}'.split('T').first,
+        startTime: '${m['start_time'] ?? '08:00'}',
+        endTime: '${m['end_time'] ?? '10:00'}',
+        teacherId: '${m['teacher_id'] ?? ''}',
+        roomId: '${m['room_id'] ?? ''}',
+        status: '${m['status'] ?? 'scheduled'}',
+        substituteTeacherId: '${m['substitute_teacher_id'] ?? ''}',
+        notes: '${m['notes'] ?? ''}',
+        syncStatus: '${m['sync_status'] ?? 'synced'}',
+        createdAt: m['created_at']?.toString(),
+        updatedAt: m['updated_at']?.toString(),
+      );
 }
 
 class DueItem {
@@ -983,6 +1342,29 @@ class PendingSync {
   int retryCount;
   String? lastError;
   String? lastAttemptAt;
+
+  Map<String, dynamic> toJson() => {
+        'table_name': tableName,
+        'record_id': recordId,
+        'action': action,
+        'payload': payload,
+        'created_at': createdAt,
+        'retry_count': retryCount,
+        'last_error': lastError,
+        'last_attempt_at': lastAttemptAt,
+      };
+
+  factory PendingSync.fromJson(Map<String, dynamic> m) => PendingSync(
+        id: int.tryParse('${m['id'] ?? 0}') ?? 0,
+        tableName: '${m['table_name'] ?? ''}',
+        recordId: '${m['record_id'] ?? ''}',
+        action: '${m['action'] ?? ''}',
+        payload: m['payload'] == null ? null : Map<String, dynamic>.from(m['payload'] as Map),
+        createdAt: '${m['created_at'] ?? ''}',
+        retryCount: int.tryParse('${m['retry_count'] ?? 0}') ?? 0,
+        lastError: m['last_error']?.toString(),
+        lastAttemptAt: m['last_attempt_at']?.toString(),
+      );
 }
 
 class PendingSummary {
@@ -1006,6 +1388,23 @@ class RemoteChangeSummary {
   final List<SyncRow> rows;
   final List<PendingSummaryItem> items;
   final String? since;
+}
+
+/// حصيلة السحب من السحابة، مع الجداول التي تعذّر جلبها ولماذا.
+class PullOutcome {
+  const PullOutcome({
+    required this.pulled,
+    required this.removed,
+    this.failedTables = const {},
+  });
+
+  final int pulled;
+  final int removed;
+
+  /// اسم الجدول السحابي ← سبب الفشل.
+  final Map<String, String> failedTables;
+
+  bool get isComplete => failedTables.isEmpty;
 }
 
 class SyncResult {

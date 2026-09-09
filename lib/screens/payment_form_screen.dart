@@ -28,6 +28,8 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
   final sender = TextEditingController();
   final search = TextEditingController();
   final customMethod = TextEditingController();
+  final customPurpose = TextEditingController();
+  final channelCtl = TextEditingController();
   String channel = '';
   DateTime? transferDate;
   String? installmentId;
@@ -50,6 +52,8 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
     sender.dispose();
     search.dispose();
     customMethod.dispose();
+    customPurpose.dispose();
+    channelCtl.dispose();
     super.dispose();
   }
 
@@ -62,11 +66,11 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
         amount: n,
         method: method,
         date: date,
-        purpose: purpose,
+        purpose: purpose == 'other' && customPurpose.text.trim().isNotEmpty ? customPurpose.text.trim() : purpose,
         notes: notes.text.trim(),
         reference: reference.text.trim(),
         senderName: sender.text.trim(),
-        channel: channel.isEmpty ? (method == 'cash' ? '' : method) : channel,
+        channel: channelCtl.text.trim().isEmpty ? (method == 'cash' ? '' : channel) : channelCtl.text.trim(),
         transferDate: transferDate == null ? '' : isoDate(transferDate!),
         customMethodNotes: customMethod.text.trim(),
         installmentId: installmentId,
@@ -89,10 +93,10 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
       builder: (context, _) {
         final q = search.text.trim();
         final unpaid = store.students.where((s) {
-          final isUnpaid = s.balance < 0;
+          final isUnpaid = s.balance < 0 || s.paymentStatus == 'unpaid' || s.paymentStatus == 'in_progress';
           if (!isUnpaid && widget.studentId != s.id) return false;
           if (q.isEmpty) return true;
-          return s.fullName.contains(q) || s.phone.contains(q) || s.gradeLevel.contains(q);
+          return s.fullName.contains(q) || s.phone.contains(q) || s.parentPhone.contains(q) || s.gradeLevel.contains(q);
         }).toList();
         final selected = studentId == null ? null : store.studentById(studentId!);
         final insts = selected == null ? <Installment>[] : store.installments.where((i) => i.studentId == selected.id).toList();
@@ -227,28 +231,61 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                     AppDropdown<String>(
                       value: purpose,
                       items: paymentPurposeNames.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
-                      onChanged: (v) => setState(() => purpose = v ?? purpose),
+                      onChanged: (v) => setState(() {
+                        purpose = v ?? purpose;
+                        if (purpose == 'seat_reservation') {
+                          amount.text = '50';
+                          notes.text = 'سداد رسم حجز مقعد (تُخصم من رسوم الشهر الأول)';
+                          installmentId = null;
+                        } else if (purpose == 'monthly_fee') {
+                          installmentId = null;
+                        }
+                      }),
+                    ),
+                    if (purpose == 'other') ...[
+                      const SizedBox(height: 10),
+                      const FieldLabel('الغرض المخصص'),
+                      TextField(controller: customPurpose, decoration: const InputDecoration(hintText: 'اكتب سبب الدفع...')),
+                    ],
+                    const SizedBox(height: 10),
+                    const FieldLabel('تاريخ الدفع', requiredField: true),
+                    InkWell(
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: date,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime.now().add(const Duration(days: 1)),
+                        );
+                        if (picked != null) setState(() => date = picked);
+                      },
+                      child: InputDecorator(
+                        decoration: const InputDecoration(),
+                        child: Text(isoDate(date), style: const TextStyle(fontSize: 13, fontFamily: 'monospace')),
+                      ),
                     ),
                     const SizedBox(height: 10),
                     const FieldLabel('طريقة الدفع *'),
                     AppDropdown<String>(
                       value: method,
                       items: paymentMethodNames.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
-                      onChanged: (v) => setState(() => method = v ?? method),
+                      onChanged: (v) => setState(() {
+                        method = v ?? method;
+                        if (method == 'bop') {
+                          channelCtl.text = 'بنك فلسطين';
+                        } else if (method == 'palpay') {
+                          channelCtl.text = 'محفظة بال بي';
+                        } else if (method == 'jawwal_pay') {
+                          channelCtl.text = 'جوال بي';
+                        } else if (method == 'cash') {
+                          channelCtl.text = '';
+                        }
+                      }),
                     ),
                     if (electronic) ...[
                       const SizedBox(height: 10),
-                      const FieldLabel('قناة التحويل'),
-                      AppDropdown<String>(
-                        value: channel.isEmpty ? 'jawwal_pay' : channel,
-                        items: const [
-                          DropdownMenuItem(value: 'jawwal_pay', child: Text('محفظة جوال بي')),
-                          DropdownMenuItem(value: 'palpay', child: Text('محفظة بال بي')),
-                          DropdownMenuItem(value: 'bop', child: Text('بنك فلسطين')),
-                          DropdownMenuItem(value: 'other', child: Text('أخرى')),
-                        ],
-                        onChanged: (v) => setState(() => channel = v ?? channel),
-                      ),
+                      const FieldLabel('جهة التحويل'),
+                      TextField(controller: channelCtl, decoration: const InputDecoration(hintText: 'اسم البنك أو المحفظة')),
                       const SizedBox(height: 10),
                       const FieldLabel('تاريخ التحويل'),
                       InkWell(

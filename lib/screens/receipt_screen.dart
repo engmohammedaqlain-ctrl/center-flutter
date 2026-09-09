@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 
+import '../data/printing.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../widgets/widgets.dart';
 
+/// سند القبض — المقابل لـ `features/finance/ReceiptModal.tsx`.
 class ReceiptScreen {
   static Future<void> open(BuildContext context, Payment payment) {
     return showModalBottomSheet<void>(
@@ -25,93 +29,176 @@ class _ReceiptSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final student = store.studentById(payment.studentId);
+
     return Padding(
       padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + MediaQuery.paddingOf(context).bottom),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(border: Border.all(color: AppColors.navy, width: 1.4)),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(color: AppColors.amberSoft, border: Border.all(color: AppColors.amber)),
-                      child: const Icon(Icons.school, color: AppColors.amber, size: 20),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(border: Border.all(color: AppColors.navy, width: 1.4)),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      InstitutionBadge(logo: store.institutionLogo, size: 36),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              store.institutionName.isEmpty ? appName : store.institutionName,
+                              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading),
+                            ),
+                            const Text('سند قبض رسمي', style: TextStyle(color: AppColors.muted, fontSize: 11)),
+                          ],
+                        ),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          Text(store.institutionName, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading)),
-                          const Text('سند قبض رسمي', style: TextStyle(color: AppColors.muted, fontSize: 11)),
+                          Text(payment.receiptNumber,
+                              style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.amber, fontSize: 12.5)),
+                          Text(formatDate(payment.date), style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(color: AppColors.line),
+                  const SizedBox(height: 8),
+                  _row('وصلنا من', student?.fullName ?? (payment.notes.isEmpty ? 'سند عام' : payment.notes)),
+                  _row('المرحلة', student?.gradeLevel ?? '—'),
+                  _row('المبلغ المقبوض', money(payment.amount)),
+                  // «وقدره كتابةً» — بند رسمي في السند لا يجوز إسقاطه
+                  _row('وقدره كتابةً', amountInArabicWords(payment.amount)),
+                  _row('طريقة السداد', paymentMethodNames[payment.method] ?? payment.method),
+                  _row('وذلك عن', paymentPurposeNames[payment.purpose] ?? payment.purpose),
+                  if (payment.senderName.isNotEmpty) _row('اسم المحول منه', payment.senderName),
+                  if (payment.reference.isNotEmpty) _row('الرقم المرجعي', payment.reference),
+                  if (payment.channel.isNotEmpty) _row('جهة التحويل', payment.channel),
+                  if (payment.transferDate.isNotEmpty) _row('تاريخ التحويل', payment.transferDate),
+                  if (payment.customMethodNotes.isNotEmpty) _row('تفاصيل الوسيلة', payment.customMethodNotes),
+                  if (payment.notes.isNotEmpty) _row('البيان', payment.notes),
+                  const SizedBox(height: 6),
+                  _ledger(payment),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text('المستلم: ${store.receiptReceiver}',
+                            style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+                      ),
+                      const Text('التوقيع: ....................',
+                          style: TextStyle(fontSize: 11, color: AppColors.muted)),
+                    ],
+                  ),
+                  if (payment.cancelled)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Column(
+                        children: [
+                          const StatusChip(
+                            label: 'هذا السند ملغى',
+                            fg: Color(0xFF991B1B),
+                            bg: AppColors.dangerSoft,
+                            border: AppColors.dangerBorder,
+                          ),
+                          if (payment.cancelReason.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(payment.cancelReason,
+                                  style: const TextStyle(fontSize: 10.5, color: AppColors.danger)),
+                            ),
                         ],
                       ),
                     ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(payment.receiptNumber, style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.amber, fontSize: 12.5)),
-                        Text(formatDate(payment.date), style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                const Divider(color: AppColors.line),
-                const SizedBox(height: 8),
-                _row('استلمنا من', student?.fullName ?? '—'),
-                _row('المرحلة', student?.gradeLevel ?? '—'),
-                _row('المبلغ', money(payment.amount)),
-                _row('الطريقة', paymentMethodNames[payment.method] ?? payment.method),
-                _row('الغرض', paymentPurposeNames[payment.purpose] ?? payment.purpose),
-                if (payment.reference.isNotEmpty) _row('المرجع', payment.reference),
-                if (payment.senderName.isNotEmpty) _row('المحول', payment.senderName),
-                if (payment.notes.isNotEmpty) _row('البيان', payment.notes),
-                _row('المتبقي بذمة الطالب', payment.remainingAfter <= 0 ? '0 ₪ (مسدد بالكامل)' : money(payment.remainingAfter)),
-                if (payment.cancelled)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 8),
-                    child: StatusChip(label: 'هذا السند ملغى', fg: Color(0xFF991B1B), bg: AppColors.dangerSoft, border: AppColors.dangerBorder),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: GhostButton(
+                    label: 'طباعة',
+                    icon: Icons.print_outlined,
+                    onPressed: () => _print(context, store, student),
                   ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: GhostButton(
+                    label: 'واتساب',
+                    icon: Icons.chat_outlined,
+                    onPressed: student == null ? null : () => _whatsapp(context, store, student),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(child: GhostButton(label: 'إغلاق', onPressed: () => Navigator.pop(context))),
+                if (!payment.cancelled && store.can('finance.cancel')) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: PrimaryButton(
+                      label: 'إلغاء السند',
+                      color: AppColors.danger,
+                      onPressed: () async {
+                        final ok = await confirmSheet(
+                          context,
+                          title: 'تأكيد إلغاء الدفعة',
+                          message:
+                              'هل أنت متأكد من إلغاء الدفعة رقم ${payment.receiptNumber} بمبلغ ${money(payment.amount)}؟',
+                          confirmLabel: 'إلغاء السند',
+                        );
+                        if (ok && context.mounted) {
+                          store.cancelPayment(payment);
+                          Navigator.pop(context);
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _ledger(Payment p) {
+    Widget cell(String label, String value, {Color? color}) => Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+            decoration: BoxDecoration(color: AppColors.bg, border: Border.all(color: AppColors.line)),
+            child: Column(
+              children: [
+                Text(label, style: const TextStyle(fontSize: 9.5, color: AppColors.muted)),
+                const SizedBox(height: 2),
+                Text(value,
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: color ?? AppColors.heading)),
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(child: GhostButton(label: 'إغلاق', onPressed: () => Navigator.pop(context))),
-              if (!payment.cancelled) ...[
-                const SizedBox(width: 8),
-                Expanded(
-                  child: PrimaryButton(
-                    label: 'إلغاء السند',
-                    color: AppColors.danger,
-                    onPressed: () async {
-                      final ok = await confirmSheet(
-                        context,
-                        title: 'تأكيد إلغاء الدفعة',
-                        message: 'هل أنت متأكد من إلغاء الدفعة رقم ${payment.receiptNumber} بمبلغ ${money(payment.amount)}؟',
-                        confirmLabel: 'إلغاء السند',
-                      );
-                      if (ok && context.mounted) {
-                        store.cancelPayment(payment);
-                        Navigator.pop(context);
-                      }
-                    },
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ],
-      ),
+        );
+
+    return Row(
+      children: [
+        cell('المبلغ المسدد', money(p.amount), color: AppColors.success),
+        const SizedBox(width: 4),
+        cell('المتبقي بذمة الطالب', p.remainingAfter <= 0 ? '0 ₪' : money(p.remainingAfter),
+            color: p.remainingAfter <= 0 ? AppColors.success : AppColors.danger),
+        const SizedBox(width: 4),
+        cell('الحالة', p.cancelled ? 'ملغى' : 'معتمد', color: p.cancelled ? AppColors.danger : AppColors.success),
+      ],
     );
   }
 
@@ -119,11 +206,100 @@ class _ReceiptSheet extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 7),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 92, child: Text(k, style: const TextStyle(color: AppColors.muted, fontSize: 11.5))),
+          SizedBox(width: 100, child: Text(k, style: const TextStyle(color: AppColors.muted, fontSize: 11.5))),
           Expanded(child: Text(v, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading))),
         ],
       ),
     );
+  }
+
+  Future<void> _print(BuildContext context, AppStore store, Student? student) async {
+    final rows = <List<String>>[
+      ['وصلنا من', student?.fullName ?? 'سند عام'],
+      if (student != null) ['المرحلة الدراسية', student.gradeLevel],
+      ['المبلغ المقبوض', money(payment.amount)],
+      ['وقدره كتابةً', amountInArabicWords(payment.amount)],
+      ['طريقة السداد', paymentMethodNames[payment.method] ?? payment.method],
+      ['وذلك عن', paymentPurposeNames[payment.purpose] ?? payment.purpose],
+      if (payment.senderName.isNotEmpty) ['اسم المحول منه', payment.senderName],
+      if (payment.reference.isNotEmpty) ['الرقم المرجعي', payment.reference],
+      if (payment.channel.isNotEmpty) ['جهة التحويل', payment.channel],
+      if (payment.notes.isNotEmpty) ['البيان', payment.notes],
+    ];
+
+    final bytes = await PdfKit.build(
+      title: 'سند قبض رسمي رقم ${payment.receiptNumber}',
+      institutionName: store.institutionName.isEmpty ? appName : store.institutionName,
+      logoBase64: store.institutionLogo,
+      subtitle: 'التاريخ: ${formatDate(payment.date)}',
+      body: (ctx) => [
+        PdfKit.table(headers: const ['البيان', 'التفاصيل'], rows: rows, flex: [3, 8]),
+        pw.SizedBox(height: 12),
+        PdfKit.table(
+          headers: const ['المبلغ المسدد', 'المتبقي بذمة الطالب', 'الحالة'],
+          rows: [
+            [
+              money(payment.amount),
+              payment.remainingAfter <= 0 ? '0 ₪ (مسدد بالكامل)' : money(payment.remainingAfter),
+              payment.cancelled ? 'ملغى' : 'معتمد',
+            ],
+          ],
+        ),
+        if (payment.cancelled) ...[
+          pw.SizedBox(height: 10),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(6),
+            decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.red)),
+            child: pw.Text(
+              'هذا السند ملغى${payment.cancelReason.isEmpty ? '' : ' — ${payment.cancelReason}'}',
+              style: const pw.TextStyle(color: PdfColors.red, fontSize: 10),
+            ),
+          ),
+        ],
+        pw.SizedBox(height: 26),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text('المستلم: ${store.receiptReceiver}', style: const pw.TextStyle(fontSize: 9)),
+            pw.Text('التوقيع: ....................', style: const pw.TextStyle(fontSize: 9)),
+          ],
+        ),
+      ],
+    );
+
+    if (!context.mounted) return;
+    await PdfKit.preview(bytes, 'سند ${payment.receiptNumber}');
+  }
+
+  /// إرسال الإيصال بالواتساب لولي الأمر — مطابق لـ `handleSendWhatsAppReceipt`.
+  Future<void> _whatsapp(BuildContext context, AppStore store, Student student) async {
+    final raw = student.parentPhone.isNotEmpty ? student.parentPhone : student.phone;
+    if (raw.trim().isEmpty) {
+      showAppSnack(context, 'لا يوجد رقم هاتف مسجل للطالب أو ولي الأمر.', error: true);
+      return;
+    }
+
+    final remaining = payment.remainingAfter > 0
+        ? money(payment.remainingAfter)
+        : (student.balance < 0 ? money(student.balance.abs()) : '0 ₪ (مسدد بالكامل)');
+
+    final msg = StringBuffer()
+      ..writeln('السلام عليكم ورحمة الله وبركاته')
+      ..writeln('حضرة ولي أمر الطالب/ة: *${student.fullName}* المحترم')
+      ..writeln()
+      ..writeln('نحيطكم علماً بأنه تم تسديد دفعة مالية وتوثيق وصل رسمي:')
+      ..writeln('📄 *رقم الوصل:* ${payment.receiptNumber}')
+      ..writeln('💰 *المبلغ:* ${money(payment.amount)}')
+      ..writeln('💳 *طريقة الدفع:* ${paymentMethodNames[payment.method] ?? payment.method}')
+      ..writeln('📌 *البيان / الغرض:* ${paymentPurposeNames[payment.purpose] ?? payment.purpose}');
+    if (payment.senderName.isNotEmpty) msg.writeln('👤 *اسم المحول منه:* ${payment.senderName}');
+    if (payment.reference.isNotEmpty) msg.writeln('🔢 *الرقم المرجعي:* ${payment.reference}');
+    msg
+      ..writeln('📅 *تاريخ الدفعة:* ${formatDate(payment.date)}')
+      ..write('⚖️ *المتبقي بذمة الطالب:* $remaining');
+
+    await launchWaWithText(raw, msg.toString());
   }
 }

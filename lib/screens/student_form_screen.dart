@@ -68,7 +68,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     super.initState();
     final s = widget.student;
     final inList = s != null && gradeLevels.contains(s.gradeLevel);
-    grade = inList ? s!.gradeLevel : (s == null ? 'عاشر' : 'أخرى (إدخال يدوي)');
+    grade = inList ? s.gradeLevel : (s == null ? 'عاشر' : 'أخرى (إدخال يدوي)');
     if (s != null && !inList && s.gradeLevel.isNotEmpty) customGrade.text = s.gradeLevel;
 
     relation = s?.relation ?? 'أب';

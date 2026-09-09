@@ -1,21 +1,42 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 
+import 'data/local_db.dart';
 import 'data/store.dart';
+import 'data/supabase.dart';
 import 'screens/developer_screen.dart';
+import 'screens/device_setup_screen.dart';
 import 'screens/shell.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 import 'widgets/widgets.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // sqflite لا يعمل على الويب افتراضياً — نستخدم تنفيذ WASM عبر IndexedDB.
+  if (kIsWeb) {
+    databaseFactory = databaseFactoryFfiWeb;
+  }
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
   ));
-  runApp(StoreScope(store: AppStore.instance, child: const CenterApp()));
+
+  final store = AppStore.instance;
+  // تحميل قاعدة البيانات المحلية قبل رسم أي شاشة، وإلا ظهر التطبيق فارغاً
+  // للحظة ثم امتلأ — وهو ما كان يبدو كأن البيانات ضاعت.
+  await store.bootstrap(SqflitePersistence());
+  SupabaseConfig.applyOverrides(store.db.settings);
+  // جلسة مستعادة: نفس ما يجري بعد تسجيل الدخول
+  unawaited(store.afterEnter());
+
+  runApp(StoreScope(store: store, child: const CenterApp()));
 }
 
 class CenterApp extends StatelessWidget {
@@ -53,6 +74,8 @@ class _Root extends StatelessWidget {
       builder: (context, _) {
         if (!store.loggedIn) return const LoginScreen();
         if (store.isMasterAdmin) return const DeveloperScreen();
+        // جهاز جديد: التهيئة وتحديد الصلاحية تسبقان أي شاشة عمل
+        if (store.needsInitialSetup) return const DeviceSetupScreen();
         return const AppShell();
       },
     );
@@ -79,14 +102,20 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  @override
+  void initState() {
+    super.initState();
+    // آخر اسم مستخدم أُدخل على هذا الجهاز — مطابق لسلوك LandingPage
+    user.text = AppStore.instance.lastUsername;
+  }
+
   Future<void> _submit() async {
+    if (busy) return;
     setState(() {
       error = null;
       busy = true;
     });
-    await Future<void>.delayed(const Duration(milliseconds: 280));
-    if (!mounted) return;
-    final err = StoreScope.of(context).login(user.text, pass.text);
+    final err = await StoreScope.of(context).login(user.text, pass.text);
     if (!mounted) return;
     setState(() {
       busy = false;

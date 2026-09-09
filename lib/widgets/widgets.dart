@@ -1,6 +1,10 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../data/permissions.dart';
 import '../data/phone.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -194,7 +198,7 @@ class GhostButton extends StatelessWidget {
   const GhostButton({super.key, required this.label, required this.onPressed, this.icon});
 
   final String label;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final IconData? icon;
 
   @override
@@ -215,6 +219,94 @@ class GhostButton extends StatelessWidget {
           children: [
             if (icon != null) ...[Icon(icon, size: 14), const SizedBox(width: 4)],
             Text(label),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// شعار المنشأة، أو أيقونة افتراضية إن لم يُرفع شعار.
+class InstitutionBadge extends StatelessWidget {
+  const InstitutionBadge({super.key, required this.logo, this.size = 32});
+
+  final String logo;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    Uint8List? bytes;
+    if (logo.isNotEmpty) {
+      try {
+        final comma = logo.indexOf(',');
+        bytes = base64Decode(comma >= 0 ? logo.substring(comma + 1) : logo);
+      } catch (_) {
+        bytes = null;
+      }
+    }
+    return Container(
+      width: size,
+      height: size,
+      padding: const EdgeInsets.all(1),
+      decoration: BoxDecoration(
+        color: AppColors.amberSoft,
+        border: Border.all(color: AppColors.amber),
+      ),
+      child: bytes == null
+          ? Icon(Icons.school, color: AppColors.amber, size: size * 0.62)
+          : Image.memory(bytes, fit: BoxFit.contain, gaplessPlayback: true),
+    );
+  }
+}
+
+/// شاشة "لا تملك صلاحية" — أوضح من إخفاء صامت يُربك المستخدم.
+/// مطابقة لمكوّن `NoAccess` في App.tsx.
+class NoAccess extends StatelessWidget {
+  const NoAccess({super.key, required this.section, required this.roleName});
+
+  final String section;
+  final String roleName;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = sectionLabels[section] ?? section;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppColors.amberSoft,
+                border: Border.all(color: AppColors.amberBorder),
+              ),
+              child: const Text('🔒', style: TextStyle(fontSize: 22)),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'قسم $label غير متاح لصلاحيتك',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
+            ),
+            const SizedBox(height: 8),
+            Text.rich(
+              TextSpan(
+                text: 'حسابك على هذا الجهاز مسجَّل بصلاحية ',
+                children: [
+                  TextSpan(text: roleName, style: const TextStyle(fontWeight: FontWeight.w800)),
+                  const TextSpan(
+                    text: '. للوصول إلى هذا القسم، اطلب من مدير النظام تعديل صلاحيتك من '
+                        '«الإعدادات ← المستخدمين والصلاحيات».',
+                  ),
+                ],
+              ),
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.muted, fontSize: 12, height: 1.6),
+            ),
           ],
         ),
       ),
@@ -409,6 +501,14 @@ Future<void> launchTel(String phone) async {
   if (await canLaunchUrl(uri)) {
     await launchUrl(uri);
   }
+}
+
+/// فتح محادثة واتساب برسالة جاهزة — المقابل لـ `wa.me/<n>?text=`.
+Future<void> launchWaWithText(String phone, String text) async {
+  final n = getWhatsAppPhone(phone);
+  if (n.isEmpty) return;
+  final uri = Uri.parse('https://wa.me/$n?text=${Uri.encodeComponent(text)}');
+  await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
 Future<void> launchWa(String phone) async {

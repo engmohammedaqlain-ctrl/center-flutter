@@ -34,18 +34,33 @@ class _FinanceScreenState extends State<FinanceScreen> {
     return ListenableBuilder(
       listenable: store,
       builder: (context, _) {
-        final q = search.text.trim();
+        if (!store.canOpenSection('finance')) {
+          return NoAccess(section: 'finance', roleName: store.roleName);
+        }
+        final q = search.text.trim().toLowerCase();
         final pays = store.payments.where((p) {
           final stu = store.studentById(p.studentId);
-          final name = stu?.fullName ?? '';
-          final matchQ = q.isEmpty || p.receiptNumber.contains(q) || name.contains(q) || p.reference.contains(q);
+          final name = (stu?.fullName ?? '').toLowerCase();
+          // البحث يشمل البيان والمحوِّل وجهة التحويل، كما في Finance.tsx
+          final matchQ = q.isEmpty ||
+              p.receiptNumber.toLowerCase().contains(q) ||
+              name.contains(q) ||
+              p.reference.toLowerCase().contains(q) ||
+              p.notes.toLowerCase().contains(q) ||
+              p.senderName.toLowerCase().contains(q) ||
+              p.channel.toLowerCase().contains(q);
           final matchM = method.isEmpty || p.method == method;
           final matchS = status.isEmpty || (status == 'active' && !p.cancelled) || (status == 'cancelled' && p.cancelled);
           return matchQ && matchM && matchS;
         }).toList();
+        sortPayments(pays);
 
-        final dues = store.dueItems().where((d) {
-          final matchQ = q.isEmpty || d.student.fullName.contains(q) || d.student.phone.contains(q);
+        final allDues = store.dueItems();
+        final dues = allDues.where((d) {
+          final matchQ = q.isEmpty ||
+              d.student.fullName.toLowerCase().contains(q) ||
+              d.student.phone.contains(q) ||
+              d.title.toLowerCase().contains(q);
           final matchS = dueStage == 'all' ||
               (dueStage == 'late' && d.late && !d.exception) ||
               (dueStage == 'due' && !d.late && !d.exception) ||
@@ -54,6 +69,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
         }).toList();
 
         final totalDue = dues.fold<double>(0, (a, d) => a + d.amount);
+        final lateCount = allDues.where((d) => d.late && !d.exception).length;
+        final dueCount = allDues.where((d) => !d.late && !d.exception).length;
+        final exceptionCount = allDues.where((d) => d.exception).length;
 
         return Column(
           children: [
@@ -64,14 +82,15 @@ class _FinanceScreenState extends State<FinanceScreen> {
               child: Row(
                 children: [
                   Expanded(child: _tab('المقبوضات', Icons.receipt_long, 0, '${store.payments.length}', false)),
-                  Expanded(child: _tab('المستحقات', Icons.schedule, 1, '${store.dueItems().length}', store.dueItems().isNotEmpty)),
-                  PrimaryButton(
-                    label: 'دفعة',
-                    icon: Icons.add,
-                    onPressed: () {
-                      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PaymentFormScreen()));
-                    },
-                  ),
+                  Expanded(child: _tab('المستحقات', Icons.schedule, 1, '${allDues.length}', allDues.isNotEmpty)),
+                  if (store.can('finance.collect'))
+                    PrimaryButton(
+                      label: 'دفعة',
+                      icon: Icons.add,
+                      onPressed: () {
+                        Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PaymentFormScreen()));
+                      },
+                    ),
                 ],
               ),
             ),
@@ -119,7 +138,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text('إجمالي المبالغ المستحقة: ${money(totalDue)}', style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w800, fontSize: 12)),
+                      child: Text('إجمالي المستحق: ${money(totalDue)}', style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w800, fontSize: 12)),
                     ),
                     SizedBox(
                       width: 130,
@@ -137,6 +156,19 @@ class _FinanceScreenState extends State<FinanceScreen> {
                   ],
                 ),
               ),
+            if (tab == 1)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                child: Row(
+                  children: [
+                    _stat('متأخر', lateCount, AppColors.danger),
+                    const SizedBox(width: 6),
+                    _stat('مستحق', dueCount, AppColors.amber),
+                    const SizedBox(width: 6),
+                    _stat('استثناء', exceptionCount, AppColors.success),
+                  ],
+                ),
+              ),
             Expanded(
               child: tab == 0
                   ? (pays.isEmpty
@@ -146,7 +178,13 @@ class _FinanceScreenState extends State<FinanceScreen> {
                           itemCount: pays.length,
                           itemBuilder: (_, i) => Padding(
                             padding: const EdgeInsets.only(bottom: 8),
-                            child: _PayCard(payment: pays[i], student: store.studentById(pays[i].studentId)),
+                            child: _PayCard(
+                              payment: pays[i],
+                              student: store.studentById(pays[i].studentId),
+                              onCancel: !pays[i].cancelled && store.can('finance.cancel')
+                                  ? () => _cancel(context, store, pays[i])
+                                  : null,
+                            ),
                           ),
                         ))
                   : (dues.isEmpty
@@ -209,7 +247,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                                             PrimaryButton(
                                               label: 'تسديد',
                                               height: 28,
-                                              onPressed: () {
+                                              onPressed: !store.can('finance.collect') ? null : () {
                                                 Navigator.of(context).push(
                                                   MaterialPageRoute(
                                                     builder: (_) => PaymentFormScreen(
@@ -236,6 +274,34 @@ class _FinanceScreenState extends State<FinanceScreen> {
         );
       },
     );
+  }
+
+  Widget _stat(String label, int value, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        decoration: BoxDecoration(color: Colors.white, border: Border.all(color: AppColors.line)),
+        child: Column(
+          children: [
+            Text('$value', style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 14)),
+            Text(label, style: const TextStyle(color: AppColors.muted, fontSize: 10)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _cancel(BuildContext context, AppStore store, Payment p) async {
+    final ok = await confirmSheet(
+      context,
+      title: 'تأكيد إلغاء الدفعة',
+      message: 'هل أنت متأكد من إلغاء الدفعة رقم ${p.receiptNumber} بمبلغ ${money(p.amount)}؟ '
+          'سيُعكس رصيد الطالب تلقائياً.',
+      confirmLabel: 'إلغاء السند',
+    );
+    if (!ok || !context.mounted) return;
+    store.cancelPayment(p);
+    showAppSnack(context, 'تم إلغاء السند وعكس الرصيد');
   }
 
   Widget _tab(String label, IconData icon, int i, String count, bool danger) {
@@ -267,9 +333,10 @@ class _FinanceScreenState extends State<FinanceScreen> {
 }
 
 class _PayCard extends StatelessWidget {
-  const _PayCard({required this.payment, required this.student});
+  const _PayCard({required this.payment, required this.student, this.onCancel});
   final Payment payment;
   final Student? student;
+  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -287,6 +354,13 @@ class _PayCard extends StatelessWidget {
               Text(formatDate(payment.date), style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
               const SizedBox(width: 6),
               payment.cancelled ? StatusChip.danger('ملغى') : StatusChip.success('معتمد'),
+              if (onCancel != null)
+                PopupMenuButton<String>(
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.more_vert, size: 16, color: AppColors.muted),
+                  onSelected: (_) => onCancel!(),
+                  itemBuilder: (_) => const [PopupMenuItem(value: 'cancel', child: Text('إلغاء السند'))],
+                ),
             ],
           ),
           const SizedBox(height: 8),

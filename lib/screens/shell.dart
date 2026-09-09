@@ -8,6 +8,7 @@ import '../widgets/widgets.dart';
 import 'attendance_screen.dart';
 import 'classes_screen.dart';
 import 'finance_screen.dart';
+import 'schedule_screen.dart';
 import 'settings_screen.dart';
 import 'students_screen.dart';
 
@@ -18,44 +19,71 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
-  int index = 0;
+/// قسم في شريط التنقّل — مطابق لـ `MobileBottomNav` مع حراسة الصلاحيات.
+class _Section {
+  const _Section(this.id, this.title, this.label, this.icon, this.activeIcon, this.screen);
+  final String id;
+  final String title;
+  final String label;
+  final IconData icon;
+  final IconData activeIcon;
+  final Widget screen;
+}
 
-  static const titles = [
-    'الطلاب والتسجيل',
-    'الحضور والغياب',
-    'المالية والصندوق',
-    'الصفوف والشعب',
-    'الإعدادات العامة',
-  ];
+class _AppShellState extends State<AppShell> {
+  String current = 'students';
+
+  /// الأقسام المتاحة لهذا المستخدم على هذا الجهاز.
+  ///
+  /// القسم الرابع يتبع نوع المنشأة: «الصفوف» للمدرسة و«الجدول» للمركز —
+  /// تثبيته على الصفوف كان يخفي قسم المجموعات كلياً عن المراكز التعليمية.
+  List<_Section> _sections(AppStore store) {
+    final school = store.isSchool;
+    final all = [
+      const _Section('students', 'الطلاب والتسجيل', 'الطلاب', Icons.groups_outlined, Icons.groups, StudentsScreen()),
+      const _Section('attendance', 'الحضور والغياب', 'الحضور', Icons.fact_check_outlined, Icons.fact_check, AttendanceScreen()),
+      const _Section('finance', 'المالية والصندوق', 'المالية', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet, FinanceScreen()),
+      if (school)
+        const _Section('classes', 'الصفوف والشعب', 'الصفوف', Icons.apartment_outlined, Icons.apartment, ClassesScreen())
+      else
+        const _Section('schedule', 'الجداول والحصص', 'الجدول', Icons.calendar_month_outlined, Icons.calendar_month, ScheduleScreen()),
+      const _Section('settings', 'الإعدادات العامة', 'الإعدادات', Icons.settings_outlined, Icons.settings, SettingsScreen()),
+    ];
+    final allowed = all.where((s) => store.canOpenSection(s.id)).toList();
+    return allowed.isEmpty ? [all.first] : allowed;
+  }
 
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: Column(
-        children: [
-          _Header(title: titles[index]),
-          Expanded(
-            child: IndexedStack(
-              index: index,
-              children: const [
-                StudentsScreen(),
-                AttendanceScreen(),
-                FinanceScreen(),
-                ClassesScreen(),
-                SettingsScreen(),
-              ],
-            ),
+    return ListenableBuilder(
+      listenable: store,
+      builder: (context, _) {
+        final sections = _sections(store);
+        var index = sections.indexWhere((s) => s.id == current);
+        if (index < 0) index = 0;
+
+        return Scaffold(
+          backgroundColor: AppColors.bg,
+          body: Column(
+            children: [
+              _Header(title: sections[index].title),
+              Expanded(
+                child: IndexedStack(
+                  index: index,
+                  children: [for (final s in sections) s.screen],
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
-      bottomNavigationBar: _BottomNav(
-        index: index,
-        onSelect: (i) => setState(() => index = i),
-        dueCount: store.dueItems().length,
-      ),
+          bottomNavigationBar: _BottomNav(
+            sections: sections,
+            index: index,
+            onSelect: (i) => setState(() => current = sections[i].id),
+            dueCount: store.can('finance.view') ? store.dueItems().length : 0,
+          ),
+        );
+      },
     );
   }
 }
@@ -76,27 +104,24 @@ class _Header extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: AppColors.amberSoft,
-              border: Border.all(color: AppColors.amber),
-            ),
-            child: const Icon(Icons.school, color: AppColors.amber, size: 20),
-          ),
+          InstitutionBadge(logo: store.institutionLogo, size: 32),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
+                  store.institutionName.isEmpty ? title : store.institutionName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12),
                 ),
-                const Text('إدارة المدارس', style: TextStyle(color: AppColors.amber, fontSize: 10)),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: AppColors.amber, fontSize: 10),
+                ),
               ],
             ),
           ),
@@ -283,7 +308,14 @@ class _SyncPair extends StatelessWidget {
 }
 
 class _BottomNav extends StatelessWidget {
-  const _BottomNav({required this.index, required this.onSelect, required this.dueCount});
+  const _BottomNav({
+    required this.sections,
+    required this.index,
+    required this.onSelect,
+    required this.dueCount,
+  });
+
+  final List<_Section> sections;
   final int index;
   final ValueChanged<int> onSelect;
   final int dueCount;
@@ -291,13 +323,7 @@ class _BottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.paddingOf(context).bottom;
-    const items = [
-      (Icons.groups_outlined, Icons.groups, 'الطلاب'),
-      (Icons.fact_check_outlined, Icons.fact_check, 'الحضور'),
-      (Icons.account_balance_wallet_outlined, Icons.account_balance_wallet, 'المالية'),
-      (Icons.apartment_outlined, Icons.apartment, 'الصفوف'),
-      (Icons.settings_outlined, Icons.settings, 'الإعدادات'),
-    ];
+    final items = [for (final s in sections) (s.icon, s.activeIcon, s.label, s.id)];
 
     return Container(
       height: 56 + (bottom > 0 ? bottom : 6),
@@ -325,7 +351,7 @@ class _BottomNav extends StatelessWidget {
                       clipBehavior: Clip.none,
                       children: [
                         Icon(index == i ? items[i].$2 : items[i].$1, size: 18, color: index == i ? AppColors.amber : AppColors.muted),
-                        if (i == 2 && dueCount > 0)
+                        if (items[i].$4 == 'finance' && dueCount > 0)
                           Positioned(
                             left: -10,
                             top: -5,
