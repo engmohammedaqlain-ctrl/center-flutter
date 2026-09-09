@@ -877,6 +877,9 @@ class AttendanceMark {
 
   Map<String, dynamic> toCloud() => {
         'id': id,
+        // عمود محلي فقط: `sanitizePayload` يُسقطه قبل الرفع، ويبقى على القرص
+        // حتى لا يضيع اليوم المرصود عند إعادة تشغيل التطبيق.
+        'session_date': date,
         'session_id': sessionId.isEmpty ? null : sessionId,
         'student_id': studentId,
         'status': status,

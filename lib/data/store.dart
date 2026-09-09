@@ -1437,7 +1437,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final group = school ? null : groupById(ownerId);
     final created = ClassSession(
       id: newId(),
-      groupId: school ? '' : ownerId,
+      groupId: ownerId,
       sessionDate: dateStr,
       startTime: group?.startTime ?? '08:00',
       endTime: group?.endTime ?? '10:00',
@@ -1852,6 +1852,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   @override
   void putRows(String table, List<Map<String, dynamic>> rows) {
     markDirty(table);
+    // جدول الحضور السحابي لا يحمل عمود تاريخ؛ اليوم المرصود في الجلسة المرتبطة
+    if (table == 'attendance') rows = _withSessionDates(rows);
     void upsertList<T>(List<T> list, T Function(Map<String, dynamic>) parse, String Function(T) idOf, void Function(int, T) setAt, void Function(T) add) {
       for (final r in rows) {
         final item = parse(r);
@@ -1905,6 +1907,17 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
           }
         }
     }
+  }
+
+  /// إلحاق تاريخ الجلسة بكل سجل حضور قادم من السحابة.
+  List<Map<String, dynamic>> _withSessionDates(List<Map<String, dynamic>> rows) {
+    final byId = {for (final s in sessions) s.id: s.sessionDate};
+    return [
+      for (final r in rows)
+        if ('${r['session_date'] ?? ''}'.isNotEmpty) r
+        else if (byId['${r['session_id'] ?? ''}'] case final d?) {...r, 'session_date': d}
+        else r,
+    ];
   }
 
   @override

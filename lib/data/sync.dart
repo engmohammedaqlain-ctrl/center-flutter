@@ -190,6 +190,15 @@ const syncedTables = [
   'cashbox_shifts',
 ];
 
+/// عمود التصالح عند الرفع لكل جدول يختلف مفتاحه الطبيعي عن `id`.
+///
+/// `attendance` عليه `UNIQUE (tenant_id, session_id, student_id)`: صفٌّ بمعرّف
+/// جديد لنفس الطالب في نفس الجلسة كان يُرفض بـ «معرّف مكرّر» ويعلق في الطابور.
+/// التصالح على المفتاح الطبيعي يدمجه في الصف القائم بدل أن يفشل.
+const tableConflictTarget = <String, String>{
+  'attendance': 'tenant_id,session_id,student_id',
+};
+
 const maxSyncRetries = 5;
 const pushChunk = 50;
 const pullPageSize = 500;
@@ -986,7 +995,8 @@ class SyncService {
   }
 
   Future<void> _upsert(String table, List<Map<String, dynamic>> rows) async {
-    final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(queryParameters: {'on_conflict': 'id'});
+    final conflict = tableConflictTarget[table] ?? 'id';
+    final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(queryParameters: {'on_conflict': conflict});
     final res = await http.post(
       uri,
       headers: {

@@ -35,18 +35,6 @@ void main() {
     }
   });
 
-  test('a school session leaves group_id empty so the foreign key holds', () async {
-    final s = await school();
-    final room = s.rooms.first;
-    final date = isoDate(DateTime.now());
-
-    final session = s.sessionFor(room.id, date, school: true);
-    expect(session.roomId, room.id);
-    expect(session.groupId, isEmpty, reason: 'group_id يشير إلى المجموعات لا القاعات');
-    expect(session.toCloud()['group_id'], isNull);
-    expect(session.toCloud()['room_id'], room.id);
-  });
-
   test('marking then reading back returns the same status', () async {
     final s = await school();
     final room = s.rooms.first;
@@ -163,6 +151,81 @@ void main() {
 
     // لا تُعاد مرة ثانية على نفس الجهاز
     expect(await s.migrateAttendanceIds(), 0);
+  });
+
+  test('attendance upserts resolve on the natural key the cloud enforces', () {
+    // uq_attendance_session_student = UNIQUE (tenant_id, session_id, student_id)
+    expect(tableConflictTarget['attendance'], 'tenant_id,session_id,student_id');
+    expect(tableConflictTarget['students'], isNull, reason: 'البقية تتصالح على المعرّف');
+  });
+
+  test('a school session keeps the desktop shape so both write one row', () async {
+    final s = await school();
+    final room = s.rooms.first;
+    final session = s.sessionFor(room.id, isoDate(DateTime.now()), school: true);
+    expect(session.groupId, room.id);
+    expect(session.roomId, room.id);
+  });
+
+  test('the marked day survives a restart', () async {
+    final disk = FakeDisk();
+    final first = AppStore.forTesting();
+    await first.bootstrap(disk);
+    injectDemoData(first);
+    await first.login('amal', 'amal2026');
+
+    final room = first.rooms.first;
+    final student = first.studentsOf(room).first;
+    final week = AppStore.schoolWeek(0);
+    final day = week[1].dateStr;
+
+    first.setAttendance(student.id, day, 'absent', ownerId: room.id);
+    await first.flush();
+
+    final second = AppStore.forTesting();
+    await second.bootstrap(disk);
+    expect(
+      second.attendanceRecord(student.id, day)?.status,
+      'absent',
+      reason: 'اليوم المرصود يُحفظ محلياً ولا يُشتق من وقت الإنشاء',
+    );
+  });
+
+  test('a cloud mark takes its day from the session, not from created_at', () async {
+    final s = await school();
+    final room = s.rooms.first;
+    final student = s.studentsOf(room).first;
+    const day = '2026-03-04';
+
+    // جلسة وصلت من السحابة ليوم غير يوم إنشاء السجل
+    s.putRows('sessions', [
+      {
+        'id': 'cloud-session-1',
+        'group_id': room.id,
+        'room_id': room.id,
+        'session_date': day,
+        'start_time': '08:00',
+        'end_time': '10:00',
+        'status': 'scheduled',
+      }
+    ]);
+    s.putRows('attendance', [
+      {
+        'id': 'cloud-att-1',
+        'session_id': 'cloud-session-1',
+        'student_id': student.id,
+        'status': 'absent',
+        'created_at': '2026-09-09T05:00:00Z',
+      }
+    ]);
+
+    expect(s.attendanceRecord(student.id, day)?.status, 'absent');
+    expect(s.attendanceInSession(room.id, student.id, day), 'absent');
+
+    // ورصد نفس اليوم يُحدّث السجل القائم بدل إنشاء صف يصطدم بالقيد الفريد
+    s.setAttendance(student.id, day, 'present', ownerId: room.id);
+    expect(s.attendanceRecord(student.id, day)!.id, 'cloud-att-1');
+    expect(s.attendance.where((a) => a.studentId == student.id && a.date == day), hasLength(1));
   });
 
   test('switching days keeps each day independent', () async {
