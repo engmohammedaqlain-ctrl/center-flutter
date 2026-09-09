@@ -117,7 +117,7 @@ class _ClassesScreenState extends State<ClassesScreen> {
   Future<void> _editRoom(BuildContext context, Classroom? room) async {
     final store = StoreScope.of(context);
     final name = TextEditingController(text: room?.name ?? '');
-    String grade = room?.gradeLevel ?? gradeLevels.first;
+    String grade = room?.gradeLevel ?? gradeLevelsFilter.first;
     String teacherId = room?.teacherId ?? (store.teachers.isNotEmpty ? store.teachers.first.id : '');
     final cap = TextEditingController(text: '${room?.capacity ?? 25}');
     await showModalBottomSheet<void>(
@@ -142,7 +142,7 @@ class _ClassesScreenState extends State<ClassesScreen> {
                   const FieldLabel('المرحلة الدراسية *'),
                   AppDropdown<String>(
                     value: grade,
-                    items: gradeLevels.map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
+                    items: gradeLevelsFilter.map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
                     onChanged: (v) => setSt(() => grade = v ?? grade),
                   ),
                   const SizedBox(height: 10),

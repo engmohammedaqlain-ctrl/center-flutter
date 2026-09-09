@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../data/phone.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 
@@ -244,14 +245,23 @@ class EmptyState extends StatelessWidget {
 }
 
 class FieldLabel extends StatelessWidget {
-  const FieldLabel(this.text, {super.key});
+  const FieldLabel(this.text, {super.key, this.requiredField = false});
   final String text;
+  final bool requiredField;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: Text(text, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.heading)),
+      child: Text.rich(
+        TextSpan(
+          text: text,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.heading),
+          children: [
+            if (requiredField) const TextSpan(text: ' *', style: TextStyle(color: AppColors.danger, fontWeight: FontWeight.w900)),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -402,9 +412,8 @@ Future<void> launchTel(String phone) async {
 }
 
 Future<void> launchWa(String phone) async {
-  final digits = phone.replaceAll(RegExp(r'\D'), '');
-  var n = digits;
-  if (n.startsWith('0')) n = '970${n.substring(1)}';
+  final n = getWhatsAppPhone(phone);
+  if (n.isEmpty) return;
   final uri = Uri.parse('https://wa.me/$n');
   if (await canLaunchUrl(uri)) {
     await launchUrl(uri, mode: LaunchMode.externalApplication);

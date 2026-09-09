@@ -1,0 +1,887 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../models/models.dart';
+
+/// مطابق لـ TABLE_ALLOWED_COLUMNS في sync.ts
+const tableAllowedColumns = <String, List<String>>{
+  'tenants': [
+    'id', 'code', 'name', 'plan_type', 'status', 'expires_at',
+    'owner_name', 'owner_phone', 'app_username', 'app_password', 'notes',
+    'created_at', 'updated_at',
+  ],
+  'users': [
+    'id', 'name', 'email', 'role', 'is_active', 'capabilities', 'tenant_id',
+    'created_at', 'updated_at',
+  ],
+  'subjects': [
+    'id', 'name', 'code', 'grade_level', 'description', 'tenant_id',
+    'created_at', 'updated_at',
+  ],
+  'rooms': [
+    'id', 'name', 'capacity', 'grade_level', 'stage_tier', 'homeroom_teacher_id',
+    'notes', 'tenant_id', 'created_at', 'updated_at',
+  ],
+  'teachers': [
+    'id', 'name', 'phone', 'email', 'subject_ids', 'payment_type', 'payment_rate',
+    'notes', 'tenant_id', 'created_at', 'updated_at',
+  ],
+  'groups': [
+    'id', 'name', 'subject_id', 'teacher_id', 'room_id', 'grade_level',
+    'price_per_month', 'max_students', 'days', 'start_time', 'end_time',
+    'status', 'tenant_id', 'created_at', 'updated_at',
+  ],
+  'grade_fees': [
+    'id', 'grade_name', 'monthly_fee', 'order_index', 'is_custom', 'stage_tier',
+    'tenant_id', 'created_at', 'updated_at',
+  ],
+  'students': [
+    'id', 'first_name', 'last_name', 'full_name', 'phone', 'phone_prefix',
+    'parent_name', 'guardian_relationship', 'parent_phone', 'parent_phone_prefix',
+    'national_id', 'grade_level', 'gender', 'status', 'balance',
+    'neighborhood', 'detailed_address', 'referral_source', 'section',
+    'school_name', 'enrollment_date', 'birth_date', 'birth_place',
+    'nationality', 'previous_school', 'gpa', 'housing_status', 'original_area',
+    'health_status', 'medical_condition', 'parent_job', 'parent_secondary_phone',
+    'email', 'guardian_declaration', 'initial_rating',
+    'seat_reservation_paid', 'seat_reservation_discounted',
+    'payment_plan', 'payment_status',
+    'academic_discount_applied', 'academic_discount_rate',
+    'has_flexible_exception', 'exception_reason', 'custom_monthly_fee',
+    'notes', 'tenant_id', 'created_at', 'updated_at',
+  ],
+  'student_attachments': [
+    'id', 'student_id_photo', 'parent_id_photo', 'birth_certificate',
+    'tenant_id', 'created_at', 'updated_at',
+  ],
+  'institution_settings': [
+    'id', 'institution_type', 'institution_name', 'logo', 'colors',
+    'tenant_id', 'created_at', 'updated_at',
+  ],
+  'enrollments': [
+    'id', 'student_id', 'group_id', 'enrollment_date', 'enrolled_at',
+    'custom_price', 'applied_price', 'discount_reason',
+    'status', 'tenant_id', 'created_at', 'updated_at',
+  ],
+  'installments': [
+    'id', 'student_id', 'title', 'amount', 'due_date', 'paid_amount',
+    'status', 'has_flexible_exception', 'exception_notes', 'tenant_id',
+    'created_at', 'updated_at',
+  ],
+  'payments': [
+    'id', 'receipt_number', 'student_id', 'enrollment_id', 'group_id',
+    'installment_id', 'amount', 'payment_method', 'payment_date',
+    'received_by_user_id', 'payment_purpose', 'transfer_channel',
+    'transfer_date', 'custom_method_notes',
+    'sender_name', 'reference_number', 'total_due_at_payment',
+    'remaining_balance_after', 'is_cancelled', 'cancelled_reason',
+    'notes', 'tenant_id', 'created_at', 'updated_at',
+  ],
+  'sessions': [
+    'id', 'group_id', 'teacher_id', 'substitute_teacher_id', 'room_id',
+    'session_date', 'start_time', 'end_time', 'status', 'notes', 'tenant_id',
+    'created_at', 'updated_at',
+  ],
+  'attendance': [
+    'id', 'session_id', 'student_id', 'status', 'marked_by_user_id', 'notes',
+    'tenant_id', 'created_at', 'updated_at',
+  ],
+  'teacher_payouts': [
+    'id', 'teacher_id', 'group_id', 'amount', 'period_start',
+    'period_end', 'payment_date', 'paid_by_user_id', 'payment_method',
+    'notes', 'tenant_id', 'created_at', 'updated_at',
+  ],
+  'expenses': [
+    'id', 'category', 'description', 'amount', 'expense_date',
+    'recorded_by_user_id', 'payment_method', 'notes', 'tenant_id',
+    'created_at', 'updated_at',
+  ],
+  'cashbox_shifts': [
+    'id', 'user_id', 'opened_at', 'closed_at', 'opening_balance',
+    'closing_balance', 'expected_closing_balance', 'difference',
+    'notes', 'status', 'tenant_id', 'created_at', 'updated_at',
+  ],
+};
+
+const nonTextColumns = <String, List<String>>{
+  'attendance': ['created_at', 'tenant_id', 'updated_at'],
+  'cashbox_shifts': [
+    'closed_at', 'closing_balance', 'created_at', 'difference',
+    'expected_closing_balance', 'opened_at', 'opening_balance', 'tenant_id', 'updated_at',
+  ],
+  'enrollments': [
+    'applied_price', 'created_at', 'custom_price', 'enrolled_at', 'enrollment_date',
+    'tenant_id', 'updated_at',
+  ],
+  'expenses': ['amount', 'created_at', 'expense_date', 'tenant_id', 'updated_at'],
+  'grade_fees': ['created_at', 'is_custom', 'monthly_fee', 'order_index', 'tenant_id', 'updated_at'],
+  'groups': [
+    'created_at', 'days', 'end_time', 'max_students', 'price_per_month', 'start_time',
+    'tenant_id', 'updated_at',
+  ],
+  'installments': [
+    'amount', 'created_at', 'due_date', 'has_flexible_exception', 'paid_amount',
+    'tenant_id', 'updated_at',
+  ],
+  'institution_settings': ['colors', 'created_at', 'tenant_id', 'updated_at'],
+  'payments': [
+    'amount', 'created_at', 'is_cancelled', 'payment_date', 'remaining_balance_after',
+    'tenant_id', 'total_due_at_payment', 'transfer_date', 'updated_at',
+  ],
+  'rooms': ['capacity', 'created_at', 'tenant_id', 'updated_at'],
+  'sessions': ['created_at', 'end_time', 'session_date', 'start_time', 'tenant_id', 'updated_at'],
+  'student_attachments': ['created_at', 'tenant_id', 'updated_at'],
+  'students': [
+    'academic_discount_applied', 'academic_discount_rate', 'balance', 'birth_date',
+    'created_at', 'custom_monthly_fee', 'enrollment_date', 'guardian_declaration',
+    'has_flexible_exception', 'initial_rating', 'seat_reservation_discounted',
+    'seat_reservation_paid', 'tenant_id', 'updated_at',
+  ],
+  'subjects': ['created_at', 'tenant_id', 'updated_at'],
+  'teacher_payouts': [
+    'amount', 'created_at', 'payment_date', 'period_end', 'period_start',
+    'tenant_id', 'updated_at',
+  ],
+  'teachers': ['created_at', 'payment_rate', 'subject_ids', 'tenant_id', 'updated_at'],
+  'tenants': ['created_at', 'expires_at', 'id', 'updated_at'],
+  'users': ['capabilities', 'created_at', 'is_active', 'tenant_id', 'updated_at'],
+};
+
+const tableLabelsAr = <String, String>{
+  'users': 'المستخدمون',
+  'subjects': 'المواد',
+  'rooms': 'الصفوف والقاعات',
+  'teachers': 'المعلمون',
+  'grade_fees': 'رسوم الصفوف',
+  'groups': 'المجموعات',
+  'students': 'الطلاب',
+  'student_attachments': 'مرفقات الطلاب',
+  'institution_settings': 'هوية المنشأة',
+  'enrollments': 'التسجيلات',
+  'installments': 'الأقساط',
+  'payments': 'سندات القبض',
+  'sessions': 'الحصص',
+  'attendance': 'الحضور والغياب',
+  'teacher_payouts': 'مستحقات المعلمين',
+  'expenses': 'المصروفات',
+  'cashbox_shifts': 'ورديات الصندوق',
+};
+
+const syncedTables = [
+  'users',
+  'subjects',
+  'rooms',
+  'teachers',
+  'grade_fees',
+  'groups',
+  'students',
+  'student_attachments',
+  'institution_settings',
+  'enrollments',
+  'installments',
+  'payments',
+  'sessions',
+  'attendance',
+  'teacher_payouts',
+  'expenses',
+  'cashbox_shifts',
+];
+
+const maxSyncRetries = 5;
+const pushChunk = 50;
+const pullPageSize = 500;
+const stampToleranceMs = 1000;
+
+const supabaseUrl = 'https://tmybbunguiurisdcvrqo.supabase.co';
+const supabaseKey = 'sb_publishable_TowjoMRcd5BJtaUqmCs6Sw_IHhVd3Jj';
+
+String localDateStr([DateTime? d]) {
+  final x = d ?? DateTime.now();
+  return isoDate(x);
+}
+
+int toTimestamp(dynamic value) {
+  if (value == null) return 0;
+  final s = value.toString().trim();
+  if (s.isEmpty) return 0;
+  final parsed = DateTime.tryParse(s);
+  if (parsed == null) return 0;
+  return parsed.millisecondsSinceEpoch;
+}
+
+Map<String, dynamic> sanitizePayload(String tableName, Map<String, dynamic>? payload, String tenantId) {
+  if (payload == null) return {'tenant_id': tenantId};
+  final allowed = tableAllowedColumns[tableName];
+  final clean = <String, dynamic>{};
+
+  if (allowed != null) {
+    for (final key in allowed) {
+      if (payload.containsKey(key)) {
+        clean[key] = payload[key];
+      }
+    }
+  } else {
+    for (final e in payload.entries) {
+      if (e.key == 'sync_status' || e.key == 'synced_at') continue;
+      clean[e.key] = e.value;
+    }
+  }
+
+  if (tableName == 'enrollments') {
+    if (clean['enrollment_date'] == null || '${clean['enrollment_date']}'.isEmpty) {
+      if (payload['enrolled_at'] != null) {
+        clean['enrollment_date'] = payload['enrolled_at'].toString().split('T').first;
+      } else {
+        clean['enrollment_date'] = localDateStr();
+      }
+    }
+  }
+
+  final nonText = nonTextColumns[tableName];
+  if (nonText != null) {
+    for (final key in nonText) {
+      final v = clean[key];
+      if (v == '' || v == null) {
+        if (key == 'created_at' || key == 'updated_at') {
+          clean.remove(key);
+        } else {
+          clean[key] = null;
+        }
+      }
+    }
+  }
+
+  clean['tenant_id'] = tenantId;
+  return clean;
+}
+
+int _pendingSeq = 1;
+
+/// مطابق لـ queuePendingSync في sync.ts
+void queuePendingSync(
+  List<PendingSync> queue, {
+  required String tableName,
+  required String recordId,
+  required String action,
+  Map<String, dynamic>? payload,
+}) {
+  final now = DateTime.now().toUtc().toIso8601String();
+  final existingIdx = queue.indexWhere((e) => e.tableName == tableName && e.recordId == recordId);
+
+  if (existingIdx >= 0) {
+    final existing = queue[existingIdx];
+    if (action == 'DELETE') {
+      if (existing.action == 'INSERT') {
+        queue.removeAt(existingIdx);
+        return;
+      }
+      existing.action = 'DELETE';
+      existing.payload = null;
+      existing.createdAt = now;
+      existing.retryCount = 0;
+      existing.lastError = null;
+      return;
+    }
+
+    existing.payload = {
+      ...?existing.payload,
+      ...?payload,
+      'id': recordId,
+    };
+    existing.createdAt = now;
+    existing.retryCount = 0;
+    existing.lastError = null;
+    return;
+  }
+
+  queue.add(
+    PendingSync(
+      id: _pendingSeq++,
+      tableName: tableName,
+      recordId: recordId,
+      action: action,
+      payload: payload,
+      createdAt: now,
+    ),
+  );
+}
+
+void cleanupBogusDemoUserSyncs(List<PendingSync> queue) {
+  queue.removeWhere((a) => a.tableName == 'users' && a.action == 'DELETE' && (a.payload == null || a.payload!['name'] == null));
+}
+
+String describeRecord(String table, Map<String, dynamic>? payload, Map<String, dynamic>? fallback) {
+  final r = payload ?? fallback ?? const <String, dynamic>{};
+  switch (table) {
+    case 'students':
+      final full = '${r['full_name'] ?? ''}'.trim();
+      if (full.isNotEmpty) return full;
+      final name = '${r['first_name'] ?? ''} ${r['last_name'] ?? ''}'.trim();
+      return name.isEmpty ? 'طالب' : name;
+    case 'payments':
+      return r['receipt_number'] != null ? 'سند ${r['receipt_number']}' : 'سند قبض';
+    case 'teachers':
+    case 'users':
+    case 'subjects':
+    case 'rooms':
+    case 'groups':
+      return '${r['name'] ?? '—'}';
+    case 'installments':
+      return '${r['title'] ?? 'قسط'}';
+    case 'expenses':
+      return '${r['description'] ?? r['category'] ?? 'مصروف'}';
+    case 'grade_fees':
+      return '${r['grade_name'] ?? 'رسوم صف'}';
+    case 'sessions':
+      return r['session_date'] != null ? 'حصة ${r['session_date']}' : 'حصة';
+    case 'attendance':
+      return 'سجل حضور';
+    case 'enrollments':
+      return 'تسجيل في مجموعة';
+    case 'teacher_payouts':
+      return 'مستحق معلم';
+    case 'cashbox_shifts':
+      return 'وردية صندوق';
+    case 'student_attachments':
+      return 'مرفقات طالب';
+    case 'institution_settings':
+      return 'الشعار والألوان';
+    default:
+      return '—';
+  }
+}
+
+String describeSupabaseError(Object error, String tableName) {
+  final raw = error.toString();
+  final table = tableLabelsAr[tableName] ?? tableName;
+
+  if (RegExp(r'invalid input syntax for type (date|timestamp)', caseSensitive: false).hasMatch(raw)) {
+    return '$table: قيمة تاريخ غير صالحة في أحد الحقول.';
+  }
+  if (RegExp(r'invalid input syntax for type (numeric|integer|bigint)', caseSensitive: false).hasMatch(raw)) {
+    return '$table: قيمة رقمية غير صالحة في أحد الحقول.';
+  }
+  if (RegExp(r'invalid input syntax for type uuid', caseSensitive: false).hasMatch(raw)) {
+    return '$table: معرّف غير صالح.';
+  }
+  if (RegExp(r'duplicate key value|already exists', caseSensitive: false).hasMatch(raw)) {
+    return '$table: هذا السجل مسجَّل مسبقاً برقم أو معرّف مكرّر.';
+  }
+  if (RegExp(r'violates not-null constraint', caseSensitive: false).hasMatch(raw)) {
+    final col = RegExp(r'column "([^"]+)"').firstMatch(raw)?.group(1);
+    return '$table: حقل إلزامي فارغ${col != null ? ' ($col)' : ''}.';
+  }
+  if (RegExp(r'violates foreign key constraint', caseSensitive: false).hasMatch(raw)) {
+    return '$table: السجل مرتبط بسجل آخر غير موجود في السحابة. ارفع السجل الأصل أولاً.';
+  }
+  if (RegExp(r'PGRST204|could not find|schema cache', caseSensitive: false).hasMatch(raw)) {
+    final col = RegExp(r"'([^']+)' column").firstMatch(raw)?.group(1);
+    return '$table: العمود ${col ?? 'المطلوب'} غير موجود في قاعدة البيانات. نفّذ ملف الهجرة على Supabase.';
+  }
+  if (RegExp(r'Failed to fetch|NetworkError|fetch failed|SocketException|ClientException', caseSensitive: false).hasMatch(raw)) {
+    return 'تعذّر الوصول إلى السحابة. تحقق من الاتصال بالإنترنت.';
+  }
+  return '$table: $raw';
+}
+
+/// مخزن محلي يوفّر لخدمة المزامنة ما يوفّره Dexie في التطبيق المكتبي.
+abstract class SyncLocalStore {
+  String? get tenantId;
+  bool get isMaster;
+  List<PendingSync> get pendingSyncs;
+  Map<String, dynamic>? recordOf(String table, String id);
+  List<Map<String, dynamic>> allOf(String table);
+  void putRows(String table, List<Map<String, dynamic>> rows);
+  void removeIds(String table, List<String> ids);
+  void markSynced(String table, String id);
+  void notifySync();
+}
+
+class SyncService {
+  SyncService(this.local);
+
+  final SyncLocalStore local;
+  bool _syncing = false;
+  final remotePendingIds = <String>{};
+
+  int get remotePendingCount => remotePendingIds.length;
+  bool get isSyncing => _syncing;
+
+  int getPendingCount() {
+    cleanupBogusDemoUserSyncs(local.pendingSyncs);
+    return local.pendingSyncs.length;
+  }
+
+  PendingSummary getPendingSummary() {
+    cleanupBogusDemoUserSyncs(local.pendingSyncs);
+    final actions = [...local.pendingSyncs]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final bucket = <String, int>{};
+    final items = <PendingSummaryItem>[];
+
+    for (final a in actions) {
+      final key = '${a.tableName}|${a.action}';
+      bucket[key] = (bucket[key] ?? 0) + 1;
+      if (items.length < 40) {
+        items.add(
+          PendingSummaryItem(
+            table: a.tableName,
+            action: a.action,
+            label: describeRecord(a.tableName, a.payload, local.recordOf(a.tableName, a.recordId)),
+            at: a.createdAt,
+          ),
+        );
+      }
+    }
+
+    final rows = bucket.entries
+        .map((e) {
+          final parts = e.key.split('|');
+          return SyncRow(parts[0], e.value, parts.length > 1 ? parts[1] : '');
+        })
+        .toList()
+      ..sort((a, b) => b.count.compareTo(a.count));
+
+    return PendingSummary(total: actions.length, rows: rows, items: items);
+  }
+
+  String lastPullKey(String tenantId) => 'last_pull_at_$tenantId';
+
+  Future<String?> getLastPullAt() async {
+    final tenantId = local.tenantId;
+    if (tenantId == null) return null;
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(lastPullKey(tenantId));
+  }
+
+  Future<void> _setLastPullAt(String tenantId, String iso) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(lastPullKey(tenantId), iso);
+  }
+
+  Future<RemoteChangeSummary> checkRemoteChanges() async {
+    final tenantId = local.tenantId;
+    if (tenantId == null) {
+      return RemoteChangeSummary(total: 0, rows: [], items: [], since: null);
+    }
+
+    final since = await getLastPullAt();
+    final rows = <SyncRow>[];
+    final items = <PendingSummaryItem>[];
+    final allNewKeys = <String>[];
+    var total = 0;
+
+    for (final cloud in syncedTables) {
+      try {
+        final localStamps = <String, int>{};
+        for (final rec in local.allOf(cloud)) {
+          localStamps['${rec['id']}'] = toTimestamp(rec['updated_at']);
+        }
+
+        final newIds = <String>[];
+        var from = 0;
+        var keepFetching = true;
+
+        while (keepFetching) {
+          final page = await _select(
+            cloud,
+            tenantId,
+            columns: 'id,updated_at',
+            since: since,
+            from: from,
+            to: from + pullPageSize - 1,
+            order: 'updated_at.desc',
+          );
+          if (page == null) break;
+          for (final row in page) {
+            final localAt = localStamps[row['id']?.toString()];
+            final remoteAt = toTimestamp(row['updated_at']);
+            if (localAt == null || remoteAt > localAt + stampToleranceMs) {
+              newIds.add('${row['id']}');
+            }
+          }
+          if (page.length < pullPageSize) {
+            keepFetching = false;
+          } else {
+            from += page.length;
+          }
+        }
+
+        if (newIds.isEmpty) continue;
+        rows.add(SyncRow(cloud, newIds.length));
+        total += newIds.length;
+        for (final id in newIds) {
+          allNewKeys.add('$cloud:$id');
+        }
+
+        if (items.length < 40) {
+          final sampleIds = newIds.take((10).clamp(0, 40 - items.length)).toList();
+          final full = await _selectIn(cloud, tenantId, sampleIds);
+          for (final row in full) {
+            items.add(
+              PendingSummaryItem(
+                table: cloud,
+                action: localStamps.containsKey('${row['id']}') ? 'UPDATE' : 'INSERT',
+                label: describeRecord(cloud, row, null),
+                at: '${row['updated_at'] ?? ''}',
+              ),
+            );
+          }
+        }
+      } catch (_) {}
+    }
+
+    items.sort((a, b) => b.at.compareTo(a.at));
+    remotePendingIds
+      ..clear()
+      ..addAll(allNewKeys);
+
+    return RemoteChangeSummary(total: total, rows: rows..sort((a, b) => b.count.compareTo(a.count)), items: items, since: since);
+  }
+
+  List<PendingSync> getFailedActions() {
+    return local.pendingSyncs.where((a) => a.retryCount >= maxSyncRetries).toList();
+  }
+
+  Future<SyncResult> push() async {
+    if (_syncing) return SyncResult(success: false, message: 'عملية مزامنة أخرى جارية');
+    if (local.isMaster) {
+      return SyncResult(success: false, message: 'وضع المطور لا يقوم بمزامنة بيانات المدارس');
+    }
+    final tenantId = local.tenantId;
+    if (tenantId == null) return SyncResult(success: false, message: 'لا توجد منشأة محددة');
+
+    _syncing = true;
+    try {
+      final result = await pushPendingChanges(tenantId);
+      if (result.pushed > 0) {
+        try {
+          await checkRemoteChanges();
+        } catch (_) {}
+      }
+      local.notifySync();
+      String message;
+      if (result.failed > 0) {
+        final firstError = getFailedActions().firstOrNull?.lastError;
+        message = 'تم رفع ${result.pushed} تعديلاً، وتعذّر رفع ${result.failed}.'
+            '${firstError != null ? ' السبب: $firstError' : ''}'
+            ' التفاصيل في «الإعدادات ← حالة المزامنة».';
+      } else {
+        message = 'تم رفع ${result.pushed} تعديلاً بنجاح';
+      }
+      return SyncResult(success: result.failed == 0, message: message, pushed: result.pushed, failed: result.failed);
+    } catch (err) {
+      return SyncResult(success: false, message: err.toString());
+    } finally {
+      _syncing = false;
+    }
+  }
+
+  Future<SyncResult> pull() async {
+    if (_syncing) return SyncResult(success: false, message: 'عملية مزامنة أخرى جارية');
+    if (local.isMaster) {
+      return SyncResult(success: false, message: 'وضع المطور لا يقوم بمزامنة بيانات المدارس');
+    }
+    final tenantId = local.tenantId;
+    if (tenantId == null) return SyncResult(success: false, message: 'لا توجد منشأة محددة');
+
+    _syncing = true;
+    try {
+      final result = await pullFromCloud(tenantId);
+      final removedNote = result.removed > 0 ? ' وحُذف ${result.removed} سجلاً محذوفاً من السحابة' : '';
+      local.notifySync();
+      return SyncResult(
+        success: true,
+        message: 'تم سحب ${result.pulled} سجلاً$removedNote',
+        pulled: result.pulled,
+        removed: result.removed,
+      );
+    } catch (err) {
+      return SyncResult(success: false, message: err.toString());
+    } finally {
+      _syncing = false;
+    }
+  }
+
+  Future<({int pushed, int failed})> pushPendingChanges(String tenantId) async {
+    final all = [...local.pendingSyncs];
+    final actions = all.where((a) => a.retryCount < maxSyncRetries).toList();
+    if (actions.isEmpty) return (pushed: 0, failed: all.length);
+
+    var pushed = 0;
+    var failed = 0;
+
+    final deletesByTable = <String, List<PendingSync>>{};
+    final writesByTable = <String, List<PendingSync>>{};
+    for (final a in actions) {
+      final bucket = a.action == 'DELETE' ? deletesByTable : writesByTable;
+      bucket.putIfAbsent(a.tableName, () => []).add(a);
+    }
+
+    for (final entry in deletesByTable.entries) {
+      final list = entry.value;
+      for (var i = 0; i < list.length; i += pushChunk) {
+        final chunk = list.sublist(i, (i + pushChunk).clamp(0, list.length));
+        final ids = chunk.map((a) => a.recordId).where((id) => id.isNotEmpty).toList();
+        if (ids.isEmpty) continue;
+        try {
+          await _deleteIds(entry.key, tenantId, ids);
+          pushed += chunk.length;
+          local.pendingSyncs.removeWhere((p) => chunk.any((c) => c.id == p.id));
+        } catch (err) {
+          failed += chunk.length;
+          _markFailed(chunk, err.toString());
+        }
+      }
+    }
+
+    for (final entry in writesByTable.entries) {
+      final tableName = entry.key;
+      final list = entry.value;
+      for (var i = 0; i < list.length; i += pushChunk) {
+        final chunk = list.sublist(i, (i + pushChunk).clamp(0, list.length));
+        final rows = <Map<String, dynamic>>[];
+        final kept = <PendingSync>[];
+        for (final action in chunk) {
+          final recordId = action.recordId.isNotEmpty ? action.recordId : '${action.payload?['id'] ?? ''}';
+          if (recordId.isEmpty) continue;
+          var fullRecord = {...?action.payload};
+          final localRec = local.recordOf(tableName, recordId);
+          if (localRec != null) {
+            fullRecord = {...localRec, ...?action.payload, 'id': recordId};
+          } else {
+            fullRecord = {...fullRecord, 'id': recordId};
+          }
+          rows.add(sanitizePayload(tableName, fullRecord, tenantId));
+          kept.add(action);
+        }
+        if (rows.isEmpty) continue;
+
+        try {
+          await _upsert(tableName, rows);
+          pushed += kept.length;
+          local.pendingSyncs.removeWhere((p) => kept.any((c) => c.id == p.id));
+          for (final a in kept) {
+            local.markSynced(tableName, a.recordId);
+          }
+        } catch (err) {
+          var rowFailed = 0;
+          for (var k = 0; k < rows.length; k++) {
+            try {
+              await _upsert(tableName, [rows[k]]);
+              pushed++;
+              local.pendingSyncs.removeWhere((p) => p.id == kept[k].id);
+              local.markSynced(tableName, kept[k].recordId);
+            } catch (rowErr) {
+              rowFailed++;
+              _markFailed([kept[k]], describeSupabaseError(rowErr, tableName));
+            }
+          }
+          failed += rowFailed;
+        }
+      }
+    }
+
+    return (pushed: pushed, failed: failed + (all.length - actions.length));
+  }
+
+  void _markFailed(List<PendingSync> actions, String message) {
+    final now = DateTime.now().toUtc().toIso8601String();
+    for (final a in actions) {
+      a.retryCount = (a.retryCount) + 1;
+      a.lastError = message;
+      a.lastAttemptAt = now;
+    }
+  }
+
+  Future<({int pulled, int removed})> pullFromCloud(String tenantId) async {
+    var totalPulled = 0;
+    var totalRemoved = 0;
+    final lastPullAt = await getLastPullAt();
+    final safeToReconcileDeletes = lastPullAt != null;
+
+    for (final cloud in syncedTables) {
+      try {
+        final allData = <Map<String, dynamic>>[];
+        var from = 0;
+        var keepFetching = true;
+        var fetchComplete = true;
+
+        while (keepFetching) {
+          final page = await _select(
+            cloud,
+            tenantId,
+            from: from,
+            to: from + pullPageSize - 1,
+            order: 'id.asc',
+          );
+          if (page == null) {
+            fetchComplete = false;
+            break;
+          }
+          if (page.isNotEmpty) {
+            allData.addAll(page);
+            from += page.length;
+            if (page.length < pullPageSize) keepFetching = false;
+          } else {
+            keepFetching = false;
+          }
+        }
+
+        if (!fetchComplete) continue;
+
+        final pendingIds = local.pendingSyncs.where((p) => p.tableName == cloud).map((p) => p.recordId).toSet();
+        final localRecords = local.allOf(cloud);
+        final localById = <String, Map<String, dynamic>>{
+          for (final r in localRecords) '${r['id']}': r,
+        };
+
+        final toWrite = <Map<String, dynamic>>[];
+        for (final record in allData) {
+          final id = '${record['id']}';
+          if (pendingIds.contains(id)) continue;
+          final loc = localById[id];
+          if (loc != null && loc['sync_status'] == 'pending') {
+            if (toTimestamp(loc['updated_at']) > toTimestamp(record['updated_at']) + stampToleranceMs) {
+              continue;
+            }
+          }
+          final rest = Map<String, dynamic>.from(record)..remove('tenant_id');
+          if (cloud == 'enrollments' && (rest['enrolled_at'] == null || '${rest['enrolled_at']}'.isEmpty) && rest['enrollment_date'] != null) {
+            rest['enrolled_at'] = rest['enrollment_date'];
+          }
+          rest['sync_status'] = 'synced';
+          toWrite.add(rest);
+        }
+
+        if (toWrite.isNotEmpty) {
+          local.putRows(cloud, toWrite);
+          totalPulled += toWrite.length;
+        }
+
+        final cloudIds = allData.map((r) => '${r['id']}').toSet();
+        final toRemove = safeToReconcileDeletes
+            ? localRecords
+                .where(
+                  (r) =>
+                      r['sync_status'] == 'synced' &&
+                      !cloudIds.contains('${r['id']}') &&
+                      !pendingIds.contains('${r['id']}') &&
+                      (r['updated_at'] == null || toTimestamp(r['updated_at']) < toTimestamp(lastPullAt)),
+                )
+                .map((r) => '${r['id']}')
+                .toList()
+            : <String>[];
+
+        if (toRemove.isNotEmpty) {
+          local.removeIds(cloud, toRemove);
+          totalRemoved += toRemove.length;
+        }
+
+        if (!safeToReconcileDeletes) {
+          final orphans = localRecords.where(
+            (r) => r['sync_status'] == 'synced' && !cloudIds.contains('${r['id']}') && !pendingIds.contains('${r['id']}'),
+          );
+          for (final orphan in orphans) {
+            queuePendingSync(
+              local.pendingSyncs,
+              tableName: cloud,
+              recordId: '${orphan['id']}',
+              action: 'INSERT',
+              payload: orphan,
+            );
+          }
+        }
+      } catch (_) {}
+    }
+
+    remotePendingIds.clear();
+    await _setLastPullAt(tenantId, DateTime.now().toUtc().toIso8601String());
+    return (pulled: totalPulled, removed: totalRemoved);
+  }
+
+  Map<String, String> get _headers => {
+        'apikey': supabaseKey,
+        'Authorization': 'Bearer $supabaseKey',
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation',
+      };
+
+  Future<List<Map<String, dynamic>>?> _select(
+    String table,
+    String tenantId, {
+    String columns = '*',
+    String? since,
+    required int from,
+    required int to,
+    required String order,
+  }) async {
+    final params = <String, String>{
+      'select': columns,
+      'tenant_id': 'eq.$tenantId',
+      'order': order,
+    };
+    if (since != null && since.isNotEmpty) {
+      params['updated_at'] = 'gt.$since';
+    }
+    final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(queryParameters: params);
+    try {
+      final res = await http.get(uri, headers: {..._headers, 'Range': '$from-$to'});
+      if (res.statusCode >= 400) return null;
+      final data = jsonDecode(res.body);
+      if (data is! List) return [];
+      return data.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _selectIn(String table, String tenantId, List<String> ids) async {
+    if (ids.isEmpty) return [];
+    final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(
+      queryParameters: {
+        'select': '*',
+        'tenant_id': 'eq.$tenantId',
+        'id': 'in.(${ids.join(',')})',
+      },
+    );
+    try {
+      final res = await http.get(uri, headers: _headers);
+      if (res.statusCode >= 400) return [];
+      final data = jsonDecode(res.body);
+      if (data is! List) return [];
+      return data.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> _upsert(String table, List<Map<String, dynamic>> rows) async {
+    final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(queryParameters: {'on_conflict': 'id'});
+    final res = await http.post(
+      uri,
+      headers: {
+        ..._headers,
+        'Prefer': 'resolution=merge-duplicates,return=minimal',
+      },
+      body: jsonEncode(rows),
+    );
+    if (res.statusCode >= 400) {
+      throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
+    }
+  }
+
+  Future<void> _deleteIds(String table, String tenantId, List<String> ids) async {
+    final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(
+      queryParameters: {
+        'id': 'in.(${ids.join(',')})',
+        'tenant_id': 'eq.$tenantId',
+      },
+    );
+    final res = await http.delete(uri, headers: _headers);
+    if (res.statusCode >= 400) {
+      throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
+    }
+  }
+}

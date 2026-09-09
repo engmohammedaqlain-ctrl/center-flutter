@@ -1,29 +1,85 @@
+import '../data/phone.dart';
+
 const currency = '₪';
 const appName = 'نظام الإدارة المدرسي';
 const appVersion = '1.2.2';
 
+/// مطابق لـ GRADE_LEVELS في types/student.ts
 const gradeLevels = [
-  'عاشر',
-  'حادي عشر علمي',
-  'حادي عشر أدبي',
   'ثاني عشر علمي',
   'ثاني عشر أدبي',
+  'حادي عشر علمي',
+  'حادي عشر أدبي',
+  'عاشر',
+  'أخرى (إدخال يدوي)',
 ];
 
+const gradeLevelsFilter = [
+  'ثاني عشر علمي',
+  'ثاني عشر أدبي',
+  'حادي عشر علمي',
+  'حادي عشر أدبي',
+  'عاشر',
+];
+
+/// مطابق لقائمة الأحياء في StudentForm.tsx
 const neighborhoods = [
   'الرمال',
   'الشجاعية',
   'الزيتون',
   'الدرج',
   'التفاح',
+  'الصبرة',
   'النصر',
   'الشيخ رضوان',
   'تل الهوا',
+  'الشيخ عجلين',
   'مخيم الشاطئ',
+  'الكرامة',
+  'المقوسي',
+  'جُحر الديك',
+  'التوام',
+  'عباد الرحمن',
+  'اليرموك',
+  'المنارة',
+  'الميناء',
+  'الكتيبة',
+  'الساحة',
+  'أنصار',
   'أخرى',
 ];
 
-const guardianRelations = ['أب', 'أم', 'أخ', 'أخت', 'عم', 'خال', 'جد', 'جدة', 'وصي قانوني'];
+const guardianRelations = [
+  'أب',
+  'أم',
+  'أخ',
+  'أخت',
+  'عم',
+  'خال',
+  'جد',
+  'جدة',
+  'وصي قانوني',
+  'أخرى',
+];
+
+const referralSources = [
+  'سوشيال ميديا (فيسبوك / انستغرام / تيك توك)',
+  'صديق أو زميل',
+  'إعلانات ممولة',
+  'لافتة أو مقر المركز',
+  'زيارة سابقة / طالب قديم',
+  'أخرى',
+];
+
+const housingTypes = [
+  'ملك',
+  'إيجار',
+  'خيمة',
+  'مركز إيواء',
+  'استضافة',
+  'منزل متضرر جزئياً',
+  'أخرى',
+];
 
 const paymentMethodNames = {
   'cash': 'نقداً',
@@ -39,6 +95,12 @@ const paymentPurposeNames = {
   'seat_reservation': 'حجز مقعد',
   'extra_sessions': 'حصص ومجموعات إضافية',
   'other': 'أخرى',
+};
+
+const teacherPaymentTypes = {
+  'monthly': 'راتب شهري',
+  'hourly': 'أجر بالحصة',
+  'percentage': 'نسبة من الرسوم',
 };
 
 String money(num value) {
@@ -63,11 +125,24 @@ String isoDate(DateTime d) {
 
 DateTime dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
+DateTime? parseIsoDate(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return null;
+  final part = raw.split('T').first.trim();
+  final bits = part.split('-');
+  if (bits.length != 3) return DateTime.tryParse(raw);
+  final y = int.tryParse(bits[0]);
+  final m = int.tryParse(bits[1]);
+  final d = int.tryParse(bits[2]);
+  if (y == null || m == null || d == null) return DateTime.tryParse(raw);
+  return DateTime(y, m, d);
+}
+
 bool isValidNationalId(String raw) => RegExp(r'^\d{9}$').hasMatch(raw.trim());
 
-bool isValidStudentPhone(String raw) {
-  final digits = raw.replaceAll(RegExp(r'\D'), '');
-  return digits.length == 10 && digits.startsWith('05');
+bool isValidStudentPhone(String raw, [String prefix = '059']) {
+  final parsed = parsePhoneAndPrefix(raw);
+  final active = raw.trim().startsWith('05') || raw.trim().startsWith('+') ? parsed.prefix : prefix;
+  return isPhoneComplete(parsed.number, active);
 }
 
 class StoreException implements Exception {
@@ -87,6 +162,10 @@ class Student {
     required this.parentName,
     required this.parentPhone,
     required this.balance,
+    this.firstName = '',
+    this.lastName = '',
+    this.phonePrefix = '059',
+    this.parentPhonePrefix = '059',
     this.nationalId = '',
     this.neighborhood = '',
     this.relation = 'أب',
@@ -94,16 +173,48 @@ class Student {
     this.notes = '',
     this.status = 'active',
     this.hasException = false,
+    this.detailedAddress = '',
+    this.referralSource = 'سوشيال ميديا (فيسبوك / انستغرام / تيك توك)',
+    this.schoolName = '',
+    this.birthDate = '',
+    this.birthPlace = 'غزة',
+    this.nationality = 'فلسطينية',
+    this.previousSchool = '',
+    this.gpa = '',
+    this.housingStatus = 'ملك',
+    this.originalArea = '',
+    this.healthStatus = 'سليم',
+    this.medicalCondition = '',
+    this.parentJob = '',
+    this.parentSecondaryPhone = '',
+    this.email = '',
+    this.guardianDeclaration = false,
+    this.initialRating = 0,
+    this.seatReservationPaid = false,
+    this.seatReservationDiscounted = false,
+    this.paymentPlan = 'full',
+    this.paymentStatus = 'unpaid',
+    this.academicDiscountApplied = false,
+    this.academicDiscountRate = 0,
+    this.exceptionReason = '',
+    this.customMonthlyFee,
+    this.syncStatus = 'synced',
+    this.createdAt,
+    this.updatedAt,
     DateTime? enrolledAt,
   }) : enrolledAt = enrolledAt ?? DateTime.now();
 
   final String id;
+  String firstName;
+  String lastName;
   String fullName;
   String gradeLevel;
   String section;
   String phone;
+  String phonePrefix;
   String parentName;
   String parentPhone;
+  String parentPhonePrefix;
   String nationalId;
   String neighborhood;
   String relation;
@@ -113,12 +224,206 @@ class Student {
   double balance;
   bool hasException;
   DateTime enrolledAt;
+  String detailedAddress;
+  String referralSource;
+  String schoolName;
+  String birthDate;
+  String birthPlace;
+  String nationality;
+  String previousSchool;
+  String gpa;
+  String housingStatus;
+  String originalArea;
+  String healthStatus;
+  String medicalCondition;
+  String parentJob;
+  String parentSecondaryPhone;
+  String email;
+  bool guardianDeclaration;
+  int initialRating;
+  bool seatReservationPaid;
+  bool seatReservationDiscounted;
+  String paymentPlan;
+  String paymentStatus;
+  bool academicDiscountApplied;
+  double academicDiscountRate;
+  String exceptionReason;
+  double? customMonthlyFee;
+  String syncStatus;
+  String? createdAt;
+  String? updatedAt;
+
+  String get guardianRelationship => relation;
+  set guardianRelationship(String v) => relation = v;
+
+  DateTime get enrollmentDate => enrolledAt;
+  set enrollmentDate(DateTime v) => enrolledAt = v;
+
+  bool get hasFlexibleException => hasException;
+  set hasFlexibleException(bool v) => hasException = v;
 
   bool get isDebtor => balance < 0;
   String get initial {
     final t = fullName.trim();
     return t.isEmpty ? 'ط' : t.substring(0, 1);
   }
+
+  Map<String, dynamic> toCloud() {
+    splitNameIfNeeded();
+    return {
+      'id': id,
+      'first_name': firstName,
+      'last_name': lastName,
+      'full_name': fullName,
+      'phone': phone,
+      'phone_prefix': phonePrefix,
+      'parent_name': parentName,
+      'guardian_relationship': relation,
+      'parent_phone': parentPhone,
+      'parent_phone_prefix': parentPhonePrefix,
+      'national_id': nationalId,
+      'grade_level': gradeLevel,
+      'gender': gender,
+      'status': status,
+      'balance': balance,
+      'neighborhood': neighborhood,
+      'detailed_address': detailedAddress,
+      'referral_source': referralSource,
+      'section': section,
+      'school_name': schoolName,
+      'enrollment_date': isoDate(enrolledAt),
+      'birth_date': birthDate,
+      'birth_place': birthPlace,
+      'nationality': nationality,
+      'previous_school': previousSchool,
+      'gpa': gpa,
+      'housing_status': housingStatus,
+      'original_area': originalArea,
+      'health_status': healthStatus,
+      'medical_condition': medicalCondition,
+      'parent_job': parentJob,
+      'parent_secondary_phone': parentSecondaryPhone,
+      'email': email,
+      'guardian_declaration': guardianDeclaration,
+      'initial_rating': initialRating,
+      'seat_reservation_paid': seatReservationPaid,
+      'seat_reservation_discounted': seatReservationDiscounted,
+      'payment_plan': paymentPlan,
+      'payment_status': paymentStatus,
+      'academic_discount_applied': academicDiscountApplied,
+      'academic_discount_rate': academicDiscountRate,
+      'has_flexible_exception': hasException,
+      'exception_reason': exceptionReason,
+      'custom_monthly_fee': customMonthlyFee,
+      'notes': notes,
+      'created_at': createdAt,
+      'updated_at': updatedAt,
+    };
+  }
+
+  void splitNameIfNeeded() {
+    if (firstName.trim().isNotEmpty) return;
+    final parts = fullName.trim().split(RegExp(r'\s+'));
+    firstName = parts.isEmpty ? '' : parts.first;
+    lastName = parts.length <= 1 ? firstName : parts.skip(1).join(' ');
+  }
+
+  factory Student.fromCloud(Map<String, dynamic> m) {
+    final full = (m['full_name'] as String?)?.trim().isNotEmpty == true
+        ? m['full_name'] as String
+        : ['${m['first_name'] ?? ''}', '${m['last_name'] ?? ''}'].where((e) => e.trim().isNotEmpty).join(' ');
+    return Student(
+      id: '${m['id']}',
+      firstName: '${m['first_name'] ?? ''}',
+      lastName: '${m['last_name'] ?? ''}',
+      fullName: full,
+      gradeLevel: '${m['grade_level'] ?? ''}',
+      section: '${m['section'] ?? ''}',
+      phone: '${m['phone'] ?? ''}',
+      phonePrefix: '${m['phone_prefix'] ?? parsePhoneAndPrefix('${m['phone'] ?? ''}').prefix}',
+      parentName: '${m['parent_name'] ?? ''}',
+      parentPhone: '${m['parent_phone'] ?? ''}',
+      parentPhonePrefix: '${m['parent_phone_prefix'] ?? parsePhoneAndPrefix('${m['parent_phone'] ?? ''}').prefix}',
+      nationalId: '${m['national_id'] ?? ''}',
+      neighborhood: '${m['neighborhood'] ?? ''}',
+      relation: '${m['guardian_relationship'] ?? 'أب'}',
+      gender: '${m['gender'] ?? 'ذكر'}',
+      notes: '${m['notes'] ?? ''}',
+      status: '${m['status'] ?? 'active'}',
+      balance: (m['balance'] as num?)?.toDouble() ?? 0,
+      hasException: m['has_flexible_exception'] == true,
+      enrolledAt: parseIsoDate('${m['enrollment_date'] ?? ''}') ?? DateTime.now(),
+      detailedAddress: '${m['detailed_address'] ?? ''}',
+      referralSource: '${m['referral_source'] ?? ''}',
+      schoolName: '${m['school_name'] ?? ''}',
+      birthDate: '${m['birth_date'] ?? ''}'.split('T').first,
+      birthPlace: '${m['birth_place'] ?? 'غزة'}',
+      nationality: '${m['nationality'] ?? 'فلسطينية'}',
+      previousSchool: '${m['previous_school'] ?? ''}',
+      gpa: '${m['gpa'] ?? ''}',
+      housingStatus: '${m['housing_status'] ?? 'ملك'}',
+      originalArea: '${m['original_area'] ?? ''}',
+      healthStatus: '${m['health_status'] ?? 'سليم'}',
+      medicalCondition: '${m['medical_condition'] ?? ''}',
+      parentJob: '${m['parent_job'] ?? ''}',
+      parentSecondaryPhone: '${m['parent_secondary_phone'] ?? ''}',
+      email: '${m['email'] ?? ''}',
+      guardianDeclaration: m['guardian_declaration'] == true,
+      initialRating: (m['initial_rating'] as num?)?.toInt() ?? 0,
+      seatReservationPaid: m['seat_reservation_paid'] == true,
+      seatReservationDiscounted: m['seat_reservation_discounted'] == true,
+      paymentPlan: '${m['payment_plan'] ?? 'full'}',
+      paymentStatus: '${m['payment_status'] ?? 'unpaid'}',
+      academicDiscountApplied: m['academic_discount_applied'] == true,
+      academicDiscountRate: (m['academic_discount_rate'] as num?)?.toDouble() ?? 0,
+      exceptionReason: '${m['exception_reason'] ?? ''}',
+      customMonthlyFee: (m['custom_monthly_fee'] as num?)?.toDouble(),
+      syncStatus: '${m['sync_status'] ?? 'synced'}',
+      createdAt: m['created_at']?.toString(),
+      updatedAt: m['updated_at']?.toString(),
+    );
+  }
+}
+
+class StudentAttachments {
+  StudentAttachments({
+    required this.id,
+    this.studentIdPhoto = '',
+    this.parentIdPhoto = '',
+    this.birthCertificate = '',
+    this.syncStatus = 'synced',
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  final String id;
+  String studentIdPhoto;
+  String parentIdPhoto;
+  String birthCertificate;
+  String syncStatus;
+  String? createdAt;
+  String? updatedAt;
+
+  bool get isEmpty => studentIdPhoto.isEmpty && parentIdPhoto.isEmpty && birthCertificate.isEmpty;
+
+  Map<String, dynamic> toCloud() => {
+        'id': id,
+        'student_id_photo': studentIdPhoto,
+        'parent_id_photo': parentIdPhoto,
+        'birth_certificate': birthCertificate,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+      };
+
+  factory StudentAttachments.fromCloud(Map<String, dynamic> m) => StudentAttachments(
+        id: '${m['id']}',
+        studentIdPhoto: '${m['student_id_photo'] ?? ''}',
+        parentIdPhoto: '${m['parent_id_photo'] ?? ''}',
+        birthCertificate: '${m['birth_certificate'] ?? ''}',
+        syncStatus: '${m['sync_status'] ?? 'synced'}',
+        createdAt: m['created_at']?.toString(),
+        updatedAt: m['updated_at']?.toString(),
+      );
 }
 
 class Classroom {
@@ -130,6 +435,9 @@ class Classroom {
     this.capacity = 25,
     this.notes = '',
     this.tier = 'secondary',
+    this.syncStatus = 'synced',
+    this.createdAt,
+    this.updatedAt,
   });
 
   final String id;
@@ -139,6 +447,34 @@ class Classroom {
   int capacity;
   String notes;
   String tier;
+  String syncStatus;
+  String? createdAt;
+  String? updatedAt;
+
+  Map<String, dynamic> toCloud() => {
+        'id': id,
+        'name': name,
+        'capacity': capacity,
+        'grade_level': gradeLevel,
+        'stage_tier': tier,
+        'homeroom_teacher_id': teacherId.isEmpty ? null : teacherId,
+        'notes': notes,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+      };
+
+  factory Classroom.fromCloud(Map<String, dynamic> m) => Classroom(
+        id: '${m['id']}',
+        name: '${m['name'] ?? ''}',
+        gradeLevel: '${m['grade_level'] ?? ''}',
+        teacherId: '${m['homeroom_teacher_id'] ?? ''}',
+        capacity: (m['capacity'] as num?)?.toInt() ?? 25,
+        notes: '${m['notes'] ?? ''}',
+        tier: '${m['stage_tier'] ?? 'secondary'}',
+        syncStatus: '${m['sync_status'] ?? 'synced'}',
+        createdAt: m['created_at']?.toString(),
+        updatedAt: m['updated_at']?.toString(),
+      );
 }
 
 class Teacher {
@@ -148,6 +484,13 @@ class Teacher {
     required this.phone,
     required this.subject,
     this.rate = 3000,
+    this.email = '',
+    this.paymentType = 'monthly',
+    this.notes = '',
+    this.subjectIds = const [],
+    this.syncStatus = 'synced',
+    this.createdAt,
+    this.updatedAt,
   });
 
   final String id;
@@ -155,6 +498,50 @@ class Teacher {
   String phone;
   String subject;
   double rate;
+  String email;
+  String paymentType;
+  String notes;
+  List<String> subjectIds;
+  String syncStatus;
+  String? createdAt;
+  String? updatedAt;
+
+  Map<String, dynamic> toCloud() => {
+        'id': id,
+        'name': name,
+        'phone': phone,
+        'email': email,
+        'subject_ids': subjectIds,
+        'payment_type': paymentType,
+        'payment_rate': rate,
+        'notes': notes,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+      };
+
+  factory Teacher.fromCloud(Map<String, dynamic> m) {
+    final ids = <String>[];
+    final raw = m['subject_ids'];
+    if (raw is List) {
+      for (final e in raw) {
+        ids.add('$e');
+      }
+    }
+    return Teacher(
+      id: '${m['id']}',
+      name: '${m['name'] ?? ''}',
+      phone: '${m['phone'] ?? ''}',
+      subject: '${m['subject'] ?? ''}',
+      rate: (m['payment_rate'] as num?)?.toDouble() ?? 0,
+      email: '${m['email'] ?? ''}',
+      paymentType: '${m['payment_type'] ?? 'monthly'}',
+      notes: '${m['notes'] ?? ''}',
+      subjectIds: ids,
+      syncStatus: '${m['sync_status'] ?? 'synced'}',
+      createdAt: m['created_at']?.toString(),
+      updatedAt: m['updated_at']?.toString(),
+    );
+  }
 }
 
 class SubjectItem {
@@ -163,12 +550,41 @@ class SubjectItem {
     required this.name,
     required this.code,
     this.gradeLevel = 'عام / كل المراحل',
+    this.description = '',
+    this.syncStatus = 'synced',
+    this.createdAt,
+    this.updatedAt,
   });
 
   final String id;
   String name;
   String code;
   String gradeLevel;
+  String description;
+  String syncStatus;
+  String? createdAt;
+  String? updatedAt;
+
+  Map<String, dynamic> toCloud() => {
+        'id': id,
+        'name': name,
+        'code': code,
+        'grade_level': gradeLevel,
+        'description': description,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+      };
+
+  factory SubjectItem.fromCloud(Map<String, dynamic> m) => SubjectItem(
+        id: '${m['id']}',
+        name: '${m['name'] ?? ''}',
+        code: '${m['code'] ?? ''}',
+        gradeLevel: '${m['grade_level'] ?? 'عام / كل المراحل'}',
+        description: '${m['description'] ?? ''}',
+        syncStatus: '${m['sync_status'] ?? 'synced'}',
+        createdAt: m['created_at']?.toString(),
+        updatedAt: m['updated_at']?.toString(),
+      );
 }
 
 class GradeFee {
@@ -177,12 +593,45 @@ class GradeFee {
     required this.gradeName,
     required this.monthlyFee,
     this.tier = 'secondary',
+    this.orderIndex = 0,
+    this.isCustom = false,
+    this.syncStatus = 'synced',
+    this.createdAt,
+    this.updatedAt,
   });
 
   final String id;
   String gradeName;
   double monthlyFee;
   String tier;
+  int orderIndex;
+  bool isCustom;
+  String syncStatus;
+  String? createdAt;
+  String? updatedAt;
+
+  Map<String, dynamic> toCloud() => {
+        'id': id,
+        'grade_name': gradeName,
+        'monthly_fee': monthlyFee,
+        'order_index': orderIndex,
+        'is_custom': isCustom,
+        'stage_tier': tier,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+      };
+
+  factory GradeFee.fromCloud(Map<String, dynamic> m) => GradeFee(
+        id: '${m['id']}',
+        gradeName: '${m['grade_name'] ?? ''}',
+        monthlyFee: (m['monthly_fee'] as num?)?.toDouble() ?? 0,
+        tier: '${m['stage_tier'] ?? 'secondary'}',
+        orderIndex: (m['order_index'] as num?)?.toInt() ?? 0,
+        isCustom: m['is_custom'] == true,
+        syncStatus: '${m['sync_status'] ?? 'synced'}',
+        createdAt: m['created_at']?.toString(),
+        updatedAt: m['updated_at']?.toString(),
+      );
 }
 
 class Payment {
@@ -198,10 +647,16 @@ class Payment {
     this.reference = '',
     this.senderName = '',
     this.channel = '',
+    this.transferDate = '',
+    this.customMethodNotes = '',
     this.installmentId,
     this.remainingAfter = 0,
+    this.totalDueAtPayment = 0,
     this.cancelled = false,
     this.cancelReason = '',
+    this.syncStatus = 'synced',
+    this.createdAt,
+    this.updatedAt,
   });
 
   final String id;
@@ -215,10 +670,63 @@ class Payment {
   final String reference;
   final String senderName;
   final String channel;
+  String transferDate;
+  String customMethodNotes;
   final String? installmentId;
   double remainingAfter;
+  double totalDueAtPayment;
   bool cancelled;
   String cancelReason;
+  String syncStatus;
+  String? createdAt;
+  String? updatedAt;
+
+  Map<String, dynamic> toCloud() => {
+        'id': id,
+        'receipt_number': receiptNumber,
+        'student_id': studentId,
+        'installment_id': installmentId,
+        'amount': amount,
+        'payment_method': method,
+        'payment_date': isoDate(date),
+        'payment_purpose': purpose,
+        'transfer_channel': channel,
+        'transfer_date': transferDate,
+        'custom_method_notes': customMethodNotes,
+        'sender_name': senderName,
+        'reference_number': reference,
+        'total_due_at_payment': totalDueAtPayment,
+        'remaining_balance_after': remainingAfter,
+        'is_cancelled': cancelled,
+        'cancelled_reason': cancelReason,
+        'notes': notes,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+      };
+
+  factory Payment.fromCloud(Map<String, dynamic> m) => Payment(
+        id: '${m['id']}',
+        receiptNumber: '${m['receipt_number'] ?? ''}',
+        studentId: '${m['student_id'] ?? ''}',
+        amount: (m['amount'] as num?)?.toDouble() ?? 0,
+        method: '${m['payment_method'] ?? 'cash'}',
+        date: parseIsoDate('${m['payment_date'] ?? ''}') ?? DateTime.now(),
+        purpose: '${m['payment_purpose'] ?? 'monthly_fee'}',
+        notes: '${m['notes'] ?? ''}',
+        reference: '${m['reference_number'] ?? ''}',
+        senderName: '${m['sender_name'] ?? ''}',
+        channel: '${m['transfer_channel'] ?? ''}',
+        transferDate: '${m['transfer_date'] ?? ''}'.split('T').first,
+        customMethodNotes: '${m['custom_method_notes'] ?? ''}',
+        installmentId: m['installment_id']?.toString(),
+        remainingAfter: (m['remaining_balance_after'] as num?)?.toDouble() ?? 0,
+        totalDueAtPayment: (m['total_due_at_payment'] as num?)?.toDouble() ?? 0,
+        cancelled: m['is_cancelled'] == true,
+        cancelReason: '${m['cancelled_reason'] ?? ''}',
+        syncStatus: '${m['sync_status'] ?? 'synced'}',
+        createdAt: m['created_at']?.toString(),
+        updatedAt: m['updated_at']?.toString(),
+      );
 }
 
 class Installment {
@@ -230,6 +738,11 @@ class Installment {
     required this.dueDate,
     this.paidAmount = 0,
     this.exception = false,
+    this.exceptionNotes = '',
+    this.status = 'pending',
+    this.syncStatus = 'synced',
+    this.createdAt,
+    this.updatedAt,
   });
 
   final String id;
@@ -239,6 +752,11 @@ class Installment {
   final DateTime dueDate;
   double paidAmount;
   bool exception;
+  String exceptionNotes;
+  String status;
+  String syncStatus;
+  String? createdAt;
+  String? updatedAt;
 
   double get remaining {
     final r = amount - paidAmount;
@@ -247,20 +765,141 @@ class Installment {
   }
 
   bool get isPaid => remaining <= 0;
+
+  Map<String, dynamic> toCloud() => {
+        'id': id,
+        'student_id': studentId,
+        'title': title,
+        'amount': amount,
+        'due_date': isoDate(dueDate),
+        'paid_amount': paidAmount,
+        'status': isPaid ? 'paid' : status,
+        'has_flexible_exception': exception,
+        'exception_notes': exceptionNotes,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+      };
+
+  factory Installment.fromCloud(Map<String, dynamic> m) => Installment(
+        id: '${m['id']}',
+        studentId: '${m['student_id'] ?? ''}',
+        title: '${m['title'] ?? 'قسط'}',
+        amount: (m['amount'] as num?)?.toDouble() ?? 0,
+        dueDate: parseIsoDate('${m['due_date'] ?? ''}') ?? DateTime.now(),
+        paidAmount: (m['paid_amount'] as num?)?.toDouble() ?? 0,
+        exception: m['has_flexible_exception'] == true,
+        exceptionNotes: '${m['exception_notes'] ?? ''}',
+        status: '${m['status'] ?? 'pending'}',
+        syncStatus: '${m['sync_status'] ?? 'synced'}',
+        createdAt: m['created_at']?.toString(),
+        updatedAt: m['updated_at']?.toString(),
+      );
 }
 
 class AttendanceMark {
-  AttendanceMark({required this.studentId, required this.date, required this.status});
+  AttendanceMark({
+    required this.studentId,
+    required this.date,
+    required this.status,
+    String? id,
+    this.sessionId = '',
+    this.markedByUserId = '',
+    this.notes = '',
+    this.syncStatus = 'synced',
+    this.createdAt,
+    this.updatedAt,
+  }) : id = id ?? 'att-$studentId-$date';
+
+  final String id;
   final String studentId;
   final String date;
   String status;
+  String sessionId;
+  String markedByUserId;
+  String notes;
+  String syncStatus;
+  String? createdAt;
+  String? updatedAt;
+
+  Map<String, dynamic> toCloud() => {
+        'id': id,
+        'session_id': sessionId.isEmpty ? null : sessionId,
+        'student_id': studentId,
+        'status': status,
+        'marked_by_user_id': markedByUserId.isEmpty ? null : markedByUserId,
+        'notes': notes,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+      };
+
+  factory AttendanceMark.fromCloud(Map<String, dynamic> m) => AttendanceMark(
+        id: '${m['id']}',
+        studentId: '${m['student_id'] ?? ''}',
+        date: '${m['session_date'] ?? m['created_at'] ?? ''}'.split('T').first,
+        status: '${m['status'] ?? ''}',
+        sessionId: '${m['session_id'] ?? ''}',
+        markedByUserId: '${m['marked_by_user_id'] ?? ''}',
+        notes: '${m['notes'] ?? ''}',
+        syncStatus: '${m['sync_status'] ?? 'synced'}',
+        createdAt: m['created_at']?.toString(),
+        updatedAt: m['updated_at']?.toString(),
+      );
 }
 
 class AppUser {
-  AppUser({required this.id, required this.name, required this.role});
+  AppUser({
+    required this.id,
+    required this.name,
+    required this.role,
+    this.email = '',
+    this.isActive = true,
+    this.capabilities = const [],
+    this.syncStatus = 'synced',
+    this.createdAt,
+    this.updatedAt,
+  });
+
   final String id;
   String name;
   String role;
+  String email;
+  bool isActive;
+  List<String> capabilities;
+  String syncStatus;
+  String? createdAt;
+  String? updatedAt;
+
+  Map<String, dynamic> toCloud() => {
+        'id': id,
+        'name': name,
+        'email': email,
+        'role': role,
+        'is_active': isActive,
+        'capabilities': capabilities,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+      };
+
+  factory AppUser.fromCloud(Map<String, dynamic> m) {
+    final caps = <String>[];
+    final raw = m['capabilities'];
+    if (raw is List) {
+      for (final e in raw) {
+        caps.add('$e');
+      }
+    }
+    return AppUser(
+      id: '${m['id']}',
+      name: '${m['name'] ?? ''}',
+      role: '${m['role'] ?? ''}',
+      email: '${m['email'] ?? ''}',
+      isActive: m['is_active'] != false,
+      capabilities: caps,
+      syncStatus: '${m['sync_status'] ?? 'synced'}',
+      createdAt: m['created_at']?.toString(),
+      updatedAt: m['updated_at']?.toString(),
+    );
+  }
 }
 
 class Tenant {
@@ -316,7 +955,65 @@ class DueItem {
 }
 
 class SyncRow {
-  SyncRow(this.table, this.count);
+  SyncRow(this.table, this.count, [this.action = '']);
   final String table;
   final int count;
+  final String action;
+}
+
+class PendingSync {
+  PendingSync({
+    required this.id,
+    required this.tableName,
+    required this.recordId,
+    required this.action,
+    this.payload,
+    required this.createdAt,
+    this.retryCount = 0,
+    this.lastError,
+    this.lastAttemptAt,
+  });
+
+  int id;
+  String tableName;
+  String recordId;
+  String action;
+  Map<String, dynamic>? payload;
+  String createdAt;
+  int retryCount;
+  String? lastError;
+  String? lastAttemptAt;
+}
+
+class PendingSummary {
+  PendingSummary({required this.total, required this.rows, required this.items});
+  final int total;
+  final List<SyncRow> rows;
+  final List<PendingSummaryItem> items;
+}
+
+class PendingSummaryItem {
+  PendingSummaryItem({required this.table, required this.action, required this.label, required this.at});
+  final String table;
+  final String action;
+  final String label;
+  final String at;
+}
+
+class RemoteChangeSummary {
+  RemoteChangeSummary({required this.total, required this.rows, required this.items, this.since});
+  final int total;
+  final List<SyncRow> rows;
+  final List<PendingSummaryItem> items;
+  final String? since;
+}
+
+class SyncResult {
+  SyncResult({required this.success, required this.message, this.pushed = 0, this.pulled = 0, this.failed = 0, this.removed = 0});
+  final bool success;
+  final String message;
+  final int pushed;
+  final int pulled;
+  final int failed;
+  final int removed;
 }

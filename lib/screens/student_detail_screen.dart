@@ -119,7 +119,7 @@ class StudentDetailScreen extends StatelessWidget {
                           _line('هاتف الطالب:', student.phone, phone: student.phone),
                           const SizedBox(height: 8),
                           _line('ولي الأمر:', '${student.parentName} · ${student.parentPhone}', phone: student.parentPhone),
-                          if (student.nationalId.isNotEmpty || student.neighborhood.isNotEmpty) ...[
+                          if (student.nationalId.isNotEmpty || student.neighborhood.isNotEmpty || student.detailedAddress.isNotEmpty) ...[
                             const SizedBox(height: 8),
                             const Divider(height: 1, color: Color(0xFFF1F5F9)),
                             const SizedBox(height: 8),
@@ -127,10 +127,40 @@ class StudentDetailScreen extends StatelessWidget {
                               [
                                 if (student.nationalId.isNotEmpty) 'هوية: ${student.nationalId}',
                                 if (student.neighborhood.isNotEmpty) student.neighborhood,
+                                if (student.detailedAddress.isNotEmpty) student.detailedAddress,
                               ].join('  ·  '),
                               style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
                             ),
                           ],
+                          if (student.birthPlace.isNotEmpty || student.nationality.isNotEmpty || student.healthStatus.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              [
+                                if (student.gender.isNotEmpty) student.gender,
+                                if (student.birthPlace.isNotEmpty) 'مكان الولادة: ${student.birthPlace}',
+                                if (student.nationality.isNotEmpty) student.nationality,
+                                if (student.healthStatus.isNotEmpty) 'الصحة: ${student.healthStatus}',
+                              ].join('  ·  '),
+                              style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+                            ),
+                          ],
+                          if (student.referralSource.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Text('مصدر التعرف: ${student.referralSource}', style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
+                            ),
+                          if (student.initialRating > 0)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Row(
+                                children: [
+                                  for (var i = 1; i <= 5; i++)
+                                    Icon(i <= student.initialRating ? Icons.star : Icons.star_border, size: 14, color: const Color(0xFFF59E0B)),
+                                  const SizedBox(width: 6),
+                                  Text('${student.initialRating} / 5', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                                ],
+                              ),
+                            ),
                           if (student.notes.isNotEmpty) ...[
                             const SizedBox(height: 8),
                             Container(

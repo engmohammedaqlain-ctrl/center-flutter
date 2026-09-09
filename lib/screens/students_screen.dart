@@ -75,7 +75,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                       onChanged: (v) => setState(() => grade = v ?? ''),
                       items: [
                         const DropdownMenuItem(value: '', child: Text('جميع المراحل الدراسية')),
-                        ...gradeLevels.map((g) => DropdownMenuItem(value: g, child: Text(g))),
+                        ...gradeLevelsFilter.map((g) => DropdownMenuItem(value: g, child: Text(g))),
                       ],
                     ),
                   ),

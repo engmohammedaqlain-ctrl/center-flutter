@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../data/store.dart';
+import '../data/sync.dart';
+import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../widgets/widgets.dart';
 import 'attendance_screen.dart';
@@ -138,61 +140,90 @@ class _Header extends StatelessWidget {
 
   Future<void> _syncSheet(BuildContext context, {required bool push}) async {
     final store = StoreScope.of(context);
-    final total = push ? store.pendingPush : store.pendingPull;
+    if (!push) {
+      await store.sync.checkRemoteChanges();
+      if (context.mounted) store.notifySync();
+    }
+    if (!context.mounted) return;
+    final summary = push ? store.sync.getPendingSummary() : null;
+    final remote = push ? null : await store.sync.checkRemoteChanges();
+    if (!context.mounted) return;
+    final total = push ? summary!.total : (remote?.total ?? store.pendingPull);
+    final rows = push ? summary!.rows : (remote?.rows ?? const <SyncRow>[]);
+    final items = push ? summary!.items : (remote?.items ?? const <PendingSummaryItem>[]);
+
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.white,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
       builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.paddingOf(ctx).bottom),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                push ? 'رفع التعديلات المحلية' : 'سحب التعديلات من السحابة',
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                total == 0
-                    ? (push ? 'لا توجد تعديلات محلية معلقة للرفع' : 'لا توجد تعديلات جديدة في السحابة')
-                    : (push ? 'سيتم رفع $total تعديلات إلى السحابة.' : 'سيتم سحب $total تعديلات وتحديث الشاشة.'),
-                style: const TextStyle(color: AppColors.muted, fontSize: 12.5),
-              ),
-              if (push && store.pendingRows.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                for (final r in store.pendingRows)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text('${r.table}: ${r.count}', style: const TextStyle(fontSize: 12, color: AppColors.heading)),
-                  ),
-              ],
-              const SizedBox(height: 14),
-              Row(
+        var busy = false;
+        return StatefulBuilder(
+          builder: (ctx, setSt) {
+            return Padding(
+              padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.paddingOf(ctx).bottom),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: GhostButton(label: 'إغلاق', onPressed: () => Navigator.pop(ctx))),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: PrimaryButton(
-                      label: push ? 'تأكيد الرفع' : 'تأكيد السحب',
-                      color: push ? AppColors.amber : AppColors.info,
-                      onPressed: () {
-                        if (push) {
-                          store.confirmPush();
-                        } else {
-                          store.confirmPull();
-                        }
-                        Navigator.pop(ctx);
-                        showAppSnack(context, push ? 'تم رفع التعديلات' : 'تم سحب البيانات');
-                      },
-                    ),
+                  Text(
+                    push ? 'رفع التعديلات المحلية' : 'سحب التعديلات من السحابة',
+                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    total == 0
+                        ? (push ? 'لا توجد تعديلات محلية معلقة للرفع' : 'لا توجد تعديلات جديدة في السحابة')
+                        : (push ? 'سيتم رفع $total تعديلاً إلى السحابة.' : 'سيتم سحب $total تعديلاً وتحديث الشاشة.'),
+                    style: const TextStyle(color: AppColors.muted, fontSize: 12.5),
+                  ),
+                  if (rows.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    for (final r in rows)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          '${tableLabelsAr[r.table] ?? r.table}${r.action.isNotEmpty ? ' · ${r.action}' : ''}: ${r.count}',
+                          style: const TextStyle(fontSize: 12, color: AppColors.heading),
+                        ),
+                      ),
+                  ],
+                  if (items.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    for (final item in items.take(8))
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 3),
+                        child: Text('• ${item.label}', style: const TextStyle(fontSize: 11.5, color: AppColors.muted)),
+                      ),
+                  ],
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(child: GhostButton(label: 'إغلاق', onPressed: () { if (!busy) Navigator.pop(ctx); })),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: PrimaryButton(
+                          label: push ? 'تأكيد الرفع' : 'تأكيد السحب',
+                          color: push ? AppColors.amber : AppColors.info,
+                          busy: busy,
+                          onPressed: total == 0 || busy
+                              ? null
+                              : () async {
+                                  setSt(() => busy = true);
+                                  final result = push ? await store.sync.push() : await store.sync.pull();
+                                  if (!ctx.mounted) return;
+                                  Navigator.pop(ctx);
+                                  if (context.mounted) showAppSnack(context, result.message, error: !result.success);
+                                },
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );

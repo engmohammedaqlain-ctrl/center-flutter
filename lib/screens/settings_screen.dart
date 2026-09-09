@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/store.dart';
+import '../data/sync.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../widgets/widgets.dart';
@@ -203,7 +204,11 @@ class _TeachersTab extends StatelessWidget {
     final store = StoreScope.of(context);
     final name = TextEditingController(text: t?.name ?? '');
     final phone = TextEditingController(text: t?.phone ?? '');
+    final email = TextEditingController(text: t?.email ?? '');
+    final notes = TextEditingController(text: t?.notes ?? '');
+    final rate = TextEditingController(text: '${t?.rate ?? 3000}');
     String subject = t?.subject ?? store.subjects.first.name;
+    String paymentType = t?.paymentType ?? 'monthly';
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -226,12 +231,28 @@ class _TeachersTab extends StatelessWidget {
                   const FieldLabel('الهاتف'),
                   TextField(controller: phone, keyboardType: TextInputType.phone),
                   const SizedBox(height: 8),
+                  const FieldLabel('البريد الإلكتروني'),
+                  TextField(controller: email, keyboardType: TextInputType.emailAddress),
+                  const SizedBox(height: 8),
                   const FieldLabel('المادة'),
                   AppDropdown<String>(
                     value: subject,
                     items: store.subjects.map((s) => DropdownMenuItem(value: s.name, child: Text(s.name))).toList(),
                     onChanged: (v) => setSt(() => subject = v ?? subject),
                   ),
+                  const SizedBox(height: 8),
+                  const FieldLabel('نوع الاستحقاق'),
+                  AppDropdown<String>(
+                    value: teacherPaymentTypes.containsKey(paymentType) ? paymentType : 'monthly',
+                    items: teacherPaymentTypes.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
+                    onChanged: (v) => setSt(() => paymentType = v ?? paymentType),
+                  ),
+                  const SizedBox(height: 8),
+                  const FieldLabel('قيمة الاستحقاق / الراتب'),
+                  TextField(controller: rate, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                  const SizedBox(height: 8),
+                  const FieldLabel('ملاحظات'),
+                  TextField(controller: notes),
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -251,7 +272,19 @@ class _TeachersTab extends StatelessWidget {
                           label: 'حفظ',
                           onPressed: () {
                             try {
-                              store.upsertTeacher(Teacher(id: t?.id ?? store.newId(), name: name.text.trim(), phone: phone.text.trim(), subject: subject, rate: t?.rate ?? 3000));
+                              store.upsertTeacher(
+                                Teacher(
+                                  id: t?.id ?? store.newId(),
+                                  name: name.text.trim(),
+                                  phone: phone.text.trim(),
+                                  subject: subject,
+                                  rate: double.tryParse(rate.text.trim()) ?? t?.rate ?? 3000,
+                                  email: email.text.trim(),
+                                  paymentType: paymentType,
+                                  notes: notes.text.trim(),
+                                  subjectIds: store.subjects.where((s) => s.name == subject).map((s) => s.id).toList(),
+                                ),
+                              );
                               Navigator.pop(ctx);
                             } on StoreException catch (e) {
                               showAppSnack(context, e.message, error: true);
@@ -510,9 +543,22 @@ class _BackupTab extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SectionTitle('حالة المزامنة مع السحابة'),
-                  store.pendingPush == 0
-                      ? const Text('لا توجد تعديلات متعثرة للرفع.', style: TextStyle(color: AppColors.muted, fontSize: 12))
-                      : Text('${store.pendingPush} تعديلات محلية بانتظار الرفع', style: const TextStyle(color: AppColors.amber, fontWeight: FontWeight.w700, fontSize: 12)),
+                  Text(
+                    store.pendingPush == 0 ? 'لا توجد تعديلات متعثرة للرفع.' : '${store.pendingPush} تعديلات محلية بانتظار الرفع',
+                    style: TextStyle(color: store.pendingPush == 0 ? AppColors.muted : AppColors.amber, fontWeight: FontWeight.w700, fontSize: 12),
+                  ),
+                  if (store.sync.getFailedActions().isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'عمليات فاشلة بعد $maxSyncRetries محاولات: ${store.sync.getFailedActions().length}',
+                      style: const TextStyle(color: AppColors.danger, fontSize: 12, fontWeight: FontWeight.w700),
+                    ),
+                    for (final a in store.sync.getFailedActions().take(5))
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text('${tableLabelsAr[a.tableName] ?? a.tableName}: ${a.lastError ?? ''}', style: const TextStyle(color: AppColors.danger, fontSize: 11)),
+                      ),
+                  ],
                 ],
               ),
             ),

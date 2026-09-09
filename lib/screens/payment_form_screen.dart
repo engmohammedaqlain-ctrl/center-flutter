@@ -27,6 +27,9 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
   final reference = TextEditingController();
   final sender = TextEditingController();
   final search = TextEditingController();
+  final customMethod = TextEditingController();
+  String channel = '';
+  DateTime? transferDate;
   String? installmentId;
   bool busy = false;
 
@@ -46,6 +49,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
     reference.dispose();
     sender.dispose();
     search.dispose();
+    customMethod.dispose();
     super.dispose();
   }
 
@@ -62,6 +66,9 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
         notes: notes.text.trim(),
         reference: reference.text.trim(),
         senderName: sender.text.trim(),
+        channel: channel.isEmpty ? (method == 'cash' ? '' : method) : channel,
+        transferDate: transferDate == null ? '' : isoDate(transferDate!),
+        customMethodNotes: customMethod.text.trim(),
         installmentId: installmentId,
       );
       if (!mounted) return;
@@ -231,11 +238,45 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                     ),
                     if (electronic) ...[
                       const SizedBox(height: 10),
+                      const FieldLabel('قناة التحويل'),
+                      AppDropdown<String>(
+                        value: channel.isEmpty ? 'jawwal_pay' : channel,
+                        items: const [
+                          DropdownMenuItem(value: 'jawwal_pay', child: Text('محفظة جوال بي')),
+                          DropdownMenuItem(value: 'palpay', child: Text('محفظة بال بي')),
+                          DropdownMenuItem(value: 'bop', child: Text('بنك فلسطين')),
+                          DropdownMenuItem(value: 'other', child: Text('أخرى')),
+                        ],
+                        onChanged: (v) => setState(() => channel = v ?? channel),
+                      ),
+                      const SizedBox(height: 10),
+                      const FieldLabel('تاريخ التحويل'),
+                      InkWell(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: transferDate ?? date,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now().add(const Duration(days: 1)),
+                          );
+                          if (picked != null) setState(() => transferDate = picked);
+                        },
+                        child: InputDecorator(
+                          decoration: const InputDecoration(),
+                          child: Text(transferDate == null ? isoDate(date) : isoDate(transferDate!), style: const TextStyle(fontSize: 13)),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
                       const FieldLabel('اسم المحول منه'),
                       TextField(controller: sender),
                       const SizedBox(height: 10),
                       const FieldLabel('الرقم المرجعي'),
                       TextField(controller: reference, decoration: const InputDecoration(hintText: 'رقم الحركة')),
+                    ],
+                    if (method == 'other') ...[
+                      const SizedBox(height: 10),
+                      const FieldLabel('تفاصيل طريقة الدفع الأخرى'),
+                      TextField(controller: customMethod, decoration: const InputDecoration(hintText: 'اكتب طريقة الدفع...')),
                     ],
                     const SizedBox(height: 10),
                     const FieldLabel('البيان'),
