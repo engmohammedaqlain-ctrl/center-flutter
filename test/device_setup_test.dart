@@ -67,6 +67,36 @@ void main() {
     expect(s.needsInitialSetup, isTrue);
   });
 
+  test('the work shell never flashes before the identity screen', () async {
+    final s = AppStore.forTesting();
+    await s.bootstrap(FakeDisk());
+    injectDemoData(s);
+
+    // ما ستعرضه الشاشة عند كل إخطار أثناء الدخول
+    final seen = <String>[];
+    s.addListener(() {
+      if (!s.loggedIn) {
+        seen.add('login');
+      } else if (s.isMasterAdmin) {
+        seen.add('developer');
+      } else if (s.needsInitialSetup) {
+        seen.add('setup');
+      } else {
+        seen.add('shell');
+      }
+    });
+
+    await s.login('amal', 'amal2026');
+
+    expect(s.needsInitialSetup, isTrue);
+    expect(
+      seen.contains('shell'),
+      isFalse,
+      reason: 'ظهرت شاشة العمل قبل شاشة الصلاحية: $seen',
+    );
+    expect(seen.where((x) => x == 'setup'), isNotEmpty);
+  });
+
   test('the developer portal never sees the setup screen', () async {
     final s = AppStore.forTesting();
     await s.bootstrap(FakeDisk());

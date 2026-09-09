@@ -614,11 +614,20 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   Future<void> _enterTenant(Tenant tenant) async {
-    loggedIn = true;
+    // الحالة كاملةً قبل أي إخطار: تحديد الدخول ثم فتح بوابة التهيئة في نفس
+    // اللحظة. ترك حسم البوابة إلى ما بعد `hydrateInstitution` — وهي تُخطر
+    // الشاشات — كان يعرض شاشة العمل فارغة للحظة ثم يقفز إلى شاشة التهيئة.
     isMasterAdmin = false;
     currentTenant = tenant;
+    _setupPending = true;
+    loggedIn = true;
+
     _tenantUser = tenant.username;
     _tenantPass = tenant.password;
+    final me = deviceUserId == null ? null : users.where((x) => x.id == deviceUserId).firstOrNull;
+    roleName = me == null ? 'مدير النظام' : roleLabel(me.role);
+    notifyListeners();
+
     await db.setSetting(_kCustomUser, tenant.username);
     await db.setSetting(_kCustomPass, tenant.password);
     // اسم العرض يُكتب مرة واحدة: لو خصّصه المدير فلا يُدهس عند كل دخول
@@ -626,12 +635,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       institutionName = tenant.name;
       await db.setSetting(institutionNameKey, tenant.name);
     }
-    final me = deviceUserId == null ? null : users.where((x) => x.id == deviceUserId).firstOrNull;
-    roleName = me == null ? 'مدير النظام' : roleLabel(me.role);
     await _saveSession();
     await hydrateInstitution();
-    await _resolveSetupGate(freshLogin: true);
-    await afterEnter();
+
+    // الترحيلات وفتح قناة السحابة لا تحبس زر الدخول: شاشة التهيئة تسحب بنفسها
+    unawaited(afterEnter());
     notifyListeners();
   }
 

@@ -1,5 +1,4 @@
 import 'package:center_mobile/data/demo_data.dart';
-import 'package:center_mobile/data/institution.dart';
 import 'package:center_mobile/data/store.dart';
 import 'package:center_mobile/data/sync.dart';
 import 'package:center_mobile/models/models.dart';
@@ -120,7 +119,10 @@ void main() {
   });
 
   test('old text ids are rewritten as uuids and their stuck queue entries dropped', () async {
-    final s = await school();
+    // بلا تسجيل دخول: الترحيل يجري تلقائياً بعده، فيسبق ما يريده الاختبار
+    final s = AppStore.forTesting();
+    await s.bootstrap(FakeDisk());
+    injectDemoData(s);
     final room = s.rooms.first;
     final student = s.studentsOf(room).first;
     final date = isoDate(DateTime.now());
@@ -138,8 +140,6 @@ void main() {
       payload: {'id': staleId},
     );
 
-    // الترحيل يجري مرة عند الدخول؛ نُعيده هنا على سجل قديم مُقحَم بعده
-    await s.db.setSetting(attendanceIdMigrationKey, null);
     final moved = await s.migrateAttendanceIds();
     expect(moved, 1);
     expect(s.attendance.any((a) => a.id == staleId), isFalse);
