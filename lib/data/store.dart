@@ -217,6 +217,37 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   static const _pendingTable = '__pending_syncs';
 
+  /// بصمة آخر حالة عُرف أنها مطابقة للسحابة: 'جدول|معرّف' ← بصمة.
+  ///
+  /// بها نعرف أن تعديلاً عاد إلى ما في السحابة، فنُسقط عمليته من الطابور بدل
+  /// أن يظل العدّاد يقول «تعديل بانتظار الرفع» ولا شيء في الحقيقة تغيّر.
+  final _syncedPrint = <String, String>{};
+
+  /// الحقول المتغيّرة دائماً لا تدخل البصمة، وإلا لاختلفت من غير سبب.
+  static const _volatile = {'updated_at', 'created_at', 'sync_status', 'synced_at', 'tenant_id'};
+
+  String _fingerprint(Map<String, dynamic> row) {
+    final keys = row.keys.where((k) => !_volatile.contains(k)).toList()..sort();
+    return jsonEncode({for (final k in keys) k: row[k]});
+  }
+
+  void _rememberSynced(String table, String id, Map<String, dynamic>? row) {
+    if (row == null) {
+      _syncedPrint.remove('$table|$id');
+      return;
+    }
+    _syncedPrint['$table|$id'] = _fingerprint(row);
+  }
+
+  /// هل عاد السجل إلى آخر حالة مرفوعة، فلا شيء يستحق الرفع؟
+  bool _isBackToSynced(String table, String id, Map<String, dynamic>? payload) {
+    final known = _syncedPrint['$table|$id'];
+    if (known == null) return false;
+    final current = payload ?? recordOf(table, id);
+    if (current == null) return false;
+    return _fingerprint(current) == known;
+  }
+
   void _scheduleFlush() {
     _flushTimer?.cancel();
     _flushTimer = Timer(const Duration(milliseconds: 350), () {
@@ -780,6 +811,17 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   String _nowIso() => DateTime.now().toUtc().toIso8601String();
 
   void _queue(String table, String recordId, String action, Map<String, dynamic>? payload) {
+    // تعديل ثم تراجع عنه: السجل صار كما في السحابة، فتُسقط العملية المعلّقة
+    // بدل رفعٍ لا يغيّر شيئاً وعدّادٍ يشير إلى تغيير غير موجود.
+    if (action == 'UPDATE' && _isBackToSynced(table, recordId, payload)) {
+      final had = pendingSyncs.any((p) => p.tableName == table && p.recordId == recordId);
+      pendingSyncs.removeWhere((p) => p.tableName == table && p.recordId == recordId);
+      markRecord(table, recordId);
+      if (had) markDirty(_pendingTable);
+      notifyListeners();
+      return;
+    }
+
     queuePendingSync(
       pendingSyncs,
       tableName: table,
@@ -1997,6 +2039,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   @override
   void putRows(String table, List<Map<String, dynamic>> rows) {
     markDirty(table);
+    // الصف الذي حالته `synced` يمثّل ما في السحابة، سواء وصل منها أو من القرص
+    for (final r in rows) {
+      final id = '${r['id'] ?? ''}';
+      if (id.isEmpty) continue;
+      final status = '${r['sync_status'] ?? 'synced'}';
+      if (status == 'synced') _rememberSynced(table, id, r);
+    }
     // جدول الحضور السحابي لا يحمل عمود تاريخ؛ اليوم المرصود في الجلسة المرتبطة
     if (table == 'attendance') rows = _withSessionDates(rows);
     void upsertList<T>(List<T> list, T Function(Map<String, dynamic>) parse, String Function(T) idOf, void Function(int, T) setAt, void Function(T) add) {
@@ -2105,6 +2154,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   void markSynced(String table, String id) {
     markDirty(table);
     markDirty(_pendingTable);
+    _rememberSynced(table, id, recordOf(table, id));
     void stamp(dynamic rec) {
       try {
         rec.syncStatus = 'synced';
