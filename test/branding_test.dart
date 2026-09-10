@@ -49,6 +49,36 @@ void main() {
     expect(lum(AppColors.amberDark), lessThan(lum(AppColors.amber)));
   });
 
+  test('all five identity colours reach the interface', () {
+    AppColors.apply(_red);
+    // كل لون يختاره المدير له أثر مرئي؛ إهمال أحدها يترك موضعاً بلون غريب
+    expect(AppColors.navy, const Color(0xFF4A0E17), reason: 'sidebarBg');
+    expect(AppColors.accent, const Color(0xFFDC2626), reason: 'activeItem');
+    expect(AppColors.heading, const Color(0xFF4A0E17), reason: 'primaryButton');
+    expect(AppColors.amber, const Color(0xFFB91C1C), reason: 'actionButton');
+    expect(AppColors.bg, const Color(0xFFFFF9F9), reason: 'appBg');
+  });
+
+  test('the highlight is distinct from the action colour', () {
+    AppColors.apply(_red);
+    expect(
+      AppColors.accent,
+      isNot(AppColors.amber),
+      reason: 'القسم المفتوح يجب أن يتمايز عن زر الإجراء',
+    );
+  });
+
+  test('a missing highlight falls back to the action colour', () {
+    AppColors.apply(const InstitutionColors(actionButton: '#B91C1C', activeItem: ''));
+    expect(AppColors.accent, const Color(0xFFB91C1C));
+  });
+
+  test('a three-digit value is read as CSS shorthand', () {
+    // '#bad' لون صالح مختصر، لا قيمة فاسدة
+    expect(parseHexColor('#bad'), const Color(0xFFBBAADD));
+    expect(parseHexColor('#ZZZ'), isNull);
+  });
+
   test('badge tints stay amber, as they are written literally in Center', () {
     AppColors.apply(_red);
     // اشتقاقها من لون الإجراء كان يجعلها زهرية باهتة مع هوية حمراء

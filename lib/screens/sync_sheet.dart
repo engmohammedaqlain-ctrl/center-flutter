@@ -186,7 +186,7 @@ Widget _syncPanel(BuildContext ctx, AppStore store) {
       children: [
         Row(
           children: [
-            const Icon(Icons.cloud_outlined, size: 15, color: Color(0xFFF39C12)),
+            Icon(Icons.cloud_outlined, size: 15, color: AppColors.accent),
             const SizedBox(width: 6),
             Text(
               'المزامنة السحابية المباشرة',
@@ -226,7 +226,7 @@ Widget _syncPanel(BuildContext ctx, AppStore store) {
                 store,
                 push: false,
                 count: store.pendingPull,
-                color: AppColors.info,
+                color: AppColors.accent,
                 icon: Icons.arrow_downward,
                 label: 'سحب',
               ),
@@ -380,7 +380,7 @@ class _SyncConfirmState extends State<_SyncConfirm> {
   List<PendingSummaryItem> items = const [];
 
   bool get _push => widget.push;
-  Color get _accent => _push ? AppColors.amber : AppColors.info;
+  Color get _accent => _push ? AppColors.amber : AppColors.accent;
   IconData get _icon => _push ? Icons.arrow_upward : Icons.arrow_downward;
 
   @override

@@ -311,7 +311,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: on ? AppColors.amber : Colors.transparent, width: 2)),
+          border: Border(bottom: BorderSide(color: on ? AppColors.accent : Colors.transparent, width: 2)),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,

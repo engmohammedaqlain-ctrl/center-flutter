@@ -82,11 +82,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                       decoration: BoxDecoration(
-                        border: Border(bottom: BorderSide(color: tab == i ? AppColors.amber : Colors.transparent, width: 2)),
+                        border: Border(bottom: BorderSide(color: tab == i ? AppColors.accent : Colors.transparent, width: 2)),
                       ),
                       child: Row(
                         children: [
-                          Icon(tabs[i].icon, size: 14, color: tab == i ? AppColors.amber : AppColors.muted),
+                          Icon(tabs[i].icon, size: 14, color: tab == i ? AppColors.accent : AppColors.muted),
                           const SizedBox(width: 5),
                           Text(tabs[i].label, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: tab == i ? AppColors.heading : AppColors.muted)),
                         ],

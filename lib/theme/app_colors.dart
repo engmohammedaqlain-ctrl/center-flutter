@@ -19,6 +19,10 @@ abstract final class AppColors {
   static Color amber = const Color(0xFFE88C15);
   static Color amberDark = const Color(0xFFD97E0D);
 
+  /// لون التمييز — `activeItem`: القسم المفتوح، واسم المنشأة في الترويسة،
+  /// وعمليات السحب. كان مهملاً فظهرت هذه المواضع بألوان لا صلة لها بالهوية.
+  static Color accent = const Color(0xFFE88C15);
+
   /// خلفية الشارات وحدّها. ثابتتان كما في Center: `bg-[#FFF7ED]` و`#FED7AA`
   /// مكتوبتان صراحةً في المكوّنات، والهوية تتحكّم بخمسة ألوان لا غير.
   /// اشتقاقهما من لون الإجراء كان يجعلهما زهريتين باهتتين مع هوية حمراء.
@@ -63,6 +67,7 @@ abstract final class AppColors {
 
     amber = action;
     amberDark = _shade(action, 0.86);
+    accent = parseHexColor(c.activeItem) ?? action;
 
     heading = primary;
     bg = surfaceBg;

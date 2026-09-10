@@ -134,8 +134,8 @@ class _Header extends StatelessWidget {
                   store.institutionName.isEmpty ? 'إدارة المدارس' : store.institutionName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFFF39C12),
+                  style: TextStyle(
+                    color: AppColors.accent,
                     fontSize: 10.5,
                     fontWeight: FontWeight.w600,
                     height: 1.2,
@@ -193,7 +193,7 @@ class _SyncPill extends StatelessWidget {
     if (pull > 0) {
       return _pill(
         context,
-        color: AppColors.info,
+        color: AppColors.accent,
         icon: Icons.arrow_downward,
         label: 'سحب',
         count: pull,
@@ -357,7 +357,7 @@ class _NavItem extends StatelessWidget {
               height: 2,
               width: active ? 34 : 0,
               decoration: BoxDecoration(
-                color: AppColors.amber,
+                color: AppColors.accent,
                 borderRadius: BorderRadius.zero,
               ),
             ),
@@ -379,7 +379,7 @@ class _NavItem extends StatelessWidget {
                       child: Icon(
                         active ? section.activeIcon : section.icon,
                         size: 19,
-                        color: active ? AppColors.amber : AppColors.muted,
+                        color: active ? AppColors.accent : AppColors.muted,
                       ),
                     ),
                     if (badge > 0)
@@ -413,7 +413,7 @@ class _NavItem extends StatelessWidget {
                     fontSize: 10,
                     height: 1,
                     fontWeight: active ? FontWeight.w800 : FontWeight.w500,
-                    color: active ? AppColors.amber : AppColors.muted,
+                    color: active ? AppColors.accent : AppColors.muted,
                   ),
                 ),
               ],
