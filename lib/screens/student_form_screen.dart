@@ -21,6 +21,9 @@ class StudentFormScreen extends StatefulWidget {
 class _StudentFormScreenState extends State<StudentFormScreen> {
   late final name = TextEditingController(text: widget.student?.fullName ?? '');
   late final nationalId = TextEditingController(text: widget.student?.nationalId ?? '');
+  late final portalCode = TextEditingController(
+    text: widget.student?.portalCode ?? AppStore.instance.newPortalCode(),
+  );
   late final parentName = TextEditingController(text: widget.student?.parentName ?? '');
   late final notes = TextEditingController(text: widget.student?.notes ?? '');
   late final detailedAddress = TextEditingController(text: widget.student?.detailedAddress ?? '');
@@ -119,6 +122,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   void dispose() {
     name.dispose();
     nationalId.dispose();
+    portalCode.dispose();
     parentName.dispose();
     notes.dispose();
     detailedAddress.dispose();
@@ -321,6 +325,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           parentPhone: combinePhoneAndPrefix(parentPhoneNumber, parentPhonePrefix),
           parentPhonePrefix: parentPhonePrefix,
           nationalId: cleanNatId,
+          portalCode: portalCode.text.trim(),
           neighborhood: selectedNeighborhood,
           relation: relation,
           gender: gender,
@@ -429,6 +434,37 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(idDuplicateError!, style: const TextStyle(color: AppColors.danger, fontSize: 11, fontWeight: FontWeight.w700)),
                   ),
+                const SizedBox(height: 10),
+                // رمز دخول الطالب إلى بوابته
+                const FieldLabel('رمز الدخول للبوابة'),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: portalCode,
+                        keyboardType: TextInputType.number,
+                        maxLength: 10,
+                        style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                        decoration: const InputDecoration(hintText: 'رمز من 6 أرقام', counterText: ''),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    GhostButton(
+                      label: 'توليد',
+                      icon: Icons.autorenew,
+                      onPressed: () => setState(() {
+                        portalCode.text = AppStore.instance.newPortalCode();
+                      }),
+                    ),
+                  ],
+                ),
+                const Padding(
+                  padding: EdgeInsets.only(top: 4),
+                  child: Text(
+                    'رمز الدخول الخاص بالطالب لبوابته.',
+                    style: TextStyle(color: AppColors.muted, fontSize: 10.5),
+                  ),
+                ),
                 const SizedBox(height: 10),
                 const FieldLabel('آخر صف دراسي / المرحلة', requiredField: true),
                 AppDropdown<String>(

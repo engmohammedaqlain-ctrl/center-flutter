@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:uuid/uuid.dart';
@@ -512,6 +513,40 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   String newId() => _uuid.v4();
 
+  /// رمز دخول البوابة — ست خانات، مطابق لـ `generateRandomCode` في Center:
+  /// `Math.floor(100000 + Math.random() * 900000)`.
+  String newPortalCode() => (100000 + _rand.nextInt(900000)).toString();
+
+  final _rand = math.Random();
+
+  /// ضمان وجود رمز بوابة لكل طالب في القائمة. يعيد عدد ما وُلِّد.
+  int ensureStudentPortalCodes(List<Student> list) {
+    var made = 0;
+    for (final s in list) {
+      if (s.portalCode.trim().isNotEmpty) continue;
+      s.portalCode = newPortalCode();
+      s.updatedAt = _nowIso();
+      s.syncStatus = 'pending';
+      queuePendingSync(pendingSyncs,
+          tableName: 'students', recordId: s.id, action: 'UPDATE', payload: s.toCloud());
+      markRecord('students', s.id);
+      made++;
+    }
+    if (made > 0) {
+      markDirty(_pendingTable);
+      notifyListeners();
+    }
+    return made;
+  }
+
+  /// ضمان وجود رمز بوابة لمعلم.
+  String ensureTeacherPortalCode(Teacher t) {
+    if (t.portalCode.trim().isNotEmpty) return t.portalCode;
+    t.portalCode = newPortalCode();
+    upsertTeacher(t);
+    return t.portalCode;
+  }
+
   /// تسجيل الدخول — مطابق لتسلسل `LandingPage.handleLogin`:
   /// 1) حساب المطور، 2) المنشآت من السحابة، 3) المنشأة المحفوظة على الجهاز.
   Future<String?> login(String username, String password) async {
@@ -989,6 +1024,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       // صراحةً، والطالب الجديد يبدأ برصيد صفر.
       if (incoming.seatReservationPaid) {
         incoming.balance = incoming.balance + seatReservationFee;
+      }
+      // رمز بوابة الطالب يُولَّد عند التسجيل، كما في StudentForm
+      if (incoming.portalCode.trim().isEmpty) {
+        incoming.portalCode = newPortalCode();
       }
       students.insert(0, incoming);
       _queue('students', incoming.id, 'INSERT', incoming.toCloud());

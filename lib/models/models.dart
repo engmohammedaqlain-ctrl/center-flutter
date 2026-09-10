@@ -2,7 +2,7 @@ import '../data/phone.dart';
 
 const currency = '₪';
 const appName = 'نظام الإدارة المدرسي';
-const appVersion = '1.2.3';
+const appVersion = '1.2.4';
 
 /// مطابق لـ GRADE_LEVELS في types/student.ts
 const gradeLevels = [
@@ -227,6 +227,7 @@ class Student {
     this.academicDiscountRate = 0,
     this.exceptionReason = '',
     this.customMonthlyFee,
+    this.portalCode = '',
     this.syncStatus = 'synced',
     this.createdAt,
     this.updatedAt,
@@ -278,6 +279,9 @@ class Student {
   double academicDiscountRate;
   String exceptionReason;
   double? customMonthlyFee;
+
+  /// رمز دخول الطالب إلى بوابته — ست خانات.
+  String portalCode;
   String syncStatus;
   String? createdAt;
   String? updatedAt;
@@ -344,6 +348,7 @@ class Student {
       'has_flexible_exception': hasException,
       'exception_reason': exceptionReason,
       'custom_monthly_fee': customMonthlyFee,
+      'portal_code': portalCode.isEmpty ? null : portalCode,
       'notes': notes,
       'created_at': createdAt,
       'updated_at': updatedAt,
@@ -407,6 +412,7 @@ class Student {
       academicDiscountRate: (m['academic_discount_rate'] as num?)?.toDouble() ?? 0,
       exceptionReason: '${m['exception_reason'] ?? ''}',
       customMonthlyFee: (m['custom_monthly_fee'] as num?)?.toDouble(),
+      portalCode: '${m['portal_code'] ?? ''}',
       syncStatus: '${m['sync_status'] ?? 'synced'}',
       createdAt: m['created_at']?.toString(),
       updatedAt: m['updated_at']?.toString(),
@@ -516,6 +522,8 @@ class Teacher {
     this.email = '',
     this.paymentType = 'percentage',
     this.notes = '',
+    this.nationalId = '',
+    this.portalCode = '',
     this.subjectIds = const [],
     this.syncStatus = 'synced',
     this.createdAt,
@@ -530,6 +538,12 @@ class Teacher {
   String email;
   String paymentType;
   String notes;
+
+  /// رقم هوية المعلم — اسم المستخدم في بوابة المعلم.
+  String nationalId;
+
+  /// رمز دخول المعلم إلى بوابته — ست خانات.
+  String portalCode;
   List<String> subjectIds;
   String syncStatus;
   String? createdAt;
@@ -543,6 +557,8 @@ class Teacher {
         'subject_ids': subjectIds,
         'payment_type': paymentType,
         'payment_rate': rate,
+        'national_id': nationalId.isEmpty ? null : nationalId,
+        'portal_code': portalCode.isEmpty ? null : portalCode,
         'notes': notes,
         'created_at': createdAt,
         'updated_at': updatedAt,
@@ -565,6 +581,8 @@ class Teacher {
       email: '${m['email'] ?? ''}',
       paymentType: '${m['payment_type'] ?? 'percentage'}',
       notes: '${m['notes'] ?? ''}',
+      nationalId: '${m['national_id'] ?? ''}',
+      portalCode: '${m['portal_code'] ?? ''}',
       subjectIds: ids,
       syncStatus: '${m['sync_status'] ?? 'synced'}',
       createdAt: m['created_at']?.toString(),

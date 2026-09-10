@@ -336,12 +336,16 @@ class _RoomCard extends StatelessWidget {
                   if (v == 'print') {
                     printClassRoster(context, store: StoreScope.of(context), room: room, students: students);
                   }
+                  if (v == 'codes') {
+                    showClassPortalCodes(context, room: room, students: students);
+                  }
                   if (v == 'edit') onEdit();
                   if (v == 'assign') onAssign();
                   if (v == 'delete') onDelete();
                 },
                 itemBuilder: (_) => const [
                   PopupMenuItem(value: 'print', child: Text('طباعة كشف الصف')),
+                  PopupMenuItem(value: 'codes', child: Text('رموز دخول البوابة')),
                   PopupMenuItem(value: 'edit', child: Text('تعديل بيانات الصف')),
                   PopupMenuItem(value: 'assign', child: Text('تعيين مربي')),
                   PopupMenuItem(value: 'delete', child: Text('حذف الصف')),
@@ -524,4 +528,113 @@ class _ClassDetailState extends State<_ClassDetail> {
       ],
     );
   }
+}
+
+/// رموز دخول طلاب الصف إلى البوابة — المقابل لـ `ClassPortalCodesModal`.
+///
+/// يُظهر رمز كل طالب ويولّد الناقص دفعةً واحدة، فتوزيع الرموز على الصف
+/// لا يحتاج فتح ملف كل طالب على حدة.
+Future<void> showClassPortalCodes(
+  BuildContext context, {
+  required Classroom room,
+  required List<Student> students,
+}) {
+  final store = StoreScope.of(context);
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.white,
+    isScrollControlled: true,
+    builder: (ctx) => ListenableBuilder(
+      listenable: store,
+      builder: (ctx, _) {
+        final missing = students.where((s) => s.portalCode.trim().isEmpty).length;
+        return SafeArea(
+          top: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.vpn_key_outlined, size: 18, color: AppColors.amber),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('رموز دخول البوابة — ${room.name}', style: AppText.cardTitle),
+                            Text('${students.length} طالب · بلا رمز: $missing', style: AppText.label),
+                          ],
+                        ),
+                      ),
+                      if (missing > 0)
+                        PrimaryButton(
+                          label: 'توليد الناقص',
+                          icon: Icons.autorenew,
+                          onPressed: () {
+                            final made = store.ensureStudentPortalCodes(students);
+                            showAppSnack(ctx, 'تم توليد $made رمزاً');
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: AppColors.line),
+                Flexible(
+                  child: ListView.separated(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    itemCount: students.length,
+                    separatorBuilder: (_, _) => const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                    itemBuilder: (_, i) {
+                      final student = students[i];
+                      final code = student.portalCode.trim();
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 9),
+                        child: Row(
+                          children: [
+                            Text('${i + 1}', style: AppText.label),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                student.fullName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppText.body,
+                              ),
+                            ),
+                            if (code.isEmpty)
+                              const Text('—', style: TextStyle(color: AppColors.faint, fontSize: 13))
+                            else
+                              SelectableText(
+                                code,
+                                style: const TextStyle(
+                                  fontFamily: 'monospace',
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 13,
+                                  letterSpacing: 1.5,
+                                  color: AppColors.heading,
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+                  child: GhostButton(label: 'إغلاق', onPressed: () => Navigator.pop(ctx)),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
 }

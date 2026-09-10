@@ -27,6 +27,7 @@ const tableAllowedColumns = <String, List<String>>{
   ],
   'teachers': [
     'id', 'name', 'phone', 'email', 'subject_ids', 'payment_type', 'payment_rate',
+    'national_id', 'portal_code',
     'notes', 'tenant_id', 'created_at', 'updated_at',
   ],
   'groups': [
@@ -51,6 +52,7 @@ const tableAllowedColumns = <String, List<String>>{
     'payment_plan', 'payment_status',
     'academic_discount_applied', 'academic_discount_rate',
     'has_flexible_exception', 'exception_reason', 'custom_monthly_fee',
+    'portal_code',
     'notes', 'tenant_id', 'created_at', 'updated_at',
   ],
   'student_attachments': [
@@ -104,6 +106,14 @@ const tableAllowedColumns = <String, List<String>>{
     'closing_balance', 'expected_closing_balance', 'difference',
     'notes', 'status', 'tenant_id', 'created_at', 'updated_at',
   ],
+  'class_announcements': [
+    'id', 'tenant_id', 'teacher_id', 'group_id', 'title', 'content',
+    'image_url', 'created_at',
+  ],
+  'student_evaluations': [
+    'id', 'tenant_id', 'student_id', 'teacher_id', 'subject_id',
+    'score', 'notes', 'created_at',
+  ],
 };
 
 const nonTextColumns = <String, List<String>>{
@@ -148,6 +158,8 @@ const nonTextColumns = <String, List<String>>{
   'teachers': ['created_at', 'payment_rate', 'subject_ids', 'tenant_id', 'updated_at'],
   'tenants': ['created_at', 'expires_at', 'id', 'updated_at'],
   'users': ['capabilities', 'created_at', 'is_active', 'tenant_id', 'updated_at'],
+  'class_announcements': ['created_at', 'tenant_id'],
+  'student_evaluations': ['created_at', 'score', 'tenant_id'],
 };
 
 const tableLabelsAr = <String, String>{
@@ -168,6 +180,8 @@ const tableLabelsAr = <String, String>{
   'teacher_payouts': 'مستحقات المعلمين',
   'expenses': 'المصروفات',
   'cashbox_shifts': 'ورديات الصندوق',
+  'class_announcements': 'إعلانات الصفوف',
+  'student_evaluations': 'تقييمات الطلاب',
 };
 
 const syncedTables = [
@@ -188,6 +202,8 @@ const syncedTables = [
   'teacher_payouts',
   'expenses',
   'cashbox_shifts',
+  'class_announcements',
+  'student_evaluations',
 ];
 
 /// عمود التصالح عند الرفع لكل جدول يختلف مفتاحه الطبيعي عن `id`.
@@ -742,6 +758,12 @@ class SyncService {
           } else {
             fullRecord = {...fullRecord, 'id': recordId};
           }
+          // جلسة بلا مجموعة تنتهك قيود السحابة ولن تُقبل مهما أُعيدت
+          if (tableName == 'sessions' && '${fullRecord['group_id'] ?? ''}'.isEmpty) {
+            local.pendingSyncs.removeWhere((p) => p.id == action.id);
+            continue;
+          }
+
           rows.add(sanitizePayload(tableName, fullRecord, tenantId));
           kept.add(action);
         }

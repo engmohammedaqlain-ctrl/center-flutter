@@ -532,6 +532,10 @@ class _TeachersTabState extends State<_TeachersTab> {
     final phone = TextEditingController(text: parsed.number);
     final email = TextEditingController(text: t?.email ?? '');
     final notes = TextEditingController(text: t?.notes ?? '');
+    final teacherNationalId = TextEditingController(text: t?.nationalId ?? '');
+    final teacherPortalCode = TextEditingController(
+      text: (t?.portalCode.isNotEmpty ?? false) ? t!.portalCode : store.newPortalCode(),
+    );
     final rate = TextEditingController(text: '${t?.rate ?? 70}');
     var prefix = parsed.prefix;
     var paymentType = teacherPaymentTypes.containsKey(t?.paymentType) ? t!.paymentType : 'percentage';
@@ -586,6 +590,38 @@ class _TeachersTabState extends State<_TeachersTab> {
                     const SizedBox(height: 8),
                     const FieldLabel('البريد الإلكتروني'),
                     TextField(controller: email, keyboardType: TextInputType.emailAddress),
+                    const SizedBox(height: 8),
+                    // بيانات دخول المعلم إلى بوابته
+                    const FieldLabel('رقم الهوية'),
+                    TextField(
+                      controller: teacherNationalId,
+                      keyboardType: TextInputType.number,
+                      maxLength: 9,
+                      decoration: const InputDecoration(hintText: '9 أرقام', counterText: ''),
+                    ),
+                    const SizedBox(height: 8),
+                    const FieldLabel('رمز الدخول للبوابة'),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: teacherPortalCode,
+                            keyboardType: TextInputType.number,
+                            maxLength: 10,
+                            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                            decoration: const InputDecoration(hintText: 'رمز من 6 أرقام', counterText: ''),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        GhostButton(
+                          label: 'توليد',
+                          icon: Icons.autorenew,
+                          onPressed: () => setSt(() {
+                            teacherPortalCode.text = store.newPortalCode();
+                          }),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 8),
                     InkWell(
                       onTap: () => setSt(() => salaryOpen = !salaryOpen),
@@ -681,6 +717,8 @@ class _TeachersTabState extends State<_TeachersTab> {
                                     email: email.text.trim(),
                                     paymentType: paymentType,
                                     notes: notes.text.trim(),
+                                    nationalId: digitsOnly(teacherNationalId.text),
+                                    portalCode: teacherPortalCode.text.trim(),
                                     subjectIds: [...subjectIds],
                                   ),
                                 );

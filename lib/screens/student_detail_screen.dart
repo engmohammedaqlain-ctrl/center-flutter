@@ -123,6 +123,8 @@ class StudentDetailScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const SectionTitle('بيانات الطالب والتواصل'),
+                          _PortalCodeRow(student: student),
+                          const SizedBox(height: 8),
                           _line('هاتف الطالب:', student.phone, phone: student.phone),
                           const SizedBox(height: 8),
                           _line('ولي الأمر:', '${student.parentName} · ${student.parentPhone}', phone: student.parentPhone),
@@ -596,6 +598,59 @@ class _Thumb extends StatelessWidget {
               maxLines: 2,
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 9.5, color: AppColors.muted)),
+        ],
+      ),
+    );
+  }
+}
+
+/// رمز دخول الطالب إلى بوابته، مع توليده عند غيابه.
+/// مطابق لبطاقة «رمز الدخول للبوابة» في `StudentDetail.tsx`.
+class _PortalCodeRow extends StatelessWidget {
+  const _PortalCodeRow({required this.student});
+  final Student student;
+
+  @override
+  Widget build(BuildContext context) {
+    final store = StoreScope.of(context);
+    final code = student.portalCode.trim();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.amberSoft,
+        border: Border.all(color: AppColors.amberBorder),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.vpn_key_outlined, size: 15, color: AppColors.amber),
+          const SizedBox(width: 6),
+          const Expanded(
+            child: Text(
+              'رمز الدخول للبوابة:',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: AppColors.heading),
+            ),
+          ),
+          if (code.isEmpty)
+            GhostButton(
+              label: 'توليد',
+              icon: Icons.autorenew,
+              onPressed: () {
+                store.ensureStudentPortalCodes([student]);
+                showAppSnack(context, 'تم توليد رمز الدخول');
+              },
+            )
+          else
+            SelectableText(
+              code,
+              style: const TextStyle(
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.w900,
+                fontSize: 13,
+                letterSpacing: 1.5,
+                color: AppColors.heading,
+              ),
+            ),
         ],
       ),
     );
