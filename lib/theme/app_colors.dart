@@ -18,8 +18,12 @@ abstract final class AppColors {
   /// لون الإجراء وسندات القبض — `actionButton`.
   static Color amber = const Color(0xFFE88C15);
   static Color amberDark = const Color(0xFFD97E0D);
-  static Color amberSoft = const Color(0xFFFFF7ED);
-  static Color amberBorder = const Color(0xFFFED7AA);
+
+  /// خلفية الشارات وحدّها. ثابتتان كما في Center: `bg-[#FFF7ED]` و`#FED7AA`
+  /// مكتوبتان صراحةً في المكوّنات، والهوية تتحكّم بخمسة ألوان لا غير.
+  /// اشتقاقهما من لون الإجراء كان يجعلهما زهريتين باهتتين مع هوية حمراء.
+  static const amberSoft = Color(0xFFFFF7ED);
+  static const amberBorder = Color(0xFFFED7AA);
 
   /// خلفية مساحة العمل — `appBg`.
   static Color bg = const Color(0xFFF8FAFC);
@@ -59,8 +63,6 @@ abstract final class AppColors {
 
     amber = action;
     amberDark = _shade(action, 0.86);
-    amberSoft = _mixWhite(action, 0.93);
-    amberBorder = _mixWhite(action, 0.68);
 
     heading = primary;
     bg = surfaceBg;
@@ -75,13 +77,4 @@ abstract final class AppColors {
     return Color.fromARGB(255, ch(c.r), ch(c.g), ch(c.b));
   }
 
-  /// مزج مع الأبيض بنسبة [amount] (1 = أبيض خالص).
-  static Color _mixWhite(Color c, double amount) {
-    int ch(double v) {
-      final base = v * 255;
-      return (base + (255 - base) * amount).round().clamp(0, 255);
-    }
-
-    return Color.fromARGB(255, ch(c.r), ch(c.g), ch(c.b));
-  }
 }

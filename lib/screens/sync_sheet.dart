@@ -578,9 +578,9 @@ class _SyncConfirmState extends State<_SyncConfirm> {
         Container(
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          color: AppColors.bg,
-          decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: AppColors.line)),
+          decoration: BoxDecoration(
+            color: AppColors.bg,
+            border: const Border(bottom: BorderSide(color: AppColors.line)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

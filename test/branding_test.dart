@@ -47,8 +47,13 @@ void main() {
     expect(lum(AppColors.navyDark), lessThan(lum(AppColors.navy)));
     expect(lum(AppColors.navyMid), greaterThan(lum(AppColors.navy)));
     expect(lum(AppColors.amberDark), lessThan(lum(AppColors.amber)));
-    expect(lum(AppColors.amberSoft), greaterThan(lum(AppColors.amberBorder)));
-    expect(lum(AppColors.amberBorder), greaterThan(lum(AppColors.amber)));
+  });
+
+  test('badge tints stay amber, as they are written literally in Center', () {
+    AppColors.apply(_red);
+    // اشتقاقها من لون الإجراء كان يجعلها زهرية باهتة مع هوية حمراء
+    expect(AppColors.amberSoft, const Color(0xFFFFF7ED));
+    expect(AppColors.amberBorder, const Color(0xFFFED7AA));
   });
 
   test('semantic colours never move', () {
