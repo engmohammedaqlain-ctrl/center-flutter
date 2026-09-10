@@ -49,23 +49,22 @@ void main() {
     expect(lum(AppColors.amberDark), lessThan(lum(AppColors.amber)));
   });
 
-  test('all five identity colours reach the interface', () {
+  test('the identity colours reach the interface the way Center draws them', () {
     AppColors.apply(_red);
-    // كل لون يختاره المدير له أثر مرئي؛ إهمال أحدها يترك موضعاً بلون غريب
     expect(AppColors.navy, const Color(0xFF4A0E17), reason: 'sidebarBg');
-    expect(AppColors.accent, const Color(0xFFDC2626), reason: 'activeItem');
     expect(AppColors.heading, const Color(0xFF4A0E17), reason: 'primaryButton');
     expect(AppColors.amber, const Color(0xFFB91C1C), reason: 'actionButton');
     expect(AppColors.bg, const Color(0xFFFFF9F9), reason: 'appBg');
+    // index.css يُحيل `text-[#E88C15]` و`text-[#F39C12]` و`bg-[#FFF7ED]` —
+    // اسم المنشأة والقسم المفتوح في الهاتف — إلى لون العمليات لا إلى activeItem
+    expect(AppColors.accent, const Color(0xFFB91C1C), reason: 'التمييز يتبع لون العمليات');
   });
 
-  test('the highlight is distinct from the action colour', () {
+  test('activeItem is kept for the portals but does not recolour mobile highlights', () {
+    // لا يُرسم إلا في قائمة سطح المكتب الجانبية والبوابات، فيبقى محفوظاً كما هو
+    expect(InstitutionColors.fromMap(_red.toMap()).activeItem, '#DC2626');
     AppColors.apply(_red);
-    expect(
-      AppColors.accent,
-      isNot(AppColors.amber),
-      reason: 'القسم المفتوح يجب أن يتمايز عن زر الإجراء',
-    );
+    expect(AppColors.accent, isNot(const Color(0xFFDC2626)));
   });
 
   test('a missing highlight falls back to the action colour', () {
@@ -79,11 +78,18 @@ void main() {
     expect(parseHexColor('#ZZZ'), isNull);
   });
 
-  test('badge tints stay amber, as they are written literally in Center', () {
-    AppColors.apply(_red);
-    // اشتقاقها من لون الإجراء كان يجعلها زهرية باهتة مع هوية حمراء
-    expect(AppColors.amberSoft, const Color(0xFFFFF7ED));
-    expect(AppColors.amberBorder, const Color(0xFFFED7AA));
+  test('badge tints are mixed from the action colour, as index.css mixes them', () {
+    // `color-mix(in srgb, var(--theme-action-btn) 10%, white)` للخلفية و25% للحدّ
+    void near(Color actual, Color expected, String reason) {
+      int ch(double v) => (v * 255).round();
+      expect((ch(actual.r) - ch(expected.r)).abs(), lessThanOrEqualTo(1), reason: reason);
+      expect((ch(actual.g) - ch(expected.g)).abs(), lessThanOrEqualTo(1), reason: reason);
+      expect((ch(actual.b) - ch(expected.b)).abs(), lessThanOrEqualTo(1), reason: reason);
+    }
+
+    AppColors.apply(const InstitutionColors(actionButton: '#15803D'));
+    near(AppColors.amberSoft, const Color(0xFFE8F2EC), 'خلفية فاتحة خضراء لا برتقالية');
+    near(AppColors.amberBorder, const Color(0xFFC5DFCF), 'حدّ أخضر فاتح');
   });
 
   test('semantic colours never move', () {
@@ -111,6 +117,31 @@ void main() {
       s.pendingSyncs.any((p) => p.tableName == 'institution_settings'),
       isTrue,
       reason: 'الهوية تُرفع لتصل بقية الأجهزة',
+    );
+  });
+
+  test('saving the identity keeps colour keys another version stored', () async {
+    // نسخة أخرى تحفظ طرق الدفع المخصّصة داخل كائن الألوان نفسه؛ رفعه بالألوان
+    // الخمسة وحدها كان يمسحها من السحابة عند كل الأجهزة
+    final s = await school(FakeDisk());
+    final methods = [
+      {'id': 'other', 'name': 'مالت شات', 'type': 'other', 'enabled': true},
+    ];
+    await s.db.setSetting(
+      institutionColorsKey,
+      jsonEncode({..._red.toMap(), '__custom_payment_methods': methods}),
+    );
+
+    await s.saveInstitution(colors: _red.copyWith(actionButton: '#15803D'));
+
+    final row = s.extraCloud['institution_settings']!.firstWhere((e) => e['id'] == s.tenantId);
+    final cloud = row['colors'] as Map;
+    expect(cloud['actionButton'], '#15803D', reason: 'اللون الجديد يُرفع');
+    expect(cloud['__custom_payment_methods'], methods, reason: 'وما لا نعرفه يبقى كما هو');
+    expect(
+      jsonDecode(s.db.settings[institutionColorsKey]!)['__custom_payment_methods'],
+      methods,
+      reason: 'ويبقى محلياً كي لا يُمسح في الحفظ التالي',
     );
   });
 

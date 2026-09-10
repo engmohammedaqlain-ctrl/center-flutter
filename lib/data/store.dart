@@ -473,6 +473,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     required Map<String, double> scores,
     Map<String, String> notes = const {},
   }) {
+    requireCapability('attendance.edit');
     final cleanTitle = title.trim();
     if (groupId.isEmpty) throw StoreException('يرجى اختيار الشعبة');
     if (cleanTitle.isEmpty) throw StoreException('يرجى تحديد عنوان التقييم');
@@ -511,6 +512,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   void deleteEvaluation(String id) {
+    requireCapability('attendance.edit');
     final bucket = extraCloud['student_evaluations'];
     if (bucket == null) return;
     final before = bucket.length;
@@ -554,6 +556,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     String method = 'cash',
     String notes = '',
   }) {
+    requireCapability('finance.expenses');
     final desc = description.trim();
     if (desc.isEmpty) throw StoreException('البيان مطلوب لتسجيل سند الصرف');
     if (amount <= 0) throw StoreException('مبلغ سند الصرف يجب أن يكون أكبر من صفر');
@@ -581,6 +584,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   void deleteExpense(String id) {
+    requireCapability('finance.expenses');
     final bucket = extraCloud['expenses'];
     if (bucket == null) return;
     final before = bucket.length;
@@ -623,6 +627,20 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     notifyListeners();
   }
 
+  /// كائن الألوان كما حُفظ بكل مفاتيحه، ومنها ما لا تعرفه هذه النسخة —
+  /// `__custom_payment_methods` مثلاً. الكتابة فوقه بالألوان الخمسة وحدها
+  /// كانت تمسح من السحابة إعدادات حفظتها نسخة أخرى في العمود نفسه.
+  Map<String, dynamic> get _storedColorsMap {
+    final raw = db.settings[institutionColorsKey];
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final data = jsonDecode(raw);
+      return data is Map ? Map<String, dynamic>.from(data) : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
   Future<void> saveInstitution({
     String? type,
     String? name,
@@ -635,7 +653,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       await db.setSetting(institutionNameKey, institutionName.isEmpty ? null : institutionName);
     }
     if (logo != null) await db.setSetting(institutionLogoKey, logo.isEmpty ? null : logo);
-    if (colors != null) await db.setSetting(institutionColorsKey, jsonEncode(colors.toMap()));
+    if (colors != null) {
+      await db.setSetting(institutionColorsKey, jsonEncode({..._storedColorsMap, ...colors.toMap()}));
+    }
     applyBrandColors();
     _persistInstitutionRow();
     notifyListeners();
@@ -651,7 +671,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       'institution_type': institutionType,
       'institution_name': institutionName,
       'logo': institutionLogo.isEmpty ? null : institutionLogo,
-      'colors': institutionColors.toMap(),
+      'colors': {..._storedColorsMap, ...institutionColors.toMap()},
       'updated_at': _nowIso(),
     };
     final bucket = extraCloud.putIfAbsent('institution_settings', () => []);
@@ -728,6 +748,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   /// ضمان وجود رمز بوابة لكل طالب في القائمة. يعيد عدد ما وُلِّد.
   int ensureStudentPortalCodes(List<Student> list) {
+    requireCapability('students.edit');
     var made = 0;
     for (final s in list) {
       if (s.portalCode.trim().isNotEmpty) continue;
@@ -815,9 +836,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     await migrateCapabilities();
     dedupeAttendance();
     if (!networkEnabled) return;
+    // الاستماع أولاً: لا يتوقف على نجاح خطوات الشبكة التي تليه
+    await startRealtime();
     await primeReceiptCounter();
     await sync.checkRemoteChanges();
-    await startRealtime();
     notifyListeners();
   }
 
@@ -832,28 +854,60 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (tid == null || !networkEnabled) return;
     _realtime ??= RealtimeListener(
       tables: syncedTables,
-      onChange: (table) {
-        // وصول تغيير من جهاز آخر: نُحدِّث عدّاد السحب ونُخطر الشاشات
-        unawaited(_onRemoteChange(table));
-      },
+      onChange: handleRemoteEvent,
+      onJoined: _onRealtimeJoined,
     );
     await _realtime!.connect(tid);
   }
 
   Future<void> stopRealtime() async {
+    _joinCheck?.cancel();
+    _joinCheck = null;
     await _realtime?.disconnect();
     _realtime = null;
   }
 
-  DateTime _lastRemotePoke = DateTime.fromMillisecondsSinceEpoch(0);
+  Timer? _joinCheck;
 
-  Future<void> _onRemoteChange(String table) async {
-    // تجميع الأحداث المتلاحقة بدل استعلام لكل صف
-    final now = DateTime.now();
-    if (now.difference(_lastRemotePoke).inMilliseconds < 1200) return;
-    _lastRemotePoke = now;
-    await sync.checkRemoteChanges();
-    notifyListeners();
+  /// (إعادة) الاشتراك: ما تغيّر أثناء الانقطاع لم يصل حدثاً، فيُفحص مرة واحدة
+  /// بعد أن تستقر ردود الاشتراك لكل الجداول.
+  void _onRealtimeJoined() {
+    _joinCheck?.cancel();
+    _joinCheck = Timer(const Duration(milliseconds: 1500), () async {
+      await sync.checkRemoteChanges();
+      notifyListeners();
+    });
+  }
+
+  /// تغيير وصل لحظياً من السحابة — مطابق لـ `handleRealtimeChange` في sync.ts.
+  ///
+  /// يُنبّه بوجود تعديل ولا يطبّقه، ويُحسب لكل سجل من الحدث نفسه بلا استعلام.
+  /// التجميع السابق كان يُسقط كل حدث يلي آخر بأقل من ثانية.
+  void handleRemoteEvent(RealtimeEvent e) {
+    if (!syncedTables.contains(e.table)) return;
+    final record = e.record;
+
+    // الحذف يحمل المفتاح وحده: يُسقط لاختلاف المنشأة لا لغياب tenant_id
+    final remoteTenant = record['tenant_id']?.toString() ?? '';
+    if (remoteTenant.isNotEmpty && remoteTenant != tenantId) return;
+
+    final id = record['id']?.toString() ?? '';
+    if (id.isEmpty) return;
+
+    // تعديل ما زال في طابور الرفع عندنا — ليس قادماً من الخارج
+    if (pendingSyncs.any((p) => p.tableName == e.table && p.recordId == id)) return;
+
+    final local = recordOf(e.table, id);
+    if (e.type == 'DELETE') {
+      // الحذف يهمّنا فقط إن كان السجل ما زال عندنا
+      if (local == null) return;
+    } else if (local != null &&
+        toTimestamp(record['updated_at']) <= toTimestamp(local['updated_at']) + stampToleranceMs) {
+      // صدى تعديلاتنا نحن بعد رفعها: نسختنا نفسها أو أحدث منها
+      return;
+    }
+
+    if (sync.remotePendingIds.add('${e.table}:$id')) notifyListeners();
   }
 
   Future<void> _enterTenant(Tenant tenant) async {
@@ -1014,6 +1068,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// رصد حالة محددة لطالب في يوم. `null` يمسح الرصد.
   /// [ownerId] هو معرّف الصف (نظام مدرسة) أو المجموعة (نظام مركز).
   void setAttendance(String studentId, String date, String? status, {String? ownerId}) {
+    requireCapability('attendance.edit');
     final existing = markFor(ownerId, studentId, date);
 
     if (status == null) {
@@ -1075,6 +1130,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// يمرّ على نفس مفتاح [markFor] لكل طالب، فلا يتخلّف أحد لأن سجله مرتبط
   /// بجلسة أخرى — وهو ما كان يجعل الزر يُغيّر البعض دون البعض.
   int markAllPresent(String date, List<Student> list, {String? ownerId}) {
+    requireCapability('attendance.edit');
     if (list.isEmpty) return 0;
     final sessionId = ownerId == null || ownerId.isEmpty
         ? ''
@@ -1208,6 +1264,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   void upsertStudent(Student incoming, {bool isNew = false, StudentAttachments? attachments}) {
+    requireCapability('students.edit');
     if (!isValidNationalId(incoming.nationalId)) {
       throw StoreException('رقم الهوية غير صالح! يجب أن يتكون من 9 أرقام.');
     }
@@ -1279,6 +1336,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// السندات المالية لا تُحذف ولا تُترك يتيمة: وجود سند قبض غير ملغى يمنع الحذف،
   /// لأن سجل القبض المالي لا يُمحى بحذف صاحبه. مطابق لـ `StudentsService.delete`.
   void deleteStudent(String id) {
+    requireCapability('students.delete');
     final active = payments.where((p) => p.studentId == id && !p.cancelled).length;
     if (active > 0) {
       throw StoreException(
@@ -1508,6 +1566,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     String? groupId,
     String? enrollmentId,
   }) {
+    requireCapability('finance.collect');
     if (amount <= 0) throw StoreException('يرجى إدخال مبلغ صحيح');
     final stu = studentById(studentId);
     if (stu == null) throw StoreException('يرجى اختيار الطالب أولاً');
@@ -1566,6 +1625,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   void cancelPayment(Payment p, [String reason = 'ملغاة من قبل الإدارة']) {
+    requireCapability('finance.cancel');
     if (p.cancelled) return;
     p.cancelled = true;
     p.cancelReason = reason;
@@ -1678,6 +1738,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   void upsertGroup(Group g) {
+    requireCapability('schedule.edit');
     if (g.name.trim().isEmpty) throw StoreException('يرجى إدخال اسم المجموعة');
     if (g.subjectId.isEmpty) throw StoreException('يرجى اختيار المادة الدراسية');
     if (g.teacherId.isEmpty) throw StoreException('يرجى اختيار المدرّس');
@@ -1730,6 +1791,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   /// حذف مجموعة. التسجيلات القائمة تمنع الحذف حتى لا تُترك يتيمة.
   void deleteGroup(String id) {
+    requireCapability('schedule.edit');
     final active = enrollmentCount(id);
     if (active > 0) {
       throw StoreException(
@@ -1761,6 +1823,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     double? customPrice,
     String discountReason = '',
   }) {
+    requireCapability('schedule.edit');
     final student = studentById(studentId);
     if (student == null) throw StoreException('يرجى اختيار الطالب أولاً');
     final group = groupById(groupId);
@@ -1796,6 +1859,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   void updateEnrollmentStatus(String enrollmentId, String status) {
+    requireCapability('schedule.edit');
     final e = enrollments.where((x) => x.id == enrollmentId).firstOrNull;
     if (e == null) return;
     e.status = status;
@@ -1805,6 +1869,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   void deleteEnrollment(String enrollmentId) {
+    requireCapability('schedule.edit');
     final linked = payments.where((p) => p.enrollmentId == enrollmentId && !p.cancelled).length;
     if (linked > 0) {
       throw StoreException(
@@ -1844,6 +1909,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   void upsertTeacher(Teacher t) {
+    requireCapability('settings.view');
     if (t.name.trim().isEmpty) throw StoreException('يرجى إدخال اسم المعلم');
     t.updatedAt = _nowIso();
     t.syncStatus = 'pending';
@@ -1860,11 +1926,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   void deleteTeacher(String id) {
+    requireCapability('settings.view');
     teachers.removeWhere((t) => t.id == id);
     _queue('teachers', id, 'DELETE', null);
   }
 
   void upsertSubject(SubjectItem s) {
+    requireCapability('settings.view');
     if (s.name.trim().isEmpty) throw StoreException('يرجى إدخال اسم المادة');
     s.updatedAt = _nowIso();
     s.syncStatus = 'pending';
@@ -1881,11 +1949,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   void deleteSubject(String id) {
+    requireCapability('settings.view');
     subjects.removeWhere((s) => s.id == id);
     _queue('subjects', id, 'DELETE', null);
   }
 
   void upsertRoom(Classroom r) {
+    requireCapability('schedule.edit', ['settings.view']);
     if (r.name.trim().isEmpty) throw StoreException('يرجى إدخال اسم الصف / الشعبة');
     r.updatedAt = _nowIso();
     r.syncStatus = 'pending';
@@ -1902,11 +1972,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   void deleteRoom(String id) {
+    requireCapability('schedule.edit', ['settings.view']);
     rooms.removeWhere((r) => r.id == id);
     _queue('rooms', id, 'DELETE', null);
   }
 
   void updateGradeFee(GradeFee f) {
+    requireCapability('settings.fees');
     if (f.gradeName.trim().isEmpty) throw StoreException('يرجى إدخال اسم المرحلة الدراسية');
     if (f.monthlyFee < 0) throw StoreException('يرجى إدخال رسم شهري صحيح');
     f.updatedAt = _nowIso();
@@ -1920,6 +1992,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   void addGradeFee(GradeFee f, {String initialSection = ''}) {
+    requireCapability('settings.fees');
     if (f.gradeName.trim().isEmpty) throw StoreException('يرجى إدخال اسم المرحلة أو الصف');
     if (f.monthlyFee < 0) throw StoreException('يرجى إدخال رسم شهري صحيح');
     f.createdAt = _nowIso();
@@ -1942,6 +2015,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   void deleteGradeFee(GradeFee f) {
+    requireCapability('settings.fees');
     final count = students.where((s) => s.gradeLevel.trim().toLowerCase() == f.gradeName.trim().toLowerCase()).length;
     if (count > 0) {
       throw StoreException(
@@ -1953,6 +2027,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   void updateUser(AppUser u) {
+    requireCapability('settings.users');
     final i = users.indexWhere((e) => e.id == u.id);
     if (i < 0) return;
     u.updatedAt = _nowIso();
@@ -1963,6 +2038,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   void deleteUser(String id) {
+    requireCapability('settings.users');
     if (users.length <= 1) throw StoreException('لا يمكن حذف المستخدم الوحيد في النظام');
     users.removeWhere((u) => u.id == id);
     _queue('users', id, 'DELETE', null);
@@ -2124,6 +2200,17 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   ///
   /// الجهاز الذي لم تُثبَّت عليه هوية بعد يعمل بصلاحية المدير الكاملة — وهو
   /// السلوك نفسه في النسخة المكتبية قبل أن يختار المدير حساباً للجهاز.
+  /// حارس الصلاحية في أول كل عملية كتابة يطلبها المستخدم.
+  ///
+  /// إخفاء الأزرار وحده لا يكفي: كل زر جديد فرصة لنسيان فحصه. هنا يُرفض الفعل
+  /// نفسه مهما كان المسار إليه. النسخة المكتبية تحرس الأقسام وتبويبي المستخدمين
+  /// والنسخ الاحتياطي فقط، فيُنفَّذ فيها ما لا يملكه المستخدم.
+  /// [alternatives] لعملية تخدم موضعين بصلاحيتين، كالقاعات والصفوف.
+  void requireCapability(String cap, [List<String> alternatives = const []]) {
+    if (can(cap) || alternatives.any(can)) return;
+    throw StoreException('لا تملك صلاحية «${capabilityLabel(cap)}» على هذا الجهاز.');
+  }
+
   List<String> get myCapabilities {
     final me = deviceUser;
     if (me == null) return defaultCapsFor('admin');
@@ -2147,6 +2234,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   void addUser(AppUser u) {
+    requireCapability('settings.users');
     if (u.name.trim().isEmpty) throw StoreException('يرجى إدخال اسم المستخدم');
     u.createdAt = _nowIso();
     u.updatedAt = _nowIso();

@@ -78,6 +78,16 @@ List<String> upgradeCapabilities(List<String> caps) {
   return out;
 }
 
+/// اسم الصلاحية كما يُعرض في شاشة المستخدمين — لرسائل الرفض.
+String capabilityLabel(String cap) {
+  for (final g in capabilityGroups) {
+    for (final item in g.items) {
+      if (item.id == cap) return item.label;
+    }
+  }
+  return cap;
+}
+
 String normalizeRole(String? role) {
   final r = (role ?? '').trim().toLowerCase();
   if (r == 'admin' || r == 'مدير' || r.contains('مدير')) return 'admin';

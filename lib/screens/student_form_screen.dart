@@ -65,6 +65,8 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   String birthCertificate = '';
   bool attachmentsLoaded = false;
 
+  static const _gap = SizedBox(height: 12);
+
   @override
   void initState() {
     super.initState();
@@ -373,10 +375,22 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     }
   }
 
+  // ═══ الواجهة ══════════════════════════════════════════════════════════════
+  //
+  // الحقول على الصفحة مباشرة لا داخل بطاقات؛ الأقسام يفصلها عنوان وخط. الحقول
+  // القصيرة متجاورة في صفّ، والعدّاد وزر التوليد داخل حقليهما، والحفظ ثابت
+  // أسفل الشاشة فلا حاجة للنزول إلى آخر النموذج.
+
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final editing = widget.student != null;
+    if (!store.can('students.edit')) {
+      return Scaffold(
+        appBar: AppBar(title: Text(editing ? 'تعديل بيانات الطالب' : 'تسجيل طالب جديد')),
+        body: NoAccess(section: 'students', roleName: store.roleName),
+      );
+    }
     final studentLen = phoneTargetLength(phonePrefix);
     final parentLen = phoneTargetLength(parentPhonePrefix);
     final studentComplete = isPhoneComplete(phoneNumber, phonePrefix);
@@ -384,426 +398,571 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     final fullStudentPhone = combinePhoneAndPrefix(phoneNumber, phonePrefix);
     final matchingSections = store.rooms.where((r) => r.gradeLevel.trim().isEmpty || r.gradeLevel.trim() == (grade == 'أخرى (إدخال يدوي)' ? customGrade.text.trim() : grade).trim()).toList();
     final canSave = idDuplicateError == null && phoneDuplicateError == null;
+    final idLen = nationalId.text.length;
 
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(editing ? 'تعديل بيانات الطالب' : 'تسجيل طالب جديد'),
-        backgroundColor: AppColors.amberSoft,
-        foregroundColor: AppColors.heading,
-        titleTextStyle: TextStyle(color: AppColors.heading, fontWeight: FontWeight.w800, fontSize: 14),
+        titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-        children: [
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.person, size: 16, color: AppColors.amber),
-                    const SizedBox(width: 6),
-                    Expanded(child: Text('البيانات الأساسية للطالب والتواصل', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading))),
-                    Text('الحقول ذات علامة * مطلوبة', style: TextStyle(color: AppColors.muted, fontSize: 10)),
-                  ],
-                ),
-                const Divider(height: 18),
-                const FieldLabel('الاسم الرباعي للطالب', requiredField: true),
-                TextField(controller: name, decoration: const InputDecoration(hintText: 'مثال: محمد أحمد النجار')),
-                const SizedBox(height: 10),
-                const FieldLabel('رقم هوية الطالب', requiredField: true),
+      bottomNavigationBar: _actionBar(editing: editing, canSave: canSave),
+      body: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          children: [
+            // ── ١. البيانات الأساسية ──────────────────────────────────────────
+            _section(Icons.badge_outlined, 'البيانات الأساسية', note: 'الحقول ذات * مطلوبة'),
+            const FieldLabel('الاسم الرباعي للطالب', requiredField: true),
+            TextField(
+              controller: name,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(hintText: 'مثال: محمد أحمد النجار'),
+            ),
+            _gap,
+            _pair(
+              [
+                const FieldLabel('رقم الهوية', requiredField: true),
                 TextField(
                   controller: nationalId,
                   keyboardType: TextInputType.number,
                   maxLength: 9,
+                  style: const TextStyle(fontSize: 13, letterSpacing: 0.5),
                   decoration: InputDecoration(
                     hintText: '9 أرقام',
-                    counterText: '${nationalId.text.length} / 9',
-                    filled: true,
+                    counterText: '',
                     fillColor: idDuplicateError != null
                         ? const Color(0xFFFFF1F2)
-                        : (nationalId.text.length == 9 ? const Color(0xFFF0FDF4) : null),
+                        : (idLen == 9 ? const Color(0xFFF0FDF4) : Colors.white),
+                    suffixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+                    suffixIcon: _counter(idLen, 9),
                   ),
                 ),
-                if (idDuplicateError != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(idDuplicateError!, style: const TextStyle(color: AppColors.danger, fontSize: 11, fontWeight: FontWeight.w700)),
-                  ),
-                const SizedBox(height: 10),
-                // رمز دخول الطالب إلى بوابته
-                const FieldLabel('رمز الدخول للبوابة'),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: portalCode,
-                        keyboardType: TextInputType.number,
-                        maxLength: 10,
-                        style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                        decoration: const InputDecoration(hintText: 'رمز من 6 أرقام', counterText: ''),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    GhostButton(
-                      label: 'توليد',
-                      icon: Icons.autorenew,
-                      onPressed: () => setState(() {
-                        portalCode.text = AppStore.instance.newPortalCode();
-                      }),
-                    ),
-                  ],
-                ),
-                const Padding(
-                  padding: EdgeInsets.only(top: 4),
-                  child: Text(
-                    'رمز الدخول الخاص بالطالب لبوابته.',
-                    style: TextStyle(color: AppColors.muted, fontSize: 10.5),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                const FieldLabel('آخر صف دراسي / المرحلة', requiredField: true),
-                AppDropdown<String>(
-                  value: grade,
-                  items: gradeLevels.map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
-                  onChanged: (v) => setState(() => grade = v ?? grade),
-                ),
-                if (grade == 'أخرى (إدخال يدوي)') ...[
-                  const SizedBox(height: 8),
-                  TextField(controller: customGrade, decoration: const InputDecoration(hintText: 'اكتب اسم الصف الدراسي يدوياً...')),
-                ],
-                const SizedBox(height: 10),
-                const FieldLabel('الشعبة الدراسية'),
+              ],
+              [
+                const FieldLabel('رمز البوابة'),
                 TextField(
-                  controller: sectionCtl,
+                  controller: portalCode,
+                  keyboardType: TextInputType.number,
+                  maxLength: 10,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
                   decoration: InputDecoration(
-                    hintText: matchingSections.isEmpty ? 'مثال: شعبة 1، أو أ' : 'مثال: ${matchingSections.first.name}',
-                  ),
-                ),
-                if (matchingSections.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        for (final r in matchingSections)
-                          InkWell(
-                            onTap: () => setState(() => sectionCtl.text = r.name),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: sectionCtl.text == r.name ? AppColors.amberSoft : Colors.white,
-                                border: Border.all(color: sectionCtl.text == r.name ? AppColors.amber : AppColors.line),
-                              ),
-                              child: Text(r.name, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-                            ),
-                          ),
-                      ],
+                    hintText: '6 أرقام',
+                    counterText: '',
+                    suffixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                    suffixIcon: IconButton(
+                      tooltip: 'توليد رمز جديد',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                      icon: Icon(Icons.autorenew, size: 18, color: AppColors.amber),
+                      onPressed: () => setState(() => portalCode.text = AppStore.instance.newPortalCode()),
                     ),
                   ),
-                const SizedBox(height: 10),
-                const FieldLabel('رقم واتساب وجوال الطالب (بالمقدمة)', requiredField: true),
-                _phoneRow(
-                  prefix: phonePrefix,
-                  controller: phoneCtl,
-                  target: studentLen,
-                  complete: studentComplete,
-                  error: phoneDuplicateError != null,
-                  onPrefix: (v) => setState(() {
-                    phonePrefix = v;
-                    phoneNumber = '';
-                    phoneCtl.clear();
-                    phoneDuplicateError = null;
-                  }),
-                  onNumber: _applyStudentPhone,
-                ),
-                _phoneHint(
-                  complete: studentComplete,
-                  error: phoneDuplicateError,
-                  length: phoneNumber.length,
-                  target: studentLen,
-                  okText: 'رقم جوال صالح ($fullStudentPhone)',
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 8),
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+            if (idDuplicateError != null) _message(idDuplicateError!, AppColors.danger),
+            _gap,
+            _pair(
+              [
+                const FieldLabel('المرحلة', requiredField: true),
+                AppDropdown<String>(
+                  value: grade,
+                  items: gradeLevels.map((g) => DropdownMenuItem(value: g, child: Text(g, overflow: TextOverflow.ellipsis))).toList(),
+                  onChanged: (v) => setState(() => grade = v ?? grade),
+                ),
+              ],
+              [
+                const FieldLabel('الشعبة'),
+                TextField(
+                  controller: sectionCtl,
+                  onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(
+                    hintText: matchingSections.isEmpty ? 'مثال: أ' : matchingSections.first.name,
+                  ),
+                ),
+              ],
+            ),
+            if (grade == 'أخرى (إدخال يدوي)') ...[
+              const SizedBox(height: 8),
+              TextField(controller: customGrade, decoration: const InputDecoration(hintText: 'اكتب اسم الصف الدراسي يدوياً...')),
+            ],
+            if (matchingSections.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final r in matchingSections) _sectionChip(r.name),
+                ],
+              ),
+            ],
+            _gap,
+            const FieldLabel('جوال وواتساب الطالب', requiredField: true),
+            _phoneRow(
+              prefix: phonePrefix,
+              controller: phoneCtl,
+              target: studentLen,
+              complete: studentComplete,
+              error: phoneDuplicateError != null,
+              onPrefix: (v) => setState(() {
+                phonePrefix = v;
+                phoneNumber = '';
+                phoneCtl.clear();
+                phoneDuplicateError = null;
+              }),
+              onNumber: _applyStudentPhone,
+            ),
+            _phoneHint(
+              complete: studentComplete,
+              error: phoneDuplicateError,
+              length: phoneNumber.length,
+              target: studentLen,
+              okText: 'رقم صالح: $fullStudentPhone',
+            ),
+
+            // ── ٢. ولي الأمر والسكن ──────────────────────────────────────────
+            _section(Icons.family_restroom_outlined, 'ولي الأمر والسكن'),
+            _pair(
+              [
                 const FieldLabel('اسم ولي الأمر'),
-                TextField(controller: parentName, decoration: const InputDecoration(hintText: 'مثال: محمد علي النجار')),
-                const SizedBox(height: 10),
+                TextField(controller: parentName, decoration: const InputDecoration(hintText: 'الاسم الثلاثي')),
+              ],
+              [
                 const FieldLabel('صلة القرابة'),
                 AppDropdown<String>(
                   value: relation,
                   items: guardianRelations.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
                   onChanged: (v) => setState(() => relation = v ?? relation),
                 ),
-                const SizedBox(height: 10),
-                const FieldLabel('رقم جوال / واتساب ولي الأمر (بالمقدمة)'),
-                _phoneRow(
-                  prefix: parentPhonePrefix,
-                  controller: parentPhoneCtl,
-                  target: parentLen,
-                  complete: parentComplete,
-                  error: false,
-                  onPrefix: (v) => setState(() {
-                    parentPhonePrefix = v;
-                    parentPhoneNumber = '';
-                    parentPhoneCtl.clear();
-                  }),
-                  onNumber: _applyParentPhone,
-                ),
-                _phoneHint(
-                  complete: parentComplete && parentPhoneNumber.isNotEmpty,
-                  error: null,
-                  length: parentPhoneNumber.length,
-                  target: parentLen,
-                  okText: 'رقم ولي أمر مكتمل (${combinePhoneAndPrefix(parentPhoneNumber, parentPhonePrefix)})',
-                ),
-                const SizedBox(height: 10),
-                const FieldLabel('الحي الأساسي (ابحث أو اختر)'),
-                InkWell(
-                  onTap: () => _pickNeighborhood(),
-                  child: InputDecorator(
-                    decoration: const InputDecoration(),
-                    child: Text(
-                      neighborhood.isEmpty ? 'اختر الحي أو ابحث عنه...' : neighborhood,
-                      style: TextStyle(color: neighborhood.isEmpty ? AppColors.muted : AppColors.heading, fontSize: 13),
-                    ),
-                  ),
-                ),
-                if (neighborhood == 'أخرى') ...[
-                  const SizedBox(height: 8),
-                  TextField(controller: customNeighborhood, decoration: const InputDecoration(hintText: 'اكتب اسم الحي...')),
-                ],
-                const SizedBox(height: 10),
-                const FieldLabel('العنوان المفصل حسب أقرب معلم (كتابي)'),
-                TextField(controller: detailedAddress, decoration: const InputDecoration(hintText: 'مثال: شارع النفق، بجوار مسجد الهدى، عمارة الأمل')),
-                const SizedBox(height: 10),
+              ],
+              startFlex: 3,
+              endFlex: 2,
+            ),
+            _gap,
+            const FieldLabel('جوال ولي الأمر'),
+            _phoneRow(
+              prefix: parentPhonePrefix,
+              controller: parentPhoneCtl,
+              target: parentLen,
+              complete: parentComplete,
+              error: false,
+              onPrefix: (v) => setState(() {
+                parentPhonePrefix = v;
+                parentPhoneNumber = '';
+                parentPhoneCtl.clear();
+              }),
+              onNumber: _applyParentPhone,
+            ),
+            _phoneHint(
+              complete: parentComplete && parentPhoneNumber.isNotEmpty,
+              error: null,
+              length: parentPhoneNumber.length,
+              target: parentLen,
+              okText: 'رقم صالح: ${combinePhoneAndPrefix(parentPhoneNumber, parentPhonePrefix)}',
+            ),
+            _gap,
+            const FieldLabel('الحي الأساسي'),
+            _selectField(
+              text: neighborhood.isEmpty ? 'اختر الحي أو ابحث عنه...' : neighborhood,
+              placeholder: neighborhood.isEmpty,
+              icon: Icons.search,
+              onTap: _pickNeighborhood,
+            ),
+            if (neighborhood == 'أخرى') ...[
+              const SizedBox(height: 8),
+              TextField(controller: customNeighborhood, decoration: const InputDecoration(hintText: 'اكتب اسم الحي...')),
+            ],
+            _gap,
+            const FieldLabel('العنوان المفصل'),
+            TextField(
+              controller: detailedAddress,
+              decoration: const InputDecoration(hintText: 'الشارع وأقرب معلم — مثال: بجوار مسجد الهدى'),
+            ),
+
+            // ── ٣. التسجيل ────────────────────────────────────────────────────
+            _section(Icons.event_note_outlined, 'التسجيل'),
+            _pair(
+              [
                 const FieldLabel('تاريخ التسجيل', requiredField: true),
-                InkWell(
+                _selectField(
+                  text: isoDate(enrollmentDate),
+                  icon: Icons.calendar_today_outlined,
                   onTap: () => _pickDate(birth: false),
-                  child: InputDecorator(
-                    decoration: const InputDecoration(),
-                    child: Text(isoDate(enrollmentDate), style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
-                  ),
                 ),
-                const SizedBox(height: 10),
+              ],
+              [
                 const FieldLabel('من أين عرفتنا؟'),
                 AppDropdown<String>(
                   value: referralSources.contains(referral) ? referral : referralSources.last,
                   items: referralSources.map((r) => DropdownMenuItem(value: r, child: Text(r, overflow: TextOverflow.ellipsis))).toList(),
                   onChanged: (v) => setState(() => referral = v ?? referral),
                 ),
-                const SizedBox(height: 10),
-                const FieldLabel('ملاحظات سريعة'),
-                TextField(controller: notes, decoration: const InputDecoration(hintText: 'أي ملاحظة أو طلبات خاصة للملف...')),
               ],
             ),
+            _gap,
+            const FieldLabel('ملاحظات'),
+            TextField(
+              controller: notes,
+              minLines: 1,
+              maxLines: 3,
+              decoration: const InputDecoration(hintText: 'أي ملاحظة أو طلبات خاصة للملف...'),
+            ),
+
+            // ── ٤. بيانات إضافية (اختيارية) ──────────────────────────────────
+            _extraHeader(),
+            if (extra) ..._extraFields(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _extraFields() {
+    return [
+      _pair(
+        [
+          const FieldLabel('تاريخ الميلاد'),
+          _selectField(
+            text: birthDate == null ? 'اختر التاريخ' : isoDate(birthDate!),
+            placeholder: birthDate == null,
+            icon: Icons.calendar_today_outlined,
+            onTap: () => _pickDate(birth: true),
           ),
-          const SizedBox(height: 8),
-          InkWell(
-            onTap: () => setState(() => extra = !extra),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(color: AppColors.amberSoft, border: Border.all(color: AppColors.amberBorder)),
-              child: Row(
-                children: [
-                  Icon(extra ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: AppColors.amber, size: 18),
-                  const SizedBox(width: 6),
-                  Text(extra ? 'طي البيانات الإضافية' : 'توسيع', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading, fontSize: 12.5)),
-                ],
+        ],
+        [
+          const FieldLabel('الجنس'),
+          Row(
+            children: [
+              Expanded(child: _toggle('ذكر', gender == 'ذكر', AppColors.amber, () => setState(() => gender = 'ذكر'))),
+              const SizedBox(width: 6),
+              Expanded(child: _toggle('أنثى', gender == 'أنثى', AppColors.navy, () => setState(() => gender = 'أنثى'))),
+            ],
+          ),
+        ],
+      ),
+      _gap,
+      _pair(
+        [
+          const FieldLabel('مكان الولادة'),
+          TextField(controller: birthPlace, decoration: const InputDecoration(hintText: 'غزة')),
+        ],
+        [
+          const FieldLabel('الجنسية'),
+          TextField(controller: nationality, decoration: const InputDecoration(hintText: 'فلسطينية')),
+        ],
+      ),
+      _gap,
+      _pair(
+        [
+          const FieldLabel('المدرسة السابقة'),
+          TextField(controller: previousSchool, decoration: const InputDecoration(hintText: 'اسم المدرسة')),
+        ],
+        [
+          const FieldLabel('المعدل'),
+          TextField(controller: gpa, decoration: const InputDecoration(hintText: '92.5%')),
+        ],
+        startFlex: 3,
+        endFlex: 2,
+      ),
+      _gap,
+      _pair(
+        [
+          const FieldLabel('طبيعة السكن'),
+          AppDropdown<String>(
+            value: housingTypes.contains(housing) ? housing : housingTypes.last,
+            items: housingTypes.map((h) => DropdownMenuItem(value: h, child: Text(h, overflow: TextOverflow.ellipsis))).toList(),
+            onChanged: (v) => setState(() => housing = v ?? housing),
+          ),
+        ],
+        [
+          const FieldLabel('البلدة الأصلية'),
+          TextField(controller: originalArea, decoration: const InputDecoration(hintText: 'يافا، حمامة...')),
+        ],
+      ),
+      _gap,
+      const FieldLabel('الحالة الصحية'),
+      Row(
+        children: [
+          Expanded(
+            child: _toggle('سليم', health == 'سليم', AppColors.success, () => setState(() {
+                  health = 'سليم';
+                  medicalCondition.clear();
+                })),
+          ),
+          const SizedBox(width: 6),
+          Expanded(child: _toggle('يعاني من مرض', health == 'مريض', AppColors.danger, () => setState(() => health = 'مريض'))),
+        ],
+      ),
+      if (health == 'مريض') ...[
+        const SizedBox(height: 8),
+        TextField(
+          controller: medicalCondition,
+          minLines: 1,
+          maxLines: 3,
+          decoration: const InputDecoration(hintText: 'نوع المرض أو الأدوية التي يحتاجها الطالب...'),
+        ),
+      ],
+      _gap,
+      _pair(
+        [
+          const FieldLabel('مهنة ولي الأمر'),
+          TextField(controller: parentJob, decoration: const InputDecoration(hintText: 'معلم، تاجر...')),
+        ],
+        [
+          const FieldLabel('البريد الإلكتروني'),
+          TextField(
+            controller: email,
+            keyboardType: TextInputType.emailAddress,
+            textDirection: TextDirection.ltr,
+            decoration: const InputDecoration(hintText: 'name@mail.com'),
+          ),
+        ],
+      ),
+      _gap,
+      const FieldLabel('جوال بديل لولي الأمر'),
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Row(
+          children: [
+            SizedBox(
+              width: 92,
+              child: AppDropdown<String>(
+                value: secondaryPrefix,
+                items: phonePrefixes.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
+                onChanged: (v) => setState(() => secondaryPrefix = v ?? secondaryPrefix),
               ),
             ),
-          ),
-          if (extra) ...[
-            const SizedBox(height: 8),
-            AppCard(
-              color: const Color(0xFFFAFCF7),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const FieldLabel('تاريخ الميلاد'),
-                  InkWell(
-                    onTap: () => _pickDate(birth: true),
-                    child: InputDecorator(
-                      decoration: const InputDecoration(),
-                      child: Text(birthDate == null ? 'اختر التاريخ' : isoDate(birthDate!), style: const TextStyle(fontSize: 13)),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  const FieldLabel('الجنس'),
-                  Row(
-                    children: [
-                      Expanded(child: _toggle('ذكر', gender == 'ذكر', AppColors.amber, () => setState(() => gender = 'ذكر'))),
-                      const SizedBox(width: 8),
-                      Expanded(child: _toggle('أنثى', gender == 'أنثى', AppColors.navy, () => setState(() => gender = 'أنثى'))),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  const FieldLabel('مكان الولادة'),
-                  TextField(controller: birthPlace, decoration: const InputDecoration(hintText: 'مثال: غزة')),
-                  const SizedBox(height: 10),
-                  const FieldLabel('الجنسية'),
-                  TextField(controller: nationality, decoration: const InputDecoration(hintText: 'مثال: فلسطينية')),
-                  const SizedBox(height: 10),
-                  const FieldLabel('المدرسة السابقة'),
-                  TextField(controller: previousSchool, decoration: const InputDecoration(hintText: 'اسم المدرسة السابقة')),
-                  const SizedBox(height: 10),
-                  const FieldLabel('المعدل'),
-                  TextField(controller: gpa, decoration: const InputDecoration(hintText: 'مثال: 92.5%')),
-                  const SizedBox(height: 10),
-                  const FieldLabel('طبيعة السكن الحالي'),
-                  AppDropdown<String>(
-                    value: housingTypes.contains(housing) ? housing : housingTypes.last,
-                    items: housingTypes.map((h) => DropdownMenuItem(value: h, child: Text(h))).toList(),
-                    onChanged: (v) => setState(() => housing = v ?? housing),
-                  ),
-                  const SizedBox(height: 10),
-                  const FieldLabel('المناطق الأصلية'),
-                  TextField(controller: originalArea, decoration: const InputDecoration(hintText: 'البلدة الأصلية (مثال: يافا، حمامة...)')),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(color: Colors.white, border: Border.all(color: AppColors.line)),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const FieldLabel('الحالة الصحية'),
-                        Row(
-                          children: [
-                            Expanded(child: _toggle('سليم', health == 'سليم', const Color(0xFF9A4F05), () => setState(() { health = 'سليم'; medicalCondition.clear(); }))),
-                            const SizedBox(width: 8),
-                            Expanded(child: _toggle('مريض / يعاني من مرض', health == 'مريض', AppColors.danger, () => setState(() => health = 'مريض'))),
-                          ],
-                        ),
-                        if (health == 'مريض') ...[
-                          const SizedBox(height: 8),
-                          const FieldLabel('نوع المرض أو الحالة الصحية بالتفصيل'),
-                          TextField(controller: medicalCondition, decoration: const InputDecoration(hintText: 'يرجى ذكر نوع المرض أو أي أدوية يحتاجها الطالب...')),
-                        ] else
-                          const Padding(
-                            padding: EdgeInsets.only(top: 8),
-                            child: Text('لا توجد أمراض مسجلة، الطالب بصحة جيدة والحمد لله.', style: TextStyle(color: AppColors.muted, fontSize: 11.5)),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  const FieldLabel('مهنة ولي الأمر'),
-                  TextField(controller: parentJob, decoration: const InputDecoration(hintText: 'مثال: معلم، تاجر، موظف...')),
-                  const SizedBox(height: 10),
-                  const FieldLabel('رقم جوال بديل لولي الأمر (بالمقدمة)'),
-                  Row(
-                    children: [
-                      SizedBox(
-                        width: 88,
-                        child: AppDropdown<String>(
-                          value: secondaryPrefix,
-                          items: phonePrefixes.map((p) => DropdownMenuItem(value: p, child: Text(p, textDirection: TextDirection.ltr))).toList(),
-                          onChanged: (v) => setState(() => secondaryPrefix = v ?? secondaryPrefix),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Directionality(
-                          textDirection: TextDirection.ltr,
-                          child: TextField(
-                            controller: parentSecondaryNumber,
-                            keyboardType: TextInputType.phone,
-                            decoration: const InputDecoration(hintText: 'رقم إضافي'),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  const FieldLabel('البريد الإلكتروني'),
-                  TextField(controller: email, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(hintText: 'student@example.com')),
-                  const SizedBox(height: 12),
-                  Text('المرفقات والوثائق الرسمية (صور أو مستندات)', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy, fontSize: 12)),
-                  const SizedBox(height: 8),
-                  _attachBox('مرفق: صورة هوية الطالب', studentIdPhoto, () => _pickAttachment((v) => studentIdPhoto = v), () => setState(() => studentIdPhoto = '')),
-                  const SizedBox(height: 8),
-                  const SizedBox(height: 8),
-                  _attachBox('مرفق: شهادة الميلاد', birthCertificate, () => _pickAttachment((v) => birthCertificate = v), () => setState(() => birthCertificate = '')),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(color: Colors.white, border: Border.all(color: AppColors.line)),
-                    child: Row(
-                      children: [
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('تقييم الطالب المبدئي (5 نجوم)', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)),
-                              Text('تقييم المستوى أو المقابلة المبدئية عند التسجيل', style: TextStyle(color: AppColors.muted, fontSize: 11)),
-                            ],
-                          ),
-                        ),
-                        Row(
-                          children: [
-                            for (var star = 1; star <= 5; star++)
-                              InkWell(
-                                onTap: () => setState(() => initialRating = initialRating == star ? 0 : star),
-                                child: Icon(initialRating >= star ? Icons.star : Icons.star_border, color: initialRating >= star ? const Color(0xFFF59E0B) : const Color(0xFFD1D5DB), size: 22),
-                              ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (initialRating > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text('$initialRating / 5 نجوم', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
-                    ),
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(color: AppColors.bg, border: Border.all(color: AppColors.amberBorder)),
-                    child: InkWell(
-                      onTap: () => setState(() => guardianDeclaration = !guardianDeclaration),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(guardianDeclaration ? Icons.check_box : Icons.check_box_outline_blank, color: AppColors.amber, size: 20),
-                          const SizedBox(width: 8),
-                          const Expanded(
-                            child: Text(
-                              'زر صح إقرار ولي الأمر: أقر أنا ولي أمر الطالب بصحة كافة البيانات والمعلومات المدخلة أعلاه، وأوافق على سياسات ولوائح المركز التعليمي ونظام الدفع والدوام.',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, height: 1.45),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: parentSecondaryNumber,
+                keyboardType: TextInputType.phone,
+                style: const TextStyle(fontSize: 13.5, letterSpacing: 0.8),
+                decoration: const InputDecoration(hintText: 'رقم إضافي'),
               ),
             ),
           ],
-          const SizedBox(height: 14),
-          Row(
+        ),
+      ),
+      _gap,
+      const FieldLabel('المرفقات والوثائق'),
+      Row(
+        children: [
+          Expanded(
+            child: _attachBox('صورة هوية الطالب', studentIdPhoto, () => _pickAttachment((v) => studentIdPhoto = v),
+                () => setState(() => studentIdPhoto = '')),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _attachBox('شهادة الميلاد', birthCertificate, () => _pickAttachment((v) => birthCertificate = v),
+                () => setState(() => birthCertificate = '')),
+          ),
+        ],
+      ),
+      _gap,
+      Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('التقييم المبدئي', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading)),
+                const Text('مستوى الطالب في مقابلة التسجيل', style: TextStyle(color: AppColors.muted, fontSize: 10.5)),
+              ],
+            ),
+          ),
+          for (var star = 1; star <= 5; star++)
+            InkWell(
+              onTap: () => setState(() => initialRating = initialRating == star ? 0 : star),
+              child: Padding(
+                padding: const EdgeInsets.all(2),
+                child: Icon(
+                  initialRating >= star ? Icons.star_rounded : Icons.star_outline_rounded,
+                  color: initialRating >= star ? const Color(0xFFF59E0B) : const Color(0xFFCBD5E1),
+                  size: 26,
+                ),
+              ),
+            ),
+        ],
+      ),
+      _gap,
+      InkWell(
+        onTap: () => setState(() => guardianDeclaration = !guardianDeclaration),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          color: AppColors.amberSoft,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(context))),
+              Icon(guardianDeclaration ? Icons.check_box : Icons.check_box_outline_blank, color: AppColors.amber, size: 20),
               const SizedBox(width: 8),
-              Expanded(
-                child: PrimaryButton(
-                  label: editing ? 'حفظ التعديل' : 'تسجيل الطالب',
-                  icon: Icons.check,
-                  onPressed: canSave ? _save : null,
+              const Expanded(
+                child: Text(
+                  'أقر أنا ولي أمر الطالب بصحة كافة البيانات المدخلة، وأوافق على سياسات ولوائح المركز التعليمي ونظام الدفع والدوام.',
+                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, height: 1.5),
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    ];
+  }
+
+  /// عنوان قسم: أيقونة واسم وخط رفيع — بديل البطاقة التي كانت تحبس الحقول.
+  Widget _section(IconData icon, String title, {String? note}) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 20, bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: AppColors.amber),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(title, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: AppColors.heading)),
+              ),
+              if (note != null) Text(note, style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(height: 1, color: AppColors.line),
         ],
+      ),
+    );
+  }
+
+  Widget _extraHeader() {
+    return InkWell(
+      onTap: () => setState(() => extra = !extra),
+      child: Padding(
+        padding: const EdgeInsets.only(top: 20, bottom: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.post_add_outlined, size: 18, color: AppColors.amber),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('بيانات إضافية', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: AppColors.heading)),
+                      const Text('الميلاد والسكن والصحة والمرفقات — اختيارية', style: TextStyle(color: AppColors.faint, fontSize: 10.5)),
+                    ],
+                  ),
+                ),
+                Text(extra ? 'إخفاء' : 'عرض', style: TextStyle(color: AppColors.amber, fontWeight: FontWeight.w800, fontSize: 12)),
+                Icon(extra ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: AppColors.amber, size: 20),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(height: 1, color: AppColors.line),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// حقلان متجاوران بعنوانيهما — للحقول القصيرة التي تهدر سطراً كاملاً وحدها.
+  Widget _pair(List<Widget> start, List<Widget> end, {int startFlex = 1, int endFlex = 1}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(flex: startFlex, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: start)),
+        const SizedBox(width: 10),
+        Expanded(flex: endFlex, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: end)),
+      ],
+    );
+  }
+
+  /// حقل اختيار يُفتح بلمسة (تاريخ، حي) بشكل الحقول النصية نفسه.
+  Widget _selectField({required String text, required IconData icon, required VoidCallback onTap, bool placeholder = false}) {
+    return InkWell(
+      onTap: onTap,
+      child: InputDecorator(
+        decoration: InputDecoration(
+          suffixIconConstraints: const BoxConstraints(minWidth: 34, minHeight: 20),
+          suffixIcon: Icon(icon, size: 16, color: AppColors.faint),
+        ),
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 13, color: placeholder ? AppColors.faint : AppColors.text),
+        ),
+      ),
+    );
+  }
+
+  /// عدّاد الأرقام داخل طرف الحقل بدل سطر مستقل تحته.
+  Widget _counter(int length, int target) {
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(end: 10),
+      child: Text(
+        '$length/$target',
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          color: length == target ? AppColors.success : AppColors.faint,
+        ),
+      ),
+    );
+  }
+
+  Widget _message(String text, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 5),
+      child: Text(text, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+    );
+  }
+
+  Widget _sectionChip(String label) {
+    final on = sectionCtl.text == label;
+    return InkWell(
+      onTap: () => setState(() => sectionCtl.text = label),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: on ? AppColors.amberSoft : Colors.white,
+          border: Border.all(color: on ? AppColors.amber : AppColors.line),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: on ? AppColors.amber : AppColors.muted),
+        ),
+      ),
+    );
+  }
+
+  Widget _actionBar({required bool editing, required bool canSave}) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: AppColors.line)),
+        ),
+        child: Row(
+          children: [
+            Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(context))),
+            const SizedBox(width: 10),
+            Expanded(
+              flex: 2,
+              child: PrimaryButton(
+                label: editing ? 'حفظ التعديل' : 'تسجيل الطالب',
+                icon: Icons.check,
+                height: 44,
+                onPressed: canSave ? _save : null,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -812,17 +971,25 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     return InkWell(
       onTap: tap,
       child: Container(
-        height: 36,
+        height: 44,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: on ? color : Colors.white,
           border: Border.all(color: on ? color : AppColors.line),
         ),
-        child: Text(label, textAlign: TextAlign.center, style: TextStyle(color: on ? Colors.white : AppColors.muted, fontWeight: FontWeight.w800, fontSize: 11.5)),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: on ? Colors.white : AppColors.muted, fontWeight: FontWeight.w800, fontSize: 11.5),
+        ),
       ),
     );
   }
 
+  /// رقم الجوال يُقرأ من اليسار: المقدمة أولاً ثم بقية الرقم — مطابق لـ
+  /// `dir="ltr"` في StudentForm.tsx. في صفّ عربي كانت المقدمة تقع يميناً بعد الرقم.
   Widget _phoneRow({
     required String prefix,
     required TextEditingController controller,
@@ -832,108 +999,107 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     required ValueChanged<String> onPrefix,
     required ValueChanged<String> onNumber,
   }) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 88,
-          child: Directionality(
-            textDirection: TextDirection.ltr,
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 92,
             child: AppDropdown<String>(
               value: prefix,
               items: phonePrefixes.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
               onChanged: (v) => onPrefix(v ?? prefix),
             ),
           ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Directionality(
-            textDirection: TextDirection.ltr,
+          const SizedBox(width: 8),
+          Expanded(
             child: TextField(
               controller: controller,
               keyboardType: TextInputType.phone,
               maxLength: target,
               onChanged: onNumber,
+              style: const TextStyle(fontSize: 13.5, letterSpacing: 0.8),
               decoration: InputDecoration(
                 hintText: '$target أرقام',
                 counterText: '',
-                filled: true,
-                fillColor: error ? const Color(0xFFFFF1F2) : (complete ? const Color(0xFFF0FDF4) : null),
+                fillColor: error ? const Color(0xFFFFF1F2) : (complete ? const Color(0xFFF0FDF4) : Colors.white),
+                suffixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+                suffixIcon: _counter(controller.text.length, target),
               ),
             ),
           ),
-        ),
-      ],
-    );
-  }
-
-  Widget _phoneHint({required bool complete, required String? error, required int length, required int target, required String okText}) {
-    if (error != null) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: Text(error, style: const TextStyle(color: AppColors.danger, fontSize: 11, fontWeight: FontWeight.w700)),
-      );
-    }
-    if (length > 0 && !complete) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: Row(
-          children: [
-            Expanded(child: Text('يجب إدخال $target أرقام بعد المقدمة', style: const TextStyle(color: Color(0xFFB45309), fontSize: 11))),
-            Text('$length / $target', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF92400E))),
-          ],
-        ),
-      );
-    }
-    if (complete) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: Row(
-          children: [
-            Expanded(child: Text(okText, style: const TextStyle(color: Color(0xFF166534), fontSize: 11, fontWeight: FontWeight.w700))),
-            Text('$length / $target', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF166534))),
-          ],
-        ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Row(
-        children: [
-          Expanded(child: Text('اختر المقدمة واكتب الـ $target أرقام', style: const TextStyle(color: AppColors.muted, fontSize: 10))),
-          Text('0 / $target', style: const TextStyle(fontSize: 10, color: AppColors.faint)),
         ],
       ),
     );
   }
 
+  /// سطر الحالة تحت الجوال يظهر فقط حين يقول شيئاً: خطأ، أو رقم ناقص، أو رقم صالح.
+  Widget _phoneHint({required bool complete, required String? error, required int length, required int target, required String okText}) {
+    if (error != null) return _message(error, AppColors.danger);
+    if (length > 0 && !complete) return _message('يجب إدخال $target أرقام بعد المقدمة', const Color(0xFFB45309));
+    if (complete) return _message(okText, const Color(0xFF166534));
+    return const SizedBox.shrink();
+  }
+
+  /// مرفق مربّع: لمسة للاختيار، ثم معاينة بزر حذف فوقها.
   Widget _attachBox(String title, String data, VoidCallback pick, VoidCallback clear) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(color: Colors.white, border: Border.all(color: AppColors.amberBorder, style: BorderStyle.solid)),
-      child: Column(
-        children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5)),
-          const SizedBox(height: 8),
-          if (data.isNotEmpty) ...[
-            if (_bytesOf(data) != null) Image.memory(_bytesOf(data)!, height: 80, fit: BoxFit.cover),
-            TextButton(onPressed: clear, child: const Text('حذف المرفق', style: TextStyle(color: AppColors.danger, fontSize: 11))),
-          ] else
-            InkWell(
-              onTap: pick,
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 10),
-                child: Column(
-                  children: [
-                    Icon(Icons.upload_file, color: AppColors.amber),
-                    SizedBox(height: 4),
-                    Text('اختر صورة', style: TextStyle(color: AppColors.muted, fontSize: 11)),
-                  ],
-                ),
+    final bytes = data.isEmpty ? null : _bytesOf(data);
+    return InkWell(
+      onTap: data.isEmpty ? pick : null,
+      child: Container(
+        height: 96,
+        decoration: BoxDecoration(
+          color: AppColors.bg,
+          border: Border.all(color: data.isEmpty ? AppColors.line : AppColors.amberBorder),
+        ),
+        child: data.isEmpty
+            ? Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.add_photo_alternate_outlined, color: AppColors.amber, size: 24),
+                  const SizedBox(height: 5),
+                  Text(title, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.muted, fontSize: 11, fontWeight: FontWeight.w700)),
+                ],
+              )
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (bytes != null)
+                    Image.memory(bytes, fit: BoxFit.cover)
+                  else
+                    const Center(child: Icon(Icons.insert_drive_file_outlined, color: AppColors.muted)),
+                  PositionedDirectional(
+                    bottom: 0,
+                    start: 0,
+                    end: 0,
+                    child: Container(
+                      color: const Color(0x99000000),
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: Text(
+                        title,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                  PositionedDirectional(
+                    top: 4,
+                    end: 4,
+                    child: InkWell(
+                      onTap: clear,
+                      child: Container(
+                        width: 26,
+                        height: 26,
+                        alignment: Alignment.center,
+                        color: const Color(0x99000000),
+                        child: const Icon(Icons.close, size: 15, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-        ],
       ),
     );
   }

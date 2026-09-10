@@ -19,15 +19,13 @@ abstract final class AppColors {
   static Color amber = const Color(0xFFE88C15);
   static Color amberDark = const Color(0xFFD97E0D);
 
-  /// لون التمييز — `activeItem`: القسم المفتوح، واسم المنشأة في الترويسة،
-  /// وعمليات السحب. كان مهملاً فظهرت هذه المواضع بألوان لا صلة لها بالهوية.
+  /// لون التمييز على الهاتف: القسم المفتوح واسم المنشأة — يتبع لون العمليات.
   static Color accent = const Color(0xFFE88C15);
 
-  /// خلفية الشارات وحدّها. ثابتتان كما في Center: `bg-[#FFF7ED]` و`#FED7AA`
-  /// مكتوبتان صراحةً في المكوّنات، والهوية تتحكّم بخمسة ألوان لا غير.
-  /// اشتقاقهما من لون الإجراء كان يجعلهما زهريتين باهتتين مع هوية حمراء.
-  static const amberSoft = Color(0xFFFFF7ED);
-  static const amberBorder = Color(0xFFFED7AA);
+  /// خلفية وحدّ فاتحان مشتقّان من لون العمليات — مطابق لـ
+  /// `color-mix(in srgb, var(--theme-action-btn) 10%/25%, white)` في index.css.
+  static Color amberSoft = _mix(const Color(0xFFE88C15), 0.10);
+  static Color amberBorder = _mix(const Color(0xFFE88C15), 0.25);
 
   /// خلفية مساحة العمل — `appBg`.
   static Color bg = const Color(0xFFF8FAFC);
@@ -67,7 +65,13 @@ abstract final class AppColors {
 
     amber = action;
     amberDark = _shade(action, 0.86);
-    accent = parseHexColor(c.activeItem) ?? action;
+    // على الهاتف يتبع التمييز لونَ العمليات، كما في index.css بالنسخة المكتبية:
+    // `text-[#E88C15]` و`text-[#F39C12]` و`bg-[#FFF7ED]` كلها تُحال إلى
+    // `--theme-action-btn`. لون `activeItem` لا يُرسم إلا في القائمة الجانبية
+    // لسطح المكتب وفي البوابات، فيُحفظ ويُزامَن ولا يظهر هنا.
+    accent = action;
+    amberSoft = _mix(action, 0.10);
+    amberBorder = _mix(action, 0.25);
 
     heading = primary;
     bg = surfaceBg;
@@ -77,6 +81,12 @@ abstract final class AppColors {
   static void reset() => apply(InstitutionColors.defaults);
 
   /// تفتيح أو تغميق بضرب المركّبات — `factor` أقل من 1 يُغمّق.
+  /// مزج اللون بالأبيض بنسبة — مطابق لـ `color-mix(in srgb, <لون> N%, white)`.
+  static Color _mix(Color c, double ratio) {
+    int ch(double v) => (v * 255 * ratio + 255 * (1 - ratio)).round().clamp(0, 255);
+    return Color.fromARGB(255, ch(c.r), ch(c.g), ch(c.b));
+  }
+
   static Color _shade(Color c, double factor) {
     int ch(double v) => (v * 255 * factor).round().clamp(0, 255);
     return Color.fromARGB(255, ch(c.r), ch(c.g), ch(c.b));

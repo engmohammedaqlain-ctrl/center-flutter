@@ -76,7 +76,7 @@ class StatusChip extends StatelessWidget {
 
   factory StatusChip.amber(String label) => StatusChip(
         label: label,
-        fg: const Color(0xFF9A4F05),
+        fg: AppColors.amber, // `text-[#9A4F05]` يُحال إلى لون العمليات
         bg: AppColors.amberSoft,
         border: AppColors.amberBorder,
       );
@@ -116,14 +116,29 @@ class MoneyChip extends StatelessWidget {
 }
 
 class SearchField extends StatelessWidget {
-  const SearchField({super.key, required this.controller, required this.hint, this.onChanged});
+  const SearchField({super.key, required this.controller, required this.hint, this.onChanged, this.trailing});
 
   final TextEditingController controller;
   final String hint;
   final ValueChanged<String>? onChanged;
 
+  /// ما يُعرض في طرف الحقل — كعدد النتائج — بدل سطر مستقل تحته.
+  final Widget? trailing;
+
   @override
   Widget build(BuildContext context) {
+    final clear = controller.text.isEmpty
+        ? null
+        : IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+            icon: const Icon(Icons.close, size: 16, color: AppColors.faint),
+            onPressed: () {
+              controller.clear();
+              onChanged?.call('');
+            },
+          );
+
     return SizedBox(
       height: 40,
       child: TextField(
@@ -135,16 +150,102 @@ class SearchField extends StatelessWidget {
           hintText: hint,
           prefixIcon: const Icon(Icons.search, size: 16, color: AppColors.faint),
           prefixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          suffixIcon: controller.text.isEmpty
-              ? null
-              : IconButton(
-                  padding: EdgeInsets.zero,
-                  icon: const Icon(Icons.close, size: 16, color: AppColors.faint),
-                  onPressed: () {
-                    controller.clear();
-                    onChanged?.call('');
-                  },
+          suffixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          suffixIcon: trailing == null
+              ? clear
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(padding: const EdgeInsetsDirectional.only(end: 8), child: trailing),
+                    ?clear,
+                  ],
                 ),
+        ),
+      ),
+    );
+  }
+}
+
+/// زر تصفية مدمج: أيقونة واسم الاختيار الحالي، ويفتح قائمة الخيارات.
+///
+/// بديل القائمة المنسدلة بعرض الشاشة حين تشارك البحثَ سطراً واحداً. يتلوّن
+/// حين تكون التصفية مفعّلة حتى لا يُنسى أن القائمة مقصوصة.
+class FilterButton extends StatelessWidget {
+  const FilterButton({
+    super.key,
+    required this.options,
+    required this.value,
+    required this.onSelected,
+    this.maxWidth = 132,
+  });
+
+  /// القيمة ← النص المعروض. القيمة الفارغة تعني «الكل».
+  final Map<String, String> options;
+  final String value;
+  final ValueChanged<String> onSelected;
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = value.isNotEmpty;
+    final label = options[value] ?? options[''] ?? '';
+    final fg = active ? AppColors.amber : AppColors.text;
+
+    return PopupMenuButton<String>(
+      initialValue: value,
+      tooltip: 'تصفية',
+      position: PopupMenuPosition.under,
+      color: Colors.white,
+      shape: const RoundedRectangleBorder(),
+      onSelected: onSelected,
+      itemBuilder: (_) => [
+        for (final e in options.entries)
+          PopupMenuItem<String>(
+            value: e.key,
+            height: 40,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 22,
+                  child: e.key == value ? Icon(Icons.check, size: 16, color: AppColors.amber) : null,
+                ),
+                Expanded(
+                  child: Text(
+                    e.value,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: e.key == value ? FontWeight.w800 : FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+      child: Container(
+        height: 40,
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: active ? AppColors.amberSoft : Colors.white,
+          border: Border.all(color: active ? AppColors.amberBorder : AppColors.line),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(active ? Icons.filter_alt : Icons.filter_alt_outlined, size: 16, color: fg),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: fg),
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(Icons.arrow_drop_down, size: 18, color: fg),
+          ],
         ),
       ),
     );

@@ -533,6 +533,7 @@ class SyncService {
     final items = <PendingSummaryItem>[];
     final allNewKeys = <String>[];
     var total = 0;
+    var failed = false;
 
     for (final cloud in syncedTables) {
       try {
@@ -555,7 +556,10 @@ class SyncService {
             to: from + pullPageSize - 1,
             order: 'updated_at.desc',
           );
-          if (page == null) break;
+          if (page == null) {
+            failed = true;
+            break;
+          }
           for (final row in page) {
             final localAt = localStamps[row['id']?.toString()];
             final remoteAt = toTimestamp(row['updated_at']);
@@ -591,14 +595,22 @@ class SyncService {
             );
           }
         }
-      } catch (_) {}
+      } catch (_) {
+        failed = true;
+      }
     }
 
     items.sort((a, b) => b.at.compareTo(a.at));
-    lastRemoteCheck = DateTime.now();
-    remotePendingIds
-      ..clear()
-      ..addAll(allNewKeys);
+    if (failed) {
+      // فحص ناقص لا يُثبت خلوّ السحابة: يُضاف ما وُجد ولا يُمسح ما عُرف، ولا
+      // يُسجَّل وقت فحص كان سيُظهر «متزامن» على غير حقيقة.
+      remotePendingIds.addAll(allNewKeys);
+    } else {
+      lastRemoteCheck = DateTime.now();
+      remotePendingIds
+        ..clear()
+        ..addAll(allNewKeys);
+    }
 
     return RemoteChangeSummary(total: total, rows: rows..sort((a, b) => b.count.compareTo(a.count)), items: items, since: since);
   }

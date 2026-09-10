@@ -47,15 +47,64 @@ Future<void> _bootstrap() async {
   unawaited(store.afterEnter());
 }
 
-class CenterApp extends StatelessWidget {
+class CenterApp extends StatefulWidget {
   const CenterApp({super.key});
+
+  @override
+  State<CenterApp> createState() => _CenterAppState();
+}
+
+/// السمة تُعاد بناؤها حين تتغيّر ألوان الهوية — وحينها فقط.
+///
+/// كانت تُبنى مرة واحدة عند الإقلاع بالألوان الافتراضية، قبل أن تصل ألوان
+/// المنشأة من القرص أو السحابة، فبقي شريط العنوان في كل شاشة فرعية كحلياً
+/// مهما اختارت الإدارة. المخزن يُخطر عند كل تعديل، فتُقارَن بصمة الألوان أولاً
+/// بدل إعادة بناء التطبيق كله مع كل لمسة حضور.
+class _CenterAppState extends State<CenterApp> {
+  AppStore? _store;
+  String _palette = _currentPalette();
+  ThemeData _theme = AppTheme.build();
+
+  static String _currentPalette() => [
+        AppColors.navy,
+        AppColors.amber,
+        AppColors.heading,
+        AppColors.bg,
+        AppColors.accent,
+      ].map((c) => c.toARGB32()).join('|');
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // قراءة بلا اشتراك: الاشتراك في StoreScope يعيد بناء التطبيق مع كل إخطار
+    final store = context.getInheritedWidgetOfExactType<StoreScope>()?.notifier;
+    if (identical(store, _store)) return;
+    _store?.removeListener(_onStoreChanged);
+    _store = store?..addListener(_onStoreChanged);
+    _onStoreChanged();
+  }
+
+  void _onStoreChanged() {
+    final next = _currentPalette();
+    if (next == _palette) return;
+    setState(() {
+      _palette = next;
+      _theme = AppTheme.build();
+    });
+  }
+
+  @override
+  void dispose() {
+    _store?.removeListener(_onStoreChanged);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'نظام الإدارة المدرسي',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.build(),
+      theme: _theme,
       locale: const Locale('ar'),
       supportedLocales: const [Locale('ar')],
       localizationsDelegates: const [

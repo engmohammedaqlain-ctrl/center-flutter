@@ -1,20 +1,44 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'supabase.dart';
+
+/// تغيير واحد وصل من السحابة.
+class RealtimeEvent {
+  const RealtimeEvent({required this.table, required this.type, required this.record});
+
+  final String table;
+
+  /// `INSERT` أو `UPDATE` أو `DELETE`.
+  final String type;
+
+  /// الصف الجديد، أو القديم في الحذف — وهو يحمل المفتاح وحده غالباً.
+  final Map<String, dynamic> record;
+}
 
 /// الاستماع اللحظي لتغييرات السحابة — المقابل لـ `setupRealtimeListeners`
 /// في `sync.ts` و `useRealtimeListener` في الشاشات.
 ///
 /// بدونه لا يعلم الجهاز بأي تعديل من جهاز آخر حتى يضغط المستخدم «سحب» يدوياً.
 class RealtimeListener {
-  RealtimeListener({required this.onChange, required this.tables});
+  RealtimeListener({
+    required this.onChange,
+    required this.tables,
+    this.onJoined,
+    @visibleForTesting WebSocketChannel Function(Uri uri)? connector,
+  }) : _connector = connector ?? WebSocketChannel.connect;
 
-  /// يُستدعى باسم الجدول الذي تغيّر في السحابة.
-  final void Function(String table) onChange;
+  /// يُستدعى لكل تغيير بجدوله وصفّه.
+  final void Function(RealtimeEvent event) onChange;
+
+  /// يُستدعى عند قبول الاشتراك — بعد الاتصال الأول وبعد كل إعادة اتصال.
+  final void Function()? onJoined;
+
   final List<String> tables;
+  final WebSocketChannel Function(Uri uri) _connector;
 
   WebSocketChannel? _channel;
   StreamSubscription<dynamic>? _sub;
@@ -28,9 +52,12 @@ class RealtimeListener {
 
   /// فتح الاتصال لمنشأة محددة. استدعاؤه مرة أخرى يعيد الاتصال.
   Future<void> connect(String tenantId) async {
-    _stopped = false;
-    if (_tenantId == tenantId && _channel != null) return;
+    if (_tenantId == tenantId && _channel != null && !_stopped) return;
     await disconnect();
+    // `disconnect` يرفع علامة الإيقاف، فتُنزل بعده لا قبله. الترتيب المعكوس
+    // كان يجعل `_open` يعود فوراً فلا يُفتح الاتصال أبداً، ولا يصل أي تعديل
+    // من جهاز آخر إلا بفحص يدوي.
+    _stopped = false;
     _tenantId = tenantId;
     _open();
   }
@@ -43,7 +70,7 @@ class RealtimeListener {
     final uri = Uri.parse('$base/realtime/v1/websocket?apikey=${SupabaseConfig.key}&vsn=1.0.0');
 
     try {
-      final channel = WebSocketChannel.connect(uri);
+      final channel = _connector(uri);
       _channel = channel;
 
       _sub = channel.stream.listen(
@@ -90,29 +117,49 @@ class RealtimeListener {
     try {
       final decoded = jsonDecode('$raw');
       if (decoded is! Map) return;
-      final event = '${decoded['event'] ?? ''}';
-      if (event != 'postgres_changes' && event != 'INSERT' && event != 'UPDATE' && event != 'DELETE') {
+
+      // قبول الاشتراك. ردود نبض القلب تحمل الموضوع `phoenix` فتُستثنى.
+      if (decoded['event'] == 'phx_reply') {
+        final payload = decoded['payload'];
+        if (payload is Map && payload['status'] == 'ok' && '${decoded['topic']}'.startsWith('realtime:')) {
+          onJoined?.call();
+        }
         return;
       }
-      final payload = decoded['payload'];
-      String? table;
-      if (payload is Map) {
-        final data = payload['data'];
-        if (data is Map) table = data['table']?.toString();
-        table ??= payload['table']?.toString();
-      }
-      table ??= _tableFromTopic('${decoded['topic'] ?? ''}');
-      if (table != null && table.isNotEmpty) onChange(table);
+
+      final event = parse(decoded);
+      if (event != null) onChange(event);
     } catch (_) {
       // رسالة غير متوقعة لا تُسقط الاتصال
     }
   }
 
-  String? _tableFromTopic(String topic) {
-    // realtime:public:<table>:<filter>
-    final parts = topic.split(':');
-    if (parts.length >= 3) return parts[2];
-    return null;
+  /// قراءة تغيير من رسالة الخادم، أو `null` إن لم تكن تغييراً.
+  @visibleForTesting
+  static RealtimeEvent? parse(Map<dynamic, dynamic> message) {
+    final event = '${message['event'] ?? ''}';
+    final payload = message['payload'];
+    if (payload is! Map) return null;
+
+    final Map<dynamic, dynamic> data;
+    if (event == 'postgres_changes') {
+      final inner = payload['data'];
+      if (inner is! Map) return null;
+      data = inner;
+    } else if (event == 'INSERT' || event == 'UPDATE' || event == 'DELETE') {
+      data = payload; // صيغة البروتوكول القديمة
+    } else {
+      return null;
+    }
+
+    final table = '${data['table'] ?? ''}';
+    final type = '${data['type'] ?? event}'.toUpperCase();
+    final record = data['record'];
+    final old = data['old_record'];
+    final source = record is Map && record.isNotEmpty ? record : old;
+    if (table.isEmpty || source is! Map) return null;
+
+    return RealtimeEvent(table: table, type: type, record: Map<String, dynamic>.from(source));
   }
 
   void _scheduleReconnect() {

@@ -265,9 +265,10 @@ Widget _syncButton(
   required IconData icon,
   required String label,
 }) {
-  final on = count > 0;
+  final allowed = store.can(push ? 'sync.push' : 'sync.pull');
+  final on = count > 0 && allowed;
   return PressableScale(
-    onTap: store.sync.isSyncing
+    onTap: store.sync.isSyncing || !allowed
         ? null
         : () {
             Navigator.pop(ctx);
@@ -368,6 +369,11 @@ Widget _menuTile({
 /// تُفتح فوراً وتفحص بداخلها. كان الفحص يسبق الفتح — وهو جولة كاملة على كل
 /// الجداول — فتبقى الشاشة بلا استجابة حتى ينتهي، ويبدو الزر معطّلاً.
 Future<void> openSyncSheet(BuildContext context, AppStore store, {required bool push}) {
+  // كل مسارات فتح المزامنة تمرّ من هنا، فتُحرس هنا لا عند كل زر وحده
+  if (!store.can(push ? 'sync.push' : 'sync.pull')) {
+    showAppSnack(context, push ? 'لا تملك صلاحية رفع التعديلات على هذا الجهاز' : 'لا تملك صلاحية سحب البيانات على هذا الجهاز', error: true);
+    return Future.value();
+  }
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,

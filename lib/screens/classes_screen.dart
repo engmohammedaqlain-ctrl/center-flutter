@@ -63,7 +63,8 @@ class _ClassesScreenState extends State<ClassesScreen> {
                       ],
                     ),
                   ),
-                  PrimaryButton(label: 'صف جديد', icon: Icons.add, onPressed: () => _editRoom(context, null)),
+                  if (store.can('schedule.edit'))
+                    PrimaryButton(label: 'صف جديد', icon: Icons.add, onPressed: () => _editRoom(context, null)),
                 ],
               ),
             ),
@@ -343,12 +344,15 @@ class _RoomCard extends StatelessWidget {
                   if (v == 'assign') onAssign();
                   if (v == 'delete') onDelete();
                 },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'print', child: Text('طباعة كشف الصف')),
-                  PopupMenuItem(value: 'codes', child: Text('رموز دخول البوابة')),
-                  PopupMenuItem(value: 'edit', child: Text('تعديل بيانات الصف')),
-                  PopupMenuItem(value: 'assign', child: Text('تعيين مربي')),
-                  PopupMenuItem(value: 'delete', child: Text('حذف الصف')),
+                itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'print', child: Text('طباعة كشف الصف')),
+                  const PopupMenuItem(value: 'codes', child: Text('رموز دخول البوابة')),
+                  // التعديل والتعيين والحذف لمن يملك تعديل الجداول وحده
+                  if (StoreScope.of(context).can('schedule.edit')) ...const [
+                    PopupMenuItem(value: 'edit', child: Text('تعديل بيانات الصف')),
+                    PopupMenuItem(value: 'assign', child: Text('تعيين مربي')),
+                    PopupMenuItem(value: 'delete', child: Text('حذف الصف')),
+                  ],
                 ],
               ),
             ],
@@ -455,8 +459,10 @@ class _ClassDetailState extends State<_ClassDetail> {
                       students: list,
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  SquareIconButton(icon: Icons.edit_outlined, onTap: widget.onEdit),
+                  if (StoreScope.of(context).can('schedule.edit')) ...[
+                    const SizedBox(width: 6),
+                    SquareIconButton(icon: Icons.edit_outlined, onTap: widget.onEdit),
+                  ],
                   const SizedBox(width: 6),
                   StatusChip.muted('${list.length} / ${widget.room.capacity}'),
                 ],
@@ -572,7 +578,7 @@ Future<void> showClassPortalCodes(
                           ],
                         ),
                       ),
-                      if (missing > 0)
+                      if (missing > 0 && store.can('students.edit'))
                         PrimaryButton(
                           label: 'توليد الناقص',
                           icon: Icons.autorenew,

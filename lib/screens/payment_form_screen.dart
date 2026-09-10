@@ -102,13 +102,19 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
         final insts = selected == null ? <Installment>[] : store.installments.where((i) => i.studentId == selected.id).toList();
         final electronic = method != 'cash';
 
+        final scope = StoreScope.of(context);
+        if (!scope.can('finance.collect')) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('تسديد دفعة')),
+            body: NoAccess(section: 'finance', roleName: scope.roleName),
+          );
+        }
         return Scaffold(
           backgroundColor: AppColors.bg,
           appBar: AppBar(
             title: Text(selected == null ? 'تسديد دفعة جديدة' : 'تسديد دفعة للطالب: ${selected.fullName}'),
-            backgroundColor: AppColors.amberSoft,
-            foregroundColor: AppColors.heading,
-            titleTextStyle: TextStyle(color: AppColors.heading, fontWeight: FontWeight.w800, fontSize: 13.5),
+            // شريط الهوية الغامق كبقية الشاشات
+            titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13.5),
           ),
           body: ListView(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),

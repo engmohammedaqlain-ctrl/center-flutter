@@ -22,6 +22,14 @@ class StudentDetailScreen extends StatelessWidget {
     return ListenableBuilder(
       listenable: store,
       builder: (context, _) {
+        // الملف يُفتح من المالية والصفوف أيضاً، فتُحرس الشاشة نفسها لا زرّ الوصول وحده
+        if (!store.can('students.view')) {
+          return Scaffold(
+            backgroundColor: AppColors.bg,
+            appBar: AppBar(title: const Text('ملف الطالب')),
+            body: NoAccess(section: 'students', roleName: store.roleName),
+          );
+        }
         final student = store.studentById(studentId);
         if (student == null) {
           return Scaffold(
@@ -51,6 +59,9 @@ class StudentDetailScreen extends StatelessWidget {
         // الالتزام يحتسب الحاضر وحده — مطابق لـ attendanceStats في StudentDetail.tsx
         final rate = marks.isEmpty ? 100 : ((present / marks.length) * 100).round();
         final settled = !student.isDebtor && insts.every((i) => i.isPaid);
+        // الأرصدة والدفعات تخصّ من يملك عرض المالية، والقبض من يملك القبض
+        final canFinance = store.can('finance.view');
+        final canCollect = store.can('finance.collect');
 
         return Scaffold(
           backgroundColor: AppColors.bg,
@@ -61,61 +72,64 @@ class StudentDetailScreen extends StatelessWidget {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
                   children: [
-                    AppCard(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text('الرصيد المالي الحالي:', style: TextStyle(color: AppColors.muted, fontSize: 10.5)),
-                                    const SizedBox(height: 4),
-                                    if (student.isDebtor)
-                                      Text('عليه ${money(student.balance)}', style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w800, fontSize: 16))
-                                    else if (student.balance > 0)
-                                      Text('له ${money(student.balance)}', style: const TextStyle(color: AppColors.success, fontWeight: FontWeight.w800, fontSize: 16))
-                                    else
-                                      const Text('مسدد بالكامل (0 ₪)', style: TextStyle(color: AppColors.success, fontWeight: FontWeight.w800)),
-                                  ],
+                    if (canFinance) ...[
+                      AppCard(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text('الرصيد المالي الحالي:', style: TextStyle(color: AppColors.muted, fontSize: 10.5)),
+                                      const SizedBox(height: 4),
+                                      if (student.isDebtor)
+                                        Text('عليه ${money(student.balance)}', style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w800, fontSize: 16))
+                                      else if (student.balance > 0)
+                                        Text('له ${money(student.balance)}', style: const TextStyle(color: AppColors.success, fontWeight: FontWeight.w800, fontSize: 16))
+                                      else
+                                        const Text('مسدد بالكامل (0 ₪)', style: TextStyle(color: AppColors.success, fontWeight: FontWeight.w800)),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              PrimaryButton(
-                                label: 'تسديد دفعة',
-                                icon: Icons.credit_card,
-                                onPressed: settled
-                                    ? null
-                                    : () {
-                                        final next = insts.where((i) => !i.isPaid).firstOrNull;
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                            builder: (_) => PaymentFormScreen(
-                                              studentId: student.id,
-                                              installmentId: next?.id,
-                                              amount: next?.remaining,
+                                if (canCollect)
+                                PrimaryButton(
+                                  label: 'تسديد دفعة',
+                                  icon: Icons.credit_card,
+                                  onPressed: settled
+                                      ? null
+                                      : () {
+                                          final next = insts.where((i) => !i.isPaid).firstOrNull;
+                                          Navigator.of(context).push(
+                                            MaterialPageRoute(
+                                              builder: (_) => PaymentFormScreen(
+                                                studentId: student.id,
+                                                installmentId: next?.id,
+                                                amount: next?.remaining,
+                                              ),
                                             ),
-                                          ),
-                                        );
-                                      },
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              const Text('إجمالي المقبوضات:', style: TextStyle(color: AppColors.muted, fontSize: 12)),
-                              const Spacer(),
-                              Text(money(totalPaid), style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading, fontSize: 12.5)),
-                            ],
-                          ),
-                        ],
+                                          );
+                                        },
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                const Text('إجمالي المقبوضات:', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+                                const Spacer(),
+                                Text(money(totalPaid), style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading, fontSize: 12.5)),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
+                      const SizedBox(height: 8),
+                    ],
                     AppCard(
                       padding: const EdgeInsets.all(12),
                       child: Column(
@@ -181,7 +195,7 @@ class StudentDetailScreen extends StatelessWidget {
                         ],
                       ),
                     ),
-                    if (insts.isNotEmpty) ...[
+                    if (canFinance && insts.isNotEmpty) ...[
                       const SizedBox(height: 8),
                       AppCard(
                         padding: const EdgeInsets.all(12),
@@ -193,31 +207,33 @@ class StudentDetailScreen extends StatelessWidget {
                         ),
                       ),
                     ],
-                    const SizedBox(height: 8),
-                    AppCard(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        children: [
-                          SectionTitle('سجل الدفعات (${pays.length})', trailing: Text('المقبوض: ${money(totalPaid)}', style: const TextStyle(color: AppColors.muted, fontSize: 11))),
-                          if (pays.isEmpty)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 16),
-                              child: Text('لا توجد دفعات مسجلة حتى الآن', style: TextStyle(color: AppColors.muted, fontSize: 12)),
-                            )
-                          else
-                            for (final p in pays) _pay(context, p),
-                        ],
+                    if (canFinance) ...[
+                      const SizedBox(height: 8),
+                      AppCard(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          children: [
+                            SectionTitle('سجل الدفعات (${pays.length})', trailing: Text('المقبوض: ${money(totalPaid)}', style: const TextStyle(color: AppColors.muted, fontSize: 11))),
+                            if (pays.isEmpty)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 16),
+                                child: Text('لا توجد دفعات مسجلة حتى الآن', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+                              )
+                            else
+                              for (final p in pays) _pay(context, p),
+                          ],
+                        ),
                       ),
-                    ),
-                    if (!store.isSchool) ...[
+                    ],
+                    if (!store.isSchool && store.can('schedule.view')) ...[
                       const SizedBox(height: 8),
                       StudentGroupsCard(student: student),
                     ],
-                    if (marks.isNotEmpty) ...[
+                    if (marks.isNotEmpty && store.can('attendance.view')) ...[
                       const SizedBox(height: 8),
                       _AttendanceCard(marks: marks, rate: rate, present: present, absent: absent, excused: excused),
                     ],
-                    if (store.features.enableEvaluations) ...[
+                    if (store.features.enableEvaluations && store.can('attendance.view')) ...[
                       const SizedBox(height: 8),
                       _EvaluationsCard(evaluations: store.evaluationsOfStudent(student.id)),
                     ],
@@ -280,6 +296,7 @@ class StudentDetailScreen extends StatelessWidget {
                 ],
               ),
             ),
+            if (StoreScope.of(context).can('students.edit'))
             GhostButton(
               label: 'تعديل',
               icon: Icons.edit_outlined,
@@ -319,7 +336,7 @@ class StudentDetailScreen extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: InkWell(
-        onTap: inst.isPaid
+        onTap: inst.isPaid || !StoreScope.of(context).can('finance.collect')
             ? null
             : () {
                 Navigator.of(context).push(
@@ -345,15 +362,16 @@ class StudentDetailScreen extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 6),
-              Row(
+              // التفاف لا صفّ: تاريخ ومبلغان في سطر واحد كانت تطفح على الهواتف الضيقة
+              Wrap(
+                spacing: 10,
+                runSpacing: 2,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   Text('استحقاق: ${formatDate(inst.dueDate)}', style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-                  const Spacer(),
                   Text('المطلوب: ${money(inst.amount)}', style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-                  if (!inst.isPaid) ...[
-                    const SizedBox(width: 8),
+                  if (!inst.isPaid)
                     Text('المتبقي: ${money(inst.remaining)}', style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w800, fontSize: 11)),
-                  ],
                 ],
               ),
             ],
@@ -629,7 +647,7 @@ class _PortalCodeRow extends StatelessWidget {
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: AppColors.heading),
             ),
           ),
-          if (code.isEmpty)
+          if (code.isEmpty && store.can('students.edit'))
             GhostButton(
               label: 'توليد',
               icon: Icons.autorenew,
@@ -638,6 +656,8 @@ class _PortalCodeRow extends StatelessWidget {
                 showAppSnack(context, 'تم توليد رمز الدخول');
               },
             )
+          else if (code.isEmpty)
+            const Text('—', style: TextStyle(color: AppColors.faint))
           else
             SelectableText(
               code,

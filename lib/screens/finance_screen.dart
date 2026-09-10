@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import 'expense_form_sheet.dart';
 import 'payment_form_screen.dart';
@@ -79,222 +80,243 @@ class _FinanceScreenState extends State<FinanceScreen> {
         final dueCount = allDues.where((d) => !d.late && !d.exception).length;
         final exceptionCount = allDues.where((d) => d.exception).length;
 
-        return Column(
-          children: [
-            Container(
-              margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-              padding: const EdgeInsets.fromLTRB(6, 4, 6, 0),
-              decoration: BoxDecoration(color: Colors.white, border: Border.all(color: AppColors.line)),
-              child: Row(
-                children: [
-                  Expanded(child: _tab('المقبوضات', Icons.receipt_long, 0, '${store.payments.length}', false)),
-                  Expanded(child: _tab('المستحقات', Icons.schedule, 1, '${allDues.length}', allDues.isNotEmpty)),
-                  if (showExpenses)
-                    Expanded(
-                      child: _tab(
-                        'المصروفات',
-                        Icons.payments_outlined,
-                        2,
-                        '${store.expenses.length + store.teacherPayouts.length}',
-                        false,
-                      ),
-                    ),
-                  if (tab != 2 && store.can('finance.collect'))
-                    PrimaryButton(
-                      label: 'دفعة',
-                      icon: Icons.add,
-                      onPressed: () {
-                        Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PaymentFormScreen()));
-                      },
-                    ),
-                ],
-              ),
-            ),
-            if (tab != 2)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                child: SearchField(
-                  controller: search,
-                  hint: tab == 0 ? 'ابحث برقم الوصل، الطالب، المرجع...' : 'ابحث باسم الطالب أو رقم الهاتف...',
-                  onChanged: (_) => setState(() {}),
-                ),
-              ),
-            if (tab == 0)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+        // الإجراء يتبع التبويب: قبض دفعة، أو سند صرف في تبويب المصروفات
+        final ThumbAction? action;
+        if (tab == 2) {
+          action = store.can('finance.expenses')
+              ? ThumbAction(
+                  label: 'إضافة سند صرف',
+                  icon: Icons.add,
+                  color: AppColors.navy,
+                  onPressed: () async {
+                    final saved = await showExpenseSheet(context, store);
+                    if (saved && context.mounted) showAppSnack(context, 'تم حفظ سند الصرف');
+                  },
+                )
+              : null;
+        } else {
+          action = store.can('finance.collect')
+              ? ThumbAction(
+                  label: 'دفعة جديدة',
+                  icon: Icons.add_card,
+                  onPressed: () {
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PaymentFormScreen()));
+                  },
+                )
+              : null;
+        }
+
+        return ThumbActionLayer(
+          action: action,
+          child: Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                padding: const EdgeInsets.fromLTRB(6, 4, 6, 0),
+                decoration: BoxDecoration(color: Colors.white, border: Border.all(color: AppColors.line)),
                 child: Row(
                   children: [
-                    Expanded(
-                      child: AppDropdown<String>(
-                        value: method,
-                        items: [
-                          const DropdownMenuItem(value: '', child: Text('كل طرق الدفع')),
-                          ...paymentMethodNames.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))),
-                        ],
-                        onChanged: (v) => setState(() => method = v ?? ''),
+                    Expanded(child: _tab('المقبوضات', Icons.receipt_long, 0, '${store.payments.length}', false)),
+                    Expanded(child: _tab('المستحقات', Icons.schedule, 1, '${allDues.length}', allDues.isNotEmpty)),
+                    if (showExpenses)
+                      Expanded(
+                        child: _tab(
+                          'المصروفات',
+                          Icons.payments_outlined,
+                          2,
+                          '${store.expenses.length + store.teacherPayouts.length}',
+                          false,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: AppDropdown<String>(
-                        value: status,
-                        items: const [
-                          DropdownMenuItem(value: '', child: Text('كل الحالات')),
-                          DropdownMenuItem(value: 'active', child: Text('مقبوضة')),
-                          DropdownMenuItem(value: 'cancelled', child: Text('ملغاة')),
-                        ],
-                        onChanged: (v) => setState(() => status = v ?? ''),
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            else if (tab == 1)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text('إجمالي المستحق: ${money(totalDue)}', style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w800, fontSize: 12)),
-                    ),
-                    SizedBox(
-                      width: 130,
-                      child: AppDropdown<String>(
-                        value: dueStage,
-                        items: const [
-                          DropdownMenuItem(value: 'all', child: Text('كل الحالات')),
-                          DropdownMenuItem(value: 'due', child: Text('مستحق')),
-                          DropdownMenuItem(value: 'late', child: Text('متأخر عن السداد')),
-                          DropdownMenuItem(value: 'exception', child: Text('استثناء')),
-                        ],
-                        onChanged: (v) => setState(() => dueStage = v ?? 'all'),
-                      ),
-                    ),
                   ],
                 ),
               ),
-            if (tab == 1)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                child: Row(
-                  children: [
-                    _stat('متأخر', lateCount, AppColors.danger),
-                    const SizedBox(width: 6),
-                    _stat('مستحق', dueCount, AppColors.amber),
-                    const SizedBox(width: 6),
-                    _stat('استثناء', exceptionCount, AppColors.success),
-                  ],
+              if (tab != 2)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                  child: SearchField(
+                    controller: search,
+                    hint: tab == 0 ? 'ابحث برقم الوصل، الطالب، المرجع...' : 'ابحث باسم الطالب أو رقم الهاتف...',
+                    onChanged: (_) => setState(() {}),
+                  ),
                 ),
-              ),
-            if (tab == 2) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                child: _expensesSummary(context, store),
-              ),
-              Expanded(child: _expensesList(store)),
-            ] else
-            Expanded(
-              child: tab == 0
-                  ? (pays.isEmpty
-                      ? const Padding(padding: EdgeInsets.all(12), child: EmptyState(message: 'لا توجد دفعات مسجلة مطابقة للبحث'))
-                      : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-                          itemCount: pays.length,
-                          itemBuilder: (_, i) => Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: _PayCard(
-                              payment: pays[i],
-                              student: store.studentById(pays[i].studentId),
-                              onCancel: !pays[i].cancelled && store.can('finance.cancel')
-                                  ? () => _cancel(context, store, pays[i])
-                                  : null,
-                            ),
-                          ),
-                        ))
-                  : (dues.isEmpty
-                      ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: EmptyState(message: 'لا توجد دفعات أو أقساط مستحقة مطابقة للبحث. الحسابات منتظمة ومسددة.'),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-                          itemCount: dues.length,
-                          itemBuilder: (_, i) {
-                            final d = dues[i];
-                            return Padding(
+              if (tab == 0)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: AppDropdown<String>(
+                          value: method,
+                          items: [
+                            const DropdownMenuItem(value: '', child: Text('كل طرق الدفع')),
+                            ...paymentMethodNames.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))),
+                          ],
+                          onChanged: (v) => setState(() => method = v ?? ''),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: AppDropdown<String>(
+                          value: status,
+                          items: const [
+                            DropdownMenuItem(value: '', child: Text('كل الحالات')),
+                            DropdownMenuItem(value: 'active', child: Text('مقبوضة')),
+                            DropdownMenuItem(value: 'cancelled', child: Text('ملغاة')),
+                          ],
+                          onChanged: (v) => setState(() => status = v ?? ''),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else if (tab == 1)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text('إجمالي المستحق: ${money(totalDue)}', style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w800, fontSize: 12)),
+                      ),
+                      SizedBox(
+                        width: 130,
+                        child: AppDropdown<String>(
+                          value: dueStage,
+                          items: const [
+                            DropdownMenuItem(value: 'all', child: Text('كل الحالات')),
+                            DropdownMenuItem(value: 'due', child: Text('مستحق')),
+                            DropdownMenuItem(value: 'late', child: Text('متأخر عن السداد')),
+                            DropdownMenuItem(value: 'exception', child: Text('استثناء')),
+                          ],
+                          onChanged: (v) => setState(() => dueStage = v ?? 'all'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (tab == 1)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  child: Row(
+                    children: [
+                      _stat('متأخر', lateCount, AppColors.danger),
+                      const SizedBox(width: 6),
+                      _stat('مستحق', dueCount, AppColors.amber),
+                      const SizedBox(width: 6),
+                      _stat('استثناء', exceptionCount, AppColors.success),
+                    ],
+                  ),
+                ),
+              if (tab == 2) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                  child: _expensesSummary(context, store),
+                ),
+                Expanded(child: _expensesList(store)),
+              ] else
+              Expanded(
+                child: tab == 0
+                    ? (pays.isEmpty
+                        ? const Padding(padding: EdgeInsets.all(12), child: EmptyState(message: 'لا توجد دفعات مسجلة مطابقة للبحث'))
+                        : ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(12, 0, 12, thumbActionClearance),
+                            itemCount: pays.length,
+                            itemBuilder: (_, i) => Padding(
                               padding: const EdgeInsets.only(bottom: 8),
-                              child: AppCard(
-                                padding: const EdgeInsets.all(12),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: InkWell(
-                                            onTap: () {
-                                              Navigator.of(context).push(
-                                                MaterialPageRoute(builder: (_) => StudentDetailScreen(studentId: d.student.id)),
-                                              );
-                                            },
+                              child: _PayCard(
+                                payment: pays[i],
+                                student: store.studentById(pays[i].studentId),
+                                onCancel: !pays[i].cancelled && store.can('finance.cancel')
+                                    ? () => _cancel(context, store, pays[i])
+                                    : null,
+                              ),
+                            ),
+                          ))
+                    : (dues.isEmpty
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: EmptyState(message: 'لا توجد دفعات أو أقساط مستحقة مطابقة للبحث. الحسابات منتظمة ومسددة.'),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(12, 0, 12, thumbActionClearance),
+                            itemCount: dues.length,
+                            itemBuilder: (_, i) {
+                              final d = dues[i];
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: AppCard(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: InkWell(
+                                              onTap: () {
+                                                Navigator.of(context).push(
+                                                  MaterialPageRoute(builder: (_) => StudentDetailScreen(studentId: d.student.id)),
+                                                );
+                                              },
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(d.student.fullName, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading)),
+                                                  Text(d.student.gradeLevel, style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                          d.exception
+                                              ? StatusChip.success('استثناء')
+                                              : (d.late ? StatusChip.danger(d.stageLabel) : StatusChip.amber(d.stageLabel)),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        children: [
+                                          Expanded(
                                             child: Column(
                                               crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
-                                                Text(d.student.fullName, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading)),
-                                                Text(d.student.gradeLevel, style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
+                                                Text(d.title, style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
+                                                Text('استحقاق: ${formatDate(d.dueDate)}', style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
                                               ],
                                             ),
                                           ),
-                                        ),
-                                        d.exception
-                                            ? StatusChip.success('استثناء')
-                                            : (d.late ? StatusChip.danger(d.stageLabel) : StatusChip.amber(d.stageLabel)),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                          Column(
+                                            crossAxisAlignment: CrossAxisAlignment.end,
                                             children: [
-                                              Text(d.title, style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
-                                              Text('استحقاق: ${formatDate(d.dueDate)}', style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
+                                              Text(money(d.amount), style: const TextStyle(color: Color(0xFFBA1A1A), fontWeight: FontWeight.w800, fontSize: 14)),
+                                              const SizedBox(height: 4),
+                                              PrimaryButton(
+                                                label: 'تسديد',
+                                                height: 28,
+                                                onPressed: !store.can('finance.collect') ? null : () {
+                                                  Navigator.of(context).push(
+                                                    MaterialPageRoute(
+                                                      builder: (_) => PaymentFormScreen(
+                                                        studentId: d.student.id,
+                                                        installmentId: d.installmentId,
+                                                        amount: d.amount,
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                              ),
                                             ],
                                           ),
-                                        ),
-                                        Column(
-                                          crossAxisAlignment: CrossAxisAlignment.end,
-                                          children: [
-                                            Text(money(d.amount), style: const TextStyle(color: Color(0xFFBA1A1A), fontWeight: FontWeight.w800, fontSize: 14)),
-                                            const SizedBox(height: 4),
-                                            PrimaryButton(
-                                              label: 'تسديد',
-                                              height: 28,
-                                              onPressed: !store.can('finance.collect') ? null : () {
-                                                Navigator.of(context).push(
-                                                  MaterialPageRoute(
-                                                    builder: (_) => PaymentFormScreen(
-                                                      studentId: d.student.id,
-                                                      installmentId: d.installmentId,
-                                                      amount: d.amount,
-                                                    ),
-                                                  ),
-                                                );
-                                              },
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ],
+                                        ],
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            );
-                          },
-                        )),
-            ),
-          ],
+                              );
+                            },
+                          )),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -353,19 +375,6 @@ class _FinanceScreenState extends State<FinanceScreen> {
               ),
             ],
           ),
-          if (store.can('finance.expenses')) ...[
-            const SizedBox(height: 10),
-            PrimaryButton(
-              expand: true,
-              label: 'إضافة سند صرف',
-              icon: Icons.add,
-              color: AppColors.navy,
-              onPressed: () async {
-                final saved = await showExpenseSheet(context, store);
-                if (saved && context.mounted) showAppSnack(context, 'تم حفظ سند الصرف');
-              },
-            ),
-          ],
         ],
       ),
     );
@@ -407,7 +416,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, thumbActionClearance),
       itemCount: items.length,
       itemBuilder: (_, i) => Padding(
         padding: const EdgeInsets.only(bottom: 8),

@@ -4,6 +4,7 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../widgets/animated_count.dart';
+import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import 'attendance_print.dart';
 
@@ -88,88 +89,97 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           }
         }
 
-        return Column(
-          children: [
-            _pickers(
-              store,
-              school: school,
-              grades: grades,
-              currentGrade: currentGrade,
-              owners: owners,
-              currentOwner: currentOwner,
-            ),
-            _dayStrip(week, day),
-            Expanded(
-              child: list.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.all(14),
-                      child: EmptyState(message: 'لا يوجد طلاب مسجلون في هذا الصف/المجموعة'),
-                    )
-                  // بناء كسول: صفّ واحد لكل ما يظهر على الشاشة فقط.
-                  // بناء القائمة كاملةً كان يُنشئ مئات الصفوف عند كل تعديل،
-                  // فيتأخر التبديل بين الأيام والصفوف تأخراً محسوساً.
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 18),
-                      itemCount: list.length + 2,
-                      itemBuilder: (context, i) {
-                        if (i == 0) {
+        return ThumbActionLayer(
+          action: canEdit
+              ? ThumbAction(
+                  label: 'الكل حاضر',
+                  icon: Icons.done_all,
+                  color: AppColors.success,
+                  onPressed: list.isEmpty || currentOwner.isEmpty
+                      ? null
+                      : () => store.markAllPresent(day.dateStr, list, ownerId: currentOwner),
+                )
+              : null,
+          child: Column(
+            children: [
+              _pickers(
+                store,
+                school: school,
+                grades: grades,
+                currentGrade: currentGrade,
+                owners: owners,
+                currentOwner: currentOwner,
+              ),
+              _dayStrip(week, day),
+              Expanded(
+                child: list.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.all(14),
+                        child: EmptyState(message: 'لا يوجد طلاب مسجلون في هذا الصف/المجموعة'),
+                      )
+                    // بناء كسول: صفّ واحد لكل ما يظهر على الشاشة فقط.
+                    // بناء القائمة كاملةً كان يُنشئ مئات الصفوف عند كل تعديل،
+                    // فيتأخر التبديل بين الأيام والصفوف تأخراً محسوساً.
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(14, 0, 14, thumbActionClearance),
+                        itemCount: list.length + 2,
+                        itemBuilder: (context, i) {
+                          if (i == 0) {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: _dayStats(
+                                day: day,
+                                list: list,
+                                present: present,
+                                absent: absent,
+                                excused: excused,
+                                unmarked: unmarked,
+                              ),
+                            );
+                          }
+                          if (i == list.length + 1) {
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 5),
+                              child: GhostButton(
+                                label: 'طباعة كشف الأسبوع',
+                                icon: Icons.print_outlined,
+                                onPressed: currentOwner.isEmpty
+                                    ? null
+                                    : () => printWeeklyAttendance(
+                                          context,
+                                          store: store,
+                                          title: ownerName,
+                                          week: week,
+                                          students: list,
+                                          ownerId: currentOwner,
+                                        ),
+                              ),
+                            );
+                          }
+                          final student = list[i - 1];
                           return Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: _dayStats(
-                              store: store,
-                              day: day,
-                              list: list,
-                              owner: currentOwner,
-                              present: present,
-                              absent: absent,
-                              excused: excused,
-                              unmarked: unmarked,
+                            padding: const EdgeInsets.only(bottom: 7),
+                            child: _StudentRow(
+                              // مفتاح يشمل اليوم والحالة: الصف يُعاد بناؤه عند
+                              // تغيّر رصده وحده، لا مع كل إخطار من المخزن
+                              key: ValueKey('${student.id}|${day.dateStr}'),
+                              index: i,
+                              student: student,
+                              status: store.attendanceInSession(currentOwner, student.id, day.dateStr),
                               canEdit: canEdit,
+                              onSet: (status) => store.setAttendance(
+                                student.id,
+                                day.dateStr,
+                                status,
+                                ownerId: currentOwner,
+                              ),
                             ),
                           );
-                        }
-                        if (i == list.length + 1) {
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 5),
-                            child: GhostButton(
-                              label: 'طباعة كشف الأسبوع',
-                              icon: Icons.print_outlined,
-                              onPressed: currentOwner.isEmpty
-                                  ? null
-                                  : () => printWeeklyAttendance(
-                                        context,
-                                        store: store,
-                                        title: ownerName,
-                                        week: week,
-                                        students: list,
-                                        ownerId: currentOwner,
-                                      ),
-                            ),
-                          );
-                        }
-                        final student = list[i - 1];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 7),
-                          child: _StudentRow(
-                            // مفتاح يشمل اليوم والحالة: الصف يُعاد بناؤه عند
-                            // تغيّر رصده وحده، لا مع كل إخطار من المخزن
-                            key: ValueKey('${student.id}|${day.dateStr}'),
-                            index: i,
-                            student: student,
-                            status: store.attendanceInSession(currentOwner, student.id, day.dateStr),
-                            canEdit: canEdit,
-                            onSet: (status) => store.setAttendance(
-                              student.id,
-                              day.dateStr,
-                              status,
-                              ownerId: currentOwner,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-            ),
-          ],
+                        },
+                      ),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -270,17 +280,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   Widget _dayStats({
-    required AppStore store,
     required SchoolDay day,
     required List<Student> list,
-    required String owner,
     required int present,
     required int absent,
     required int excused,
     required int unmarked,
-    required bool canEdit,
   }) {
-    final disabled = !canEdit || list.isEmpty;
     return AppCard(
       padding: const EdgeInsets.all(13),
       child: Row(
@@ -307,42 +313,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     ),
                     _stat('حاضر', present, AppColors.success),
                     _stat('غائب', absent, AppColors.danger),
-                    if (excused > 0) _stat('مأذون', excused, AppColors.info),
+                    _stat('مأذون', excused, const Color(0xFFD97706)),
                     if (unmarked > 0) _stat('لم يُرصد', unmarked, AppColors.faint),
                   ],
                 ),
               ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          PressableScale(
-            onTap: disabled ? null : () => store.markAllPresent(day.dateStr, list, ownerId: owner),
-            child: Opacity(
-              opacity: disabled ? 0.5 : 1,
-              child: Container(
-                height: 34,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: AppColors.success,
-                  borderRadius: BorderRadius.zero,
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.success.withValues(alpha: 0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.done_all, size: 15, color: Colors.white),
-                    SizedBox(width: 5),
-                    Text('الكل حاضر', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
-                  ],
-                ),
-              ),
             ),
           ),
         ],
@@ -350,17 +325,25 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     );
   }
 
+  /// نص واحد لا صفّ: الصفّ لا ينكسر، فكان يطفح بجوار زر «الكل حاضر» على
+  /// الشاشات الضيقة. العدد يبقى متحرّكاً داخل النص.
   Widget _stat(String label, int value, Color color) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text('• $label: ', style: TextStyle(color: color, fontSize: 11.5, fontWeight: FontWeight.w800)),
-        AnimatedCount(
-          value,
-          duration: const Duration(milliseconds: 400),
-          style: TextStyle(color: color, fontSize: 11.5, fontWeight: FontWeight.w900),
-        ),
-      ],
+    return Text.rich(
+      TextSpan(
+        style: TextStyle(color: color, fontSize: 11.5, fontWeight: FontWeight.w800),
+        children: [
+          TextSpan(text: '• $label: '),
+          WidgetSpan(
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: AnimatedCount(
+              value,
+              duration: const Duration(milliseconds: 400),
+              style: TextStyle(color: color, fontSize: 11.5, fontWeight: FontWeight.w900),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -428,7 +411,8 @@ class _DayChip extends StatelessWidget {
   }
 }
 
-/// صف الطالب: رقمه واسمه وهاتفه، وزرّا رصد كبيران للّمس.
+/// صف الطالب: رقمه واسمه وهاتفه، وثلاثة أزرار رصد للّمس — حاضر وغائب ومأذون
+/// كما في «أزرار الرصد اللمسية» في Attendance.tsx.
 class _StudentRow extends StatefulWidget {
   const _StudentRow({
     super.key,
@@ -476,63 +460,102 @@ class _StudentRowState extends State<_StudentRow> {
     final status = _status;
     final present = status == 'present';
     final absent = status == 'absent';
+    final excused = status == 'excused';
+
+    final info = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Text(
+              '#$index',
+              style: const TextStyle(color: AppColors.faint, fontSize: 10, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                student.fullName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
+              ),
+            ),
+          ],
+        ),
+        if (student.phone.trim().isNotEmpty) ...[
+          const SizedBox(height: 3),
+          Text(
+            student.phone,
+            textDirection: TextDirection.ltr,
+            style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
+          ),
+        ],
+      ],
+    );
+
+    final buttons = [
+      _markButton(
+        label: 'حاضر ✓',
+        on: present,
+        fg: AppColors.success,
+        softBg: const Color(0xFFF0FDF4),
+        softBorder: AppColors.successBorder,
+        onTap: canEdit ? () => _tap(present ? null : 'present') : null,
+      ),
+      _markButton(
+        label: 'غائب ✗',
+        on: absent,
+        fg: AppColors.danger,
+        softBg: const Color(0xFFFEF2F2),
+        softBorder: AppColors.dangerBorder,
+        onTap: canEdit ? () => _tap(absent ? null : 'absent') : null,
+      ),
+      _markButton(
+        label: 'مأذون',
+        on: excused,
+        fg: const Color(0xFFD97706),
+        softBg: const Color(0xFFFFFBEB),
+        softBorder: const Color(0xFFFDE68A),
+        onTap: canEdit ? () => _tap(excused ? null : 'excused') : null,
+      ),
+    ];
 
     return AppCard(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: LayoutBuilder(
+        builder: (context, box) {
+          // ثلاثة أزرار بجوار الاسم تحتاج نحو 300 بكسل؛ دون ذلك تنزل تحته
+          // بعرض كامل فتبقى أهداف اللمس كبيرة ولا يُسحق الاسم.
+          if (box.maxWidth < 300) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
+                info,
+                const SizedBox(height: 8),
                 Row(
                   children: [
-                    Text(
-                      '#$index',
-                      style: const TextStyle(color: AppColors.faint, fontSize: 10, fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        student.fullName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
-                      ),
-                    ),
+                    for (var i = 0; i < buttons.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 6),
+                      Expanded(child: buttons[i]),
+                    ],
                   ],
                 ),
-                if (student.phone.trim().isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    student.phone,
-                    textDirection: TextDirection.ltr,
-                    style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
-                  ),
-                ],
               ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          _markButton(
-            label: 'حاضر ✓',
-            on: present,
-            fg: AppColors.success,
-            softBg: const Color(0xFFF0FDF4),
-            softBorder: AppColors.successBorder,
-            onTap: canEdit ? () => _tap(present ? null : 'present') : null,
-          ),
-          const SizedBox(width: 7),
-          _markButton(
-            label: 'غائب ✗',
-            on: absent,
-            fg: AppColors.danger,
-            softBg: const Color(0xFFFEF2F2),
-            softBorder: AppColors.dangerBorder,
-            onTap: canEdit ? () => _tap(absent ? null : 'absent') : null,
-          ),
-        ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: info),
+              const SizedBox(width: 8),
+              for (var i = 0; i < buttons.length; i++) ...[
+                if (i > 0) const SizedBox(width: 6),
+                buttons[i],
+              ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -550,7 +573,7 @@ class _StudentRowState extends State<_StudentRow> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         height: 34,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: on ? fg : softBg,
@@ -558,9 +581,13 @@ class _StudentRowState extends State<_StudentRow> {
           border: Border.all(color: on ? fg : softBorder),
           boxShadow: on ? [BoxShadow(color: fg.withValues(alpha: 0.3), blurRadius: 7, offset: const Offset(0, 2))] : null,
         ),
-        child: Text(
-          label,
-          style: TextStyle(color: on ? Colors.white : fg, fontSize: 12, fontWeight: FontWeight.w800),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            label,
+            maxLines: 1,
+            style: TextStyle(color: on ? Colors.white : fg, fontSize: 12, fontWeight: FontWeight.w800),
+          ),
         ),
       ),
     );

@@ -178,8 +178,11 @@ class _SyncPill extends StatelessWidget {
     final push = store.pendingPush;
     final pull = store.pendingPull;
     final busy = store.sync.isSyncing;
+    // من لا يملك الرفع أو السحب لا يُعرض عليه زرّه
+    final canPush = store.can('sync.push');
+    final canPull = store.can('sync.pull');
 
-    if (push > 0) {
+    if (push > 0 && canPush) {
       return _pill(
         context,
         color: AppColors.amber,
@@ -190,7 +193,7 @@ class _SyncPill extends StatelessWidget {
         onTap: () => openSyncSheet(context, store, push: true),
       );
     }
-    if (pull > 0) {
+    if (pull > 0 && canPull) {
       return _pill(
         context,
         color: AppColors.accent,
@@ -205,7 +208,7 @@ class _SyncPill extends StatelessWidget {
     // كانت تطمئن المستخدم بينما في السحابة تعديلات لم يعلم بها.
     final known = store.sync.remoteStateKnown;
     return PressableScale(
-      onTap: () => openSyncSheet(context, store, push: false),
+      onTap: canPull ? () => openSyncSheet(context, store, push: false) : null,
       child: Container(
         height: 28,
         padding: const EdgeInsets.symmetric(horizontal: 9),

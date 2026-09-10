@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import 'evaluation_form_sheet.dart';
 import 'evaluations_print.dart';
@@ -63,81 +64,85 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                     ? null
                     : () => printEvaluations(context, store: store, evaluations: list),
               ),
-              if (store.can('attendance.edit'))
-                IconButton(
-                  tooltip: 'رصد درجات جديدة',
-                  icon: const Icon(Icons.add),
-                  onPressed: () => _record(context, store),
-                ),
             ],
           ),
-          body: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-                child: _stats(list),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                child: SearchField(
-                  controller: search,
-                  hint: 'ابحث باسم الطالب أو عنوان التقييم...',
-                  onChanged: (_) => setState(() {}),
+          body: ThumbActionLayer(
+            action: store.can('attendance.edit')
+                ? ThumbAction(
+                    label: 'رصد درجات جديدة',
+                    icon: Icons.edit_note,
+                    color: AppColors.navy,
+                    onPressed: () => _record(context, store),
+                  )
+                : null,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                  child: _stats(list),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: AppDropdown<String>(
-                        value: groupId,
-                        items: [
-                          const DropdownMenuItem(value: 'all', child: Text('كل الشعب')),
-                          for (final g in store.groups)
-                            DropdownMenuItem(value: g.id, child: Text(g.name)),
-                        ],
-                        onChanged: (v) => setState(() => groupId = v ?? 'all'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: AppDropdown<String>(
-                        value: type,
-                        items: [
-                          const DropdownMenuItem(value: 'all', child: Text('كل الأنواع')),
-                          for (final e in evaluationTypeNames.entries)
-                            DropdownMenuItem(value: e.key, child: Text(e.value)),
-                        ],
-                        onChanged: (v) => setState(() => type = v ?? 'all'),
-                      ),
-                    ),
-                  ],
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  child: SearchField(
+                    controller: search,
+                    hint: 'ابحث باسم الطالب أو عنوان التقييم...',
+                    onChanged: (_) => setState(() {}),
+                  ),
                 ),
-              ),
-              Expanded(
-                child: list.isEmpty
-                    ? const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: EmptyState(message: 'لا توجد تقييمات مرصودة مطابقة للبحث.'),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-                        itemCount: list.length,
-                        itemBuilder: (_, i) => Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: _EvalCard(
-                            evaluation: list[i],
-                            studentName: store.studentById(list[i].studentId)?.fullName ?? 'طالب محذوف',
-                            groupName: store.groups.where((g) => g.id == list[i].groupId).firstOrNull?.name ?? '',
-                            onDelete: store.can('attendance.edit')
-                                ? () => _delete(context, store, list[i])
-                                : null,
-                          ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: AppDropdown<String>(
+                          value: groupId,
+                          items: [
+                            const DropdownMenuItem(value: 'all', child: Text('كل الشعب')),
+                            for (final g in store.groups)
+                              DropdownMenuItem(value: g.id, child: Text(g.name)),
+                          ],
+                          onChanged: (v) => setState(() => groupId = v ?? 'all'),
                         ),
                       ),
-              ),
-            ],
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: AppDropdown<String>(
+                          value: type,
+                          items: [
+                            const DropdownMenuItem(value: 'all', child: Text('كل الأنواع')),
+                            for (final e in evaluationTypeNames.entries)
+                              DropdownMenuItem(value: e.key, child: Text(e.value)),
+                          ],
+                          onChanged: (v) => setState(() => type = v ?? 'all'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: list.isEmpty
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: EmptyState(message: 'لا توجد تقييمات مرصودة مطابقة للبحث.'),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, thumbActionClearance),
+                          itemCount: list.length,
+                          itemBuilder: (_, i) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _EvalCard(
+                              evaluation: list[i],
+                              studentName: store.studentById(list[i].studentId)?.fullName ?? 'طالب محذوف',
+                              groupName: store.groups.where((g) => g.id == list[i].groupId).firstOrNull?.name ?? '',
+                              onDelete: store.can('attendance.edit')
+                                  ? () => _delete(context, store, list[i])
+                                  : null,
+                            ),
+                          ),
+                        ),
+                ),
+              ],
+            ),
           ),
         );
       },
