@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -6,6 +8,7 @@ import '../data/store.dart';
 import '../data/sync.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/widgets.dart';
 
@@ -342,389 +345,399 @@ Widget _menuTile({
   );
 }
 
-/// ورقة تأكيد الرفع أو السحب — تعرض ما سيجري قبل تنفيذه، ثم تُظهر النتيجة
-/// والرقم وهو ينزل إلى الصفر بدل أن يختفي فجأة.
-Future<void> openSyncSheet(BuildContext context, AppStore store, {required bool push}) async {
-  if (!push) await store.sync.checkRemoteChanges();
-  if (!context.mounted) return;
-
-  final summary = push ? store.sync.getPendingSummary() : null;
-  final remote = push ? null : await store.sync.checkRemoteChanges();
-  if (!context.mounted) return;
-
-  final total = push ? summary!.total : (remote?.total ?? store.pendingPull);
-  final rows = push ? summary!.rows : (remote?.rows ?? const <SyncRow>[]);
-  final items = push ? summary!.items : (remote?.items ?? const <PendingSummaryItem>[]);
-
-  if (!context.mounted) return;
-  await _darkSheet(context, (ctx) => _SyncConfirm(
-        store: store,
-        push: push,
-        total: total,
-        rows: rows,
-        items: items,
-      ));
+/// ورقة تأكيد الرفع أو السحب — مطابقة لـ `SyncConfirmModal` في Center.
+///
+/// تُفتح فوراً وتفحص بداخلها. كان الفحص يسبق الفتح — وهو جولة كاملة على كل
+/// الجداول — فتبقى الشاشة بلا استجابة حتى ينتهي، ويبدو الزر معطّلاً.
+Future<void> openSyncSheet(BuildContext context, AppStore store, {required bool push}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: 0.5),
+    isScrollControlled: true,
+    builder: (ctx) => _SyncConfirm(store: store, push: push),
+  );
 }
 
 class _SyncConfirm extends StatefulWidget {
-  const _SyncConfirm({
-    required this.store,
-    required this.push,
-    required this.total,
-    required this.rows,
-    required this.items,
-  });
+  const _SyncConfirm({required this.store, required this.push});
 
   final AppStore store;
   final bool push;
-  final int total;
-  final List<SyncRow> rows;
-  final List<PendingSummaryItem> items;
 
   @override
   State<_SyncConfirm> createState() => _SyncConfirmState();
 }
 
 class _SyncConfirmState extends State<_SyncConfirm> {
-  bool busy = false;
-  int remaining = 0;
+  bool loading = true;
+  bool running = false;
   SyncResult? result;
+  String? lastPullAt;
+
+  int total = 0;
+  List<SyncRow> rows = const [];
+  List<PendingSummaryItem> items = const [];
+
+  bool get _push => widget.push;
+  Color get _accent => _push ? AppColors.amber : AppColors.info;
+  IconData get _icon => _push ? Icons.arrow_upward : Icons.arrow_downward;
 
   @override
   void initState() {
     super.initState();
-    remaining = widget.total;
+    unawaited(_load());
   }
 
-  Color get _accent => widget.push ? AppColors.amber : AppColors.info;
+  /// حصر ما سيجري. الرفع محلي وفوري؛ السحب يسأل السحابة.
+  Future<void> _load() async {
+    setState(() => loading = true);
+    final sync = widget.store.sync;
+
+    if (_push) {
+      final summary = sync.getPendingSummary();
+      if (!mounted) return;
+      setState(() {
+        total = summary.total;
+        rows = summary.rows;
+        items = summary.items;
+        loading = false;
+      });
+      return;
+    }
+
+    lastPullAt = await sync.getLastPullAt();
+    final remote = await sync.checkRemoteChanges();
+    if (!mounted) return;
+    setState(() {
+      total = remote.total;
+      rows = remote.rows;
+      items = remote.items;
+      loading = false;
+    });
+  }
 
   Future<void> _run() async {
     setState(() {
-      busy = true;
+      running = true;
       result = null;
     });
     HapticFeedback.mediumImpact();
 
-    final res = widget.push ? await widget.store.sync.push() : await widget.store.sync.pull();
+    final res = _push ? await widget.store.sync.push() : await widget.store.sync.pull();
     if (!mounted) return;
 
     setState(() {
-      busy = false;
+      running = false;
       result = res;
-      // العدّاد ينزل إلى ما تبقّى فعلاً، فيرى المستخدم أثر العملية
-      remaining = widget.push ? widget.store.pendingPush : widget.store.pendingPull;
+      total = _push ? widget.store.pendingPush : widget.store.pendingPull;
     });
     HapticFeedback.lightImpact();
 
-    // إغلاق تلقائي بعد نجاح كامل، ليقرأ المستخدم النتيجة أولاً
     if (res.success) {
-      await Future<void>.delayed(const Duration(milliseconds: 1400));
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
       if (mounted) Navigator.pop(context);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.push ? 'رفع التعديلات المحلية' : 'سحب التعديلات من السحابة';
     final done = result != null && result!.success;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Container(
+      decoration: const BoxDecoration(color: Colors.white),
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SafeArea(
+        top: false,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.85),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // شريط تمييز علوي بلون العملية، كما في النسخة المكتبية
+              Container(height: 3, color: _accent),
+              _header(),
+              if (result != null) _resultBanner(),
+              Flexible(child: _body(done)),
+              _footer(done),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _header() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.line)),
+      ),
+      child: Row(
         children: [
-          Row(
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                width: 40,
-                height: 40,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: (done ? AppColors.success : _accent).withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.zero,
-                ),
-                child: busy
-                    ? SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2.2, color: _accent),
-                      )
-                    : Icon(
-                        done
-                            ? Icons.check_circle
-                            : (widget.push ? Icons.arrow_upward : Icons.arrow_downward),
-                        color: done ? AppColors.success : _accent,
-                        size: 20,
-                      ),
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13.5),
-                    ),
-                    const SizedBox(height: 3),
-                    Row(
-                      children: [
-                        Text(
-                          'المتبقي: ',
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11.5),
-                        ),
-                        AnimatedCount(
-                          remaining,
-                          duration: const Duration(milliseconds: 900),
-                          style: TextStyle(color: _accent, fontSize: 15, fontWeight: FontWeight.w900),
-                        ),
-                        Text(
-                          ' من ${widget.total}',
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-
-          // شريط تقدّم يمتلئ كلما نقص المتبقي
-          ClipRRect(
-            borderRadius: BorderRadius.zero,
-            child: TweenAnimationBuilder<double>(
-              tween: Tween(end: widget.total == 0 ? 1 : 1 - (remaining / widget.total)),
-              duration: const Duration(milliseconds: 900),
-              curve: Curves.easeOutCubic,
-              builder: (_, v, _) => LinearProgressIndicator(
-                value: v.clamp(0, 1),
-                minHeight: 5,
-                backgroundColor: Colors.white.withValues(alpha: 0.08),
-                valueColor: AlwaysStoppedAnimation(done ? AppColors.success : _accent),
-              ),
+          Icon(_icon, size: 17, color: _accent),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _push ? 'رفع التعديلات إلى السحابة' : 'سحب التعديلات من السحابة',
+              style: AppText.cardTitle,
             ),
           ),
-          const SizedBox(height: 14),
-
-          // أسباب التعثّر تُعرض في مكان العملية نفسها
-          if (result != null && !result!.success) ...[
-            for (final entry in widget.store.sync.failureReasons().entries)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Container(
-                  padding: const EdgeInsets.all(11),
-                  decoration: BoxDecoration(
-                    color: AppColors.danger.withValues(alpha: 0.12),
-                    border: Border.all(color: AppColors.danger.withValues(alpha: 0.35)),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.report_gmailerrorred, size: 16, color: Color(0xFFFDA4AF)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '${entry.value} سجل: ${entry.key}',
-                          style: const TextStyle(color: Color(0xFFFECDD3), fontSize: 11.5, height: 1.6),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            if (widget.store.sync.getFailedActions().isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: PressableScale(
-                  onTap: () {
-                    widget.store.sync.retryFailedActions();
-                    setState(() => result = null);
-                  },
-                  child: Container(
-                    height: 38,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.06),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.refresh, size: 15, color: Colors.white.withValues(alpha: 0.8)),
-                        const SizedBox(width: 6),
-                        Text(
-                          'إعادة المحاولة للمتعثرة',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.8),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
-          if (result != null)
-            Container(
-              padding: const EdgeInsets.all(11),
-              decoration: BoxDecoration(
-                color: (result!.success ? AppColors.success : AppColors.danger).withValues(alpha: 0.14),
-                borderRadius: BorderRadius.zero,
-                border: Border.all(
-                  color: (result!.success ? AppColors.success : AppColors.danger).withValues(alpha: 0.4),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    result!.success ? Icons.check_circle_outline : Icons.error_outline,
-                    size: 16,
-                    color: result!.success ? const Color(0xFF6EE7B7) : const Color(0xFFFDA4AF),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      result!.message,
-                      style: TextStyle(
-                        color: result!.success ? const Color(0xFFA7F3D0) : const Color(0xFFFECDD3),
-                        fontSize: 11.5,
-                        height: 1.5,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else ...[
-            Text(
-              widget.total == 0
-                  ? (widget.push ? 'لا توجد تعديلات محلية معلّقة للرفع' : 'لا توجد تعديلات جديدة في السحابة')
-                  : (widget.push
-                      ? 'سيتم رفع ${widget.total} تعديلاً إلى السحابة.'
-                      : 'سيتم سحب ${widget.total} تعديلاً وتحديث الشاشة.'),
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12, height: 1.6),
+          PressableScale(
+            onTap: running ? null : () => Navigator.pop(context),
+            child: const Padding(
+              padding: EdgeInsets.all(6),
+              child: Icon(Icons.close, size: 17, color: AppColors.muted),
             ),
-            if (widget.rows.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final r in widget.rows)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.06),
-                        borderRadius: BorderRadius.zero,
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-                      ),
-                      child: Text(
-                        '${tableLabelsAr[r.table] ?? r.table} · ${r.count}',
-                        style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 10.5, fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                ],
-              ),
-            ],
-            if (widget.items.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              for (final item in widget.items.take(6))
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(
-                    '• ${item.label}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 11),
-                  ),
-                ),
-            ],
-          ],
-
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: PressableScale(
-                  onTap: busy ? null : () => Navigator.pop(context),
-                  child: Container(
-                    height: 42,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.zero,
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-                    ),
-                    child: Text(
-                      done ? 'تم' : 'إغلاق',
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12.5, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 9),
-              Expanded(
-                flex: 2,
-                child: PressableScale(
-                  onTap: (widget.total == 0 || busy || done) ? null : _run,
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 200),
-                    opacity: (widget.total == 0 || done) ? 0.45 : 1,
-                    child: Container(
-                      height: 42,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: done ? AppColors.success : _accent,
-                        borderRadius: BorderRadius.zero,
-                        boxShadow: [
-                          BoxShadow(
-                            color: (done ? AppColors.success : _accent).withValues(alpha: 0.35),
-                            blurRadius: 10,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          if (busy)
-                            const SizedBox(
-                              width: 15,
-                              height: 15,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
-                          else
-                            Icon(
-                              done ? Icons.check : (widget.push ? Icons.cloud_upload_outlined : Icons.cloud_download_outlined),
-                              size: 16,
-                              color: Colors.white,
-                            ),
-                          const SizedBox(width: 7),
-                          Text(
-                            busy
-                                ? (widget.push ? 'جارِ الرفع...' : 'جارِ السحب...')
-                                : done
-                                    ? 'اكتملت'
-                                    : (widget.push ? 'تأكيد الرفع' : 'تأكيد السحب'),
-                            style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
           ),
         ],
       ),
     );
+  }
+
+  Widget _resultBanner() {
+    final ok = result!.success;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: ok ? const Color(0xFFF0FDF4) : const Color(0xFFFFFAF9),
+        border: Border(bottom: BorderSide(color: ok ? AppColors.successBorder : AppColors.dangerBorder)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            ok ? Icons.check_circle_outline : Icons.warning_amber_rounded,
+            size: 16,
+            color: ok ? const Color(0xFF166534) : const Color(0xFFBA1A1A),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              result!.message,
+              style: TextStyle(
+                color: ok ? const Color(0xFF166534) : const Color(0xFFBA1A1A),
+                fontSize: 11.5,
+                height: 1.6,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _body(bool done) {
+    if (loading) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 40),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: _accent),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              _push ? 'جارٍ حصر التعديلات…' : 'جارٍ فحص السحابة…',
+              style: AppText.muted,
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (total == 0) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.check_circle, size: 34, color: AppColors.success),
+            const SizedBox(height: 10),
+            Text(
+              _push
+                  ? 'لا توجد تعديلات على هذا الجهاز بانتظار الرفع. كل شيء وصل السحابة.'
+                  : 'لا توجد تعديلات جديدة في السحابة. بياناتك محدَّثة.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: Color(0xFF334155), height: 1.7),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView(
+      shrinkWrap: true,
+      padding: EdgeInsets.zero,
+      children: [
+        // الملخّص: كم عملية ولأي جدول
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          color: AppColors.bg,
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: AppColors.line)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${_push ? 'سيُرفع' : 'سيُسحب'}: $total عملية',
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: AppColors.heading),
+              ),
+              const SizedBox(height: 8),
+              for (final row in rows)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 5),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${row.action.isEmpty ? '' : '${actionLabelsAr[row.action] ?? row.action} '}'
+                          '${tableLabelsAr[row.table] ?? row.table}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11.5, color: Color(0xFF334155)),
+                        ),
+                      ),
+                      Text(
+                        '${row.count}',
+                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: _accent),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+
+        // التفصيل: كل عملية باسم سجلها
+        for (var i = 0; i < items.length; i++)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 20,
+                  child: Text('${i + 1}', style: const TextStyle(fontSize: 11.5, color: AppColors.faint)),
+                ),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: items[i].action.isEmpty
+                              ? 'تحديث'
+                              : actionLabelsAr[items[i].action] ?? items[i].action,
+                          style: TextStyle(fontWeight: FontWeight.w800, color: _accent),
+                        ),
+                        TextSpan(
+                          text: ' · ${tableLabelsAr[items[i].table] ?? items[i].table} · ',
+                          style: const TextStyle(color: AppColors.muted),
+                        ),
+                        TextSpan(
+                          text: items[i].label,
+                          style: const TextStyle(color: AppColors.text),
+                        ),
+                      ],
+                    ),
+                    style: const TextStyle(fontSize: 11.5, height: 1.6),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (total > items.length)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 9),
+            child: Text(
+              'و${total - items.length} عملية أخرى…',
+              textAlign: TextAlign.center,
+              style: AppText.label,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _footer(bool done) {
+    final disabled = loading || running || total == 0 || done;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: AppColors.line)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              _push
+                  ? 'تعديلات هذا الجهاز التي لم تصل السحابة'
+                  : lastPullAt == null
+                      ? 'لم يُنفَّذ سحب على هذا الجهاز بعد'
+                      : 'آخر سحب: ${_when(lastPullAt!)}',
+              maxLines: 2,
+              style: const TextStyle(fontSize: 10.5, color: AppColors.muted, height: 1.4),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GhostButton(
+            label: done ? 'تم' : 'إغلاق',
+            onPressed: running ? null : () => Navigator.pop(context),
+          ),
+          const SizedBox(width: 8),
+          PressableScale(
+            onTap: disabled ? null : _run,
+            child: Opacity(
+              opacity: disabled ? 0.5 : 1,
+              child: Container(
+                height: 36,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: done ? AppColors.success : _accent),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (running)
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    else
+                      Icon(done ? Icons.check : _icon, size: 15, color: Colors.white),
+                    const SizedBox(width: 6),
+                    Text(
+                      running
+                          ? (_push ? 'جارٍ الرفع…' : 'جارٍ السحب…')
+                          : done
+                              ? 'اكتملت'
+                              : '${_push ? 'تأكيد رفع' : 'تأكيد سحب'} $total',
+                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _when(String iso) {
+    final at = DateTime.tryParse(iso)?.toLocal();
+    if (at == null) return iso;
+    final h = at.hour.toString().padLeft(2, '0');
+    final m = at.minute.toString().padLeft(2, '0');
+    return '${formatDate(at)} · $h:$m';
   }
 }

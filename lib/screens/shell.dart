@@ -201,8 +201,11 @@ class _SyncPill extends StatelessWidget {
         onTap: () => openSyncSheet(context, store, push: false),
       );
     }
+    // «متزامن» تُقال فقط حين تكون السحابة قد فُحصت للتوّ. قولها بلا فحص
+    // كانت تطمئن المستخدم بينما في السحابة تعديلات لم يعلم بها.
+    final known = store.sync.remoteStateKnown;
     return PressableScale(
-      onTap: () => showActionSheet(context, store),
+      onTap: () => openSyncSheet(context, store, push: false),
       child: Container(
         height: 28,
         padding: const EdgeInsets.symmetric(horizontal: 9),
@@ -214,10 +217,14 @@ class _SyncPill extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.check_circle, size: 13, color: Color(0xFF34D399)),
+            Icon(
+              known ? Icons.check_circle : Icons.cloud_sync_outlined,
+              size: 13,
+              color: known ? const Color(0xFF34D399) : Colors.white.withValues(alpha: 0.7),
+            ),
             const SizedBox(width: 5),
             Text(
-              'متزامن',
+              known ? 'متزامن' : 'مزامنة',
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.85),
                 fontSize: 10.5,

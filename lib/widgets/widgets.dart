@@ -176,7 +176,8 @@ class PrimaryButton extends StatelessWidget {
     final child = SizedBox(
       height: height,
       child: ElevatedButton(
-        onPressed: busy ? null : onPressed,
+        // أثناء العمل يبقى الزر بلونه ويُمنع الضغط وحده
+        onPressed: busy ? () {} : onPressed,
         style: ElevatedButton.styleFrom(
           backgroundColor: color ?? AppColors.amber,
           foregroundColor: Colors.white,

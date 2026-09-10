@@ -90,9 +90,16 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
     }
 
     setState(() => submitting = true);
-    await store.completeInitialSetup(user);
-    if (!mounted) return;
-    setState(() => submitting = false);
+    try {
+      await store.completeInitialSetup(user);
+    } catch (e) {
+      // بلا هذا يبقى الزر «جاري التثبيت…» إلى الأبد ولا يدخل المستخدم أبداً
+      if (mounted) {
+        setState(() => passwordError = e is StoreException ? e.message : 'تعذّر تثبيت هوية الجهاز.');
+      }
+    } finally {
+      if (mounted) setState(() => submitting = false);
+    }
   }
 
   @override
@@ -101,8 +108,16 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
     final tenantName = store.currentTenant?.name ?? store.institutionName;
 
     return Scaffold(
-      backgroundColor: Colors.black.withValues(alpha: 0.4),
-      body: SafeArea(
+      body: Container(
+        // خلفية بهوية المنشأة: الحجاب الأسود المسطّح كان يبدو كخطأ في العرض
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [AppColors.navy, AppColors.navyDark],
+          ),
+        ),
+        child: SafeArea(
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
@@ -133,6 +148,7 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

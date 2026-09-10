@@ -184,6 +184,13 @@ const tableLabelsAr = <String, String>{
   'student_evaluations': 'تقييمات الطلاب',
 };
 
+/// أسماء العمليات كما تُعرض — مطابق لـ `ACTION_LABELS` في SyncDetails.tsx
+const actionLabelsAr = <String, String>{
+  'INSERT': 'إضافة',
+  'UPDATE': 'تعديل',
+  'DELETE': 'حذف',
+};
+
 const syncedTables = [
   'users',
   'subjects',
@@ -452,6 +459,16 @@ class SyncService {
   int get remotePendingCount => remotePendingIds.length;
   bool get isSyncing => _syncing;
 
+  /// آخر مرة سُئلت فيها السحابة عن تغييرات.
+  DateTime? lastRemoteCheck;
+
+  /// هل نعرف حالة السحابة الآن؟ يقادم العهد يجعل «متزامن» ادّعاءً لا خبراً.
+  bool get remoteStateKnown {
+    final at = lastRemoteCheck;
+    if (at == null) return false;
+    return DateTime.now().difference(at) < const Duration(minutes: 3);
+  }
+
   int getPendingCount() {
     cleanupBogusDemoUserSyncs(local.pendingSyncs);
     return local.pendingSyncs.length;
@@ -576,6 +593,7 @@ class SyncService {
     }
 
     items.sort((a, b) => b.at.compareTo(a.at));
+    lastRemoteCheck = DateTime.now();
     remotePendingIds
       ..clear()
       ..addAll(allNewKeys);
@@ -957,6 +975,7 @@ class SyncService {
     }
 
     remotePendingIds.clear();
+    lastRemoteCheck = DateTime.now();
     // ختم آخر سحب لا يتقدّم إلا بعد سحب كامل ناجح: تقديمه بعد سحب ناقص كان
     // يجعل تغييرات الجدول الفاشل تقع قبل الختم فلا تُحسب في «السحب» أبداً.
     if (failedTables.isEmpty) {

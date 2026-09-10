@@ -69,8 +69,37 @@ class CenterApp extends StatelessWidget {
   }
 }
 
-class _Root extends StatelessWidget {
+class _Root extends StatefulWidget {
   const _Root();
+
+  @override
+  State<_Root> createState() => _RootState();
+}
+
+/// يعيد فحص السحابة عند العودة إلى التطبيق.
+///
+/// بلا ذلك يبقى عدّاد السحب على آخر قيمة عُرفت قبل ساعات، فيظهر «متزامن»
+/// بينما جهاز آخر أضاف تعديلات في الأثناء.
+class _RootState extends State<_Root> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final store = AppStore.instance;
+    if (!store.loggedIn || store.isMasterAdmin || !store.networkEnabled) return;
+    unawaited(store.sync.checkRemoteChanges().then((_) => store.notifySync()));
+  }
 
   @override
   Widget build(BuildContext context) {
