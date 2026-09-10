@@ -57,10 +57,15 @@ Future<List<Map<String, dynamic>>?> supabaseSelect(
   }
 }
 
-/// إدراج أو تحديث صفوف مع الدمج على `id`.
-Future<void> supabaseUpsert(String table, List<Map<String, dynamic>> rows) async {
+/// إدراج أو تحديث صفوف. [onConflict] يحدّد عمود التصالح حين يختلف المفتاح
+/// الطبيعي عن `id` — مثل `attendance` وقيده على (الجلسة، الطالب).
+Future<void> supabaseUpsert(
+  String table,
+  List<Map<String, dynamic>> rows, {
+  String onConflict = 'id',
+}) async {
   final uri = Uri.parse('${SupabaseConfig.url}/rest/v1/$table').replace(
-    queryParameters: {'on_conflict': 'id'},
+    queryParameters: {'on_conflict': onConflict},
   );
   final res = await http.post(
     uri,

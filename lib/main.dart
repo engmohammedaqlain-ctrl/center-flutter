@@ -5,11 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'data/db_platform.dart';
 import 'data/local_db.dart';
+import 'data/portal.dart';
 import 'data/store.dart';
 import 'data/supabase.dart';
 import 'models/models.dart';
 import 'screens/developer_screen.dart';
 import 'screens/device_setup_screen.dart';
+import 'screens/portal_screens.dart';
 import 'screens/shell.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
@@ -205,13 +207,23 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final user = TextEditingController();
   final pass = TextEditingController();
+  final portalId = TextEditingController();
+  final portalCode = TextEditingController();
+
+  /// `true` = بوابة الطلاب والمعلمين، `false` = دخول الإدارة.
+  bool portalTab = true;
   String? error;
   bool busy = false;
+
+  /// حسابات مطابقة لرقم الهوية والرمز — قد يكون الرقم في أكثر من منشأة.
+  List<PortalUser> choices = const [];
 
   @override
   void dispose() {
     user.dispose();
     pass.dispose();
+    portalId.dispose();
+    portalCode.dispose();
     super.dispose();
   }
 
@@ -220,6 +232,47 @@ class _LoginScreenState extends State<LoginScreen> {
     super.initState();
     // آخر اسم مستخدم أُدخل على هذا الجهاز — مطابق لسلوك LandingPage
     user.text = AppStore.instance.lastUsername;
+  }
+
+  Future<void> _portalSubmit() async {
+    if (busy) return;
+    setState(() {
+      error = null;
+      choices = const [];
+      busy = true;
+    });
+
+    final result = await const PortalService().login(portalId.text, portalCode.text);
+    if (!mounted) return;
+
+    if (!result.ok) {
+      setState(() {
+        busy = false;
+        error = result.error;
+      });
+      return;
+    }
+
+    // حساب واحد: ندخل مباشرةً. أكثر من واحد: يختار المستخدم منشأته أو دوره.
+    if (result.users.length == 1) {
+      setState(() => busy = false);
+      _openPortal(result.users.first);
+      return;
+    }
+    setState(() {
+      busy = false;
+      choices = result.users;
+    });
+  }
+
+  void _openPortal(PortalUser account) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => account.isTeacher
+            ? TeacherPortalScreen(user: account, onExit: () => Navigator.of(context).pop())
+            : StudentPortalScreen(user: account, onExit: () => Navigator.of(context).pop()),
+      ),
+    );
   }
 
   Future<void> _submit() async {
@@ -300,6 +353,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12),
                     ),
                     const SizedBox(height: 26),
+                    _tabs(),
+                    const SizedBox(height: 10),
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
@@ -314,7 +369,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ],
                       ),
-                      child: Column(
+                      child: portalTab
+                          ? _portalForm()
+                          : Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           _label('اسم المستخدم:'),
@@ -340,81 +397,12 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             decoration: _deco('أدخل كلمة المرور...', Icons.lock_outline),
                           ),
-                          AnimatedSize(
-                            duration: const Duration(milliseconds: 220),
-                            curve: Curves.easeOut,
-                            child: error == null
-                                ? const SizedBox(width: double.infinity)
-                                : Padding(
-                                    padding: const EdgeInsets.only(top: 12),
-                                    child: Container(
-                                      padding: const EdgeInsets.all(11),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF4C0519).withValues(alpha: 0.75),
-                                        borderRadius: BorderRadius.zero,
-                                        border: Border.all(
-                                          color: const Color(0xFFF43F5E).withValues(alpha: 0.45),
-                                        ),
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          const Icon(Icons.error_outline, color: Color(0xFFFB7185), size: 16),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Text(
-                                              error!,
-                                              style: const TextStyle(
-                                                color: Color(0xFFFECDD3),
-                                                fontSize: 12,
-                                                height: 1.5,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                          ),
+                          _errorBox(),
                           const SizedBox(height: 18),
-                          PressableScale(
+                          _submitButton(
+                            label: busy ? 'جارِ التحقق...' : 'تسجيل الدخول',
+                            icon: Icons.login,
                             onTap: busy ? null : _submit,
-                            child: Container(
-                              height: 46,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: AppColors.amber,
-                                borderRadius: BorderRadius.zero,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppColors.amber.withValues(alpha: 0.4),
-                                    blurRadius: 16,
-                                    offset: const Offset(0, 5),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  if (busy)
-                                    const SizedBox(
-                                      width: 17,
-                                      height: 17,
-                                      child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white),
-                                    )
-                                  else
-                                    const Icon(Icons.login, size: 18, color: Colors.white),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    busy ? 'جارِ التحقق...' : 'تسجيل الدخول',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
                           ),
                         ],
                       ),
@@ -429,6 +417,245 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  /// شريط اختيار البوابة — مطابق لـ LandingPage: بوابة الطلاب والمعلمين
+  /// إلى جانب دخول الإدارة.
+  Widget _tabs() {
+    Widget tab(String label, IconData icon, bool selected, VoidCallback onTap) {
+      return Expanded(
+        child: PressableScale(
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: selected ? AppColors.amber : Colors.white.withValues(alpha: 0.06),
+              border: Border.all(
+                color: selected ? AppColors.amber : Colors.white.withValues(alpha: 0.12),
+              ),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  icon,
+                  size: 14,
+                  color: selected ? Colors.white : Colors.white.withValues(alpha: 0.65),
+                ),
+                const SizedBox(width: 5),
+                // «بوابة الطلاب والمعلمين» أطول من نصف الشاشة على الأجهزة
+                // الضيقة، فيلزم أن ينكمش بدل أن يفيض
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: selected ? Colors.white : Colors.white.withValues(alpha: 0.65),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        tab('بوابة الطلاب والمعلمين', Icons.school_outlined, portalTab, () {
+          setState(() {
+            portalTab = true;
+            error = null;
+            choices = const [];
+          });
+        }),
+        const SizedBox(width: 8),
+        tab('دخول الإدارة', Icons.lock_outline, !portalTab, () {
+          setState(() {
+            portalTab = false;
+            error = null;
+            choices = const [];
+          });
+        }),
+      ],
+    );
+  }
+
+  /// نموذج دخول البوابة: رقم الهوية ورمز الدخول.
+  Widget _portalForm() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _label('رقم الهوية:'),
+        const SizedBox(height: 7),
+        TextField(
+          controller: portalId,
+          keyboardType: TextInputType.number,
+          textInputAction: TextInputAction.next,
+          style: const TextStyle(color: Colors.white, fontSize: 13.5),
+          decoration: _deco('أدخل رقم الهوية...', Icons.badge_outlined),
+        ),
+        const SizedBox(height: 14),
+        _label('رمز الدخول (الكود):'),
+        const SizedBox(height: 7),
+        TextField(
+          controller: portalCode,
+          keyboardType: TextInputType.number,
+          obscureText: true,
+          onSubmitted: (_) => _portalSubmit(),
+          style: const TextStyle(color: Colors.white, fontSize: 13.5, fontFamily: 'monospace'),
+          decoration: _deco('أدخل رمز الدخول...', Icons.vpn_key_outlined),
+        ),
+        _errorBox(),
+        // أكثر من حساب لنفس الرقم: يختار المستخدم منشأته أو دوره
+        if (choices.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _label('اختر الحساب:'),
+          const SizedBox(height: 7),
+          for (final account in choices)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 7),
+              child: PressableScale(
+                onTap: () => _openPortal(account),
+                child: Container(
+                  padding: const EdgeInsets.all(11),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        account.isTeacher ? Icons.school : Icons.person,
+                        size: 16,
+                        color: AppColors.amber,
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              account.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            Text(
+                              '${account.isTeacher ? 'معلم' : 'طالب'} · ${account.tenantName}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.55),
+                                fontSize: 10.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        Icons.arrow_forward,
+                        size: 15,
+                        color: Colors.white.withValues(alpha: 0.4),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+        const SizedBox(height: 18),
+        _submitButton(
+          label: busy ? 'جارِ التحقق...' : 'دخول البوابة',
+          icon: Icons.login,
+          onTap: busy ? null : _portalSubmit,
+        ),
+      ],
+    );
+  }
+
+  /// صندوق الخطأ المشترك بين النموذجين.
+  Widget _errorBox() {
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      child: error == null
+          ? const SizedBox(width: double.infinity)
+          : Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Container(
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4C0519).withValues(alpha: 0.75),
+                  border: Border.all(color: const Color(0xFFF43F5E).withValues(alpha: 0.45)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Color(0xFFFB7185), size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        error!,
+                        style: const TextStyle(color: Color(0xFFFECDD3), fontSize: 12, height: 1.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+
+  Widget _submitButton({required String label, required IconData icon, VoidCallback? onTap}) {
+    return PressableScale(
+      onTap: onTap,
+      child: Container(
+        height: 46,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: AppColors.amber,
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.amber.withValues(alpha: 0.4),
+              blurRadius: 16,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (busy)
+              const SizedBox(
+                width: 17,
+                height: 17,
+                child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white),
+              )
+            else
+              Icon(icon, size: 18, color: Colors.white),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800),
+            ),
+          ],
         ),
       ),
     );
