@@ -94,7 +94,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                       children: [
                         TextSpan(
                           text: '${list.length}',
-                          style: const TextStyle(color: AppColors.heading, fontWeight: FontWeight.w800),
+                          style: TextStyle(color: AppColors.heading, fontWeight: FontWeight.w800),
                         ),
                         if (list.length != store.students.length)
                           TextSpan(text: ' / ${store.students.length}', style: const TextStyle(color: AppColors.faint)),
@@ -183,7 +183,7 @@ class _StudentCard extends StatelessWidget {
                 ),
                 child: Text(
                   student.initial,
-                  style: const TextStyle(color: AppColors.amber, fontWeight: FontWeight.w800, fontSize: 15),
+                  style: TextStyle(color: AppColors.amber, fontWeight: FontWeight.w800, fontSize: 15),
                 ),
               ),
               const SizedBox(width: Gap.md),

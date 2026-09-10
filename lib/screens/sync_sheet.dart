@@ -9,8 +9,8 @@ import '../theme/app_colors.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/widgets.dart';
 
-const _sheetBg = AppColors.navy;
-const _sheetPanel = Color(0xCC123963);
+Color get _sheetBg => AppColors.navy;
+Color get _sheetPanel => AppColors.navyMid.withValues(alpha: 0.8);
 
 /// غلاف موحّد للأوراق السفلية الداكنة — مقبض سحب وحواف علوية دائرية.
 Future<T?> _darkSheet<T>(BuildContext context, WidgetBuilder builder) {
@@ -20,9 +20,9 @@ Future<T?> _darkSheet<T>(BuildContext context, WidgetBuilder builder) {
     barrierColor: Colors.black.withValues(alpha: 0.6),
     isScrollControlled: true,
     builder: (ctx) => Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: _sheetBg,
-        border: Border(top: BorderSide(color: Color(0xFF1E3A5F))),
+        border: Border(top: BorderSide(color: AppColors.navyMid)),
         borderRadius: BorderRadius.zero,
       ),
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),

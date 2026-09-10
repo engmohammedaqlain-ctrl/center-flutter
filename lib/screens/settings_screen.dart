@@ -134,7 +134,7 @@ class _LogoutBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -197,9 +197,9 @@ class _FeesTabState extends State<_FeesTab> {
             AppCard(
               child: Row(
                 children: [
-                  Container(width: 36, height: 36, color: AppColors.amberSoft, child: const Icon(Icons.payments, color: AppColors.amber, size: 18)),
+                  Container(width: 36, height: 36, color: AppColors.amberSoft, child: Icon(Icons.payments, color: AppColors.amber, size: 18)),
                   const SizedBox(width: 8),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -292,13 +292,13 @@ class _FeesTabState extends State<_FeesTab> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(f.gradeName, style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
+                                Text(f.gradeName, style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
                                 const SizedBox(height: 4),
                                 StatusChip.muted(stageTierLabel(f.tier)),
                               ],
                             ),
                           ),
-                          Text(money(f.monthlyFee), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: AppColors.amber)),
+                          Text(money(f.monthlyFee), style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: AppColors.amber)),
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -310,7 +310,7 @@ class _FeesTabState extends State<_FeesTab> {
                             StatusChip.amber(r.name),
                           InkWell(
                             onTap: () => _quickSection(context, f.gradeName, f.tier),
-                            child: const StatusChip(label: '+ شعبة', fg: AppColors.navy, bg: AppColors.amberSoft, border: AppColors.amberBorder),
+                            child: StatusChip(label: '+ شعبة', fg: AppColors.navy, bg: AppColors.amberSoft, border: AppColors.amberBorder),
                           ),
                         ],
                       ),
@@ -401,7 +401,7 @@ class _FeesTabState extends State<_FeesTab> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('تعديل مرحلة ${f.gradeName}', style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
+                  Text('تعديل مرحلة ${f.gradeName}', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
                   const SizedBox(height: 10),
                   const FieldLabel('اسم المرحلة الدراسية', requiredField: true),
                   TextField(controller: name),
@@ -472,7 +472,7 @@ class _TeachersTabState extends State<_TeachersTab> {
                 children: [
                   Expanded(child: SearchField(controller: search, hint: 'بحث باسم المعلم أو رقم الهاتف...', onChanged: (_) => setState(() {}))),
                   const SizedBox(width: 8),
-                  Text('${list.length} مدرس', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: AppColors.heading)),
+                  Text('${list.length} مدرس', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: AppColors.heading)),
                   const SizedBox(width: 8),
                   PrimaryButton(label: 'إضافة مدرس', icon: Icons.add, onPressed: () => _edit(context)),
                 ],
@@ -496,7 +496,7 @@ class _TeachersTabState extends State<_TeachersTab> {
                                     children: [
                                       Text('#${i + 1}', style: const TextStyle(color: AppColors.muted, fontSize: 11, fontFamily: 'monospace')),
                                       const SizedBox(width: 6),
-                                      Expanded(child: Text(list[i].name, style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading, fontSize: 13))),
+                                      Expanded(child: Text(list[i].name, style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading, fontSize: 13))),
                                     ],
                                   ),
                                   const SizedBox(height: 4),
@@ -559,7 +559,7 @@ class _TeachersTabState extends State<_TeachersTab> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(t == null ? 'إضافة مدرس جديد' : 'تعديل بيانات: ${t.name}', style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
+                    Text(t == null ? 'إضافة مدرس جديد' : 'تعديل بيانات: ${t.name}', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
                     const SizedBox(height: 10),
                     const FieldLabel('اسم المدرس', requiredField: true),
                     TextField(controller: name, decoration: const InputDecoration(hintText: 'مثال: أ. محمد العلي')),
@@ -630,7 +630,7 @@ class _TeachersTabState extends State<_TeachersTab> {
                         decoration: BoxDecoration(color: AppColors.bg, border: Border.all(color: AppColors.line)),
                         child: Row(
                           children: [
-                            const Icon(Icons.payments_outlined, size: 16, color: AppColors.amber),
+                            Icon(Icons.payments_outlined, size: 16, color: AppColors.amber),
                             const SizedBox(width: 6),
                             const Expanded(child: Text('نظام المحاسبة والراتب (بيانات إضافية)', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12))),
                             Text(salaryOpen ? 'طي الإعدادات' : 'توسيع لتعديل الراتب', style: const TextStyle(fontSize: 10.5, color: AppColors.muted)),
@@ -800,14 +800,14 @@ class _SubjectsTabState extends State<_SubjectsTab> {
                                     height: 36,
                                     alignment: Alignment.center,
                                     color: const Color(0xFFF1F5F9),
-                                    child: Text(s.code.isEmpty ? '—' : s.code, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 10, color: AppColors.navy)),
+                                    child: Text(s.code.isEmpty ? '—' : s.code, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 10, color: AppColors.navy)),
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text(s.name, style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
+                                        Text(s.name, style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
                                         Text(s.gradeLevel.isEmpty ? 'عام / كل المراحل' : s.gradeLevel, style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
                                         if (s.description.isNotEmpty) Text(s.description, style: const TextStyle(color: AppColors.faint, fontSize: 11)),
                                       ],
@@ -848,7 +848,7 @@ class _SubjectsTabState extends State<_SubjectsTab> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(s == null ? 'إضافة مادة دراسية جديدة' : 'تعديل مادة: ${s.name}', style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
+                  Text(s == null ? 'إضافة مادة دراسية جديدة' : 'تعديل مادة: ${s.name}', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
                   const SizedBox(height: 10),
                   const FieldLabel('اسم المادة الدراسية', requiredField: true),
                   TextField(controller: name, decoration: const InputDecoration(hintText: 'مثال: الرياضيات، الفيزياء...')),
@@ -952,13 +952,13 @@ class _UsersTab extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.badge_outlined, color: AppColors.navy, size: 18),
+                          Icon(Icons.badge_outlined, color: AppColors.navy, size: 18),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(u.name, style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
+                                Text(u.name, style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
                                 Text(roleLabel(u.role), style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
                               ],
                             ),
@@ -1074,7 +1074,7 @@ class _UsersTab extends StatelessWidget {
                       child: ListView(
                         children: [
                           for (final g in capabilityGroups) ...[
-                            Text(g.label, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.navy)),
+                            Text(g.label, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.navy)),
                             for (final item in g.items)
                               CheckboxListTile(
                                 dense: true,
@@ -1133,7 +1133,7 @@ class _UsersTab extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('مستخدم جديد', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
+                    Text('مستخدم جديد', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
                     const SizedBox(height: 10),
                     const FieldLabel('الاسم', requiredField: true),
                     TextField(controller: name),
@@ -1309,7 +1309,7 @@ class _BackupTab extends StatelessWidget {
                           decoration: BoxDecoration(color: AppColors.bg, border: Border.all(color: AppColors.line)),
                           child: Column(
                             children: [
-                              Text('${e.value}', style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
+                              Text('${e.value}', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
                               Text(e.key, style: const TextStyle(color: AppColors.muted, fontSize: 10)),
                             ],
                           ),
@@ -1429,7 +1429,7 @@ class _RoomsTab extends StatelessWidget {
               padding: const EdgeInsets.all(12),
               child: Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1461,7 +1461,7 @@ class _RoomsTab extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(r.name,
-                                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading)),
+                                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading)),
                               Text(
                                 [
                                   'السعة: ${r.capacity}',
@@ -1506,7 +1506,7 @@ class _RoomsTab extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(room == null ? 'إضافة قاعة جديدة' : 'تعديل: ${room.name}',
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
             const SizedBox(height: 10),
             const FieldLabel('اسم القاعة', requiredField: true),
             TextField(controller: name, decoration: const InputDecoration(hintText: 'مثال: القاعة (أ)')),

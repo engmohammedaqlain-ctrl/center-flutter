@@ -110,7 +110,7 @@ class StudentDetailScreen extends StatelessWidget {
                             children: [
                               const Text('إجمالي المقبوضات:', style: TextStyle(color: AppColors.muted, fontSize: 12)),
                               const Spacer(),
-                              Text(money(totalPaid), style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading, fontSize: 12.5)),
+                              Text(money(totalPaid), style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading, fontSize: 12.5)),
                             ],
                           ),
                         ],
@@ -265,7 +265,7 @@ class StudentDetailScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(student.fullName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading)),
+                  Text(student.fullName, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading)),
                   const SizedBox(height: 2),
                   Row(
                     children: [
@@ -370,9 +370,9 @@ class StudentDetailScreen extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.receipt_long, size: 14, color: AppColors.amber),
+                Icon(Icons.receipt_long, size: 14, color: AppColors.amber),
                 const SizedBox(width: 6),
-                Text(p.receiptNumber, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading)),
+                Text(p.receiptNumber, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading)),
                 const SizedBox(width: 8),
                 Text(formatDate(p.date), style: const TextStyle(color: AppColors.muted, fontSize: 11)),
                 const Spacer(),
@@ -439,7 +439,7 @@ class _AttendanceCardState extends State<_AttendanceCard> {
           SectionTitle(
             'سجل الحضور والالتزام',
             trailing: Text('الالتزام: ${widget.rate}%',
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading)),
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading)),
           ),
           Container(
             padding: const EdgeInsets.symmetric(vertical: 8),
@@ -575,7 +575,7 @@ class _Thumb extends StatelessWidget {
             children: [
               Padding(
                 padding: const EdgeInsets.all(10),
-                child: Text(label, style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
+                child: Text(label, style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
               ),
               Flexible(child: InteractiveViewer(maxScale: 5, child: Image.memory(bytes))),
               Padding(
@@ -623,9 +623,9 @@ class _PortalCodeRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.vpn_key_outlined, size: 15, color: AppColors.amber),
+          Icon(Icons.vpn_key_outlined, size: 15, color: AppColors.amber),
           const SizedBox(width: 6),
-          const Expanded(
+          Expanded(
             child: Text(
               'رمز الدخول للبوابة:',
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: AppColors.heading),
@@ -643,7 +643,7 @@ class _PortalCodeRow extends StatelessWidget {
           else
             SelectableText(
               code,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: 'monospace',
                 fontWeight: FontWeight.w900,
                 fontSize: 13,

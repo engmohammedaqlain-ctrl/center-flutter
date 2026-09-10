@@ -319,7 +319,7 @@ class NoAccess extends StatelessWidget {
             Text(
               'قسم $label غير متاح لصلاحيتك',
               textAlign: TextAlign.center,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
             ),
             const SizedBox(height: 8),
             Text.rich(
@@ -377,7 +377,7 @@ class FieldLabel extends StatelessWidget {
       child: Text.rich(
         TextSpan(
           text: text,
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.heading),
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.heading),
           children: [
             if (requiredField) const TextSpan(text: ' *', style: TextStyle(color: AppColors.danger, fontWeight: FontWeight.w900)),
           ],
@@ -460,7 +460,7 @@ class SectionTitle extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Text(text, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading)),
+            child: Text(text, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading)),
           ),
           ?trailing,
         ],
@@ -500,7 +500,7 @@ Future<bool> confirmSheet(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
+            Text(title, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
             const SizedBox(height: 8),
             Text(message, style: const TextStyle(color: AppColors.muted, fontSize: 12.5, height: 1.5)),
             const SizedBox(height: 14),

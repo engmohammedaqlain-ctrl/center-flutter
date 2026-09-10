@@ -249,7 +249,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               children: [
                 Text(
                   existing == null ? 'إضافة مجموعة دراسية' : 'تعديل: ${existing.name}',
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
                 ),
                 const SizedBox(height: 10),
                 const FieldLabel('اسم المجموعة', requiredField: true),
@@ -457,7 +457,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 children: [
                   Text(
                     'تسجيل الطلاب — ${group.name}',
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
                   ),
                   Text(
                     'المسجّلون: ${enrolled.length}${group.maxStudents != null ? ' / ${group.maxStudents}' : ''}'
@@ -557,7 +557,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                 child: Text('${s.fullName}  (${s.gradeLevel})',
                                     style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
                               ),
-                              const Icon(Icons.add_circle_outline, size: 16, color: AppColors.amber),
+                              Icon(Icons.add_circle_outline, size: 16, color: AppColors.amber),
                             ],
                           ),
                         ),
@@ -649,7 +649,7 @@ class _GroupCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(group.name,
-                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading)),
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading)),
                     Text(
                       '${store.subjectName(group.subjectId)} · ${store.teacherName(group.teacherId)}',
                       style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
@@ -709,7 +709,7 @@ class _GroupCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(money(group.pricePerMonth),
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.amber)),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.amber)),
             ],
           ),
         ],
@@ -768,7 +768,7 @@ class _WeeklyView extends StatelessWidget {
                               ),
                             ),
                             Text(g.timeLabel,
-                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.heading)),
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.heading)),
                           ],
                         ),
                       ),
@@ -837,7 +837,7 @@ class StudentGroupsCard extends StatelessWidget {
                       ),
                     ),
                     Text(money(e.appliedPrice ?? 0),
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.heading)),
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.heading)),
                     if (store.can('schedule.edit')) ...[
                       const SizedBox(width: 6),
                       SquareIconButton(
@@ -891,7 +891,7 @@ class StudentGroupsCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text('تسجيل ${student.fullName} في مجموعة',
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
               const SizedBox(height: 10),
               const FieldLabel('المجموعة', requiredField: true),
               AppDropdown<String>(

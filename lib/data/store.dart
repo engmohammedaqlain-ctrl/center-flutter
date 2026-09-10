@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/models.dart';
+import '../theme/app_colors.dart';
 import 'institution.dart';
 import 'local_db.dart';
 import 'permissions.dart';
@@ -365,6 +366,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         }
       }
       _restoreSession();
+      applyBrandColors();
     } finally {
       _loading = false;
     }
@@ -427,6 +429,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   String get institutionLogo => db.settings[institutionLogoKey] ?? '';
 
+  /// طبع ألوان المنشأة على الواجهة. تُستدعى بعد كل ما قد يغيّرها.
+  void applyBrandColors() => AppColors.apply(institutionColors);
+
   InstitutionColors get institutionColors {
     final raw = db.settings[institutionColorsKey];
     if (raw == null || raw.isEmpty) return InstitutionColors.defaults;
@@ -462,6 +467,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
     if (logo != null) await db.setSetting(institutionLogoKey, logo.isEmpty ? null : logo);
     if (colors != null) await db.setSetting(institutionColorsKey, jsonEncode(colors.toMap()));
+    applyBrandColors();
     _persistInstitutionRow();
     notifyListeners();
   }
@@ -510,6 +516,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (colors is Map) {
       await db.setSetting(institutionColorsKey, jsonEncode(Map<String, dynamic>.from(colors)));
     }
+    applyBrandColors();
     notifyListeners();
   }
 
@@ -2193,6 +2200,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   @override
   void notifySync() => notifyListeners();
+
+  @override
+  Future<void> onPulled() => hydrateInstitution();
 }
 
 class StoreScope extends InheritedNotifier<AppStore> {

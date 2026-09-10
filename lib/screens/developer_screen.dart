@@ -91,7 +91,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      const Text('الاشتراكات والمنشآت',
+                                      Text('الاشتراكات والمنشآت',
                                           style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
                                       Text('المعروض: ${list.length} من ${store.tenants.length}',
                                           style: const TextStyle(color: AppColors.muted, fontSize: 11)),
@@ -122,7 +122,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                       ),
                       const SizedBox(height: 8),
                       if (loading && store.tenants.isEmpty)
-                        const Padding(
+                        Padding(
                           padding: EdgeInsets.symmetric(vertical: 40),
                           child: Center(child: CircularProgressIndicator(color: AppColors.amber)),
                         )
@@ -156,7 +156,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
     final top = MediaQuery.paddingOf(context).top;
     return Container(
       padding: EdgeInsets.fromLTRB(14, top + 10, 12, 12),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.navy,
         border: Border(bottom: BorderSide(color: AppColors.navyMid)),
       ),
@@ -166,10 +166,10 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
             width: 32,
             height: 32,
             decoration: BoxDecoration(color: AppColors.amberSoft, border: Border.all(color: AppColors.amber)),
-            child: const Icon(Icons.tune, color: AppColors.navy, size: 18),
+            child: Icon(Icons.tune, color: AppColors.navy, size: 18),
           ),
           const SizedBox(width: 8),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -266,7 +266,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text('تمديد اشتراك «${t.name}»',
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
                 const SizedBox(height: 4),
                 Text('الانتهاء الحالي: ${formatDate(t.expiresAt)}',
                     style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
@@ -432,7 +432,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(existing == null ? 'إضافة منشأة جديدة' : 'تعديل: ${existing.name}',
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
                 const SizedBox(height: 10),
                 const FieldLabel('اسم المنشأة', requiredField: true),
                 TextField(
@@ -601,7 +601,7 @@ class _TenantCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(tenant.name,
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading)),
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading)),
               ),
               if (!tenant.active)
                 StatusChip.danger('موقوف')

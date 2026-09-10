@@ -394,7 +394,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
         title: Text(editing ? 'تعديل بيانات الطالب' : 'تسجيل طالب جديد'),
         backgroundColor: AppColors.amberSoft,
         foregroundColor: AppColors.heading,
-        titleTextStyle: const TextStyle(color: AppColors.heading, fontWeight: FontWeight.w800, fontSize: 14),
+        titleTextStyle: TextStyle(color: AppColors.heading, fontWeight: FontWeight.w800, fontSize: 14),
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
@@ -405,9 +405,9 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.person, size: 16, color: AppColors.amber),
+                    Icon(Icons.person, size: 16, color: AppColors.amber),
                     const SizedBox(width: 6),
-                    const Expanded(child: Text('البيانات الأساسية للطالب والتواصل', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading))),
+                    Expanded(child: Text('البيانات الأساسية للطالب والتواصل', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading))),
                     Text('الحقول ذات علامة * مطلوبة', style: TextStyle(color: AppColors.muted, fontSize: 10)),
                   ],
                 ),
@@ -619,7 +619,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                 children: [
                   Icon(extra ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: AppColors.amber, size: 18),
                   const SizedBox(width: 6),
-                  Text(extra ? 'طي البيانات الإضافية' : 'توسيع', style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading, fontSize: 12.5)),
+                  Text(extra ? 'طي البيانات الإضافية' : 'توسيع', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading, fontSize: 12.5)),
                 ],
               ),
             ),
@@ -729,7 +729,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                   const FieldLabel('البريد الإلكتروني'),
                   TextField(controller: email, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(hintText: 'student@example.com')),
                   const SizedBox(height: 12),
-                  const Text('المرفقات والوثائق الرسمية (صور أو مستندات)', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy, fontSize: 12)),
+                  Text('المرفقات والوثائق الرسمية (صور أو مستندات)', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy, fontSize: 12)),
                   const SizedBox(height: 8),
                   _attachBox('مرفق: صورة هوية الطالب', studentIdPhoto, () => _pickAttachment((v) => studentIdPhoto = v), () => setState(() => studentIdPhoto = '')),
                   const SizedBox(height: 8),
@@ -926,7 +926,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           ] else
             InkWell(
               onTap: pick,
-              child: const Padding(
+              child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 10),
                 child: Column(
                   children: [
@@ -986,7 +986,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                                 return ListTile(
                                   dense: true,
                                   title: Text(n, style: TextStyle(fontWeight: on ? FontWeight.w800 : FontWeight.w500, fontSize: 13)),
-                                  trailing: on ? const Icon(Icons.check, color: AppColors.amber, size: 16) : null,
+                                  trailing: on ? Icon(Icons.check, color: AppColors.amber, size: 16) : null,
                                   tileColor: on ? AppColors.amberSoft : null,
                                   onTap: () {
                                     setState(() => neighborhood = n);

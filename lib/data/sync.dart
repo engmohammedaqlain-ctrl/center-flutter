@@ -437,6 +437,9 @@ abstract class SyncLocalStore {
   void removeIds(String table, List<String> ids);
   void markSynced(String table, String id);
   void notifySync();
+
+  /// ما يجري بعد اكتمال سحب: قراءة الإعدادات التي وصلت مع الصفوف.
+  Future<void> onPulled();
 }
 
 class SyncService {
@@ -647,6 +650,8 @@ class SyncService {
     _syncing = true;
     try {
       final result = await pullFromCloud(tenantId);
+      // هوية المنشأة تصل ضمن السحب: تُقرأ فوراً ليظهر الشعار واللون المعتمد
+      await local.onPulled();
       final removedNote = result.removed > 0 ? ' وحُذف ${result.removed} سجلاً محذوفاً من السحابة' : '';
       local.notifySync();
 

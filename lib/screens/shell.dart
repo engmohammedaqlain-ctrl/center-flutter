@@ -104,7 +104,7 @@ class _Header extends StatelessWidget {
 
     return Container(
       padding: EdgeInsets.fromLTRB(14, top + 10, 14, 10),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.navy,
         border: Border(bottom: BorderSide(color: AppColors.navyMid)),
         boxShadow: [BoxShadow(color: Color(0x14000000), blurRadius: 8, offset: Offset(0, 2))],

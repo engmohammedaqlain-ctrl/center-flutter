@@ -153,7 +153,7 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
               color: AppColors.amberSoft,
               border: Border.all(color: AppColors.amberBorder),
             ),
-            child: const Icon(Icons.apartment, color: AppColors.amber, size: 20),
+            child: Icon(Icons.apartment, color: AppColors.amber, size: 20),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -164,7 +164,7 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
                   tenantName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
                 ),
                 const Text(
                   'تهيئة النظام لأول مرة على هذا الجهاز',
@@ -202,14 +202,14 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
             color: AppColors.amberSoft,
             border: Border.all(color: AppColors.amberBorder),
           ),
-          child: const SizedBox(
+          child: SizedBox(
             width: 26,
             height: 26,
             child: CircularProgressIndicator(strokeWidth: 2.6, color: AppColors.amber),
           ),
         ),
         const SizedBox(height: 16),
-        const Text(
+        Text(
           'جاري تنزيل بيانات المركز من السحابة...',
           textAlign: TextAlign.center,
           style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading),
@@ -340,7 +340,7 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
             },
             onSubmitted: (_) => _finish(store, selected),
             style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               hintText: 'أدخل كلمة مرور',
               prefixIcon: Icon(Icons.vpn_key_outlined, size: 16, color: AppColors.amber),
             ),
@@ -372,7 +372,7 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
                   const TextSpan(text: 'سيتم تثبيت الجهاز باسم '),
                   TextSpan(
                     text: selected.name,
-                    style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading),
+                    style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading),
                   ),
                   const TextSpan(text: ' كـ '),
                   const TextSpan(text: 'سكرتير', style: TextStyle(fontWeight: FontWeight.w800)),

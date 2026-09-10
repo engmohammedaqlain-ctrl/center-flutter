@@ -110,7 +110,7 @@ class SplashScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
@@ -137,7 +137,7 @@ class SplashScreen extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: const Icon(Icons.school, color: AppColors.amber, size: 50),
+                child: Icon(Icons.school, color: AppColors.amber, size: 50),
               ),
               const SizedBox(height: 22),
               Text(
@@ -215,7 +215,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       body: Container(
         // تدرّج هادئ بدل لون مصمت — العمق هو ما يميّز الشاشة الرسمية
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
@@ -250,7 +250,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: ClipRRect(
                         borderRadius: BorderRadius.zero,
                         child: logo == null
-                            ? const Icon(Icons.school, color: AppColors.amber, size: 56)
+                            ? Icon(Icons.school, color: AppColors.amber, size: 56)
                             : Image.memory(logo, fit: BoxFit.contain, gaplessPlayback: true),
                       ),
                     ),

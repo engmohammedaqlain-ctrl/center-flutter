@@ -216,7 +216,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                                             child: Column(
                                               crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
-                                                Text(d.student.fullName, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading)),
+                                                Text(d.student.fullName, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading)),
                                                 Text(d.student.gradeLevel, style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
                                               ],
                                             ),
@@ -347,9 +347,9 @@ class _PayCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.receipt_long, size: 14, color: AppColors.amber),
+              Icon(Icons.receipt_long, size: 14, color: AppColors.amber),
               const SizedBox(width: 6),
-              Text(payment.receiptNumber, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading)),
+              Text(payment.receiptNumber, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading)),
               const Spacer(),
               Text(formatDate(payment.date), style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
               const SizedBox(width: 6),
@@ -388,7 +388,7 @@ class _PayCard extends StatelessWidget {
                       decoration: payment.cancelled ? TextDecoration.lineThrough : null,
                     ),
                   ),
-                  const Text('عرض الوصل', style: TextStyle(color: AppColors.amber, fontSize: 10.5, fontWeight: FontWeight.w700)),
+                  Text('عرض الوصل', style: TextStyle(color: AppColors.amber, fontSize: 10.5, fontWeight: FontWeight.w700)),
                 ],
               ),
             ],

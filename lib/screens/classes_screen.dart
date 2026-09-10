@@ -51,14 +51,14 @@ class _ClassesScreenState extends State<ClassesScreen> {
                     width: 32,
                     height: 32,
                     color: AppColors.amberSoft,
-                    child: const Icon(Icons.apartment, color: AppColors.heading, size: 18),
+                    child: Icon(Icons.apartment, color: AppColors.heading, size: 18),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('صفوف وشعب المدرسة', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading)),
+                        Text('صفوف وشعب المدرسة', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading)),
                         Text('المعروض: ${filtered.length} من أصل ${store.rooms.length} صف', style: const TextStyle(color: AppColors.muted, fontSize: 11)),
                       ],
                     ),
@@ -156,7 +156,7 @@ class _ClassesScreenState extends State<ClassesScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(room == null ? 'إضافة صف / شعبة جديدة' : 'تعديل: ${room.name}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
+                  Text(room == null ? 'إضافة صف / شعبة جديدة' : 'تعديل: ${room.name}', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
                   const SizedBox(height: 12),
                   const FieldLabel('اسم الصف / الشعبة', requiredField: true),
                   TextField(controller: name, decoration: const InputDecoration(hintText: 'مثال: شعبة 1، شعبة أ، عاشر أ...')),
@@ -246,7 +246,7 @@ class _ClassesScreenState extends State<ClassesScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('تعيين المربي', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
+                  Text('تعيين المربي', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
                   const SizedBox(height: 12),
                   AppDropdown<String>(
                     value: teacherId.isEmpty ? null : teacherId,
@@ -441,7 +441,7 @@ class _ClassDetailState extends State<_ClassDetail> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(widget.room.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
+                        Text(widget.room.name, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
                         if (teacher != null) Text('المربي: ${teacher.name}', style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
                       ],
                     ),
@@ -506,7 +506,7 @@ class _ClassDetailState extends State<_ClassDetail> {
                       color: AppColors.amberSoft,
                       child: Row(
                         children: [
-                          Text((i + 1).toString().padLeft(2, '0'), style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading, fontSize: 12)),
+                          Text((i + 1).toString().padLeft(2, '0'), style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading, fontSize: 12)),
                           const Spacer(),
                           s.isDebtor ? StatusChip.danger('عليه مستحق') : StatusChip.success('مسدد'),
                         ],
@@ -516,7 +516,7 @@ class _ClassDetailState extends State<_ClassDetail> {
                       child: Center(
                         child: Padding(
                           padding: const EdgeInsets.all(8),
-                          child: Text(s.fullName, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading)),
+                          child: Text(s.fullName, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading)),
                         ),
                       ),
                     ),
@@ -560,7 +560,7 @@ Future<void> showClassPortalCodes(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
                   child: Row(
                     children: [
-                      const Icon(Icons.vpn_key_outlined, size: 18, color: AppColors.amber),
+                      Icon(Icons.vpn_key_outlined, size: 18, color: AppColors.amber),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Column(
@@ -612,7 +612,7 @@ Future<void> showClassPortalCodes(
                             else
                               SelectableText(
                                 code,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontFamily: 'monospace',
                                   fontWeight: FontWeight.w900,
                                   fontSize: 13,

@@ -11,10 +11,10 @@ import 'app_colors.dart';
 /// البطاقات تبدو غير منتمية لبعضها.
 abstract final class AppText {
   /// عنوان شاشة أو قسم.
-  static const title = TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.heading, height: 1.35);
+  static TextStyle get title => TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.heading, height: 1.35);
 
   /// عنوان بطاقة أو صف في قائمة.
-  static const cardTitle = TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.heading, height: 1.3);
+  static TextStyle get cardTitle => TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.heading, height: 1.3);
 
   /// نص أساسي.
   static const body = TextStyle(fontSize: 12.5, color: AppColors.text, height: 1.5);
@@ -26,7 +26,7 @@ abstract final class AppText {
   static const label = TextStyle(fontSize: 10.5, color: AppColors.muted, height: 1.35, fontWeight: FontWeight.w600);
 
   /// رقم بارز.
-  static const figure = TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: AppColors.heading, height: 1.2);
+  static TextStyle get figure => TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: AppColors.heading, height: 1.2);
 }
 
 /// مقياس المسافات — مضاعفات ثابتة بدل قيم عشوائية.
@@ -73,7 +73,7 @@ abstract final class AppTheme {
       brightness: Brightness.light,
       scaffoldBackgroundColor: AppColors.bg,
       canvasColor: Colors.white,
-      colorScheme: const ColorScheme.light(
+      colorScheme: ColorScheme.light(
         primary: AppColors.amber,
         onPrimary: Colors.white,
         secondary: AppColors.navy,
@@ -82,7 +82,7 @@ abstract final class AppTheme {
         onSurface: AppColors.text,
       ),
       textTheme: base.apply(bodyColor: AppColors.text, displayColor: AppColors.heading),
-      appBarTheme: const AppBarTheme(
+      appBarTheme: AppBarTheme(
         elevation: 0,
         scrolledUnderElevation: 0,
         backgroundColor: AppColors.navy,

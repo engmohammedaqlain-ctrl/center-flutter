@@ -52,7 +52,7 @@ class _ReceiptSheet extends StatelessWidget {
                           children: [
                             Text(
                               store.institutionName.isEmpty ? appName : store.institutionName,
-                              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading),
+                              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading),
                             ),
                             const Text('سند قبض رسمي', style: TextStyle(color: AppColors.muted, fontSize: 11)),
                           ],
@@ -62,7 +62,7 @@ class _ReceiptSheet extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(payment.receiptNumber,
-                              style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.amber, fontSize: 12.5)),
+                              style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.amber, fontSize: 12.5)),
                           Text(formatDate(payment.date), style: const TextStyle(color: AppColors.muted, fontSize: 11)),
                         ],
                       ),
@@ -209,7 +209,7 @@ class _ReceiptSheet extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(width: 100, child: Text(k, style: const TextStyle(color: AppColors.muted, fontSize: 11.5))),
-          Expanded(child: Text(v, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading))),
+          Expanded(child: Text(v, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading))),
         ],
       ),
     );

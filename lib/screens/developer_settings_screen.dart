@@ -85,9 +85,9 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Icon(Icons.lock_outline, size: 32, color: AppColors.amber),
+                Icon(Icons.lock_outline, size: 32, color: AppColors.amber),
                 const SizedBox(height: 10),
-                const Text(
+                Text(
                   'هذا القسم خاص بالمطور',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
@@ -381,7 +381,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text('توليد بيانات تجريبية',
+                Text('توليد بيانات تجريبية',
                     style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading)),
                 const Text('تغذية النظام بسجلات للتجربة والاختبار',
                     style: TextStyle(color: AppColors.muted, fontSize: 10.5)),
@@ -467,7 +467,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
                   SizedBox(width: 130, child: Text(r.$1, style: const TextStyle(color: AppColors.muted, fontSize: 11.5))),
                   Expanded(
                     child: Text(r.$2,
-                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: AppColors.heading)),
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: AppColors.heading)),
                   ),
                 ],
               ),

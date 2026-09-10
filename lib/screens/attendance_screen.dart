@@ -290,7 +290,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               children: [
                 Text(
                   'رصد حضور: ${day.dayName} (${day.shortDate})',
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading),
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading),
                 ),
                 const SizedBox(height: 6),
                 Wrap(
@@ -494,7 +494,7 @@ class _StudentRowState extends State<_StudentRow> {
                         student.fullName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
                       ),
                     ),
                   ],

@@ -108,7 +108,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
             title: Text(selected == null ? 'تسديد دفعة جديدة' : 'تسديد دفعة للطالب: ${selected.fullName}'),
             backgroundColor: AppColors.amberSoft,
             foregroundColor: AppColors.heading,
-            titleTextStyle: const TextStyle(color: AppColors.heading, fontWeight: FontWeight.w800, fontSize: 13.5),
+            titleTextStyle: TextStyle(color: AppColors.heading, fontWeight: FontWeight.w800, fontSize: 13.5),
           ),
           body: ListView(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
@@ -123,7 +123,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const Text('الطالب المحدد', style: TextStyle(color: AppColors.muted, fontSize: 11)),
-                                Text(selected.fullName, style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
+                                Text(selected.fullName, style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
                                 Text(
                                   selected.balance < 0 ? '${money(selected.balance)} مطلوبة' : '${money(selected.balance)} رصيد دائن',
                                   style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: selected.balance < 0 ? AppColors.danger : AppColors.amber),
@@ -223,7 +223,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                     TextField(
                       controller: amount,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.amber),
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.amber),
                       decoration: const InputDecoration(hintText: '0'),
                     ),
                     const SizedBox(height: 10),
