@@ -56,7 +56,7 @@ const tableAllowedColumns = <String, List<String>>{
     'notes', 'tenant_id', 'created_at', 'updated_at',
   ],
   'student_attachments': [
-    'id', 'student_id_photo', 'parent_id_photo', 'birth_certificate',
+    'id', 'student_id_photo', 'birth_certificate',
     'tenant_id', 'created_at', 'updated_at',
   ],
   'institution_settings': [
@@ -101,27 +101,19 @@ const tableAllowedColumns = <String, List<String>>{
     'recorded_by_user_id', 'payment_method', 'notes', 'tenant_id',
     'created_at', 'updated_at',
   ],
-  'cashbox_shifts': [
-    'id', 'user_id', 'opened_at', 'closed_at', 'opening_balance',
-    'closing_balance', 'expected_closing_balance', 'difference',
-    'notes', 'status', 'tenant_id', 'created_at', 'updated_at',
-  ],
   'class_announcements': [
     'id', 'tenant_id', 'teacher_id', 'group_id', 'title', 'content',
     'image_url', 'created_at',
   ],
   'student_evaluations': [
-    'id', 'tenant_id', 'student_id', 'teacher_id', 'subject_id',
-    'score', 'notes', 'created_at',
+    'id', 'tenant_id', 'student_id', 'group_id', 'teacher_id', 'subject_id',
+    'title', 'score', 'max_score', 'evaluation_date', 'type', 'notes',
+    'created_at', 'updated_at',
   ],
 };
 
 const nonTextColumns = <String, List<String>>{
   'attendance': ['created_at', 'tenant_id', 'updated_at'],
-  'cashbox_shifts': [
-    'closed_at', 'closing_balance', 'created_at', 'difference',
-    'expected_closing_balance', 'opened_at', 'opening_balance', 'tenant_id', 'updated_at',
-  ],
   'enrollments': [
     'applied_price', 'created_at', 'custom_price', 'enrolled_at', 'enrollment_date',
     'tenant_id', 'updated_at',
@@ -158,8 +150,10 @@ const nonTextColumns = <String, List<String>>{
   'teachers': ['created_at', 'payment_rate', 'subject_ids', 'tenant_id', 'updated_at'],
   'tenants': ['created_at', 'expires_at', 'id', 'updated_at'],
   'users': ['capabilities', 'created_at', 'is_active', 'tenant_id', 'updated_at'],
-  'class_announcements': ['created_at', 'tenant_id'],
-  'student_evaluations': ['created_at', 'score', 'tenant_id'],
+  'class_announcements': ['created_at', 'id', 'tenant_id'],
+  'student_evaluations': [
+    'created_at', 'evaluation_date', 'id', 'max_score', 'score', 'tenant_id', 'updated_at',
+  ],
 };
 
 const tableLabelsAr = <String, String>{
@@ -179,9 +173,8 @@ const tableLabelsAr = <String, String>{
   'attendance': 'الحضور والغياب',
   'teacher_payouts': 'مستحقات المعلمين',
   'expenses': 'المصروفات',
-  'cashbox_shifts': 'ورديات الصندوق',
   'class_announcements': 'إعلانات الصفوف',
-  'student_evaluations': 'تقييمات الطلاب',
+  'student_evaluations': 'التقييمات والدرجات',
 };
 
 /// أسماء العمليات كما تُعرض — مطابق لـ `ACTION_LABELS` في SyncDetails.tsx
@@ -208,10 +201,17 @@ const syncedTables = [
   'attendance',
   'teacher_payouts',
   'expenses',
-  'cashbox_shifts',
   'class_announcements',
   'student_evaluations',
 ];
+
+/// هل يحمل الجدول عمود `updated_at`؟
+///
+/// السحب التزايدي يرشّح بـ `updated_at=gt.<الختم>`، وسؤال جدول لا يملك العمود
+/// يردّه PostgREST بخطأ 400 فيسقط الجدول كله من السحب. `class_announcements`
+/// مثلاً لا يحمل إلا `created_at`، فيُسحب كاملاً في كل مرة.
+bool tableHasUpdatedAt(String table) =>
+    tableAllowedColumns[table]?.contains('updated_at') ?? true;
 
 /// عمود التصالح عند الرفع لكل جدول يختلف مفتاحه الطبيعي عن `id`.
 ///
@@ -375,10 +375,12 @@ String describeRecord(String table, Map<String, dynamic>? payload, Map<String, d
       return 'تسجيل في مجموعة';
     case 'teacher_payouts':
       return 'مستحق معلم';
-    case 'cashbox_shifts':
-      return 'وردية صندوق';
     case 'student_attachments':
       return 'مرفقات طالب';
+    case 'student_evaluations':
+      return '${r['title'] ?? ''}'.trim().isEmpty ? 'تقييم طالب' : 'تقييم ${r['title']}';
+    case 'class_announcements':
+      return '${r['title'] ?? 'إعلان صفّي'}';
     case 'institution_settings':
       return 'الشعار والألوان';
     default:
@@ -865,16 +867,25 @@ class SyncService {
     local.notifySync();
   }
 
+  /// جلب البيانات من السحابة ودمجها محلياً.
+  ///
+  /// وضعان — مطابق لـ `pullFromCloud` في lib/sync.ts:
+  ///  - **أول سحب** (`lastPullAt = null`): سحب كامل لكل الجداول لتأسيس النسخة.
+  ///  - **السحبات اللاحقة**: تزايدي — فقط ما تغيّر (`updated_at > lastPullAt`).
+  ///    ولكشف الحذف تُجلب المعرّفات وحدها (`select=id`) بدل السجلات الكاملة.
   Future<PullOutcome> pullFromCloud(String tenantId) async {
     var totalPulled = 0;
     var totalRemoved = 0;
     final lastPullAt = await getLastPullAt();
     final safeToReconcileDeletes = lastPullAt != null;
+    final incrementalPull = lastPullAt != null;
     // الجداول التي تعذّر جلبها. ابتلاع الخطأ بصمت كان يُظهر «تم سحب 0 سجلاً»
     // على أنه نجاح، فلا يعرف المستخدم أن جدولاً كاملاً لم يصل.
     final failedTables = <String, String>{};
 
     for (final cloud in syncedTables) {
+      // الجدول بلا `updated_at` لا يقبل الترشيح التزايدي فيُسحب كاملاً
+      final isIncremental = incrementalPull && tableHasUpdatedAt(cloud);
       try {
         final allData = <Map<String, dynamic>>[];
         var from = 0;
@@ -885,6 +896,7 @@ class SyncService {
           final page = await _select(
             cloud,
             tenantId,
+            since: isIncremental ? lastPullAt : null,
             from: from,
             to: from + pullPageSize - 1,
             order: 'id.asc',
@@ -936,26 +948,70 @@ class SyncService {
           totalPulled += toWrite.length;
         }
 
-        final cloudIds = allData.map((r) => '${r['id']}').toSet();
-        final toRemove = safeToReconcileDeletes
-            ? localRecords
-                .where(
-                  (r) =>
-                      r['sync_status'] == 'synced' &&
-                      !cloudIds.contains('${r['id']}') &&
-                      !pendingIds.contains('${r['id']}') &&
-                      (r['updated_at'] == null || toTimestamp(r['updated_at']) < toTimestamp(lastPullAt)),
-                )
-                .map((r) => '${r['id']}')
-                .toList()
-            : <String>[];
+        // ── توفيق الحذف ──────────────────────────────────────────────────
+        // في السحب التزايدي `allData` لا تحوي إلا المتغيّر، فلا تصلح لكشف
+        // الحذف. تُجلب المعرّفات وحدها: صفحة `select=id` أخفّ من السجل كاملاً.
+        if (safeToReconcileDeletes) {
+          Set<String> cloudIds;
+          if (isIncremental) {
+            final allIds = <String>[];
+            var idFrom = 0;
+            var idKeep = true;
+            var idComplete = true;
 
-        if (toRemove.isNotEmpty) {
-          local.removeIds(cloud, toRemove);
-          totalRemoved += toRemove.length;
+            while (idKeep) {
+              final page = await _select(
+                cloud,
+                tenantId,
+                columns: 'id',
+                from: idFrom,
+                to: idFrom + pullPageSize - 1,
+                order: 'id.asc',
+              );
+              if (page == null) {
+                idComplete = false;
+                break;
+              }
+              if (page.isNotEmpty) {
+                for (final row in page) {
+                  allIds.add('${row['id']}');
+                }
+                idFrom += page.length;
+                if (page.length < pullPageSize) idKeep = false;
+              } else {
+                idKeep = false;
+              }
+            }
+
+            if (!idComplete) {
+              failedTables[cloud] = 'تعذّر التحقق من المحذوف في ${tableLabelsAr[cloud] ?? cloud}.';
+              continue;
+            }
+            cloudIds = allIds.toSet();
+          } else {
+            // أول سحب: المعرّفات متاحة من البيانات المجلوبة أصلاً
+            cloudIds = allData.map((r) => '${r['id']}').toSet();
+          }
+
+          final toRemove = localRecords
+              .where(
+                (r) =>
+                    r['sync_status'] == 'synced' &&
+                    !cloudIds.contains('${r['id']}') &&
+                    !pendingIds.contains('${r['id']}') &&
+                    (r['updated_at'] == null || toTimestamp(r['updated_at']) < toTimestamp(lastPullAt)),
+              )
+              .map((r) => '${r['id']}')
+              .toList();
+
+          if (toRemove.isNotEmpty) {
+            local.removeIds(cloud, toRemove);
+            totalRemoved += toRemove.length;
+          }
         }
 
         if (!safeToReconcileDeletes) {
+          final cloudIds = allData.map((r) => '${r['id']}').toSet();
           final orphans = localRecords.where(
             (r) => r['sync_status'] == 'synced' && !cloudIds.contains('${r['id']}') && !pendingIds.contains('${r['id']}'),
           );

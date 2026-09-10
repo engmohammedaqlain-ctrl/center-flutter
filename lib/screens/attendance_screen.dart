@@ -74,14 +74,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           orElse: () => week.where((d) => d.isToday).firstOrNull ?? week.first,
         );
 
-        var present = 0, absent = 0, unmarked = 0;
+        var present = 0, absent = 0, excused = 0, unmarked = 0;
         for (final s in list) {
           switch (store.attendanceInSession(currentOwner, s.id, day.dateStr)) {
             case 'present':
-            case 'late':
               present++;
             case 'absent':
               absent++;
+            case 'excused':
+              excused++;
             default:
               unmarked++;
           }
@@ -121,6 +122,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                               owner: currentOwner,
                               present: present,
                               absent: absent,
+                              excused: excused,
                               unmarked: unmarked,
                               canEdit: canEdit,
                             ),
@@ -274,6 +276,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     required String owner,
     required int present,
     required int absent,
+    required int excused,
     required int unmarked,
     required bool canEdit,
   }) {
@@ -304,6 +307,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     ),
                     _stat('حاضر', present, AppColors.success),
                     _stat('غائب', absent, AppColors.danger),
+                    if (excused > 0) _stat('مأذون', excused, AppColors.info),
                     if (unmarked > 0) _stat('لم يُرصد', unmarked, AppColors.faint),
                   ],
                 ),
@@ -470,7 +474,7 @@ class _StudentRowState extends State<_StudentRow> {
     final index = widget.index;
     final canEdit = widget.canEdit;
     final status = _status;
-    final present = status == 'present' || status == 'late';
+    final present = status == 'present';
     final absent = status == 'absent';
 
     return AppCard(

@@ -19,11 +19,11 @@ void main() {
     });
 
     test('finance rights all depend on finance.view', () {
-      for (final cap in ['finance.collect', 'finance.cancel', 'finance.cashbox']) {
+      for (final cap in ['finance.collect', 'finance.cancel', 'finance.expenses']) {
         expect(toggleCapability(const [], cap), contains('finance.view'), reason: cap);
       }
       final stripped = toggleCapability(
-        ['finance.view', 'finance.collect', 'finance.cancel', 'finance.cashbox'],
+        ['finance.view', 'finance.collect', 'finance.cancel', 'finance.expenses'],
         'finance.view',
       );
       expect(stripped, isEmpty);
@@ -41,6 +41,34 @@ void main() {
       final once = toggleCapability(const [], 'attendance.edit');
       final twice = toggleCapability(once, 'attendance.edit');
       expect(twice, isNot(contains('attendance.edit')));
+    });
+  });
+
+  group('ترقية أسماء الصلاحيات القديمة', () {
+    test('finance.cashbox تُقرأ كـ finance.expenses بلا فقدان', () {
+      final caps = effectiveCapabilities(['finance.view', 'finance.cashbox'], 'receptionist');
+      expect(caps, contains('finance.expenses'));
+      expect(caps, isNot(contains('finance.cashbox')));
+    });
+
+    test('الترقية لا تُكرّر ما هو مُرقّى أصلاً', () {
+      expect(
+        upgradeCapabilities(['finance.cashbox', 'finance.expenses']),
+        ['finance.expenses'],
+      );
+    });
+
+    test('المتجر يعيد كتابة الحسابات المحفوظة مرة واحدة', () async {
+      final s = AppStore.forTesting();
+      injectDemoData(s);
+      final clerk = s.users.firstWhere((u) => u.role == 'receptionist');
+      clerk.capabilities = ['finance.view', 'finance.cashbox'];
+      expect(await s.migrateCapabilities(), 1);
+      expect(clerk.capabilities, ['finance.view', 'finance.expenses']);
+      expect(clerk.syncStatus, 'pending');
+      expect(s.pendingSyncs.any((p) => p.recordId == clerk.id), isTrue);
+      // لا تعمل مرتين على الجهاز نفسه
+      expect(await s.migrateCapabilities(), 0);
     });
   });
 

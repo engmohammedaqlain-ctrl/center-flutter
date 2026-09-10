@@ -153,39 +153,80 @@ class StudentEvaluation {
   const StudentEvaluation({
     required this.id,
     required this.studentId,
+    this.groupId = '',
     this.teacherId = '',
     this.subjectId = '',
+    this.title = '',
     this.score,
+    this.maxScore = 100,
+    this.evaluationDate = '',
+    this.type = 'quiz',
     this.notes = '',
     this.createdAt = '',
+    this.updatedAt = '',
   });
 
   final String id;
   final String studentId;
+  final String groupId;
   final String teacherId;
   final String subjectId;
+
+  /// عنوان التقييم أو الاختبار — أُضيف بهجرة `20260910_evaluations_expansion`
+  final String title;
   final double? score;
+
+  /// الدرجة القصوى. العمود أُضيف بافتراضي 100، وصفٌّ قديم بلا قيمة
+  /// لا يجوز أن يصير صفراً وإلا صارت كل نسبة صفراً.
+  final double maxScore;
+  final String evaluationDate;
+  final String type;
   final String notes;
   final String createdAt;
+  final String updatedAt;
+
+  /// النسبة المئوية للدرجة، أو `null` إن لم تُرصد درجة بعد.
+  int? get percent {
+    final s = score;
+    if (s == null || maxScore <= 0) return null;
+    return ((s / maxScore) * 100).round();
+  }
+
+  /// النجاح عند 50% فأكثر — نفس العتبة في Evaluations.tsx
+  bool get passed => (percent ?? 0) >= 50;
+
+  String get typeLabel => evaluationTypeNames[type] ?? type;
 
   Map<String, dynamic> toCloud() => {
         'id': id,
         'student_id': studentId,
+        'group_id': groupId.isEmpty ? null : groupId,
         'teacher_id': teacherId.isEmpty ? null : teacherId,
         'subject_id': subjectId.isEmpty ? null : subjectId,
+        'title': title,
         'score': score,
+        'max_score': maxScore,
+        'evaluation_date': evaluationDate.isEmpty ? null : evaluationDate,
+        'type': type,
         'notes': notes,
         'created_at': createdAt.isEmpty ? null : createdAt,
+        'updated_at': updatedAt.isEmpty ? null : updatedAt,
       };
 
   factory StudentEvaluation.fromCloud(Map<String, dynamic> m) => StudentEvaluation(
         id: '${m['id']}',
         studentId: '${m['student_id'] ?? ''}',
+        groupId: '${m['group_id'] ?? ''}',
         teacherId: '${m['teacher_id'] ?? ''}',
         subjectId: '${m['subject_id'] ?? ''}',
+        title: '${m['title'] ?? ''}',
         score: (m['score'] as num?)?.toDouble(),
+        maxScore: (m['max_score'] as num?)?.toDouble() ?? 100,
+        evaluationDate: '${m['evaluation_date'] ?? ''}'.split('T').first,
+        type: '${m['type'] ?? 'quiz'}',
         notes: '${m['notes'] ?? ''}',
         createdAt: '${m['created_at'] ?? ''}',
+        updatedAt: '${m['updated_at'] ?? ''}',
       );
 }
 
@@ -214,7 +255,6 @@ class PortalAttendance {
     this.total = 0,
     this.present = 0,
     this.absent = 0,
-    this.late = 0,
     this.excused = 0,
     this.records = const [],
   });
@@ -222,12 +262,11 @@ class PortalAttendance {
   final int total;
   final int present;
   final int absent;
-  final int late;
   final int excused;
   final List<AttendanceMark> records;
 
-  /// نسبة الالتزام: الحاضر والمتأخر من المرصود.
-  int get rate => total == 0 ? 100 : (((present + late) / total) * 100).round();
+  /// نسبة الالتزام: الحاضر من المرصود.
+  int get rate => total == 0 ? 100 : ((present / total) * 100).round();
 }
 
 /// كل ما تعرضه بوابة الطالب.
@@ -469,7 +508,7 @@ class PortalService {
     // الحضور: تاريخه في الجلسة المرتبطة
     final sessionDate = {for (final s in at(9)) '${s['id']}': '${s['session_date'] ?? ''}'};
     final marks = <AttendanceMark>[];
-    var present = 0, absent = 0, late = 0, excused = 0;
+    var present = 0, absent = 0, excused = 0;
     for (final r in at(8)) {
       final mark = AttendanceMark.fromCloud({...r, 'session_date': sessionDate['${r['session_id']}'] ?? ''});
       marks.add(mark);
@@ -478,8 +517,6 @@ class PortalService {
           present++;
         case 'absent':
           absent++;
-        case 'late':
-          late++;
         case 'excused':
           excused++;
       }
@@ -504,7 +541,6 @@ class PortalService {
         total: marks.length,
         present: present,
         absent: absent,
-        late: late,
         excused: excused,
         records: marks,
       ),

@@ -67,6 +67,20 @@ void main() {
     expect(toTimestamp(''), 0);
   });
 
+  test('الترشيح التزايدي لا يُسأل عنه إلا جدول يملك updated_at', () {
+    // سؤال جدول بلا العمود يردّه PostgREST بـ 400 فيسقط الجدول من السحب
+    expect(tableHasUpdatedAt('students'), isTrue);
+    expect(tableHasUpdatedAt('attendance'), isTrue);
+    expect(tableHasUpdatedAt('student_evaluations'), isTrue);
+    expect(tableHasUpdatedAt('class_announcements'), isFalse);
+
+    for (final t in syncedTables) {
+      if (tableHasUpdatedAt(t)) {
+        expect(tableAllowedColumns[t], contains('updated_at'), reason: t);
+      }
+    }
+  });
+
   test('phone prefix helpers match Center phoneUtils', () {
     expect(combinePhoneAndPrefix('9111222', '059'), '0599111222');
     expect(parsePhoneAndPrefix('0599111222').prefix, '059');

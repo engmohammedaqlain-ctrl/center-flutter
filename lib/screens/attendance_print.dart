@@ -25,8 +25,7 @@ Future<void> printWeeklyAttendance(
       cells.add(switch (status) {
         'present' => '✓',
         'absent' => '✗',
-        'late' => 'م',
-        'excused' => 'ع',
+        'excused' => 'م',
         _ => '',
       });
     }

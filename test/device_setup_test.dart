@@ -2,6 +2,8 @@ import 'package:center_mobile/data/demo_data.dart';
 import 'package:center_mobile/data/permissions.dart';
 import 'package:center_mobile/data/store.dart';
 import 'package:center_mobile/models/models.dart';
+import 'package:center_mobile/screens/device_setup_screen.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'persistence_test.dart' show FakeDisk;
@@ -154,6 +156,42 @@ void main() {
     expect(s.isAdminSetupPasswordValid('school2026'), isTrue, reason: 'المفتاح العام');
     expect(s.isAdminSetupPasswordValid('anas2026'), isTrue, reason: 'كلمة مرور المطور');
     expect(s.isAdminSetupPasswordValid('amal2026'), isTrue, reason: 'كلمة مرور المنشأة');
+  });
+
+  testWidgets('كلمة مرور المدير مطلوبة للسكرتير أيضاً', (tester) async {
+    // تعيين جهاز باسم سكرتير بلا كلمة مرور كان يفتح النظام لأي حامل للجهاز
+    final s = await loggedIn(FakeDisk(), withStudents: false);
+    final clerk = s.users.firstWhere((u) => u.role == 'receptionist');
+
+    await tester.pumpWidget(StoreScope(
+      store: s,
+      child: const MaterialApp(
+        locale: Locale('ar'),
+        home: Directionality(textDirection: TextDirection.rtl, child: DeviceSetupScreen()),
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('كلمة مرور المدير الرئيسية:'), findsOneWidget);
+
+    // اختيار السكرتير لا يُخفي الحقل
+    final state = tester.state<State>(find.byType(DeviceSetupScreen));
+    // ignore: avoid_dynamic_calls
+    (state as dynamic).selectedUserId = clerk.id;
+    // ignore: invalid_use_of_protected_member
+    state.setState(() {});
+    await tester.pump();
+    expect(find.text('كلمة مرور المدير الرئيسية:'), findsOneWidget);
+
+    // الضغط بلا كلمة مرور يرفض ولا يثبّت الهوية
+    await tester.tap(find.text('تأكيد وبدء العمل على الجهاز'));
+    await tester.pump();
+    expect(find.text('كلمة مرور المدير غير صحيحة'), findsOneWidget);
+    expect(s.deviceUserId, isNull);
+    expect(s.needsInitialSetup, isTrue);
+
+    await s.flush(); // إلغاء مؤقّت الكتابة المؤجّلة قبل هدم الشجرة
   });
 
   test('an institution with no users falls back to a deterministic owner admin', () async {

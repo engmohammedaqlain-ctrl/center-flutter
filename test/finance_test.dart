@@ -173,4 +173,106 @@ void main() {
       expect(mine.first.amount, student.balance.abs());
     });
   });
+
+  group('المصروفات وأجور المعلمين', () {
+    test('سند الصرف يُسجَّل ويُدرَج في طابور الرفع', () {
+      final s = seeded();
+      s.pendingSyncs.clear();
+
+      final e = s.addExpense(
+        category: 'قرطاسية ومطبوعات',
+        description: '  شراء أوراق  ',
+        amount: 150,
+        expenseDate: '2026-09-10',
+        method: 'cash',
+        notes: 'دفعة واحدة',
+      );
+
+      expect(e.description, 'شراء أوراق', reason: 'الفراغ الزائد يُقلَّم');
+      expect(e.syncStatus, 'pending');
+      expect(s.expenses.map((x) => x.id), contains(e.id));
+      expect(s.totalExpenses, 150);
+
+      final queued = s.pendingSyncs.where((p) => p.tableName == 'expenses').toList();
+      expect(queued, hasLength(1));
+      expect(queued.single.recordId, e.id);
+      expect(queued.single.action, 'INSERT');
+    });
+
+    test('سند بلا بيان أو بمبلغ غير موجب يُرفض ولا يترك أثراً', () {
+      final s = seeded();
+      s.pendingSyncs.clear();
+
+      expect(
+        () => s.addExpense(category: 'أخرى', description: '   ', amount: 50, expenseDate: '2026-09-10'),
+        throwsA(isA<StoreException>()),
+      );
+      expect(
+        () => s.addExpense(category: 'أخرى', description: 'بيان', amount: 0, expenseDate: '2026-09-10'),
+        throwsA(isA<StoreException>()),
+      );
+      expect(s.expenses, isEmpty);
+      expect(s.pendingSyncs, isEmpty);
+    });
+
+    test('السجل يرتّب الأحدث أولاً', () {
+      final s = seeded();
+      s.addExpense(category: 'أخرى', description: 'قديم', amount: 10, expenseDate: '2026-01-01');
+      s.addExpense(category: 'أخرى', description: 'حديث', amount: 20, expenseDate: '2026-09-01');
+      expect(s.expenses.first.description, 'حديث');
+    });
+
+    test('الحذف يُخرج السند ويُدرج عملية حذف', () {
+      final s = seeded();
+      final e = s.addExpense(category: 'أخرى', description: 'خطأ', amount: 5, expenseDate: '2026-09-10');
+      s.pendingSyncs.clear();
+
+      s.deleteExpense(e.id);
+      expect(s.expenses, isEmpty);
+      expect(s.pendingSyncs.single.action, 'DELETE');
+    });
+
+    test('سند الصرف يمرّ عبر شكل السحابة بلا فقدان', () {
+      final e = Expense(
+        id: 'x1',
+        category: 'صيانة ومعدات',
+        description: 'تصليح طابعة',
+        amount: 320.5,
+        expenseDate: '2026-09-10',
+        recordedByUserId: 'u1',
+        method: 'cheque',
+        notes: 'شيك مؤجل',
+      );
+      final back = Expense.fromCloud(e.toCloud());
+      expect(back.category, e.category);
+      expect(back.amount, 320.5);
+      expect(back.method, 'cheque');
+      expect(back.notes, 'شيك مؤجل');
+      expect(back.recordedByUserId, 'u1');
+    });
+
+    test('دفعة الأجر تمرّ عبر شكل السحابة بلا فقدان', () {
+      final p = TeacherPayout(
+        id: 'p1',
+        teacherId: 't1',
+        amount: 900,
+        paymentDate: '2026-09-01',
+        periodStart: '2026-08-01',
+        periodEnd: '2026-08-31',
+        method: 'bank_transfer',
+      );
+      final back = TeacherPayout.fromCloud(p.toCloud());
+      expect(back.teacherId, 't1');
+      expect(back.amount, 900);
+      expect(back.periodStart, '2026-08-01');
+      expect(back.method, 'bank_transfer');
+    });
+
+    test('طرق الصرف أضيق من طرق القبض', () {
+      // المحافظ الإلكترونية للقبض لا للصرف — مطابق لـ types/payment.ts
+      expect(expenseMethodNames.keys.toList(), ['cash', 'bank_transfer', 'cheque', 'other']);
+      expect(expenseCategoryLabel('أخرى'), 'مصاريف أخرى');
+      expect(expenseCategoryLabel('تشغيل وإيجار'), 'تشغيل وإيجار');
+    });
+  });
 }

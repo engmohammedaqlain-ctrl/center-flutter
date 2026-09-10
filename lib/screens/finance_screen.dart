@@ -4,6 +4,7 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../widgets/widgets.dart';
+import 'expense_form_sheet.dart';
 import 'payment_form_screen.dart';
 import 'receipt_screen.dart';
 import 'student_detail_screen.dart';
@@ -68,6 +69,11 @@ class _FinanceScreenState extends State<FinanceScreen> {
           return matchQ && matchS;
         }).toList();
 
+        // الميزة معطّلة أو بلا صلاحية: التبويب يختفي، ومن كان واقفاً عليه يعود
+        // للمقبوضات بدل شاشة فارغة — مطابق لحساب `activeTab` في Finance.tsx
+        final showExpenses = store.features.enableExpenses && store.can('finance.expenses');
+        if (tab == 2 && !showExpenses) tab = 0;
+
         final totalDue = dues.fold<double>(0, (a, d) => a + d.amount);
         final lateCount = allDues.where((d) => d.late && !d.exception).length;
         final dueCount = allDues.where((d) => !d.late && !d.exception).length;
@@ -83,7 +89,17 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 children: [
                   Expanded(child: _tab('المقبوضات', Icons.receipt_long, 0, '${store.payments.length}', false)),
                   Expanded(child: _tab('المستحقات', Icons.schedule, 1, '${allDues.length}', allDues.isNotEmpty)),
-                  if (store.can('finance.collect'))
+                  if (showExpenses)
+                    Expanded(
+                      child: _tab(
+                        'المصروفات',
+                        Icons.payments_outlined,
+                        2,
+                        '${store.expenses.length + store.teacherPayouts.length}',
+                        false,
+                      ),
+                    ),
+                  if (tab != 2 && store.can('finance.collect'))
                     PrimaryButton(
                       label: 'دفعة',
                       icon: Icons.add,
@@ -94,14 +110,15 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-              child: SearchField(
-                controller: search,
-                hint: tab == 0 ? 'ابحث برقم الوصل، الطالب، المرجع...' : 'ابحث باسم الطالب أو رقم الهاتف...',
-                onChanged: (_) => setState(() {}),
+            if (tab != 2)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                child: SearchField(
+                  controller: search,
+                  hint: tab == 0 ? 'ابحث برقم الوصل، الطالب، المرجع...' : 'ابحث باسم الطالب أو رقم الهاتف...',
+                  onChanged: (_) => setState(() {}),
+                ),
               ),
-            ),
             if (tab == 0)
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
@@ -132,7 +149,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                   ],
                 ),
               )
-            else
+            else if (tab == 1)
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                 child: Row(
@@ -169,6 +186,13 @@ class _FinanceScreenState extends State<FinanceScreen> {
                   ],
                 ),
               ),
+            if (tab == 2) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                child: _expensesSummary(context, store),
+              ),
+              Expanded(child: _expensesList(store)),
+            ] else
             Expanded(
               child: tab == 0
                   ? (pays.isEmpty
@@ -276,6 +300,122 @@ class _FinanceScreenState extends State<FinanceScreen> {
     );
   }
 
+  /// ملخص المصروفات وزر «إضافة سند صرف» — المقابل لرأس تبويب expenses.
+  Widget _expensesSummary(BuildContext context, AppStore store) {
+    final expenses = store.expenses;
+    final payouts = store.teacherPayouts;
+    final total = store.totalExpenses + store.totalPayouts;
+
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'إجمالي المصروفات والأجور:',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.dangerSoft,
+                  border: Border.all(color: AppColors.dangerBorder),
+                ),
+                child: Text(
+                  money(total),
+                  style: const TextStyle(
+                    color: Color(0xFFBA1A1A),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: StatusChip.muted(
+                  'تشغيلية: ${money(store.totalExpenses)} (${expenses.length})',
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: StatusChip.amber(
+                  'أجور معلمين: ${money(store.totalPayouts)} (${payouts.length})',
+                ),
+              ),
+            ],
+          ),
+          if (store.can('finance.expenses')) ...[
+            const SizedBox(height: 10),
+            PrimaryButton(
+              expand: true,
+              label: 'إضافة سند صرف',
+              icon: Icons.add,
+              color: AppColors.navy,
+              onPressed: () async {
+                final saved = await showExpenseSheet(context, store);
+                if (saved && context.mounted) showAppSnack(context, 'تم حفظ سند الصرف');
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// سجل موحّد للمصروفات وأجور المعلمين مرتّب بالتاريخ تنازلياً —
+  /// نفس دمج القائمتين في جدول واحد في Finance.tsx.
+  Widget _expensesList(AppStore store) {
+    final items = <_SpendRow>[
+      for (final e in store.expenses)
+        _SpendRow(
+          id: e.id,
+          date: e.expenseDate,
+          isPayout: false,
+          category: expenseCategoryLabel(e.category),
+          description: e.description,
+          amount: e.amount,
+          method: e.method,
+        ),
+      for (final p in store.teacherPayouts)
+        _SpendRow(
+          id: p.id,
+          date: p.paymentDate,
+          isPayout: true,
+          category: 'أجور تدريس',
+          description: store.teacherById(p.teacherId) != null
+              ? 'صرف مستحقات المعلم: ${store.teacherById(p.teacherId)!.name}'
+              : 'صرف مستحقات معلم',
+          amount: p.amount,
+          method: p.method,
+        ),
+    ]..sort((a, b) => b.date.compareTo(a.date));
+
+    if (items.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(12),
+        child: EmptyState(message: 'لا توجد سندات صرف أو دفعات أجور مسجلة حتى الآن.'),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+      itemCount: items.length,
+      itemBuilder: (_, i) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: _SpendCard(row: items[i]),
+      ),
+    );
+  }
+
   Widget _stat(String label, int value, Color color) {
     return Expanded(
       child: Container(
@@ -327,6 +467,83 @@ class _FinanceScreenState extends State<FinanceScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// صف موحّد يمثّل سند صرف أو دفعة أجر معلم في سجل واحد.
+class _SpendRow {
+  const _SpendRow({
+    required this.id,
+    required this.date,
+    required this.isPayout,
+    required this.category,
+    required this.description,
+    required this.amount,
+    required this.method,
+  });
+
+  final String id;
+  final String date;
+  final bool isPayout;
+  final String category;
+  final String description;
+  final double amount;
+  final String method;
+}
+
+class _SpendCard extends StatelessWidget {
+  const _SpendCard({required this.row});
+  final _SpendRow row;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  row.description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
+                ),
+              ),
+              const SizedBox(width: 8),
+              row.isPayout ? StatusChip.amber(row.category) : StatusChip.muted(row.category),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(Icons.event, size: 13, color: AppColors.faint),
+              const SizedBox(width: 4),
+              Text(row.date, style: const TextStyle(color: AppColors.faint, fontSize: 10.5, fontFamily: 'monospace')),
+              const SizedBox(width: 10),
+              const Icon(Icons.account_balance_wallet_outlined, size: 13, color: AppColors.faint),
+              const SizedBox(width: 4),
+              Text(
+                expenseMethodNames[row.method] ?? row.method,
+                style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
+              ),
+              const Spacer(),
+              Text(
+                money(row.amount),
+                style: const TextStyle(
+                  color: Color(0xFFBA1A1A),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13.5,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

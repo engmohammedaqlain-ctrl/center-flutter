@@ -121,6 +121,11 @@ String money(num value) {
   return '$n $currency';
 }
 
+/// رقم بلا كسر عشري زائد: 90 لا 90.0، و 87.5 كما هي.
+/// تُستعمل لعرض الدرجات — «الدرجة 90.0 من 100.0» صياغة تبدو خطأً في العرض.
+String trimNum(num value) =>
+    value % 1 == 0 ? value.toStringAsFixed(0) : value.toString();
+
 String formatDate(DateTime d) {
   final y = d.year.toString().padLeft(4, '0');
   final m = d.month.toString().padLeft(2, '0');
@@ -424,7 +429,6 @@ class StudentAttachments {
   StudentAttachments({
     required this.id,
     this.studentIdPhoto = '',
-    this.parentIdPhoto = '',
     this.birthCertificate = '',
     this.syncStatus = 'synced',
     this.createdAt,
@@ -433,18 +437,16 @@ class StudentAttachments {
 
   final String id;
   String studentIdPhoto;
-  String parentIdPhoto;
   String birthCertificate;
   String syncStatus;
   String? createdAt;
   String? updatedAt;
 
-  bool get isEmpty => studentIdPhoto.isEmpty && parentIdPhoto.isEmpty && birthCertificate.isEmpty;
+  bool get isEmpty => studentIdPhoto.isEmpty && birthCertificate.isEmpty;
 
   Map<String, dynamic> toCloud() => {
         'id': id,
         'student_id_photo': studentIdPhoto,
-        'parent_id_photo': parentIdPhoto,
         'birth_certificate': birthCertificate,
         'created_at': createdAt,
         'updated_at': updatedAt,
@@ -453,7 +455,6 @@ class StudentAttachments {
   factory StudentAttachments.fromCloud(Map<String, dynamic> m) => StudentAttachments(
         id: '${m['id']}',
         studentIdPhoto: '${m['student_id_photo'] ?? ''}',
-        parentIdPhoto: '${m['parent_id_photo'] ?? ''}',
         birthCertificate: '${m['birth_certificate'] ?? ''}',
         syncStatus: '${m['sync_status'] ?? 'synced'}',
         createdAt: m['created_at']?.toString(),
@@ -790,6 +791,241 @@ class Payment {
       );
 }
 
+/// أنواع التقييم — مطابق لـ `EVALUATION_TYPE_LABELS` في types/evaluation.ts
+const evaluationTypeNames = {
+  'quiz': 'اختبار قصير',
+  'monthly': 'اختبار شهري',
+  'final': 'امتحان نهائي',
+  'activity': 'نشاط وواجبات',
+  'behavior': 'سلوك ومواظبة',
+};
+
+/// تقييم ودرجة طالب — المقابل لـ `StudentEvaluation` في types/evaluation.ts.
+///
+/// ليس ملاحظة عابرة كما كان: عنوان ودرجة من درجة قصوى وتاريخ ونوع، وهي
+/// الحقول التي أضافتها هجرة `20260910_evaluations_expansion.sql`.
+class Evaluation {
+  Evaluation({
+    required this.id,
+    required this.studentId,
+    required this.title,
+    required this.score,
+    this.groupId = '',
+    this.subjectId = '',
+    this.teacherId = '',
+    this.maxScore = 100,
+    this.evaluationDate = '',
+    this.type = 'quiz',
+    this.notes = '',
+    this.syncStatus = 'synced',
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  final String id;
+  String studentId;
+  String groupId;
+  String subjectId;
+  String teacherId;
+  String title;
+  double score;
+  double maxScore;
+  String evaluationDate;
+  String type;
+  String notes;
+  String syncStatus;
+  String? createdAt;
+  String? updatedAt;
+
+  /// النسبة المئوية. الدرجة القصوى صفراً تعني تقييماً بلا وزن لا قسمةً على صفر.
+  int get percent => maxScore <= 0 ? 0 : ((score / maxScore) * 100).round();
+
+  /// النجاح عند 50% فأكثر — نفس العتبة في `stats` بصفحة Evaluations.tsx
+  bool get passed => percent >= 50;
+
+  String get typeLabel => evaluationTypeNames[type] ?? type;
+
+  Map<String, dynamic> toCloud() => {
+        'id': id,
+        'student_id': studentId,
+        'group_id': groupId.isEmpty ? null : groupId,
+        'subject_id': subjectId.isEmpty ? null : subjectId,
+        'teacher_id': teacherId.isEmpty ? null : teacherId,
+        'title': title,
+        'score': score,
+        'max_score': maxScore,
+        'evaluation_date': evaluationDate,
+        'type': type,
+        'notes': notes.isEmpty ? null : notes,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+        'sync_status': syncStatus,
+      };
+
+  factory Evaluation.fromCloud(Map<String, dynamic> m) => Evaluation(
+        id: '${m['id']}',
+        studentId: '${m['student_id'] ?? ''}',
+        groupId: '${m['group_id'] ?? ''}',
+        subjectId: '${m['subject_id'] ?? ''}',
+        teacherId: '${m['teacher_id'] ?? ''}',
+        title: '${m['title'] ?? ''}',
+        score: (m['score'] as num?)?.toDouble() ?? 0,
+        // العمود أُضيف بافتراضي 100؛ صفٌّ قديم بلا قيمة لا يجوز أن يصير 0
+        maxScore: (m['max_score'] as num?)?.toDouble() ?? 100,
+        evaluationDate: '${m['evaluation_date'] ?? ''}'.split('T').first,
+        type: '${m['type'] ?? 'quiz'}',
+        notes: '${m['notes'] ?? ''}',
+        syncStatus: '${m['sync_status'] ?? 'synced'}',
+        createdAt: m['created_at']?.toString(),
+        updatedAt: m['updated_at']?.toString(),
+      );
+}
+
+/// طرق صرف سندات المصروفات وأجور المعلمين — مطابق لـ
+/// `Expense.payment_method` و `TeacherPayout.payment_method` في types/payment.ts.
+/// أضيق من `paymentMethodNames` عمداً: المحافظ الإلكترونية للقبض لا للصرف.
+const expenseMethodNames = {
+  'cash': 'نقداً',
+  'bank_transfer': 'تحويل بنكي',
+  'cheque': 'شيك',
+  'other': 'أخرى',
+};
+
+/// بنود المصروفات كما تظهر في نافذة «تسجيل سند صرف جديد» في Finance.tsx
+const expenseCategories = [
+  'تشغيل وإيجار',
+  'ضيافة ونظافة',
+  'قرطاسية ومطبوعات',
+  'صيانة ومعدات',
+  'كهرباء وإنترنت',
+  'أخرى',
+];
+
+/// «أخرى» تُعرض «مصاريف أخرى» في القائمة وتُحفظ «أخرى» — كما في النسخة المكتبية
+String expenseCategoryLabel(String id) => id == 'أخرى' ? 'مصاريف أخرى' : id;
+
+/// سند صرف تشغيلي — المقابل لـ `Expense` في types/payment.ts
+class Expense {
+  Expense({
+    required this.id,
+    required this.category,
+    required this.description,
+    required this.amount,
+    required this.expenseDate,
+    this.recordedByUserId = '',
+    this.method = 'cash',
+    this.notes = '',
+    this.syncStatus = 'synced',
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  final String id;
+  String category;
+  String description;
+  double amount;
+  String expenseDate;
+  String recordedByUserId;
+  String method;
+  String notes;
+  String syncStatus;
+  String? createdAt;
+  String? updatedAt;
+
+  Map<String, dynamic> toCloud() => {
+        'id': id,
+        'category': category,
+        'description': description,
+        'amount': amount,
+        'expense_date': expenseDate,
+        'recorded_by_user_id': recordedByUserId.isEmpty ? null : recordedByUserId,
+        'payment_method': method,
+        'notes': notes.isEmpty ? null : notes,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+        'sync_status': syncStatus,
+      };
+
+  factory Expense.fromCloud(Map<String, dynamic> m) => Expense(
+        id: '${m['id']}',
+        category: '${m['category'] ?? ''}',
+        description: '${m['description'] ?? ''}',
+        amount: (m['amount'] as num?)?.toDouble() ?? 0,
+        expenseDate: '${m['expense_date'] ?? ''}'.split('T').first,
+        recordedByUserId: '${m['recorded_by_user_id'] ?? ''}',
+        method: '${m['payment_method'] ?? 'cash'}',
+        notes: '${m['notes'] ?? ''}',
+        syncStatus: '${m['sync_status'] ?? 'synced'}',
+        createdAt: m['created_at']?.toString(),
+        updatedAt: m['updated_at']?.toString(),
+      );
+}
+
+/// دفعة أجر معلم — المقابل لـ `TeacherPayout` في types/payment.ts
+class TeacherPayout {
+  TeacherPayout({
+    required this.id,
+    required this.teacherId,
+    required this.amount,
+    required this.paymentDate,
+    this.groupId = '',
+    this.periodStart = '',
+    this.periodEnd = '',
+    this.paidByUserId = '',
+    this.method = 'cash',
+    this.notes = '',
+    this.syncStatus = 'synced',
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  final String id;
+  String teacherId;
+  String groupId;
+  double amount;
+  String periodStart;
+  String periodEnd;
+  String paymentDate;
+  String paidByUserId;
+  String method;
+  String notes;
+  String syncStatus;
+  String? createdAt;
+  String? updatedAt;
+
+  Map<String, dynamic> toCloud() => {
+        'id': id,
+        'teacher_id': teacherId,
+        'group_id': groupId.isEmpty ? null : groupId,
+        'amount': amount,
+        'period_start': periodStart.isEmpty ? null : periodStart,
+        'period_end': periodEnd.isEmpty ? null : periodEnd,
+        'payment_date': paymentDate,
+        'paid_by_user_id': paidByUserId.isEmpty ? null : paidByUserId,
+        'payment_method': method,
+        'notes': notes.isEmpty ? null : notes,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+        'sync_status': syncStatus,
+      };
+
+  factory TeacherPayout.fromCloud(Map<String, dynamic> m) => TeacherPayout(
+        id: '${m['id']}',
+        teacherId: '${m['teacher_id'] ?? ''}',
+        groupId: '${m['group_id'] ?? ''}',
+        amount: (m['amount'] as num?)?.toDouble() ?? 0,
+        periodStart: '${m['period_start'] ?? ''}'.split('T').first,
+        periodEnd: '${m['period_end'] ?? ''}'.split('T').first,
+        paymentDate: '${m['payment_date'] ?? ''}'.split('T').first,
+        paidByUserId: '${m['paid_by_user_id'] ?? ''}',
+        method: '${m['payment_method'] ?? 'cash'}',
+        notes: '${m['notes'] ?? ''}',
+        syncStatus: '${m['sync_status'] ?? 'synced'}',
+        createdAt: m['created_at']?.toString(),
+        updatedAt: m['updated_at']?.toString(),
+      );
+}
+
 class Installment {
   Installment({
     required this.id,
@@ -1072,7 +1308,6 @@ class SchoolDay {
 const attendanceStatusNames = {
   'present': 'حاضر',
   'absent': 'غائب',
-  'late': 'متأخر',
   'excused': 'معذور',
 };
 

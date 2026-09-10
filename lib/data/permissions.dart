@@ -29,7 +29,7 @@ const capabilityGroups = [
     CapabilityItem('finance.view', 'عرض المالية والذمم'),
     CapabilityItem('finance.collect', 'قبض الدفعات وإصدار السندات'),
     CapabilityItem('finance.cancel', 'إلغاء سند قبض', 'يعكس رصيد الطالب'),
-    CapabilityItem('finance.cashbox', 'إدارة ورديات الصندوق'),
+    CapabilityItem('finance.expenses', 'إدارة المصروفات وصرف الأجور'),
   ]),
   CapabilityGroup('الإعدادات', [
     CapabilityItem('settings.view', 'المواد والمعلمين والقاعات'),
@@ -48,7 +48,7 @@ const allCapabilities = [
   'students.view', 'students.edit', 'students.delete',
   'schedule.view', 'schedule.edit',
   'attendance.view', 'attendance.edit',
-  'finance.view', 'finance.collect', 'finance.cancel', 'finance.cashbox',
+  'finance.view', 'finance.collect', 'finance.cancel', 'finance.expenses',
   'settings.view', 'settings.fees', 'settings.users', 'settings.backup', 'settings.branding',
   'sync.push', 'sync.pull',
 ];
@@ -60,6 +60,23 @@ const receptionistCapabilities = [
   'finance.view', 'finance.collect',
   'sync.push', 'sync.pull',
 ];
+
+/// أسماء صلاحيات قديمة استُبدلت. الحساب المحفوظ بالاسم القديم لا يفقد حقه:
+/// يُترجم إلى الاسم الجديد عند القراءة، ويُعاد كتابته مرة واحدة في المتجر.
+const legacyCapabilityAliases = <String, String>{
+  // «ورديات الصندوق» أُلغيت وحلّت محلّها «المصروفات وصرف الأجور»
+  'finance.cashbox': 'finance.expenses',
+};
+
+/// ترقية قائمة صلاحيات من الأسماء القديمة إلى الحالية بلا تكرار.
+List<String> upgradeCapabilities(List<String> caps) {
+  final out = <String>[];
+  for (final c in caps) {
+    final next = legacyCapabilityAliases[c] ?? c;
+    if (!out.contains(next)) out.add(next);
+  }
+  return out;
+}
 
 String normalizeRole(String? role) {
   final r = (role ?? '').trim().toLowerCase();
@@ -80,7 +97,9 @@ List<String> defaultCapsFor(String role) {
 /// الصلاحيات الفعلية للحساب: قائمته الخاصة، أو قالب دوره إن لم تُحدَّد بعد.
 /// الحساب الذي لا يحمل قائمة (أُنشئ قبل الميزة) لا يفقد صلاحياته فجأة.
 List<String> effectiveCapabilities(List<String> caps, String role) {
-  if (caps.isNotEmpty) return caps.where(allCapabilities.contains).toList();
+  if (caps.isNotEmpty) {
+    return upgradeCapabilities(caps).where(allCapabilities.contains).toList();
+  }
   return defaultCapsFor(role);
 }
 
@@ -113,7 +132,7 @@ const capabilityRequires = <String, List<String>>{
   'attendance.edit': ['attendance.view'],
   'finance.collect': ['finance.view'],
   'finance.cancel': ['finance.view'],
-  'finance.cashbox': ['finance.view'],
+  'finance.expenses': ['finance.view'],
   'settings.fees': ['settings.view'],
   'settings.users': ['settings.view'],
   'settings.backup': ['settings.view'],

@@ -10,6 +10,7 @@ import '../theme/app_colors.dart';
 import 'institution.dart';
 import 'local_db.dart';
 import 'permissions.dart';
+import 'system_features.dart';
 import 'phone.dart';
 import 'realtime.dart';
 import 'supabase.dart';
@@ -56,8 +57,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   final extraCloud = <String, List<Map<String, dynamic>>>{
     'teacher_payouts': [],
     'expenses': [],
-    'cashbox_shifts': [],
     'institution_settings': [],
+    'student_evaluations': [],
+    'class_announcements': [],
   };
   final attachmentsByStudent = <String, StudentAttachments>{};
 
@@ -442,6 +444,173 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
   }
 
+  // ── التقييمات والدرجات (المقابل لـ evaluations.service.ts) ────────────────
+
+  /// كل التقييمات، الأحدث تاريخاً أولاً.
+  List<Evaluation> get evaluations {
+    final rows = extraCloud['student_evaluations'] ?? const [];
+    final out = rows.map(Evaluation.fromCloud).toList();
+    out.sort((a, b) => b.evaluationDate.compareTo(a.evaluationDate));
+    return out;
+  }
+
+  List<Evaluation> evaluationsOfStudent(String studentId) =>
+      evaluations.where((e) => e.studentId == studentId).toList();
+
+  List<Evaluation> evaluationsOfGroup(String groupId) =>
+      evaluations.where((e) => e.groupId == groupId).toList();
+
+  /// رصد درجات شعبة دفعةً واحدة — مطابق لـ `saveBatchEvaluations`.
+  ///
+  /// `scores` تحمل معرّف الطالب مقابل درجته؛ من لم تُرصد له درجة يُتخطّى بلا
+  /// سجل، فالحقل الفارغ في الشاشة يعني «لم يُرصد» لا «صفر».
+  int saveEvaluationBatch({
+    required String groupId,
+    required String title,
+    required String type,
+    required double maxScore,
+    required String evaluationDate,
+    required Map<String, double> scores,
+    Map<String, String> notes = const {},
+  }) {
+    final cleanTitle = title.trim();
+    if (groupId.isEmpty) throw StoreException('يرجى اختيار الشعبة');
+    if (cleanTitle.isEmpty) throw StoreException('يرجى تحديد عنوان التقييم');
+    if (scores.isEmpty) throw StoreException('يرجى رصد درجة واحدة على الأقل');
+
+    final group = groups.where((g) => g.id == groupId).firstOrNull;
+    if (group == null) throw StoreException('الشعبة المختارة غير موجودة');
+
+    final now = _nowIso();
+    final bucket = extraCloud.putIfAbsent('student_evaluations', () => []);
+    for (final entry in scores.entries) {
+      final e = Evaluation(
+        id: newId(),
+        studentId: entry.key,
+        groupId: groupId,
+        subjectId: group.subjectId,
+        teacherId: group.teacherId,
+        title: cleanTitle,
+        score: entry.value,
+        maxScore: maxScore <= 0 ? 100 : maxScore,
+        evaluationDate: evaluationDate,
+        type: type,
+        notes: (notes[entry.key] ?? '').trim(),
+        syncStatus: 'pending',
+        createdAt: now,
+        updatedAt: now,
+      );
+      final row = e.toCloud();
+      bucket.add(row);
+      _queue('student_evaluations', e.id, 'INSERT', row);
+    }
+
+    markDirty('student_evaluations');
+    notifyListeners();
+    return scores.length;
+  }
+
+  void deleteEvaluation(String id) {
+    final bucket = extraCloud['student_evaluations'];
+    if (bucket == null) return;
+    final before = bucket.length;
+    bucket.removeWhere((e) => '${e['id']}' == id);
+    if (bucket.length == before) return;
+    _queue('student_evaluations', id, 'DELETE', null);
+    markDirty('student_evaluations');
+    notifyListeners();
+  }
+
+  // ── المصروفات وأجور المعلمين (المقابل لـ finance.service.ts) ───────────────
+
+  /// سندات الصرف التشغيلية، الأحدث أولاً.
+  ///
+  /// الجدولان يعيشان في `extraCloud` لا في قائمة مستقلة: مخزّنان ومزامَنان
+  /// أصلاً بذلك المسار، وتكرارهما في قائمة ثانية كان يفتح باب تعارض بين نسختين.
+  List<Expense> get expenses {
+    final rows = extraCloud['expenses'] ?? const [];
+    final out = rows.map(Expense.fromCloud).toList();
+    out.sort((a, b) => b.expenseDate.compareTo(a.expenseDate));
+    return out;
+  }
+
+  /// دفعات أجور المعلمين، الأحدث أولاً.
+  List<TeacherPayout> get teacherPayouts {
+    final rows = extraCloud['teacher_payouts'] ?? const [];
+    final out = rows.map(TeacherPayout.fromCloud).toList();
+    out.sort((a, b) => b.paymentDate.compareTo(a.paymentDate));
+    return out;
+  }
+
+  double get totalExpenses => expenses.fold<double>(0, (a, e) => a + e.amount);
+  double get totalPayouts => teacherPayouts.fold<double>(0, (a, p) => a + p.amount);
+
+  /// تسجيل سند صرف — مطابق لـ `FinanceService.createExpense`.
+  Expense addExpense({
+    required String category,
+    required String description,
+    required double amount,
+    required String expenseDate,
+    String method = 'cash',
+    String notes = '',
+  }) {
+    final desc = description.trim();
+    if (desc.isEmpty) throw StoreException('البيان مطلوب لتسجيل سند الصرف');
+    if (amount <= 0) throw StoreException('مبلغ سند الصرف يجب أن يكون أكبر من صفر');
+
+    final now = _nowIso();
+    final e = Expense(
+      id: newId(),
+      category: category,
+      description: desc,
+      amount: amount,
+      expenseDate: expenseDate,
+      recordedByUserId: currentUserId,
+      method: method,
+      notes: notes.trim(),
+      syncStatus: 'pending',
+      createdAt: now,
+      updatedAt: now,
+    );
+    final row = e.toCloud();
+    extraCloud.putIfAbsent('expenses', () => []).add(row);
+    _queue('expenses', e.id, 'INSERT', row);
+    markDirty('expenses');
+    notifyListeners();
+    return e;
+  }
+
+  void deleteExpense(String id) {
+    final bucket = extraCloud['expenses'];
+    if (bucket == null) return;
+    final before = bucket.length;
+    bucket.removeWhere((e) => '${e['id']}' == id);
+    if (bucket.length == before) return;
+    _queue('expenses', id, 'DELETE', null);
+    markDirty('expenses');
+    notifyListeners();
+  }
+
+  // ── أعلام الميزات (المقابل لـ systemFeatures.ts) ──────────────────────────
+
+  SystemFeatures get features => SystemFeatures.decode(db.settings[systemFeaturesKey]);
+
+  /// تعديل علم واحد أو أكثر. ما لا يُمرَّر يبقى كما هو — مطابق لـ
+  /// `saveSystemFeatures(Partial<SystemFeaturesConfig>)`.
+  Future<void> saveFeatures({
+    bool? enableExpenses,
+    bool? enableEvaluations,
+    bool? enableStudentPortal,
+  }) async {
+    final next = features.copyWith(
+      enableExpenses: enableExpenses,
+      enableEvaluations: enableEvaluations,
+      enableStudentPortal: enableStudentPortal,
+    );
+    await db.setSetting(systemFeaturesKey, next.encode());
+    notifyListeners();
+  }
+
   /// رسم حجز المقعد. قيمته الافتراضية 0 حتى تعتمد الإدارة رقماً صراحةً —
   /// تثبيته بـ 50 في الكود قاعدة عمل مخترعة.
   double get seatReservationFee {
@@ -643,6 +812,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     cleanupBogusDemoUserSyncs(pendingSyncs);
     await migrateReceiptNumbers();
     await migrateAttendanceIds();
+    await migrateCapabilities();
     dedupeAttendance();
     if (!networkEnabled) return;
     await primeReceiptCounter();
@@ -890,9 +1060,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// مطابقة لـ `toggleAttendanceCell` — النقرة الأولى للرصد السريع للغياب.
   void cycleAttendance(String studentId, String date, {String? ownerId}) {
     final current = markFor(ownerId, studentId, date)?.status;
+    // مطابق لـ `toggleAttendanceCell`: حاضر ثم غائب ثم مأذون ثم إلغاء الرصد
     final next = switch (current) {
-      null => 'absent',
-      'absent' => 'present',
+      null => 'present',
+      'present' => 'absent',
+      'absent' => 'excused',
       _ => null,
     };
     setAttendance(studentId, date, next, ownerId: ownerId);
@@ -1241,6 +1413,34 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       notifyListeners();
     }
     return stale.length;
+  }
+
+  /// إعادة كتابة أسماء الصلاحيات القديمة في حسابات المستخدمين.
+  ///
+  /// `finance.cashbox` أُلغيت وحلّت محلّها `finance.expenses`. القراءة تترجمها
+  /// (`upgradeCapabilities`) فلا يفقد أحد حقه فوراً، لكن أول حفظ للحساب كان
+  /// سيُسقط الاسم القديم صامتاً. تُكتب هنا مرة واحدة لكل جهاز وتُرفع للسحابة.
+  Future<int> migrateCapabilities() async {
+    if (db.settings[capabilityMigrationKey] == 'true') return 0;
+
+    var changed = 0;
+    for (final u in users) {
+      if (u.capabilities.isEmpty) continue;
+      final next = upgradeCapabilities(u.capabilities);
+      if (next.length == u.capabilities.length &&
+          next.every(u.capabilities.contains)) {
+        continue;
+      }
+      u.capabilities = next;
+      u.updatedAt = _nowIso();
+      u.syncStatus = 'pending';
+      _queue('users', u.id, 'UPDATE', u.toCloud());
+      changed++;
+    }
+
+    await db.setSetting(capabilityMigrationKey, 'true');
+    if (changed > 0) notifyListeners();
+    return changed;
   }
 
   /// مطابق لـ `migrateReceiptNumbers`.

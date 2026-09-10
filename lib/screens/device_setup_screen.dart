@@ -84,8 +84,10 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
   Future<void> _finish(AppStore store, AppUser user) async {
     setState(() => passwordError = null);
 
-    if (user.role == 'admin' && !store.isAdminSetupPasswordValid(password.text)) {
-      setState(() => passwordError = 'كلمة المرور غير صحيحة');
+    // كلمة مرور المدير مطلوبة لكل الأدوار — تمنع تعيين جهاز بلا تصريح.
+    // مطابق لـ `handleFinishSetup` في NewDeviceSetupModal.tsx
+    if (!store.isAdminSetupPasswordValid(password.text)) {
+      setState(() => passwordError = 'كلمة مرور المدير غير صحيحة');
       return;
     }
 
@@ -344,60 +346,37 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
             password.clear();
           }),
         ),
-        if (isAdmin) ...[
-          const SizedBox(height: 12),
-          const FieldLabel('كلمة مرور الإدارة:'),
-          TextField(
-            controller: password,
-            obscureText: true,
-            autofocus: true,
-            onChanged: (_) {
-              if (passwordError != null) setState(() => passwordError = null);
-            },
-            onSubmitted: (_) => _finish(store, selected),
-            style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
-            decoration: InputDecoration(
-              hintText: 'أدخل كلمة مرور',
-              prefixIcon: Icon(Icons.vpn_key_outlined, size: 16, color: AppColors.amber),
-            ),
+        const SizedBox(height: 12),
+        const FieldLabel('كلمة مرور المدير الرئيسية:'),
+        TextField(
+          controller: password,
+          obscureText: true,
+          autofocus: true,
+          onChanged: (_) {
+            if (passwordError != null) setState(() => passwordError = null);
+          },
+          onSubmitted: (_) => _finish(store, selected),
+          style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
+          decoration: InputDecoration(
+            hintText: 'أدخل كلمة مرور المدير لتأكيد تعيين الجهاز',
+            prefixIcon: Icon(Icons.vpn_key_outlined, size: 16, color: AppColors.amber),
           ),
-          if (passwordError != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                passwordError!,
-                style: const TextStyle(color: AppColors.danger, fontSize: 11.5, fontWeight: FontWeight.w700),
-              ),
-            ),
-          const Padding(
-            padding: EdgeInsets.only(top: 6),
+        ),
+        if (passwordError != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
             child: Text(
-              '* يتطلب تثبيت صلاحيات المدير على هذا الجهاز إدخال كلمة المرور.',
-              style: TextStyle(color: AppColors.muted, fontSize: 10.5),
+              passwordError!,
+              style: const TextStyle(color: AppColors.danger, fontSize: 11.5, fontWeight: FontWeight.w700),
             ),
           ),
-        ] else ...[
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: AppColors.bg, border: Border.all(color: AppColors.line)),
-            child: Text.rich(
-              TextSpan(
-                style: const TextStyle(color: AppColors.muted, fontSize: 11.5, height: 1.6),
-                children: [
-                  const TextSpan(text: 'سيتم تثبيت الجهاز باسم '),
-                  TextSpan(
-                    text: selected.name,
-                    style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading),
-                  ),
-                  const TextSpan(text: ' كـ '),
-                  const TextSpan(text: 'سكرتير', style: TextStyle(fontWeight: FontWeight.w800)),
-                  const TextSpan(text: ' وتصدر سندات القبض باسمه دون الحاجة لكلمة مرور.'),
-                ],
-              ),
-            ),
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+            '* يتطلب تثبيت دور هذا الجهاز (${isAdmin ? 'مدير' : 'سكرتير'}) إدخال كلمة مرور المدير لمنع التعيين غير المصرح به.',
+            style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
           ),
-        ],
+        ),
         const SizedBox(height: 16),
         PrimaryButton(
           expand: true,

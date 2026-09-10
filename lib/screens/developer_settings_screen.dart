@@ -142,6 +142,8 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
         const SizedBox(height: 8),
         _financeRules(store),
         const SizedBox(height: 8),
+        _features(store),
+        const SizedBox(height: 8),
         _connection(store),
         const SizedBox(height: 8),
         _tools(context, store),
@@ -333,6 +335,104 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
           const Text(
             'يُضاف إلى رصيد الطالب عند تعليم «تم تسديد حجز المقعد». اتركه صفراً إن لم تعتمد الإدارة رسماً.',
             style: TextStyle(color: AppColors.faint, fontSize: 10.5),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// خيارات التحكم بالميزات — المقابل لتبويب «features» في DeveloperSettings.tsx.
+  ///
+  /// الحفظ محلي لكل جهاز كما في سطح المكتب: `institution_settings` المشترك
+  /// لا يحمل عموداً لها، فإرسالها فيه كان يُسقطها صامتاً.
+  Widget _features(AppStore store) {
+    final f = store.features;
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SectionTitle('خيارات التحكم بالميزات والموديولات'),
+          const Padding(
+            padding: EdgeInsets.only(bottom: 4),
+            child: Text(
+              'تفعيل أو تعطيل الأقسام والوظائف بحسب متطلبات واحتياجات المدرسة',
+              style: TextStyle(color: AppColors.faint, fontSize: 10.5),
+            ),
+          ),
+          _featureRow(
+            title: 'إدارة المصروفات وأجور المعلمين',
+            hint: 'إظهار تبويب وسجلات المصروفات وسندات الصرف وأجور المعلمين داخل الشاشة المالية.',
+            value: f.enableExpenses,
+            onChanged: (v) => store.saveFeatures(enableExpenses: v),
+          ),
+          _featureRow(
+            title: 'تقييمات ودرجات الطلاب (موديول أكاديمي)',
+            hint: 'إتاحة رصد درجات الطلاب للمعلم، وظهور تبويب التقييمات بالإدارة، وعرض النتائج في بوابة وملف الطالب.',
+            value: f.enableEvaluations,
+            onChanged: (v) => store.saveFeatures(enableEvaluations: v),
+          ),
+          _featureRow(
+            title: 'بوابة الطالب الإلكترونية',
+            hint: 'تمكين الطلاب وأولياء الأمور من الدخول برقم الهوية ورمز الدخول لاستعراض الحضور والرسوم والمواد.',
+            value: f.enableStudentPortal,
+            onChanged: (v) => store.saveFeatures(enableStudentPortal: v),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _featureRow({
+    required String title,
+    required String hint,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.bg,
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 11.5,
+                          color: AppColors.heading,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    value ? StatusChip.success('مفعل') : StatusChip.muted('معطل'),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  hint,
+                  style: const TextStyle(color: AppColors.muted, fontSize: 10.5, height: 1.5),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Switch(
+            value: value,
+            activeThumbColor: Colors.white,
+            activeTrackColor: AppColors.success,
+            onChanged: onChanged,
           ),
         ],
       ),

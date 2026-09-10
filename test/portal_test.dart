@@ -70,9 +70,10 @@ void main() {
   });
 
   group('إحصاء الحضور', () {
-    test('الالتزام يحتسب الحاضر والمتأخر', () {
-      const a = PortalAttendance(total: 10, present: 7, absent: 2, late: 1);
-      expect(a.rate, 80);
+    test('الالتزام يحتسب الحاضر وحده', () {
+      // «متأخر» أُلغيت من النظام؛ المأذون لا يُحتسب حضوراً
+      const a = PortalAttendance(total: 10, present: 7, absent: 2, excused: 1);
+      expect(a.rate, 70);
     });
 
     test('بلا رصد يُعتبر الالتزام كاملاً', () {

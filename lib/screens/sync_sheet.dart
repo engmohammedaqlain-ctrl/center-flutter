@@ -11,6 +11,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/widgets.dart';
+import 'evaluations_screen.dart';
 
 Color get _sheetBg => AppColors.navy;
 Color get _sheetPanel => AppColors.navyMid.withValues(alpha: 0.8);
@@ -116,6 +117,23 @@ Future<void> showActionSheet(BuildContext context, AppStore store) {
               _syncPanel(ctx, store),
               const SizedBox(height: 12),
 
+              // الدرجات والتقييمات: قسم قائم بذاته في سطح المكتب، وشريط الهاتف
+              // السفلي خمسة أقسام ثابتة كما في MobileBottomNav، فمدخله هنا.
+              if (store.features.enableEvaluations && store.can('attendance.view')) ...[
+                _menuTile(
+                  icon: Icons.workspace_premium_outlined,
+                  iconColor: AppColors.accent,
+                  label: 'الدرجات والتقييمات',
+                  trailing: 'فتح',
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const EvaluationsScreen()),
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
               _menuTile(
                 icon: Icons.badge_outlined,
                 iconColor: AppColors.amber,

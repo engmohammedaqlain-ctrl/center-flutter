@@ -319,16 +319,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
         children: d.evaluations.isEmpty
             ? [_empty('لا توجد تقييمات بعد.')]
             : [
-                for (final e in d.evaluations)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 7),
-                    child: Row(
-                      children: [
-                        Expanded(child: Text(e.notes.isEmpty ? 'تقييم' : e.notes, style: AppText.body)),
-                        if (e.score != null) StatusChip.amber(e.score!.toStringAsFixed(0)),
-                      ],
-                    ),
-                  ),
+                for (final e in d.evaluations) _evaluationRow(e),
               ],
       ),
       const SizedBox(height: Gap.md),
@@ -344,6 +335,49 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
               ],
       ),
     ];
+  }
+
+  /// سطر تقييم: العنوان ونوعه وتاريخه، ثم الدرجة من الدرجة القصوى ونسبتها.
+  Widget _evaluationRow(StudentEvaluation e) {
+    final pct = e.percent;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  e.title.isEmpty ? (e.notes.isEmpty ? 'تقييم' : e.notes) : e.title,
+                  style: AppText.body,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  [e.typeLabel, if (e.evaluationDate.isNotEmpty) e.evaluationDate].join(' · '),
+                  style: AppText.label,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: Gap.sm),
+          if (e.score != null)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                e.passed
+                    ? StatusChip.success('${trimNum(e.score!)} / ${trimNum(e.maxScore)}')
+                    : StatusChip.danger('${trimNum(e.score!)} / ${trimNum(e.maxScore)}'),
+                if (pct != null) ...[
+                  const SizedBox(height: 2),
+                  Text('$pct%', style: AppText.label),
+                ],
+              ],
+            ),
+        ],
+      ),
+    );
   }
 
   Widget _figure(String label, double value, Color color) => Column(
@@ -366,7 +400,6 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
 Widget _statusChip(String status) => switch (status) {
       'present' => StatusChip.success('حاضر'),
       'absent' => StatusChip.danger('غائب'),
-      'late' => StatusChip.amber('متأخر'),
       'excused' => StatusChip.muted('معذور'),
       _ => StatusChip.muted('—'),
     };
@@ -721,8 +754,12 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
 
   Future<void> _evaluate(TeacherClass c) async {
     var studentId = c.students.first.id;
+    var type = 'quiz';
+    final title = TextEditingController();
     final score = TextEditingController();
+    final maxScore = TextEditingController(text: '100');
     final notes = TextEditingController();
+    final date = isoDate(DateTime.now());
 
     final ok = await showModalBottomSheet<bool>(
       context: context,
@@ -744,8 +781,46 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                 onChanged: (v) => setSt(() => studentId = v ?? studentId),
               ),
               const SizedBox(height: Gap.md),
-              const FieldLabel('الدرجة'),
-              TextField(controller: score, keyboardType: TextInputType.number),
+              const FieldLabel('عنوان التقييم', requiredField: true),
+              TextField(
+                controller: title,
+                decoration: const InputDecoration(hintText: 'مثال: اختبار الوحدة الأولى'),
+              ),
+              const SizedBox(height: Gap.md),
+              const FieldLabel('نوع التقييم'),
+              AppDropdown<String>(
+                value: type,
+                items: [
+                  for (final e in evaluationTypeNames.entries)
+                    DropdownMenuItem(value: e.key, child: Text(e.value)),
+                ],
+                onChanged: (v) => setSt(() => type = v ?? type),
+              ),
+              const SizedBox(height: Gap.md),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const FieldLabel('الدرجة'),
+                        TextField(controller: score, keyboardType: TextInputType.number),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: Gap.sm),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const FieldLabel('الدرجة القصوى'),
+                        TextField(controller: maxScore, keyboardType: TextInputType.number),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: Gap.md),
               const FieldLabel('ملاحظات'),
               TextField(controller: notes, maxLines: 3),
@@ -764,14 +839,23 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     );
 
     if (ok != true) return;
+    if (title.text.trim().isEmpty) {
+      if (mounted) showAppSnack(context, 'عنوان التقييم مطلوب', error: true);
+      return;
+    }
     try {
       await const PortalService().saveEvaluation(
         StudentEvaluation(
           id: AppStore.instance.newId(),
           studentId: studentId,
+          groupId: c.group.id,
           teacherId: widget.user.id,
           subjectId: c.group.subjectId,
+          title: title.text.trim(),
+          type: type,
           score: double.tryParse(score.text.trim()),
+          maxScore: double.tryParse(maxScore.text.trim()) ?? 100,
+          evaluationDate: date,
           notes: notes.text.trim(),
         ),
         widget.user.tenantId,

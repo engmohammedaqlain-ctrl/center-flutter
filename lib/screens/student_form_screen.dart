@@ -62,7 +62,6 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   int initialRating = 0;
   bool guardianDeclaration = false;
   String studentIdPhoto = '';
-  String parentIdPhoto = '';
   String birthCertificate = '';
   bool attachmentsLoaded = false;
 
@@ -112,7 +111,6 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     if (!mounted) return;
     setState(() {
       studentIdPhoto = att?.studentIdPhoto ?? '';
-      parentIdPhoto = att?.parentIdPhoto ?? '';
       birthCertificate = att?.birthCertificate ?? '';
       attachmentsLoaded = true;
     });
@@ -365,7 +363,6 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
             ? StudentAttachments(
                 id: id,
                 studentIdPhoto: studentIdPhoto,
-                parentIdPhoto: parentIdPhoto,
                 birthCertificate: birthCertificate,
               )
             : null,
@@ -733,7 +730,6 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                   const SizedBox(height: 8),
                   _attachBox('مرفق: صورة هوية الطالب', studentIdPhoto, () => _pickAttachment((v) => studentIdPhoto = v), () => setState(() => studentIdPhoto = '')),
                   const SizedBox(height: 8),
-                  _attachBox('مرفق: صورة هوية ولي الأمر', parentIdPhoto, () => _pickAttachment((v) => parentIdPhoto = v), () => setState(() => parentIdPhoto = '')),
                   const SizedBox(height: 8),
                   _attachBox('مرفق: شهادة الميلاد', birthCertificate, () => _pickAttachment((v) => birthCertificate = v), () => setState(() => birthCertificate = '')),
                   const SizedBox(height: 12),

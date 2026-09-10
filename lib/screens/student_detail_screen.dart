@@ -47,10 +47,9 @@ class StudentDetailScreen extends StatelessWidget {
         final totalPaid = pays.where((p) => !p.cancelled).fold<double>(0, (a, p) => a + p.amount);
         final present = marks.where((m) => m.status == 'present').length;
         final absent = marks.where((m) => m.status == 'absent').length;
-        final late = marks.where((m) => m.status == 'late').length;
         final excused = marks.where((m) => m.status == 'excused').length;
-        // الالتزام يحتسب الحاضر والمتأخر — مطابق لـ attendanceStats في StudentDetail.tsx
-        final rate = marks.isEmpty ? 100 : (((present + late) / marks.length) * 100).round();
+        // الالتزام يحتسب الحاضر وحده — مطابق لـ attendanceStats في StudentDetail.tsx
+        final rate = marks.isEmpty ? 100 : ((present / marks.length) * 100).round();
         final settled = !student.isDebtor && insts.every((i) => i.isPaid);
 
         return Scaffold(
@@ -216,7 +215,11 @@ class StudentDetailScreen extends StatelessWidget {
                     ],
                     if (marks.isNotEmpty) ...[
                       const SizedBox(height: 8),
-                      _AttendanceCard(marks: marks, rate: rate, present: present, absent: absent, late: late, excused: excused),
+                      _AttendanceCard(marks: marks, rate: rate, present: present, absent: absent, excused: excused),
+                    ],
+                    if (store.features.enableEvaluations) ...[
+                      const SizedBox(height: 8),
+                      _EvaluationsCard(evaluations: store.evaluationsOfStudent(student.id)),
                     ],
                     const SizedBox(height: 8),
                     _AttachmentsCard(studentId: student.id),
@@ -408,7 +411,6 @@ class _AttendanceCard extends StatefulWidget {
     required this.rate,
     required this.present,
     required this.absent,
-    required this.late,
     required this.excused,
   });
 
@@ -416,7 +418,6 @@ class _AttendanceCard extends StatefulWidget {
   final int rate;
   final int present;
   final int absent;
-  final int late;
   final int excused;
 
   @override
@@ -449,7 +450,6 @@ class _AttendanceCardState extends State<_AttendanceCard> {
               children: [
                 _stat('حضور', widget.present, AppColors.success),
                 _stat('غياب', widget.absent, AppColors.danger),
-                _stat('تأخير', widget.late, AppColors.amber),
                 _stat('معذور', widget.excused, AppColors.info),
                 _stat('الرصد', widget.marks.length, AppColors.navy),
               ],
@@ -499,7 +499,6 @@ class _AttendanceCardState extends State<_AttendanceCard> {
   Color _color(String status) => switch (status) {
         'present' => AppColors.success,
         'absent' => AppColors.danger,
-        'late' => AppColors.amber,
         'excused' => AppColors.info,
         _ => AppColors.faint,
       };
@@ -518,7 +517,6 @@ class _AttachmentsCard extends StatelessWidget {
 
     final items = <(String, String)>[
       if (att.studentIdPhoto.isNotEmpty) ('صورة هوية الطالب', att.studentIdPhoto),
-      if (att.parentIdPhoto.isNotEmpty) ('صورة هوية ولي الأمر', att.parentIdPhoto),
       if (att.birthCertificate.isNotEmpty) ('شهادة الميلاد', att.birthCertificate),
     ];
     if (items.isEmpty) return const SizedBox.shrink();
@@ -651,6 +649,84 @@ class _PortalCodeRow extends StatelessWidget {
                 color: AppColors.heading,
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+
+/// كشف الدرجات والتقييمات — المقابل لبطاقة «النتائج والتقييمات الأكاديمية»
+/// في StudentDetail.tsx. المعدل يُحسب كمتوسط النسب لا كنسبة المجاميع.
+class _EvaluationsCard extends StatelessWidget {
+  const _EvaluationsCard({required this.evaluations});
+  final List<Evaluation> evaluations;
+
+  @override
+  Widget build(BuildContext context) {
+    final average = evaluations.isEmpty
+        ? 0
+        : (evaluations.fold<int>(0, (a, e) => a + e.percent) / evaluations.length).round();
+
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SectionTitle(
+            'النتائج والتقييمات الأكاديمية (${evaluations.length})',
+            trailing: evaluations.isEmpty
+                ? null
+                : Text(
+                    'معدل: $average%',
+                    style: const TextStyle(
+                      color: AppColors.success,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+          ),
+          if (evaluations.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Text(
+                'لا توجد تقييمات مرصودة لهذا الطالب بعد',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.muted, fontSize: 12),
+              ),
+            )
+          else
+            for (final e in evaluations)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(e.title, style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
+                          Text(
+                            [e.typeLabel, if (e.evaluationDate.isNotEmpty) e.evaluationDate].join(' · '),
+                            style: const TextStyle(color: AppColors.faint, fontSize: 10.5),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${trimNum(e.score)} / ${trimNum(e.maxScore)}',
+                      style: TextStyle(
+                        color: e.passed ? AppColors.success : AppColors.danger,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12.5,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
         ],
       ),
     );
