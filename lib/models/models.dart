@@ -126,6 +126,18 @@ String money(num value) {
 String trimNum(num value) =>
     value % 1 == 0 ? value.toStringAsFixed(0) : value.toString();
 
+/// الجنس كما يُعرض ويُحفظ في Center: «ذكر» أو «أنثى».
+///
+/// بعض السجلات تصل من السحابة بالإنجليزية (`male`/`female`) من مصدر غير
+/// النسختين؛ تُقرأ هنا بالعربية، ويعود حفظها بالعربية عند أول تعديل.
+String genderLabel(String? raw) {
+  final v = (raw ?? '').trim().toLowerCase();
+  if (v.isEmpty) return 'ذكر';
+  if (const {'male', 'm', 'boy', 'ذكر'}.contains(v)) return 'ذكر';
+  if (const {'female', 'f', 'girl', 'أنثى', 'انثى'}.contains(v)) return 'أنثى';
+  return raw!.trim();
+}
+
 String formatDate(DateTime d) {
   final y = d.year.toString().padLeft(4, '0');
   final m = d.month.toString().padLeft(2, '0');

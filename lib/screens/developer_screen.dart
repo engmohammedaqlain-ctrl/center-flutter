@@ -61,7 +61,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
           ..sort((a, b) => a.name.compareTo(b.name));
 
         return Scaffold(
-          backgroundColor: AppColors.bg,
+          backgroundColor: Colors.white,
           body: Column(
             children: [
               _header(context, store),

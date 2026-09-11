@@ -10,6 +10,37 @@ import '../widgets/widgets.dart';
 
 /// سند القبض — المقابل لـ `features/finance/ReceiptModal.tsx`.
 class ReceiptScreen {
+  /// إرسال الإيصال بالواتساب لولي الأمر — مطابق لـ `handleSendWhatsAppReceipt`.
+  /// متاحة لملف الطالب أيضاً كي تُرسل الرسالة نفسها من الموضعين.
+  static Future<void> sendWhatsApp(BuildContext context, Payment payment, Student student) async {
+    final raw = student.parentPhone.isNotEmpty ? student.parentPhone : student.phone;
+    if (raw.trim().isEmpty) {
+      showAppSnack(context, 'لا يوجد رقم هاتف مسجل للطالب أو ولي الأمر.', error: true);
+      return;
+    }
+
+    final remaining = payment.remainingAfter > 0
+        ? money(payment.remainingAfter)
+        : (student.balance < 0 ? money(student.balance.abs()) : '0 ₪ (مسدد بالكامل)');
+
+    final msg = StringBuffer()
+      ..writeln('السلام عليكم ورحمة الله وبركاته')
+      ..writeln('حضرة ولي أمر الطالب/ة: *${student.fullName}* المحترم')
+      ..writeln()
+      ..writeln('نحيطكم علماً بأنه تم تسديد دفعة مالية وتوثيق وصل رسمي:')
+      ..writeln('📄 *رقم الوصل:* ${payment.receiptNumber}')
+      ..writeln('💰 *المبلغ:* ${money(payment.amount)}')
+      ..writeln('💳 *طريقة الدفع:* ${paymentMethodNames[payment.method] ?? payment.method}')
+      ..writeln('📌 *البيان / الغرض:* ${paymentPurposeNames[payment.purpose] ?? payment.purpose}');
+    if (payment.senderName.isNotEmpty) msg.writeln('👤 *اسم المحول منه:* ${payment.senderName}');
+    if (payment.reference.isNotEmpty) msg.writeln('🔢 *الرقم المرجعي:* ${payment.reference}');
+    msg
+      ..writeln('📅 *تاريخ الدفعة:* ${formatDate(payment.date)}')
+      ..write('⚖️ *المتبقي بذمة الطالب:* $remaining');
+
+    await launchWaWithText(raw, msg.toString());
+  }
+
   static Future<void> open(BuildContext context, Payment payment) {
     return showModalBottomSheet<void>(
       context: context,
@@ -274,32 +305,6 @@ class _ReceiptSheet extends StatelessWidget {
   }
 
   /// إرسال الإيصال بالواتساب لولي الأمر — مطابق لـ `handleSendWhatsAppReceipt`.
-  Future<void> _whatsapp(BuildContext context, AppStore store, Student student) async {
-    final raw = student.parentPhone.isNotEmpty ? student.parentPhone : student.phone;
-    if (raw.trim().isEmpty) {
-      showAppSnack(context, 'لا يوجد رقم هاتف مسجل للطالب أو ولي الأمر.', error: true);
-      return;
-    }
-
-    final remaining = payment.remainingAfter > 0
-        ? money(payment.remainingAfter)
-        : (student.balance < 0 ? money(student.balance.abs()) : '0 ₪ (مسدد بالكامل)');
-
-    final msg = StringBuffer()
-      ..writeln('السلام عليكم ورحمة الله وبركاته')
-      ..writeln('حضرة ولي أمر الطالب/ة: *${student.fullName}* المحترم')
-      ..writeln()
-      ..writeln('نحيطكم علماً بأنه تم تسديد دفعة مالية وتوثيق وصل رسمي:')
-      ..writeln('📄 *رقم الوصل:* ${payment.receiptNumber}')
-      ..writeln('💰 *المبلغ:* ${money(payment.amount)}')
-      ..writeln('💳 *طريقة الدفع:* ${paymentMethodNames[payment.method] ?? payment.method}')
-      ..writeln('📌 *البيان / الغرض:* ${paymentPurposeNames[payment.purpose] ?? payment.purpose}');
-    if (payment.senderName.isNotEmpty) msg.writeln('👤 *اسم المحول منه:* ${payment.senderName}');
-    if (payment.reference.isNotEmpty) msg.writeln('🔢 *الرقم المرجعي:* ${payment.reference}');
-    msg
-      ..writeln('📅 *تاريخ الدفعة:* ${formatDate(payment.date)}')
-      ..write('⚖️ *المتبقي بذمة الطالب:* $remaining');
-
-    await launchWaWithText(raw, msg.toString());
-  }
+  Future<void> _whatsapp(BuildContext context, AppStore store, Student student) =>
+      ReceiptScreen.sendWhatsApp(context, payment, student);
 }

@@ -53,7 +53,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
         }).toList();
 
         return Scaffold(
-          backgroundColor: AppColors.bg,
+          backgroundColor: Colors.white,
           appBar: AppBar(
             title: const Text('الدرجات والتقييمات'),
             actions: [

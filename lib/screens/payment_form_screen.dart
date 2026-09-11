@@ -110,7 +110,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
           );
         }
         return Scaffold(
-          backgroundColor: AppColors.bg,
+          backgroundColor: Colors.white,
           appBar: AppBar(
             title: Text(selected == null ? 'تسديد دفعة جديدة' : 'تسديد دفعة للطالب: ${selected.fullName}'),
             // شريط الهوية الغامق كبقية الشاشات

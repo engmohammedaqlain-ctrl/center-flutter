@@ -64,7 +64,7 @@ class _AppShellState extends State<AppShell> {
         if (index < 0) index = 0;
 
         return Scaffold(
-          backgroundColor: AppColors.bg,
+          backgroundColor: Colors.white,
           body: Column(
             children: [
               _Header(title: sections[index].title),

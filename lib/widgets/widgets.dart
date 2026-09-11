@@ -115,6 +115,9 @@ class MoneyChip extends StatelessWidget {
   }
 }
 
+/// ارتفاع موحّد لأدوات السطر الواحد (بحث، تصفية) كي تتساوى متجاورة.
+const controlHeight = 42.0;
+
 class SearchField extends StatelessWidget {
   const SearchField({super.key, required this.controller, required this.hint, this.onChanged, this.trailing});
 
@@ -140,14 +143,21 @@ class SearchField extends StatelessWidget {
           );
 
     return SizedBox(
-      height: 40,
+      height: controlHeight,
       child: TextField(
         controller: controller,
         onChanged: onChanged,
         style: const TextStyle(fontSize: 12.5),
         textInputAction: TextInputAction.search,
+        textAlignVertical: TextAlignVertical.center,
+        // الحقل يملأ ارتفاعه كاملاً فيُرسم إطاره بالارتفاع نفسه لزر التصفية.
+        // بدونها يلتفّ الإطار حول سطر النص فيقصر عن جاره أو يطول بحسب الخط.
+        expands: true,
+        maxLines: null,
+        minLines: null,
         decoration: InputDecoration(
           hintText: hint,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
           prefixIcon: const Icon(Icons.search, size: 16, color: AppColors.faint),
           prefixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
           suffixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -223,7 +233,7 @@ class FilterButton extends StatelessWidget {
           ),
       ],
       child: Container(
-        height: 40,
+        height: controlHeight,
         constraints: BoxConstraints(maxWidth: maxWidth),
         padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
@@ -291,14 +301,26 @@ class PrimaryButton extends StatelessWidget {
         ),
         child: busy
             ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-            : Row(
-                mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (icon != null) ...[Icon(icon, size: 15), const SizedBox(width: 5)],
-                  Text(label),
-                ],
-              ),
+            // النص لا يطفح حين يضيق الزر: يُقصَّ بنقاط في الزر الممتد، ويصغر قليلاً
+            // في الزر الحر — الذي قد لا يعرف عرضاً أقصى داخل صفّ فلا يصلح له القصّ
+            : expand
+                ? Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (icon != null) ...[Icon(icon, size: 15), const SizedBox(width: 5)],
+                      Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                    ],
+                  )
+                : FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (icon != null) ...[Icon(icon, size: 15), const SizedBox(width: 5)],
+                        Text(label),
+                      ],
+                    ),
+                  ),
       ),
     );
     return expand ? SizedBox(width: double.infinity, child: child) : child;
@@ -325,12 +347,16 @@ class GhostButton extends StatelessWidget {
           shape: RoundedRectangleBorder(borderRadius: _r),
           textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[Icon(icon, size: 14), const SizedBox(width: 4)],
-            Text(label),
-          ],
+        // يصغر النص قليلاً حين يضيق الزر بدل أن يطفح خارجه
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[Icon(icon, size: 14), const SizedBox(width: 4)],
+              Text(label),
+            ],
+          ),
         ),
       ),
     );
@@ -363,7 +389,8 @@ class InstitutionBadge extends StatelessWidget {
   final double size;
   final double radius;
 
-  /// على خلفية داكنة يكون الإطار أبيض؛ على فاتحة يبقى كهرمانياً.
+  /// على خلفية داكنة إطار أبيض شفاف؛ على فاتحة إطار رمادي خفيف جداً يُظهر حدود
+  /// الشعار الأبيض فلا يذوب في الورقة البيضاء.
   final bool onDark;
 
   @override
@@ -374,10 +401,10 @@ class InstitutionBadge extends StatelessWidget {
       height: size,
       padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
-        color: onDark ? Colors.white : AppColors.amberSoft,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(radius),
         border: Border.all(
-          color: onDark ? Colors.white.withValues(alpha: 0.25) : AppColors.amberBorder,
+          color: onDark ? Colors.white.withValues(alpha: 0.25) : AppColors.line,
         ),
       ),
       child: ClipRRect(
@@ -649,4 +676,72 @@ Future<void> launchWa(String phone) async {
   if (await canLaunchUrl(uri)) {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
+}
+
+
+/// زر تواصل: الأيقونة وحدها بلا إطار ولا تعبئة، ومساحة لمس مريحة حولها
+/// تُظهر تموّجاً دائرياً خفيفاً عند الضغط.
+class ContactIconButton extends StatelessWidget {
+  const ContactIconButton({super.key, required this.tooltip, required this.onTap, required this.child});
+
+  final String tooltip;
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: SizedBox(width: 36, height: 36, child: Center(child: child)),
+      ),
+    );
+  }
+}
+
+/// فقاعة محادثة دائرية بذيل — مطابقة لأيقونة `MessageCircle` من lucide التي
+/// يستعملها Center لزر واتساب، ولا مقابل لها في مكتبة Material.
+class MessageCircleIcon extends StatelessWidget {
+  const MessageCircleIcon({super.key, required this.color, this.size = 18});
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(width: size, height: size, child: CustomPaint(painter: _MessageCirclePainter(color)));
+  }
+}
+
+class _MessageCirclePainter extends CustomPainter {
+  const _MessageCirclePainter(this.color);
+  final Color color;
+
+  static const _pi = 3.141592653589793;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    // الذيل في أسفل اليسار كما في الأيقونة الأصلية، ولا ينعكس مع الاتجاه
+    const tail = 3 * _pi / 4;
+    const gap = 0.36;
+    final rect = Rect.fromCircle(center: Offset(w * 0.54, h * 0.46), radius: w * 0.40);
+    final path = Path()
+      ..arcTo(rect, tail + gap, 2 * _pi - 2 * gap, true)
+      ..lineTo(w * 0.08, h * 0.92)
+      ..close();
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.6
+        ..strokeJoin = StrokeJoin.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_MessageCirclePainter old) => old.color != color;
 }

@@ -67,7 +67,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: Colors.white,
       appBar: AppBar(title: const Text('تخصيص المنشأة وأدوات المطور')),
       body: unlocked ? _body(context, store) : _gate(context),
     );
@@ -214,7 +214,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
           const FieldLabel('شعار المنشأة'),
           Row(
             children: [
-              InstitutionBadge(logo: logo, size: 56),
+              InstitutionBadge(logo: logo, size: 56, onDark: false),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(

@@ -78,7 +78,8 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     relation = s?.relation ?? 'أب';
     neighborhood = (s?.neighborhood ?? '').isNotEmpty && neighborhoods.contains(s!.neighborhood) ? s.neighborhood : ((s?.neighborhood ?? '').isNotEmpty ? 'أخرى' : '');
     if (neighborhood == 'أخرى' && s != null) customNeighborhood.text = s.neighborhood;
-    gender = s?.gender ?? 'ذكر';
+    // «male»/«female» تصل أحياناً من السحابة؛ تُعرض مختارة وتُحفظ بالعربية كما في Center
+    gender = genderLabel(s?.gender);
     referral = (s?.referralSource ?? '').isNotEmpty ? s!.referralSource : referralSources.first;
     housing = (s?.housingStatus ?? '').isNotEmpty ? s!.housingStatus : 'ملك';
     health = s?.healthStatus ?? 'سليم';
@@ -836,34 +837,41 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   }
 
   Widget _extraHeader() {
-    return InkWell(
-      onTap: () => setState(() => extra = !extra),
-      child: Padding(
-        padding: const EdgeInsets.only(top: 20, bottom: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.post_add_outlined, size: 18, color: AppColors.amber),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('بيانات إضافية', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: AppColors.heading)),
-                      const Text('الميلاد والسكن والصحة والمرفقات — اختيارية', style: TextStyle(color: AppColors.faint, fontSize: 10.5)),
-                    ],
+    // الهوامش خارج منطقة اللمس: أثر الضغط يغطي سطر العنوان وحده، لا الفراغ
+    // فوقه وتحته، وبرمادي خافت جداً بلا تموّج
+    return Padding(
+      padding: const EdgeInsets.only(top: 14, bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            onTap: () => setState(() => extra = !extra),
+            highlightColor: AppColors.bg,
+            splashColor: Colors.transparent,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  Icon(Icons.post_add_outlined, size: 18, color: AppColors.amber),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('بيانات إضافية', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: AppColors.heading)),
+                        const Text('الميلاد والسكن والصحة والمرفقات — اختيارية', style: TextStyle(color: AppColors.faint, fontSize: 10.5)),
+                      ],
+                    ),
                   ),
-                ),
-                Text(extra ? 'إخفاء' : 'عرض', style: TextStyle(color: AppColors.amber, fontWeight: FontWeight.w800, fontSize: 12)),
-                Icon(extra ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: AppColors.amber, size: 20),
-              ],
+                  Text(extra ? 'إخفاء' : 'عرض', style: TextStyle(color: AppColors.amber, fontWeight: FontWeight.w800, fontSize: 12)),
+                  Icon(extra ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: AppColors.amber, size: 20),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-            Container(height: 1, color: AppColors.line),
-          ],
-        ),
+          ),
+          const SizedBox(height: 2),
+          Container(height: 1, color: AppColors.line),
+        ],
       ),
     );
   }

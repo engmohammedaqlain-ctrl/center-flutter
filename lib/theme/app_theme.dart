@@ -54,9 +54,8 @@ abstract final class Corner {
 }
 
 /// ظل خفيف يفصل البطاقة عن الخلفية بلا ثقل — بديل التدوير في إعطاء العمق.
-const cardShadow = [
-  BoxShadow(color: Color(0x0D0B2545), blurRadius: 10, offset: Offset(0, 2)),
-];
+/// البطاقات بلا ظل: حدّ رفيع وحده يفصلها عن الخلفية البيضاء.
+const cardShadow = <BoxShadow>[];
 
 abstract final class AppTheme {
   static final radius = BorderRadius.circular(Corner.field);
@@ -71,7 +70,7 @@ abstract final class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
-      scaffoldBackgroundColor: AppColors.bg,
+      scaffoldBackgroundColor: Colors.white,
       canvasColor: Colors.white,
       colorScheme: ColorScheme.light(
         primary: AppColors.amber,

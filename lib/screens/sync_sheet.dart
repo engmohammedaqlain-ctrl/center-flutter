@@ -13,20 +13,20 @@ import '../widgets/animated_count.dart';
 import '../widgets/widgets.dart';
 import 'evaluations_screen.dart';
 
-Color get _sheetBg => AppColors.navy;
-Color get _sheetPanel => AppColors.navyMid.withValues(alpha: 0.8);
+const _sheetBg = Colors.white;
+const _sheetPanel = Colors.white;
 
-/// غلاف موحّد للأوراق السفلية الداكنة — مقبض سحب وحواف علوية دائرية.
-Future<T?> _darkSheet<T>(BuildContext context, WidgetBuilder builder) {
+/// غلاف موحّد للأوراق السفلية — خلفية بيضاء وحدود خفيفة ومقبض سحب.
+Future<T?> _lightSheet<T>(BuildContext context, WidgetBuilder builder) {
   return showModalBottomSheet<T>(
     context: context,
     backgroundColor: Colors.transparent,
-    barrierColor: Colors.black.withValues(alpha: 0.6),
+    barrierColor: Colors.black.withValues(alpha: 0.45),
     isScrollControlled: true,
     builder: (ctx) => Container(
       decoration: BoxDecoration(
         color: _sheetBg,
-        border: Border(top: BorderSide(color: AppColors.navyMid)),
+        border: const Border(top: BorderSide(color: AppColors.line)),
         borderRadius: BorderRadius.zero,
       ),
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
@@ -42,8 +42,8 @@ Future<T?> _darkSheet<T>(BuildContext context, WidgetBuilder builder) {
                 Container(
                   width: 46,
                   height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.22),
+                  decoration: const BoxDecoration(
+                    color: AppColors.lineStrong,
                     borderRadius: BorderRadius.zero,
                   ),
                 ),
@@ -60,7 +60,7 @@ Future<T?> _darkSheet<T>(BuildContext context, WidgetBuilder builder) {
 /// القائمة السريعة — مطابقة لـ Action Bottom Sheet في `MobileHeader`:
 /// هوية الجهاز، ثم المزامنة السحابية، ثم تسجيل الخروج.
 Future<void> showActionSheet(BuildContext context, AppStore store) {
-  return _darkSheet(context, (ctx) {
+  return _lightSheet(context, (ctx) {
     return ListenableBuilder(
       listenable: store,
       builder: (ctx, _) {
@@ -77,7 +77,7 @@ Future<void> showActionSheet(BuildContext context, AppStore store) {
               // هوية المنشأة والجهاز
               Row(
                 children: [
-                  InstitutionBadge(logo: store.institutionLogo, size: 42, radius: 12),
+                  InstitutionBadge(logo: store.institutionLogo, size: 42, radius: 12, onDark: false),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -88,7 +88,7 @@ Future<void> showActionSheet(BuildContext context, AppStore store) {
                           store.institutionName.isEmpty ? appName : store.institutionName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12.5),
+                          style: TextStyle(color: AppColors.heading, fontWeight: FontWeight.w800, fontSize: 12.5),
                         ),
                         const SizedBox(height: 5),
                         _identityChip(isAdmin: isAdmin, name: name),
@@ -102,16 +102,17 @@ Future<void> showActionSheet(BuildContext context, AppStore store) {
                       height: 30,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.10),
+                        color: Colors.white,
                         borderRadius: BorderRadius.zero,
+                        border: Border.all(color: AppColors.line),
                       ),
-                      child: Icon(Icons.close, size: 16, color: Colors.white.withValues(alpha: 0.7)),
+                      child: const Icon(Icons.close, size: 16, color: AppColors.muted),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 12),
-              Divider(color: Colors.white.withValues(alpha: 0.10), height: 1),
+              const Divider(color: AppColors.line, height: 1),
               const SizedBox(height: 14),
 
               _syncPanel(ctx, store),
@@ -147,7 +148,7 @@ Future<void> showActionSheet(BuildContext context, AppStore store) {
               const SizedBox(height: 8),
               _menuTile(
                 icon: Icons.logout,
-                iconColor: const Color(0xFFFB7185),
+                iconColor: AppColors.danger,
                 label: 'تسجيل الخروج من النظام',
                 danger: true,
                 onTap: () async {
@@ -170,9 +171,9 @@ Future<void> showActionSheet(BuildContext context, AppStore store) {
 }
 
 Widget _identityChip({required bool isAdmin, required String name}) {
-  final fg = isAdmin ? const Color(0xFFD8B4FE) : const Color(0xFF6EE7B7);
-  final bg = isAdmin ? const Color(0x992E1065) : const Color(0x99064E3B);
-  final border = isAdmin ? const Color(0x996B21A8) : const Color(0x99065F46);
+  final fg = isAdmin ? const Color(0xFF6B21A8) : const Color(0xFF166534);
+  final bg = isAdmin ? const Color(0xFFF3E8FF) : AppColors.successSoft;
+  final border = isAdmin ? const Color(0xFFE9D5FF) : AppColors.successBorder;
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
     decoration: BoxDecoration(
@@ -197,7 +198,7 @@ Widget _syncPanel(BuildContext ctx, AppStore store) {
     decoration: BoxDecoration(
       color: _sheetPanel,
       borderRadius: BorderRadius.zero,
-      border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+      border: Border.all(color: AppColors.line),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -209,7 +210,7 @@ Widget _syncPanel(BuildContext ctx, AppStore store) {
             Text(
               'المزامنة السحابية المباشرة',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.9),
+                color: AppColors.heading,
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
@@ -267,6 +268,7 @@ Widget _syncButton(
 }) {
   final allowed = store.can(push ? 'sync.push' : 'sync.pull');
   final on = count > 0 && allowed;
+  final idle = allowed ? AppColors.muted : AppColors.faint;
   return PressableScale(
     onTap: store.sync.isSyncing || !allowed
         ? null
@@ -278,19 +280,19 @@ Widget _syncButton(
       padding: const EdgeInsets.symmetric(vertical: 11),
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: on ? color : Colors.white.withValues(alpha: 0.05),
+        color: on ? color : Colors.white,
         borderRadius: BorderRadius.zero,
-        border: Border.all(color: on ? color : Colors.white.withValues(alpha: 0.10)),
+        border: Border.all(color: on ? color : AppColors.line),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 14, color: on ? Colors.white : Colors.white.withValues(alpha: 0.6)),
+          Icon(icon, size: 14, color: on ? Colors.white : idle),
           const SizedBox(width: 6),
           Text(
             label,
             style: TextStyle(
-              color: on ? Colors.white : Colors.white.withValues(alpha: 0.6),
+              color: on ? Colors.white : idle,
               fontSize: 12,
               fontWeight: FontWeight.w800,
             ),
@@ -299,7 +301,7 @@ Widget _syncButton(
           AnimatedCount(
             count,
             style: TextStyle(
-              color: on ? Colors.white : Colors.white.withValues(alpha: 0.6),
+              color: on ? Colors.white : idle,
               fontSize: 12,
               fontWeight: FontWeight.w900,
             ),
@@ -324,10 +326,10 @@ Widget _menuTile({
     child: Container(
       padding: const EdgeInsets.all(11),
       decoration: BoxDecoration(
-        color: danger ? const Color(0x1AF43F5E) : Colors.white.withValues(alpha: 0.05),
+        color: danger ? const Color(0xFFFEF2F2) : Colors.white,
         borderRadius: BorderRadius.zero,
         border: Border.all(
-          color: danger ? const Color(0x4DF43F5E) : Colors.white.withValues(alpha: 0.10),
+          color: danger ? AppColors.dangerBorder : AppColors.line,
         ),
       ),
       child: Row(
@@ -337,7 +339,7 @@ Widget _menuTile({
             height: 28,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: iconColor.withValues(alpha: 0.2),
+              color: iconColor.withValues(alpha: 0.10),
               borderRadius: BorderRadius.zero,
             ),
             child: Icon(icon, size: 15, color: iconColor),
@@ -347,7 +349,7 @@ Widget _menuTile({
             child: Text(
               label,
               style: TextStyle(
-                color: danger ? const Color(0xFFFDA4AF) : Colors.white,
+                color: danger ? AppColors.danger : AppColors.heading,
                 fontSize: 12,
                 fontWeight: danger ? FontWeight.w800 : FontWeight.w600,
               ),
@@ -356,7 +358,7 @@ Widget _menuTile({
           if (trailing != null)
             Text(
               trailing,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11),
+              style: const TextStyle(color: AppColors.faint, fontSize: 11),
             ),
         ],
       ),

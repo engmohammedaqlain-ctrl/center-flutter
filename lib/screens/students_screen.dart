@@ -120,9 +120,9 @@ class _StudentsScreenState extends State<StudentsScreen> {
 
 /// بطاقة الطالب — بعناصر `StudentMobileCard.tsx` في صفّ واحد.
 ///
-/// الصورة، ثم الاسم والمرحلة ووليّ الأمر، ثم الرصيد وتحته زرّا التواصل. نسخة
+/// الاسم والمرحلة ووليّ الأمر، ثم الرصيد وتحته زرّا التواصل. نسخة
 /// Center بصفّين كانت تُفرد سطراً كاملاً لثلاثة أزرار صغيرة وتترك جانبه فارغاً،
-/// فتطول البطاقة إلى ضعف ما يلزم. البطاقة كلها تفتح ملف الطالب، فلا حاجة لسهم.
+/// فتطول البطاقة إلى ضعف ما يلزم. البطاقة كلها تفتح ملف الطالب، وسهم خافت في طرفها يدلّ على ذلك.
 class _StudentCard extends StatelessWidget {
   const _StudentCard({required this.student});
   final Student student;
@@ -135,26 +135,12 @@ class _StudentCard extends StatelessWidget {
     final meta = student.section.trim().isEmpty ? grade : '$grade  ·  شعبة ${student.section.trim()}';
 
     return AppCard(
-      padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+      padding: const EdgeInsets.fromLTRB(6, 11, 12, 11),
       onTap: () {
         Navigator.of(context).push(MaterialPageRoute(builder: (_) => StudentDetailScreen(studentId: student.id)));
       },
       child: Row(
         children: [
-          Container(
-            width: 42,
-            height: 42,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: AppColors.amberSoft,
-              border: Border.all(color: AppColors.amberBorder),
-            ),
-            child: Text(
-              student.initial,
-              style: TextStyle(color: AppColors.amber, fontWeight: FontWeight.w800, fontSize: 15),
-            ),
-          ),
-          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -191,112 +177,51 @@ class _StudentCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (StoreScope.of(context).can('finance.view')) MoneyChip(balance: student.balance),
+              if (StoreScope.of(context).can('finance.view')) _BalanceText(balance: student.balance),
               if (phone.isNotEmpty) ...[
-                const SizedBox(height: 7),
+                const SizedBox(height: 2),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _ContactButton(
+                    ContactIconButton(
                       tooltip: 'اتصال هاتفي',
-                      background: const Color(0xFFF1F5F9),
-                      border: AppColors.lineStrong,
                       onTap: () => launchTel(phone),
-                      child: Icon(Icons.phone_outlined, size: 15, color: AppColors.navy),
+                      child: const Icon(Icons.phone_outlined, size: 18, color: AppColors.muted),
                     ),
-                    const SizedBox(width: 6),
-                    _ContactButton(
+                    ContactIconButton(
                       tooltip: 'مراسلة واتساب',
-                      background: AppColors.successSoft,
-                      border: const Color(0xFF86EFAC),
                       onTap: () => launchWa(phone),
-                      child: const _MessageCircleIcon(color: AppColors.success),
+                      child: const MessageCircleIcon(color: AppColors.success),
                     ),
                   ],
                 ),
               ],
             ],
           ),
+          const SizedBox(width: 2),
+          // إشارة هادئة بأن البطاقة تفتح صفحة الطالب — تتجه يساراً مع الاتجاه العربي
+          const Icon(Icons.chevron_right, size: 20, color: AppColors.faint),
         ],
       ),
     );
   }
 }
 
-/// زر تواصل مربّع صغير — مطابق لأزرار `w-7 h-7` في StudentMobileCard.
-class _ContactButton extends StatelessWidget {
-  const _ContactButton({
-    required this.tooltip,
-    required this.onTap,
-    required this.child,
-    this.background = Colors.transparent,
-    this.border = Colors.transparent,
-  });
-
-  final String tooltip;
-  final VoidCallback onTap;
-  final Widget child;
-  final Color background;
-  final Color border;
+/// الرصيد نصاً هادئاً بلونه — بلا شارة ولا خلفية تنافس الاسم.
+class _BalanceText extends StatelessWidget {
+  const _BalanceText({required this.balance});
+  final double balance;
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          width: 32,
-          height: 32,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(color: background, border: Border.all(color: border)),
-          child: child,
-        ),
-      ),
+    final (text, color) = balance == 0
+        ? ('خالص', AppColors.success)
+        : balance < 0
+            ? ('عليه ${money(balance)}', AppColors.danger)
+            : ('له ${money(balance)}', AppColors.info);
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(end: 6),
+      child: Text(text, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700)),
     );
   }
-}
-
-/// فقاعة محادثة دائرية بذيل — مطابقة لأيقونة `MessageCircle` من lucide التي
-/// يستعملها Center لزر واتساب، ولا مقابل لها في مكتبة Material.
-class _MessageCircleIcon extends StatelessWidget {
-  const _MessageCircleIcon({required this.color});
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(width: 16, height: 16, child: CustomPaint(painter: _MessageCirclePainter(color)));
-  }
-}
-
-class _MessageCirclePainter extends CustomPainter {
-  const _MessageCirclePainter(this.color);
-  final Color color;
-
-  static const _pi = 3.141592653589793;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    // الذيل في أسفل اليسار كما في الأيقونة الأصلية، ولا ينعكس مع الاتجاه
-    const tail = 3 * _pi / 4;
-    const gap = 0.36;
-    final rect = Rect.fromCircle(center: Offset(w * 0.54, h * 0.46), radius: w * 0.40);
-    final path = Path()
-      ..arcTo(rect, tail + gap, 2 * _pi - 2 * gap, true)
-      ..lineTo(w * 0.08, h * 0.92)
-      ..close();
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.6
-        ..strokeJoin = StrokeJoin.round,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_MessageCirclePainter old) => old.color != color;
 }

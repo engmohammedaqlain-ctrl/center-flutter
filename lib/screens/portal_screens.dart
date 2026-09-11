@@ -157,7 +157,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
   Widget build(BuildContext context) {
     final branding = data?.branding ?? const PortalBranding();
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: Colors.white,
       body: Column(
         children: [
           _PortalBar(branding: branding, user: widget.user, onExit: widget.onExit),
@@ -483,7 +483,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   Widget build(BuildContext context) {
     final branding = data?.branding ?? const PortalBranding();
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: Colors.white,
       body: Column(
         children: [
           _PortalBar(branding: branding, user: widget.user, onExit: widget.onExit),

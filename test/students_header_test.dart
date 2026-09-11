@@ -29,6 +29,9 @@ void main() {
     final search = tester.getRect(find.byType(SearchField));
     final filter = tester.getRect(find.byType(FilterButton));
     expect(filter.center.dy, closeTo(search.center.dy, 1), reason: 'في السطر نفسه');
+    // الحقلان متجاوران فيجب أن يتساوى ارتفاعهما، وإلا بدا أحدهما ناتئاً
+    final searchBox = tester.getRect(find.descendant(of: find.byType(SearchField), matching: find.byType(InputDecorator)));
+    expect(searchBox.height, closeTo(filter.height, 0.5), reason: 'ارتفاع حقل البحث = ارتفاع زر التصفية');
     expect(search.width, greaterThan(filter.width), reason: 'البحث يأخذ المساحة الأكبر');
 
     // العدد داخل حقل البحث لا في سطر مستقل
