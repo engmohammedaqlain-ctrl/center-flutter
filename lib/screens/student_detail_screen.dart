@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/widgets.dart';
 import 'payment_form_screen.dart';
 import 'receipt_screen.dart';
@@ -127,34 +128,32 @@ class StudentDetailScreen extends StatelessWidget {
           body: ListView(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
             children: [
-              // ── الوضع المالي السريع: الرصيد والمقبوضات متجاوران ──────────────
-              if (canFinance)
-                _Card(
-                  children: [
-                    IntrinsicHeight(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(
-                            child: _Stat(
-                              label: 'الرصيد المالي الحالي',
-                              value: student.isDebtor
-                                  ? 'عليه ${money(student.balance)}'
-                                  : student.balance > 0
-                                      ? 'له ${money(student.balance)}'
-                                      : 'مسدد بالكامل',
-                              color: student.isDebtor ? AppColors.danger : AppColors.success,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _Stat(label: 'إجمالي المقبوضات', value: money(totalPaid), color: AppColors.heading),
-                          ),
-                        ],
+              // ── الوضع المالي: بطاقتان مستقلتان متجاورتان، لا صندوقان داخل بطاقة ──
+              if (canFinance) ...[
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: _Stat(
+                          label: 'الرصيد المالي الحالي',
+                          value: student.isDebtor
+                              ? 'عليه ${money(student.balance)}'
+                              : student.balance > 0
+                                  ? 'له ${money(student.balance)}'
+                                  : 'مسدد بالكامل',
+                          color: student.isDebtor ? AppColors.danger : AppColors.success,
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _Stat(label: 'إجمالي المقبوضات', value: money(totalPaid), color: AppColors.heading),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(height: 10),
+              ],
 
               // ── بيانات الطالب والتواصل ─────────────────────────────────────
               _Card(
@@ -307,7 +306,7 @@ class StudentDetailScreen extends StatelessWidget {
                         foregroundColor: AppColors.danger,
                         backgroundColor: Colors.white,
                         side: const BorderSide(color: AppColors.dangerBorder),
-                        shape: const RoundedRectangleBorder(),
+                        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(Corner.field))),
                       ),
                       icon: const Icon(Icons.delete_outline, size: 18),
                       label: const Text('حذف الطالب', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
@@ -444,7 +443,7 @@ class _Strip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(color: AppColors.bg, border: Border.all(color: AppColors.line)),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.bg, border: Border.all(color: AppColors.line)),
       child: child,
     );
   }
@@ -452,12 +451,13 @@ class _Strip extends StatelessWidget {
 
 /// بلاطة عنصر متكرر: خلفية فاتحة وإطار رفيع.
 BoxDecoration _tile({bool white = false}) => BoxDecoration(
+      borderRadius: BorderRadius.circular(Corner.box),
       color: white ? Colors.white : AppColors.bg,
       border: Border.all(color: AppColors.line),
     );
 
 /// صندوق خانة واحدة: خلفية رمادية خفيفة وإطار رفيع، ومحتوى في المنتصف.
-BoxDecoration _cellBox() => BoxDecoration(color: AppColors.bg, border: Border.all(color: AppColors.line));
+BoxDecoration _cellBox() => BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.bg, border: Border.all(color: AppColors.line));
 
 /// رقم إحصائي في بطاقة المالية: صندوق، عنوان صغير فوق قيمة بارزة بلونها، في المنتصف.
 class _Stat extends StatelessWidget {
@@ -468,9 +468,8 @@ class _Stat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-      decoration: _cellBox(),
+    return AppCard(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -515,7 +514,7 @@ class _PortalCodeChip extends StatelessWidget {
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(color: AppColors.amberSoft, border: Border.all(color: AppColors.amberBorder)),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.amberSoft, border: Border.all(color: AppColors.amberBorder)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -901,7 +900,7 @@ class _TileButton extends StatelessWidget {
       child: Container(
         height: 26,
         padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(color: background, border: Border.all(color: border)),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: background, border: Border.all(color: border)),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1033,7 +1032,7 @@ class _Thumb extends StatelessWidget {
         context: context,
         builder: (ctx) => Dialog(
           insetPadding: const EdgeInsets.all(12),
-          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(Corner.dialog))),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1055,6 +1054,7 @@ class _Thumb extends StatelessWidget {
         children: [
           Container(
             height: 90,
+            clipBehavior: Clip.antiAlias,
             decoration: _tile(),
             child: Image.memory(bytes, fit: BoxFit.cover),
           ),

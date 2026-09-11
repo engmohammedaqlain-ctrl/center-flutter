@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/widgets.dart';
 
 /// نافذة «رصد درجات جديدة» — المقابل لـ `isRecordModalOpen` في Evaluations.tsx.
@@ -225,6 +226,7 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                                   horizontal: 10,
                                 ),
                                 decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(Corner.box),
                                   color: AppColors.bg,
                                   border: Border.all(color: AppColors.line),
                                 ),

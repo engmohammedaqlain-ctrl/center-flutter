@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import 'expense_form_sheet.dart';
@@ -113,7 +114,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
               Container(
                 margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
                 padding: const EdgeInsets.fromLTRB(6, 4, 6, 0),
-                decoration: BoxDecoration(color: Colors.white, border: Border.all(color: AppColors.line)),
+                decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: Colors.white, border: Border.all(color: AppColors.line)),
                 child: Row(
                   children: [
                     Expanded(child: _tab('المقبوضات', Icons.receipt_long, 0, '${store.payments.length}', false)),
@@ -344,6 +345,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(Corner.box),
                   color: AppColors.dangerSoft,
                   border: Border.all(color: AppColors.dangerBorder),
                 ),
@@ -429,7 +431,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 6),
-        decoration: BoxDecoration(color: Colors.white, border: Border.all(color: AppColors.line)),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: Colors.white, border: Border.all(color: AppColors.line)),
         child: Column(
           children: [
             Text('$value', style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 14)),

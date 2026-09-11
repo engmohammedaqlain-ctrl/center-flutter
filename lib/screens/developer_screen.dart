@@ -4,6 +4,7 @@ import '../data/store.dart';
 import '../data/tenant_service.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/widgets.dart';
 
 /// بوابة المطور والاشتراكات — المقابل لـ `pages/DeveloperDashboardPage.tsx`.
@@ -76,6 +77,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                           margin: const EdgeInsets.only(bottom: 8),
                           padding: const EdgeInsets.all(9),
                           decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(Corner.box),
                             color: AppColors.amberSoft,
                             border: Border.all(color: AppColors.amberBorder),
                           ),
@@ -165,7 +167,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
           Container(
             width: 32,
             height: 32,
-            decoration: BoxDecoration(color: AppColors.amberSoft, border: Border.all(color: AppColors.amber)),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.amberSoft, border: Border.all(color: AppColors.amber)),
             child: Icon(Icons.tune, color: AppColors.navy, size: 18),
           ),
           const SizedBox(width: 8),
@@ -193,6 +195,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
               height: 32,
               padding: const EdgeInsets.symmetric(horizontal: 8),
               decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(Corner.box),
                 color: const Color(0xFF4C0519).withValues(alpha: 0.6),
                 border: Border.all(color: const Color(0xFFF43F5E).withValues(alpha: 0.4)),
               ),
@@ -253,7 +256,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) {
           final n = int.tryParse(months.text.trim()) ?? 0;
@@ -288,7 +291,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                 const SizedBox(height: 10),
                 Container(
                   padding: const EdgeInsets.all(9),
-                  decoration: BoxDecoration(color: AppColors.bg, border: Border.all(color: AppColors.line)),
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.bg, border: Border.all(color: AppColors.line)),
                   child: Text(
                     n <= 0 ? 'أدخل عدد أشهر صحيحاً' : 'تاريخ الانتهاء الجديد: ${formatDate(preview)}',
                     style: TextStyle(
@@ -338,7 +341,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) => Padding(
           padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
@@ -422,7 +425,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) => Padding(
           padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),

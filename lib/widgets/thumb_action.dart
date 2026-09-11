@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import 'animated_count.dart';
 
 /// المسافة التي تتركها القوائم أسفلها كي لا يغطي زر الإبهام آخر بطاقة.
@@ -103,7 +104,7 @@ class _ThumbButton extends StatelessWidget {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: color,
-            borderRadius: BorderRadius.zero,
+            borderRadius: BorderRadius.circular(Corner.box),
             boxShadow: enabled
                 ? [
                     BoxShadow(

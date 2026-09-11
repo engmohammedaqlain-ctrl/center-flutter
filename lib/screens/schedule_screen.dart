@@ -5,6 +5,7 @@ import '../data/printing.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/widgets.dart';
 
 /// الجداول والمجموعات — المقابل لـ `pages/Schedule.tsx` وملفات `features/schedule`.
@@ -53,7 +54,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             Container(
               margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
               padding: const EdgeInsets.fromLTRB(6, 4, 6, 0),
-              decoration: BoxDecoration(color: Colors.white, border: Border.all(color: AppColors.line)),
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: Colors.white, border: Border.all(color: AppColors.line)),
               child: Row(
                 children: [
                   Expanded(child: _tab('المجموعات', Icons.groups_2_outlined, 0, '${store.groups.length}')),
@@ -238,7 +239,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) => Padding(
           padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
@@ -300,6 +301,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(Corner.box),
                             color: days.contains(d) ? AppColors.amber : Colors.white,
                             border: Border.all(color: days.contains(d) ? AppColors.amber : AppColors.line),
                           ),
@@ -436,7 +438,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) {
           final enrolled = store.enrollmentsInGroup(group.id);
@@ -550,7 +552,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                           margin: const EdgeInsets.only(bottom: 4),
-                          decoration: BoxDecoration(color: AppColors.bg, border: Border.all(color: AppColors.line)),
+                          decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.bg, border: Border.all(color: AppColors.line)),
                           child: Row(
                             children: [
                               Expanded(
@@ -602,7 +604,7 @@ class _TimeField extends StatelessWidget {
         height: 40,
         padding: const EdgeInsets.symmetric(horizontal: 10),
         alignment: Alignment.centerRight,
-        decoration: BoxDecoration(color: Colors.white, border: Border.all(color: AppColors.lineStrong)),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: Colors.white, border: Border.all(color: AppColors.lineStrong)),
         child: Row(
           children: [
             const Icon(Icons.schedule, size: 14, color: AppColors.muted),
@@ -882,7 +884,7 @@ class StudentGroupsCard extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) => Padding(
           padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),

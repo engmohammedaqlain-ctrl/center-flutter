@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/store.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/widgets.dart';
 import 'attendance_screen.dart';
@@ -155,7 +156,7 @@ class _Header extends StatelessWidget {
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.zero,
+                borderRadius: BorderRadius.circular(Corner.box),
                 border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
               ),
               child: const Icon(Icons.more_vert, size: 17, color: Colors.white),
@@ -214,7 +215,7 @@ class _SyncPill extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 9),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.zero,
+          borderRadius: BorderRadius.circular(Corner.box),
           border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
         ),
         child: Row(
@@ -258,7 +259,7 @@ class _SyncPill extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 11),
           decoration: BoxDecoration(
             color: color,
-            borderRadius: BorderRadius.zero,
+            borderRadius: BorderRadius.circular(Corner.box),
             boxShadow: [
               BoxShadow(color: color.withValues(alpha: 0.35), blurRadius: 8, offset: const Offset(0, 2)),
             ],
@@ -361,7 +362,7 @@ class _NavItem extends StatelessWidget {
               width: active ? 34 : 0,
               decoration: BoxDecoration(
                 color: AppColors.accent,
-                borderRadius: BorderRadius.zero,
+                borderRadius: BorderRadius.circular(Corner.box),
               ),
             ),
             Column(
@@ -377,7 +378,7 @@ class _NavItem extends StatelessWidget {
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: active ? AppColors.amberSoft : Colors.transparent,
-                        borderRadius: BorderRadius.zero,
+                        borderRadius: BorderRadius.circular(Corner.box),
                       ),
                       child: Icon(
                         active ? section.activeIcon : section.icon,
@@ -396,7 +397,7 @@ class _NavItem extends StatelessWidget {
                             constraints: const BoxConstraints(minWidth: 15),
                             decoration: BoxDecoration(
                               color: AppColors.danger,
-                              borderRadius: BorderRadius.zero,
+                              borderRadius: BorderRadius.circular(Corner.box),
                               border: Border.all(color: Colors.white, width: 1.2),
                             ),
                             child: Text(

@@ -60,6 +60,7 @@ class _PortalBar extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 10),
               alignment: Alignment.center,
               decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(Corner.box),
                 color: Colors.white.withValues(alpha: 0.12),
                 border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
               ),
@@ -407,7 +408,7 @@ Widget _statusChip(String status) => switch (status) {
 Widget _announcement(ClassAnnouncement a) => Container(
       margin: const EdgeInsets.only(bottom: 9),
       padding: const EdgeInsets.all(11),
-      decoration: BoxDecoration(color: AppColors.bg, border: Border.all(color: AppColors.line)),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.bg, border: Border.all(color: AppColors.line)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -637,6 +638,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                                   padding: const EdgeInsets.symmetric(horizontal: 12),
                                   alignment: Alignment.center,
                                   decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(Corner.box),
                                     color: on ? AppColors.success : AppColors.dangerSoft,
                                     border: Border.all(color: on ? AppColors.success : AppColors.dangerBorder),
                                   ),

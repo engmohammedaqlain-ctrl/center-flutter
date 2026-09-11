@@ -41,16 +41,27 @@ abstract final class Gap {
   static const screen = EdgeInsets.symmetric(horizontal: 14);
 }
 
-/// نصف قطر الزوايا — صفر في كل مكان، تماماً كنظام التصميم في Center
-/// (`borderRadius: 0` لكل المقاسات في tailwind.config.ts).
+/// نصف قطر الزوايا — تدوير هادئ بقدر العنصر: عصري دون أن يفقد الطابع الرسمي.
 ///
-/// الحداثة هنا من المسافة والتباين والظل الخفيف، لا من تدوير الحواف:
-/// الحافة المستقيمة هوية النظام الإداري وتُبقي الجداول والبطاقات متراصّة.
+/// كل زاوية في التطبيق تُؤخذ من هنا، فلا أرقام متناثرة في الشاشات.
 abstract final class Corner {
-  static const card = 0.0;
-  static const field = 0.0;
-  static const chip = 0.0;
-  static const sheet = 0.0;
+  /// الشارات وحبوب الحالة الصغيرة.
+  static const chip = 4.0;
+
+  /// الحقول والأزرار.
+  static const field = 6.0;
+
+  /// الصناديق الداخلية والبلاطات داخل البطاقات.
+  static const box = 6.0;
+
+  /// البطاقات.
+  static const card = 8.0;
+
+  /// النوافذ الحوارية.
+  static const dialog = 12.0;
+
+  /// الحافة العلوية للأوراق السفلية.
+  static const sheet = 16.0;
 }
 
 /// ظل خفيف يفصل البطاقة عن الخلفية بلا ثقل — بديل التدوير في إعطاء العمق.
@@ -100,6 +111,11 @@ abstract final class AppTheme {
         border: border(),
         enabledBorder: border(),
         focusedBorder: border(AppColors.amber, 1.4),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Corner.dialog)),
       ),
       popupMenuTheme: PopupMenuThemeData(
         color: Colors.white,

@@ -8,6 +8,7 @@ import '../data/phone.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/widgets.dart';
 
 class StudentFormScreen extends StatefulWidget {
@@ -936,6 +937,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(Corner.box),
           color: on ? AppColors.amberSoft : Colors.white,
           border: Border.all(color: on ? AppColors.amber : AppColors.line),
         ),
@@ -982,6 +984,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
         height: 44,
         alignment: Alignment.center,
         decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(Corner.box),
           color: on ? color : Colors.white,
           border: Border.all(color: on ? color : AppColors.line),
         ),
@@ -1056,7 +1059,9 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
       onTap: data.isEmpty ? pick : null,
       child: Container(
         height: 96,
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(Corner.box),
           color: AppColors.bg,
           border: Border.all(color: data.isEmpty ? AppColors.line : AppColors.amberBorder),
         ),
@@ -1128,7 +1133,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setSt) {

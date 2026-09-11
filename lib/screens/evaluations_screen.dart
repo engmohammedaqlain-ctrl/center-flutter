@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import 'evaluation_form_sheet.dart';
@@ -180,7 +181,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-        decoration: BoxDecoration(color: Colors.white, border: Border.all(color: AppColors.line)),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: Colors.white, border: Border.all(color: AppColors.line)),
         child: Column(
           children: [
             Text(

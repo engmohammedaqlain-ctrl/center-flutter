@@ -26,8 +26,7 @@ Future<T?> _lightSheet<T>(BuildContext context, WidgetBuilder builder) {
     builder: (ctx) => Container(
       decoration: BoxDecoration(
         color: _sheetBg,
-        border: const Border(top: BorderSide(color: AppColors.line)),
-        borderRadius: BorderRadius.zero,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(Corner.sheet)),
       ),
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
       child: SafeArea(
@@ -44,7 +43,7 @@ Future<T?> _lightSheet<T>(BuildContext context, WidgetBuilder builder) {
                   height: 4,
                   decoration: const BoxDecoration(
                     color: AppColors.lineStrong,
-                    borderRadius: BorderRadius.zero,
+                    borderRadius: BorderRadius.all(Radius.circular(2)),
                   ),
                 ),
                 Flexible(child: builder(ctx)),
@@ -103,7 +102,7 @@ Future<void> showActionSheet(BuildContext context, AppStore store) {
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.zero,
+                        borderRadius: BorderRadius.circular(Corner.box),
                         border: Border.all(color: AppColors.line),
                       ),
                       child: const Icon(Icons.close, size: 16, color: AppColors.muted),
@@ -178,7 +177,7 @@ Widget _identityChip({required bool isAdmin, required String name}) {
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
     decoration: BoxDecoration(
       color: bg,
-      borderRadius: BorderRadius.zero,
+      borderRadius: BorderRadius.circular(Corner.box),
       border: Border.all(color: border),
     ),
     child: Row(
@@ -197,7 +196,7 @@ Widget _syncPanel(BuildContext ctx, AppStore store) {
     padding: const EdgeInsets.all(13),
     decoration: BoxDecoration(
       color: _sheetPanel,
-      borderRadius: BorderRadius.zero,
+      borderRadius: BorderRadius.circular(Corner.box),
       border: Border.all(color: AppColors.line),
     ),
     child: Column(
@@ -281,7 +280,7 @@ Widget _syncButton(
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: on ? color : Colors.white,
-        borderRadius: BorderRadius.zero,
+        borderRadius: BorderRadius.circular(Corner.box),
         border: Border.all(color: on ? color : AppColors.line),
       ),
       child: Row(
@@ -327,7 +326,7 @@ Widget _menuTile({
       padding: const EdgeInsets.all(11),
       decoration: BoxDecoration(
         color: danger ? const Color(0xFFFEF2F2) : Colors.white,
-        borderRadius: BorderRadius.zero,
+        borderRadius: BorderRadius.circular(Corner.box),
         border: Border.all(
           color: danger ? AppColors.dangerBorder : AppColors.line,
         ),
@@ -340,7 +339,7 @@ Widget _menuTile({
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: iconColor.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.zero,
+              borderRadius: BorderRadius.circular(Corner.box),
             ),
             child: Icon(icon, size: 15, color: iconColor),
           ),
@@ -471,7 +470,11 @@ class _SyncConfirmState extends State<_SyncConfirm> {
     final done = result != null && result!.success;
 
     return Container(
-      decoration: const BoxDecoration(color: Colors.white),
+      clipBehavior: Clip.antiAlias,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet)),
+      ),
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: SafeArea(
         top: false,

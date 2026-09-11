@@ -6,6 +6,7 @@ import '../data/printing.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/widgets.dart';
 
 /// سند القبض — المقابل لـ `features/finance/ReceiptModal.tsx`.
@@ -46,7 +47,7 @@ class ReceiptScreen {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (_) => _ReceiptSheet(payment: payment),
     );
   }
@@ -70,7 +71,7 @@ class _ReceiptSheet extends StatelessWidget {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(border: Border.all(color: AppColors.navy, width: 1.4)),
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), border: Border.all(color: AppColors.navy, width: 1.4)),
               child: Column(
                 children: [
                   Row(
@@ -209,7 +210,7 @@ class _ReceiptSheet extends StatelessWidget {
     Widget cell(String label, String value, {Color? color}) => Expanded(
           child: Container(
             padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-            decoration: BoxDecoration(color: AppColors.bg, border: Border.all(color: AppColors.line)),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.bg, border: Border.all(color: AppColors.line)),
             child: Column(
               children: [
                 Text(label, style: const TextStyle(fontSize: 9.5, color: AppColors.muted)),

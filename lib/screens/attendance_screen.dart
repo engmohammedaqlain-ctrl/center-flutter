@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
@@ -271,7 +272,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.zero,
+          borderRadius: BorderRadius.circular(Corner.box),
           border: Border.all(color: AppColors.line),
         ),
         child: Icon(icon, size: 17, color: AppColors.heading),
@@ -380,7 +381,7 @@ class _DayChip extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: bg,
-          borderRadius: BorderRadius.zero,
+          borderRadius: BorderRadius.circular(Corner.box),
           border: Border.all(color: border),
           boxShadow: selected
               ? [BoxShadow(color: AppColors.amber.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 2))]
@@ -577,7 +578,7 @@ class _StudentRowState extends State<_StudentRow> {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: on ? fg : softBg,
-          borderRadius: BorderRadius.zero,
+          borderRadius: BorderRadius.circular(Corner.box),
           border: Border.all(color: on ? fg : softBorder),
           boxShadow: on ? [BoxShadow(color: fg.withValues(alpha: 0.3), blurRadius: 7, offset: const Offset(0, 2))] : null,
         ),

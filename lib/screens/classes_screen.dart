@@ -146,7 +146,7 @@ class _ClassesScreenState extends State<ClassesScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (ctx) {
         return Padding(
           padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
@@ -237,7 +237,7 @@ class _ClassesScreenState extends State<ClassesScreen> {
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (ctx) {
         return Padding(
           padding: const EdgeInsets.all(16),

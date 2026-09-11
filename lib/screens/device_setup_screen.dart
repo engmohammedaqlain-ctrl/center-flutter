@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/widgets.dart';
 
 /// تهيئة الجهاز الجديد — المقابل لـ `NewDeviceSetupModal` في النسخة المكتبية.
@@ -127,6 +128,7 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
               constraints: const BoxConstraints(maxWidth: 440),
               child: Container(
                 decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(Corner.box),
                   color: Colors.white,
                   border: Border.all(color: AppColors.lineStrong),
                 ),
@@ -168,6 +170,7 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
             height: 40,
             alignment: Alignment.center,
             decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(Corner.box),
               color: AppColors.amberSoft,
               border: Border.all(color: AppColors.amberBorder),
             ),
@@ -195,6 +198,7 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(Corner.box),
               color: AppColors.amberSoft,
               border: Border.all(color: AppColors.amberBorder),
             ),
@@ -217,6 +221,7 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
           height: 56,
           alignment: Alignment.center,
           decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(Corner.box),
             color: AppColors.amberSoft,
             border: Border.all(color: AppColors.amberBorder),
           ),
@@ -251,6 +256,7 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
           height: 52,
           alignment: Alignment.center,
           decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(Corner.box),
             color: AppColors.dangerSoft,
             border: Border.all(color: AppColors.dangerBorder),
           ),
@@ -302,6 +308,7 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(Corner.box),
             color: offline ? AppColors.amberSoft : AppColors.successSoft,
             border: Border.all(color: offline ? AppColors.amberBorder : AppColors.successBorder),
           ),

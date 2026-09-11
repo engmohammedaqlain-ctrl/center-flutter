@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/widgets.dart';
 import 'receipt_screen.dart';
 
@@ -155,7 +156,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                           const SizedBox(height: 8),
                           Container(
                             constraints: const BoxConstraints(maxHeight: 220),
-                            decoration: BoxDecoration(border: Border.all(color: AppColors.line)),
+                            decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), border: Border.all(color: AppColors.line)),
                             child: unpaid.isEmpty
                                 ? const Padding(
                                     padding: EdgeInsets.all(12),

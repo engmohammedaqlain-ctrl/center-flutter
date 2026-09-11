@@ -7,6 +7,7 @@ import '../data/store.dart';
 import '../data/sync.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/widgets.dart';
 import 'developer_settings_screen.dart';
 
@@ -70,7 +71,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       children: [
         Container(
           margin: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-          decoration: BoxDecoration(color: Colors.white, border: Border.all(color: AppColors.line)),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: Colors.white, border: Border.all(color: AppColors.line)),
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -350,7 +351,7 @@ class _FeesTabState extends State<_FeesTab> {
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (ctx) {
         return Padding(
           padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
@@ -391,7 +392,7 @@ class _FeesTabState extends State<_FeesTab> {
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (ctx) {
         return Padding(
           padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
@@ -548,7 +549,7 @@ class _TeachersTabState extends State<_TeachersTab> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (ctx) {
         return Padding(
           padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
@@ -627,7 +628,7 @@ class _TeachersTabState extends State<_TeachersTab> {
                       onTap: () => setSt(() => salaryOpen = !salaryOpen),
                       child: Container(
                         padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(color: AppColors.bg, border: Border.all(color: AppColors.line)),
+                        decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.bg, border: Border.all(color: AppColors.line)),
                         child: Row(
                           children: [
                             Icon(Icons.payments_outlined, size: 16, color: AppColors.amber),
@@ -669,6 +670,7 @@ class _TeachersTabState extends State<_TeachersTab> {
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                               decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(Corner.box),
                                 color: subjectIds.contains(s.id) ? AppColors.amber : Colors.white,
                                 border: Border.all(color: subjectIds.contains(s.id) ? AppColors.amber : AppColors.line),
                               ),
@@ -838,7 +840,7 @@ class _SubjectsTabState extends State<_SubjectsTab> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (ctx) {
         return Padding(
           padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
@@ -1008,7 +1010,7 @@ class _UsersTab extends StatelessWidget {
       await showModalBottomSheet<void>(
         context: context,
         backgroundColor: Colors.white,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
         builder: (ctx) {
           return Padding(
             padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
@@ -1057,7 +1059,7 @@ class _UsersTab extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (ctx) {
         return Padding(
           padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.paddingOf(ctx).bottom),
@@ -1122,7 +1124,7 @@ class _UsersTab extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (ctx) {
         return Padding(
           padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
@@ -1306,7 +1308,7 @@ class _BackupTab extends StatelessWidget {
                       for (final e in counts.entries)
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          decoration: BoxDecoration(color: AppColors.bg, border: Border.all(color: AppColors.line)),
+                          decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.bg, border: Border.all(color: AppColors.line)),
                           child: Column(
                             children: [
                               Text('${e.value}', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
@@ -1498,7 +1500,7 @@ class _RoomsTab extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (ctx) => Padding(
         padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
         child: Column(

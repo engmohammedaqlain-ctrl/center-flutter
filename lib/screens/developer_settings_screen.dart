@@ -10,6 +10,7 @@ import '../data/store.dart';
 import '../data/supabase.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/widgets.dart';
 
 /// إعدادات المطور — المقابل لـ `features/settings/DeveloperSettings.tsx`.
@@ -167,6 +168,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
                 margin: const EdgeInsets.only(bottom: 6),
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(Corner.box),
                   color: type == e.key ? AppColors.amberSoft : Colors.white,
                   border: Border.all(color: type == e.key ? AppColors.amber : AppColors.line),
                 ),
@@ -273,6 +275,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
                       width: 34,
                       height: 34,
                       decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(Corner.box),
                         color: parseHexColor(s.$2) ?? Colors.white,
                         border: Border.all(color: AppColors.lineStrong),
                       ),
@@ -303,7 +306,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
                   onTap: () => setState(() => colors = preset.$2),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    decoration: BoxDecoration(color: Colors.white, border: Border.all(color: AppColors.line)),
+                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: Colors.white, border: Border.all(color: AppColors.line)),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -393,6 +396,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(Corner.box),
         color: AppColors.bg,
         border: Border.all(color: AppColors.line),
       ),
@@ -477,7 +481,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
           Container(
             padding: const EdgeInsets.all(10),
             margin: const EdgeInsets.only(bottom: 8),
-            decoration: BoxDecoration(color: AppColors.bg, border: Border.all(color: AppColors.line)),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.bg, border: Border.all(color: AppColors.line)),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -507,7 +511,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
           ),
           Container(
             padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: AppColors.dangerSoft, border: Border.all(color: AppColors.dangerBorder)),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.dangerSoft, border: Border.all(color: AppColors.dangerBorder)),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -590,7 +594,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
     final picked = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(Corner.dialog))),
         title: const Text('لون مخصص', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
         content: TextField(
           controller: ctrl,

@@ -206,7 +206,7 @@ class FilterButton extends StatelessWidget {
       tooltip: 'تصفية',
       position: PopupMenuPosition.under,
       color: Colors.white,
-      shape: const RoundedRectangleBorder(),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(Corner.field))),
       onSelected: onSelected,
       itemBuilder: (_) => [
         for (final e in options.entries)
@@ -237,6 +237,7 @@ class FilterButton extends StatelessWidget {
         constraints: BoxConstraints(maxWidth: maxWidth),
         padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(Corner.box),
           color: active ? AppColors.amberSoft : Colors.white,
           border: Border.all(color: active ? AppColors.amberBorder : AppColors.line),
         ),
@@ -439,6 +440,7 @@ class NoAccess extends StatelessWidget {
               height: 48,
               alignment: Alignment.center,
               decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(Corner.box),
                 color: AppColors.amberSoft,
                 border: Border.all(color: AppColors.amberBorder),
               ),
@@ -568,6 +570,7 @@ class SquareIconButton extends StatelessWidget {
         width: 28,
         height: 28,
         decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(Corner.box),
           color: bg ?? const Color(0xFFF1F5F9),
           border: Border.all(color: border ?? AppColors.lineStrong),
         ),
