@@ -90,6 +90,7 @@ abstract final class AppTheme {
         onSecondary: Colors.white,
         surface: AppColors.surface,
         onSurface: AppColors.text,
+        error: AppColors.danger,
       ),
       textTheme: base.apply(bodyColor: AppColors.text, displayColor: AppColors.heading),
       appBarTheme: AppBarTheme(
@@ -111,6 +112,11 @@ abstract final class AppTheme {
         border: border(),
         enabledBorder: border(),
         focusedBorder: border(AppColors.amber, 1.4),
+        // الحقل الناقص يُلوَّن نفسه وتظهر رسالته تحته
+        errorBorder: border(AppColors.danger),
+        focusedErrorBorder: border(AppColors.danger, 1.4),
+        errorStyle: const TextStyle(color: AppColors.danger, fontSize: 11.5, fontWeight: FontWeight.w600, height: 1.3),
+        errorMaxLines: 2,
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: Colors.white,

@@ -8,6 +8,7 @@ import '../data/sync.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
 import 'developer_settings_screen.dart';
 
@@ -177,6 +178,7 @@ class _FeesTabState extends State<_FeesTab> {
   final fee = TextEditingController();
   final section = TextEditingController();
   String tier = 'secondary';
+  final addErrors = FieldErrors();
 
   @override
   void dispose() {
@@ -226,8 +228,14 @@ class _FeesTabState extends State<_FeesTab> {
                         IconButton(icon: const Icon(Icons.close, size: 16), onPressed: () => setState(() => adding = false)),
                       ],
                     ),
-                    const FieldLabel('اسم المرحلة أو الصف الدراسي', requiredField: true),
-                    TextField(controller: name, decoration: const InputDecoration(hintText: 'مثال: الصف الثاني عشر...')),
+                    FieldLabel('اسم المرحلة أو الصف الدراسي', key: addErrors.key('name'), requiredField: true),
+                    TextField(
+                      controller: name,
+                      onChanged: (_) {
+                        if (addErrors.clear('name')) setState(() {});
+                      },
+                      decoration: InputDecoration(hintText: 'مثال: الصف الثاني عشر...', errorText: addErrors['name']),
+                    ),
                     const SizedBox(height: 8),
                     const FieldLabel('المرحلة التعليمية الكبرى', requiredField: true),
                     AppDropdown<String>(
@@ -236,8 +244,15 @@ class _FeesTabState extends State<_FeesTab> {
                       onChanged: (v) => setState(() => tier = v ?? tier),
                     ),
                     const SizedBox(height: 8),
-                    const FieldLabel('الرسوم الشهرية المعتمدة (₪)', requiredField: true),
-                    TextField(controller: fee, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: 'مثال: 200')),
+                    FieldLabel('الرسوم الشهرية المعتمدة (₪)', key: addErrors.key('fee'), requiredField: true),
+                    TextField(
+                      controller: fee,
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) {
+                        if (addErrors.clear('fee')) setState(() {});
+                      },
+                      decoration: InputDecoration(hintText: 'مثال: 200', errorText: addErrors['fee']),
+                    ),
                     const SizedBox(height: 8),
                     const FieldLabel('الشعبة الأولى (اختياري)'),
                     TextField(controller: section, decoration: const InputDecoration(hintText: 'مثال: الشعبة (أ)')),
@@ -250,6 +265,14 @@ class _FeesTabState extends State<_FeesTab> {
                           child: PrimaryButton(
                             label: 'حفظ المرحلة وإدراجها',
                             onPressed: () {
+                              final feeValue = double.tryParse(fee.text.trim());
+                              setState(() {
+                                addErrors
+                                  ..reset()
+                                  ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المرحلة أو الصف')
+                                  ..check('fee', feeValue == null || feeValue < 0, 'يرجى إدخال رسم شهري صحيح');
+                              });
+                              if (addErrors.report(context)) return;
                               try {
                                 store.addGradeFee(
                                   GradeFee(
@@ -348,12 +371,14 @@ class _FeesTabState extends State<_FeesTab> {
   Future<void> _quickSection(BuildContext context, String gradeName, String tier) async {
     final store = StoreScope.of(context);
     final ctl = TextEditingController();
+    final errors = FieldErrors();
     await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
-      builder: (ctx) {
-        return Padding(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => Padding(
           padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -361,26 +386,38 @@ class _FeesTabState extends State<_FeesTab> {
             children: [
               Text('إضافة شعبة لمرحلة: $gradeName', style: const TextStyle(fontWeight: FontWeight.w800)),
               const SizedBox(height: 8),
-              const FieldLabel('اسم الشعبة', requiredField: true),
-              TextField(controller: ctl, decoration: const InputDecoration(hintText: 'مثال: الشعبة (ب)')),
+              FieldLabel('اسم الشعبة', key: errors.key('name'), requiredField: true),
+              TextField(
+                controller: ctl,
+                onChanged: (_) {
+                  if (errors.clear('name')) setSt(() {});
+                },
+                decoration: InputDecoration(hintText: 'مثال: الشعبة (ب)', errorText: errors['name']),
+              ),
               const SizedBox(height: 10),
               PrimaryButton(
                 expand: true,
                 label: 'حفظ الشعبة',
                 onPressed: () {
+                  setSt(() {
+                    errors
+                      ..reset()
+                      ..check('name', ctl.text.trim().isEmpty, 'يرجى إدخال اسم الشعبة');
+                  });
+                  if (errors.report(ctx)) return;
                   try {
                     store.upsertRoom(Classroom(id: store.newId(), name: ctl.text.trim(), gradeLevel: gradeName, teacherId: '', capacity: 25, tier: tier));
                     Navigator.pop(ctx);
                     showAppSnack(context, 'تم إضافة الشعبة "${ctl.text.trim()}" إلى مرحلة $gradeName');
                   } on StoreException catch (e) {
-                    showAppSnack(context, e.message, error: true);
+                    showAppSnack(ctx, e.message, error: true);
                   }
                 },
               ),
             ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -389,6 +426,7 @@ class _FeesTabState extends State<_FeesTab> {
     final name = TextEditingController(text: f.gradeName);
     final fee = TextEditingController(text: f.monthlyFee.toStringAsFixed(0));
     var tier = educationalStageTiers.containsKey(f.tier) ? f.tier : 'secondary';
+    final errors = FieldErrors();
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.white,
@@ -404,8 +442,14 @@ class _FeesTabState extends State<_FeesTab> {
                 children: [
                   Text('تعديل مرحلة ${f.gradeName}', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
                   const SizedBox(height: 10),
-                  const FieldLabel('اسم المرحلة الدراسية', requiredField: true),
-                  TextField(controller: name),
+                  FieldLabel('اسم المرحلة الدراسية', key: errors.key('name'), requiredField: true),
+                  TextField(
+                    controller: name,
+                    onChanged: (_) {
+                      if (errors.clear('name')) setSt(() {});
+                    },
+                    decoration: InputDecoration(errorText: errors['name']),
+                  ),
                   const SizedBox(height: 8),
                   const FieldLabel('المرحلة التعليمية الكبرى'),
                   AppDropdown<String>(
@@ -414,15 +458,30 @@ class _FeesTabState extends State<_FeesTab> {
                     onChanged: (v) => setSt(() => tier = v ?? tier),
                   ),
                   const SizedBox(height: 8),
-                  const FieldLabel('الرسم الشهري (₪)', requiredField: true),
-                  TextField(controller: fee, keyboardType: TextInputType.number),
+                  FieldLabel('الرسم الشهري (₪)', key: errors.key('fee'), requiredField: true),
+                  TextField(
+                    controller: fee,
+                    keyboardType: TextInputType.number,
+                    onChanged: (_) {
+                      if (errors.clear('fee')) setSt(() {});
+                    },
+                    decoration: InputDecoration(errorText: errors['fee']),
+                  ),
                   const SizedBox(height: 12),
                   PrimaryButton(
                     expand: true,
                     label: 'حفظ',
                     onPressed: () {
+                      final feeValue = double.tryParse(fee.text.trim());
+                      setSt(() {
+                        errors
+                          ..reset()
+                          ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المرحلة الدراسية')
+                          ..check('fee', feeValue == null || feeValue < 0, 'يرجى إدخال رسم شهري صحيح');
+                      });
+                      if (errors.report(ctx)) return;
                       try {
-                        store.updateGradeFee(GradeFee(id: f.id, gradeName: name.text.trim(), monthlyFee: double.tryParse(fee.text) ?? f.monthlyFee, tier: tier, orderIndex: f.orderIndex, isCustom: f.isCustom));
+                        store.updateGradeFee(GradeFee(id: f.id, gradeName: name.text.trim(), monthlyFee: feeValue ?? f.monthlyFee, tier: tier, orderIndex: f.orderIndex, isCustom: f.isCustom));
                         Navigator.pop(ctx);
                       } on StoreException catch (e) {
                         showAppSnack(context, e.message, error: true);
@@ -541,6 +600,7 @@ class _TeachersTabState extends State<_TeachersTab> {
     var prefix = parsed.prefix;
     var paymentType = teacherPaymentTypes.containsKey(t?.paymentType) ? t!.paymentType : 'percentage';
     var salaryOpen = false;
+    final errors = FieldErrors();
     final subjectIds = [...?t?.subjectIds];
     if (subjectIds.isEmpty && (t?.subject ?? '').isNotEmpty) {
       subjectIds.addAll(store.subjects.where((s) => s.name == t!.subject).map((s) => s.id));
@@ -562,10 +622,16 @@ class _TeachersTabState extends State<_TeachersTab> {
                   children: [
                     Text(t == null ? 'إضافة مدرس جديد' : 'تعديل بيانات: ${t.name}', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
                     const SizedBox(height: 10),
-                    const FieldLabel('اسم المدرس', requiredField: true),
-                    TextField(controller: name, decoration: const InputDecoration(hintText: 'مثال: أ. محمد العلي')),
+                    FieldLabel('اسم المدرس', key: errors.key('name'), requiredField: true),
+                    TextField(
+                      controller: name,
+                      onChanged: (_) {
+                        if (errors.clear('name')) setSt(() {});
+                      },
+                      decoration: InputDecoration(hintText: 'مثال: أ. محمد العلي', errorText: errors['name']),
+                    ),
                     const SizedBox(height: 8),
-                    const FieldLabel('رقم الهاتف (بالمقدمة)', requiredField: true),
+                    FieldLabel('رقم الهاتف (بالمقدمة)', key: errors.key('phone'), requiredField: true),
                     Row(
                       children: [
                         SizedBox(
@@ -583,22 +649,33 @@ class _TeachersTabState extends State<_TeachersTab> {
                         Expanded(
                           child: Directionality(
                             textDirection: TextDirection.ltr,
-                            child: TextField(controller: phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(hintText: 'xxxxxxx')),
+                            child: TextField(
+                              controller: phone,
+                              keyboardType: TextInputType.phone,
+                              onChanged: (_) {
+                                if (errors.clear('phone')) setSt(() {});
+                              },
+                              decoration: const InputDecoration(hintText: 'xxxxxxx'),
+                            ),
                           ),
                         ),
                       ],
                     ),
+                    FormErrorText(errors['phone']),
                     const SizedBox(height: 8),
                     const FieldLabel('البريد الإلكتروني'),
                     TextField(controller: email, keyboardType: TextInputType.emailAddress),
                     const SizedBox(height: 8),
                     // بيانات دخول المعلم إلى بوابته
-                    const FieldLabel('رقم الهوية'),
+                    FieldLabel('رقم الهوية', key: errors.key('nationalId')),
                     TextField(
                       controller: teacherNationalId,
                       keyboardType: TextInputType.number,
                       maxLength: 9,
-                      decoration: const InputDecoration(hintText: '9 أرقام', counterText: ''),
+                      onChanged: (_) {
+                        if (errors.clear('nationalId')) setSt(() {});
+                      },
+                      decoration: InputDecoration(hintText: '9 أرقام', counterText: '', errorText: errors['nationalId']),
                     ),
                     const SizedBox(height: 8),
                     const FieldLabel('رمز الدخول للبوابة'),
@@ -649,8 +726,19 @@ class _TeachersTabState extends State<_TeachersTab> {
                         onChanged: (v) => setSt(() => paymentType = v ?? paymentType),
                       ),
                       const SizedBox(height: 8),
-                      FieldLabel(paymentType == 'percentage' ? 'النسبة (%)' : 'المبلغ (₪)', requiredField: true),
-                      TextField(controller: rate, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                      FieldLabel(
+                        paymentType == 'percentage' ? 'النسبة (%)' : 'المبلغ (₪)',
+                        key: errors.key('rate'),
+                        requiredField: true,
+                      ),
+                      TextField(
+                        controller: rate,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        onChanged: (_) {
+                          if (errors.clear('rate')) setSt(() {});
+                        },
+                        decoration: InputDecoration(errorText: errors['rate']),
+                      ),
                     ],
                     const SizedBox(height: 8),
                     const FieldLabel('المواد التي يدرّسها المعلم:'),
@@ -703,10 +791,23 @@ class _TeachersTabState extends State<_TeachersTab> {
                           child: PrimaryButton(
                             label: t == null ? 'إضافة المدرس' : 'حفظ التعديلات',
                             onPressed: () {
-                              if (name.text.trim().isEmpty || phone.text.trim().isEmpty) {
-                                showAppSnack(context, 'يرجى إدخال اسم المدرس ورقم الهاتف', error: true);
-                                return;
-                              }
+                              final rateValue = double.tryParse(rate.text.trim());
+                              final idDigits = digitsOnly(teacherNationalId.text);
+                              setSt(() {
+                                errors
+                                  ..reset()
+                                  ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المدرس')
+                                  ..check('phone', phone.text.trim().isEmpty, 'يرجى إدخال رقم هاتف المدرس')
+                                  ..check('nationalId', idDigits.isNotEmpty && idDigits.length != 9, 'رقم الهوية يجب أن يتكون من 9 أرقام')
+                                  ..check(
+                                    'rate',
+                                    rateValue == null || rateValue < 0,
+                                    paymentType == 'percentage' ? 'يرجى إدخال نسبة صحيحة' : 'يرجى إدخال مبلغ صحيح',
+                                  );
+                                // خطأ الراتب في قسم مطوي يُفتح قسمه كي يُرى
+                                if (errors['rate'] != null) salaryOpen = true;
+                              });
+                              if (errors.report(ctx)) return;
                               try {
                                 final names = store.subjects.where((s) => subjectIds.contains(s.id)).map((s) => s.name).toList();
                                 store.upsertTeacher(
@@ -836,6 +937,7 @@ class _SubjectsTabState extends State<_SubjectsTab> {
     final desc = TextEditingController(text: s?.description ?? '');
     var grade = s?.gradeLevel.isNotEmpty == true ? s!.gradeLevel : (store.gradeFees.isNotEmpty ? store.gradeFees.first.gradeName : 'عام / كل المراحل');
     if (!grades.contains(grade)) grades.add(grade);
+    final errors = FieldErrors();
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -852,8 +954,14 @@ class _SubjectsTabState extends State<_SubjectsTab> {
                 children: [
                   Text(s == null ? 'إضافة مادة دراسية جديدة' : 'تعديل مادة: ${s.name}', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
                   const SizedBox(height: 10),
-                  const FieldLabel('اسم المادة الدراسية', requiredField: true),
-                  TextField(controller: name, decoration: const InputDecoration(hintText: 'مثال: الرياضيات، الفيزياء...')),
+                  FieldLabel('اسم المادة الدراسية', key: errors.key('name'), requiredField: true),
+                  TextField(
+                    controller: name,
+                    onChanged: (_) {
+                      if (errors.clear('name')) setSt(() {});
+                    },
+                    decoration: InputDecoration(hintText: 'مثال: الرياضيات، الفيزياء...', errorText: errors['name']),
+                  ),
                   const SizedBox(height: 8),
                   const FieldLabel('رمز المادة (اختياري)'),
                   TextField(controller: code, decoration: const InputDecoration(hintText: 'مثال: MATH-1')),
@@ -885,6 +993,12 @@ class _SubjectsTabState extends State<_SubjectsTab> {
                         child: PrimaryButton(
                           label: s == null ? 'إضافة المادة' : 'حفظ التعديلات',
                           onPressed: () {
+                            setSt(() {
+                              errors
+                                ..reset()
+                                ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المادة');
+                            });
+                            if (errors.report(ctx)) return;
                             try {
                               store.upsertSubject(SubjectItem(id: s?.id ?? store.newId(), name: name.text.trim(), code: code.text.trim(), gradeLevel: grade, description: desc.text.trim()));
                               Navigator.pop(ctx);
@@ -1007,12 +1121,14 @@ class _UsersTab extends StatelessWidget {
     final label = TextEditingController(text: store.receiptReceiverLabel.isEmpty ? u.name : store.receiptReceiverLabel);
     if (normalizeRole(u.role) == 'admin') {
       final pass = TextEditingController();
+      String? passError;
       await showModalBottomSheet<void>(
         context: context,
+        isScrollControlled: true,
         backgroundColor: Colors.white,
         shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
-        builder: (ctx) {
-          return Padding(
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setSt) => Padding(
             padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1023,17 +1139,28 @@ class _UsersTab extends StatelessWidget {
                 const FieldLabel('اسم المستلم على سند القبض'),
                 TextField(controller: label),
                 const SizedBox(height: 8),
-                const FieldLabel('كلمة مرور المنشأة'),
-                TextField(controller: pass, obscureText: true),
+                const FieldLabel('كلمة مرور المنشأة', requiredField: true),
+                TextField(
+                  controller: pass,
+                  obscureText: true,
+                  onChanged: (_) {
+                    if (passError != null) setSt(() => passError = null);
+                  },
+                  decoration: InputDecoration(errorText: passError),
+                ),
                 const SizedBox(height: 10),
                 PrimaryButton(
                   expand: true,
                   label: 'تثبيت',
                   onPressed: () {
-                    final tenantPass = store.currentTenant?.password ?? 'amal2026';
                     final entered = pass.text.trim();
-                    if (entered != tenantPass && entered != 'school2026' && entered != 'anas2026') {
-                      showAppSnack(context, 'كلمة المرور غير صحيحة', error: true);
+                    if (entered.isEmpty) {
+                      setSt(() => passError = 'يرجى إدخال كلمة مرور المنشأة');
+                      return;
+                    }
+                    // المقبول نفسه في تهيئة الجهاز — لا كلمة افتراضية مكتوبة هنا
+                    if (!store.isAdminSetupPasswordValid(entered)) {
+                      setSt(() => passError = 'كلمة المرور غير صحيحة');
                       return;
                     }
                     store.setDeviceIdentity(u, label.text);
@@ -1043,8 +1170,8 @@ class _UsersTab extends StatelessWidget {
                 ),
               ],
             ),
-          );
-        },
+          ),
+        ),
       );
       return;
     }
@@ -1120,6 +1247,7 @@ class _UsersTab extends StatelessWidget {
     final name = TextEditingController();
     var role = 'receptionist';
     final caps = {...receptionistCapabilities};
+    final errors = FieldErrors();
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1137,8 +1265,14 @@ class _UsersTab extends StatelessWidget {
                   children: [
                     Text('مستخدم جديد', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
                     const SizedBox(height: 10),
-                    const FieldLabel('الاسم', requiredField: true),
-                    TextField(controller: name),
+                    FieldLabel('الاسم', key: errors.key('name'), requiredField: true),
+                    TextField(
+                      controller: name,
+                      onChanged: (_) {
+                        if (errors.clear('name')) setSt(() {});
+                      },
+                      decoration: InputDecoration(errorText: errors['name']),
+                    ),
                     const SizedBox(height: 8),
                     const FieldLabel('الدور (قالب بداية)'),
                     AppDropdown<String>(
@@ -1181,6 +1315,12 @@ class _UsersTab extends StatelessWidget {
                       expand: true,
                       label: 'حفظ',
                       onPressed: () {
+                        setSt(() {
+                          errors
+                            ..reset()
+                            ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المستخدم');
+                        });
+                        if (errors.report(ctx)) return;
                         try {
                           store.addUser(AppUser(id: store.newId(), name: name.text.trim(), role: role, capabilities: caps.toList()));
                           Navigator.pop(ctx);
@@ -1479,7 +1619,7 @@ class _RoomsTab extends StatelessWidget {
                           style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.muted),
                         ),
                         const SizedBox(width: 6),
-                        const Icon(Icons.chevron_right, size: 18, color: AppColors.muted),
+                        const Icon(Icons.chevron_left, size: 18, color: AppColors.muted),
                       ],
                     ),
                   ),
@@ -1495,79 +1635,107 @@ class _RoomsTab extends StatelessWidget {
     final name = TextEditingController(text: room?.name ?? '');
     final capacity = TextEditingController(text: '${room?.capacity ?? 25}');
     final notes = TextEditingController(text: room?.notes ?? '');
+    final errors = FieldErrors();
 
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(room == null ? 'إضافة قاعة جديدة' : 'تعديل: ${room.name}',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
-            const SizedBox(height: 10),
-            const FieldLabel('اسم القاعة', requiredField: true),
-            TextField(controller: name, decoration: const InputDecoration(hintText: 'مثال: القاعة (أ)')),
-            const SizedBox(height: 8),
-            const FieldLabel('السعة'),
-            TextField(controller: capacity, keyboardType: TextInputType.number),
-            const SizedBox(height: 8),
-            const FieldLabel('ملاحظات وتجهيزات'),
-            TextField(controller: notes, decoration: const InputDecoration(hintText: 'الطابق، التجهيزات...')),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                if (room != null)
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => Padding(
+          padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(room == null ? 'إضافة قاعة جديدة' : 'تعديل: ${room.name}',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
+              const SizedBox(height: 10),
+              FieldLabel('اسم القاعة', key: errors.key('name'), requiredField: true),
+              TextField(
+                controller: name,
+                onChanged: (_) {
+                  if (errors.clear('name')) setSt(() {});
+                },
+                decoration: InputDecoration(hintText: 'مثال: القاعة (أ)', errorText: errors['name']),
+              ),
+              const SizedBox(height: 8),
+              FieldLabel('السعة', key: errors.key('capacity')),
+              TextField(
+                controller: capacity,
+                keyboardType: TextInputType.number,
+                onChanged: (_) {
+                  if (errors.clear('capacity')) setSt(() {});
+                },
+                decoration: InputDecoration(errorText: errors['capacity']),
+              ),
+              const SizedBox(height: 8),
+              const FieldLabel('ملاحظات وتجهيزات'),
+              TextField(controller: notes, decoration: const InputDecoration(hintText: 'الطابق، التجهيزات...')),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  if (room != null)
+                    Expanded(
+                      child: GhostButton(
+                        label: 'حذف',
+                        icon: Icons.delete_outline,
+                        onPressed: () async {
+                          final used = store.groups.where((g) => g.roomId == room.id).length;
+                          if (used > 0) {
+                            showAppSnack(ctx, 'لا يمكن حذف القاعة لارتباطها بـ $used مجموعة', error: true);
+                            return;
+                          }
+                          final ok = await confirmSheet(ctx,
+                              title: 'حذف القاعة', message: 'حذف «${room.name}»؟', confirmLabel: 'حذف');
+                          if (!ok || !ctx.mounted) return;
+                          store.deleteRoom(room.id);
+                          Navigator.pop(ctx);
+                        },
+                      ),
+                    ),
+                  if (room != null) const SizedBox(width: 8),
                   Expanded(
-                    child: GhostButton(
-                      label: 'حذف',
-                      icon: Icons.delete_outline,
-                      onPressed: () async {
-                        final used = store.groups.where((g) => g.roomId == room.id).length;
-                        if (used > 0) {
-                          showAppSnack(ctx, 'لا يمكن حذف القاعة لارتباطها بـ $used مجموعة', error: true);
-                          return;
+                    child: PrimaryButton(
+                      label: room == null ? 'إضافة القاعة' : 'حفظ',
+                      onPressed: () {
+                        final seats = int.tryParse(capacity.text.trim());
+                        setSt(() {
+                          errors
+                            ..reset()
+                            ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم القاعة')
+                            ..check(
+                              'capacity',
+                              capacity.text.trim().isNotEmpty && (seats == null || seats <= 0),
+                              'يرجى إدخال سعة صحيحة',
+                            );
+                        });
+                        if (errors.report(ctx)) return;
+                        try {
+                          store.upsertRoom(
+                            Classroom(
+                              id: room?.id ?? store.newId(),
+                              name: name.text.trim(),
+                              gradeLevel: room?.gradeLevel ?? '',
+                              teacherId: room?.teacherId ?? '',
+                              capacity: seats ?? 25,
+                              notes: notes.text.trim(),
+                              tier: room?.tier ?? 'secondary',
+                              createdAt: room?.createdAt,
+                            ),
+                          );
+                          Navigator.pop(ctx);
+                        } on StoreException catch (e) {
+                          showAppSnack(ctx, e.message, error: true);
                         }
-                        final ok = await confirmSheet(ctx,
-                            title: 'حذف القاعة', message: 'حذف «${room.name}»؟', confirmLabel: 'حذف');
-                        if (!ok || !ctx.mounted) return;
-                        store.deleteRoom(room.id);
-                        Navigator.pop(ctx);
                       },
                     ),
                   ),
-                if (room != null) const SizedBox(width: 8),
-                Expanded(
-                  child: PrimaryButton(
-                    label: room == null ? 'إضافة القاعة' : 'حفظ',
-                    onPressed: () {
-                      try {
-                        store.upsertRoom(
-                          Classroom(
-                            id: room?.id ?? store.newId(),
-                            name: name.text.trim(),
-                            gradeLevel: room?.gradeLevel ?? '',
-                            teacherId: room?.teacherId ?? '',
-                            capacity: int.tryParse(capacity.text.trim()) ?? 25,
-                            notes: notes.text.trim(),
-                            tier: room?.tier ?? 'secondary',
-                            createdAt: room?.createdAt,
-                          ),
-                        );
-                        Navigator.pop(ctx);
-                      } on StoreException catch (e) {
-                        showAppSnack(ctx, e.message, error: true);
-                      }
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

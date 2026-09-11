@@ -5,6 +5,7 @@ import '../data/tenant_service.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
 
 /// بوابة المطور والاشتراكات — المقابل لـ `pages/DeveloperDashboardPage.tsx`.
@@ -420,6 +421,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
     final months = TextEditingController(text: '12');
     var planType = existing?.planType ?? 'rental';
     var codeTouched = existing != null;
+    final errors = FieldErrors();
 
     await showModalBottomSheet<void>(
       context: context,
@@ -437,19 +439,29 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                 Text(existing == null ? 'إضافة منشأة جديدة' : 'تعديل: ${existing.name}',
                     style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
                 const SizedBox(height: 10),
-                const FieldLabel('اسم المنشأة', requiredField: true),
+                FieldLabel('اسم المنشأة', key: errors.key('name'), requiredField: true),
                 TextField(
                   controller: name,
                   onChanged: (v) {
+                    errors.clear('name');
                     if (!codeTouched) {
                       code.text = TenantService.codeFromName(v, store.tenants.length);
-                      setSt(() {});
+                      errors.clear('code');
                     }
+                    setSt(() {});
                   },
+                  decoration: InputDecoration(errorText: errors['name']),
                 ),
                 const SizedBox(height: 8),
-                const FieldLabel('رمز المنشأة', requiredField: true),
-                TextField(controller: code, onChanged: (_) => codeTouched = true),
+                FieldLabel('رمز المنشأة', key: errors.key('code'), requiredField: true),
+                TextField(
+                  controller: code,
+                  onChanged: (_) {
+                    codeTouched = true;
+                    if (errors.clear('code')) setSt(() {});
+                  },
+                  decoration: InputDecoration(errorText: errors['code']),
+                ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -457,8 +469,14 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const FieldLabel('اسم المستخدم', requiredField: true),
-                          TextField(controller: username),
+                          FieldLabel('اسم المستخدم', key: errors.key('username'), requiredField: true),
+                          TextField(
+                            controller: username,
+                            onChanged: (_) {
+                              if (errors.clear('username')) setSt(() {});
+                            },
+                            decoration: InputDecoration(errorText: errors['username']),
+                          ),
                         ],
                       ),
                     ),
@@ -467,8 +485,14 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const FieldLabel('كلمة المرور', requiredField: true),
-                          TextField(controller: password),
+                          FieldLabel('كلمة المرور', key: errors.key('password'), requiredField: true),
+                          TextField(
+                            controller: password,
+                            onChanged: (_) {
+                              if (errors.clear('password')) setSt(() {});
+                            },
+                            decoration: InputDecoration(errorText: errors['password']),
+                          ),
                         ],
                       ),
                     ),
@@ -486,8 +510,15 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                 ),
                 if (planType == 'rental') ...[
                   const SizedBox(height: 8),
-                  const FieldLabel('مدة الاشتراك (أشهر)'),
-                  TextField(controller: months, keyboardType: TextInputType.number),
+                  FieldLabel('مدة الاشتراك (أشهر)', key: errors.key('months'), requiredField: true),
+                  TextField(
+                    controller: months,
+                    keyboardType: TextInputType.number,
+                    onChanged: (_) {
+                      if (errors.clear('months')) setSt(() {});
+                    },
+                    decoration: InputDecoration(errorText: errors['months']),
+                  ),
                 ],
                 const SizedBox(height: 8),
                 Row(
@@ -525,13 +556,21 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                       child: PrimaryButton(
                         label: existing == null ? 'إضافة' : 'حفظ',
                         onPressed: () async {
-                          if (name.text.trim().isEmpty ||
-                              code.text.trim().isEmpty ||
-                              username.text.trim().isEmpty ||
-                              password.text.trim().isEmpty) {
-                            showAppSnack(ctx, 'يرجى تعبئة الاسم والرمز وبيانات الدخول', error: true);
-                            return;
-                          }
+                          final monthCount = int.tryParse(months.text.trim());
+                          setSt(() {
+                            errors
+                              ..reset()
+                              ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المنشأة')
+                              ..check('code', code.text.trim().isEmpty, 'يرجى إدخال رمز المنشأة')
+                              ..check('username', username.text.trim().isEmpty, 'يرجى إدخال اسم المستخدم')
+                              ..check('password', password.text.trim().isEmpty, 'يرجى إدخال كلمة المرور')
+                              ..check(
+                                'months',
+                                planType == 'rental' && (monthCount == null || monthCount <= 0),
+                                'يرجى إدخال عدد أشهر صحيح',
+                              );
+                          });
+                          if (errors.report(ctx)) return;
                           final n = int.tryParse(months.text.trim()) ?? 12;
                           final tenant = Tenant(
                             id: existing?.id ?? store.newId(),

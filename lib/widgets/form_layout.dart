@@ -64,12 +64,20 @@ class FieldPair extends StatelessWidget {
 
 /// حقل اختيار يُفتح بلمسة (تاريخ، حي) بشكل الحقول النصية نفسه.
 class SelectField extends StatelessWidget {
-  const SelectField({super.key, required this.text, required this.icon, required this.onTap, this.placeholder = false});
+  const SelectField({
+    super.key,
+    required this.text,
+    required this.icon,
+    required this.onTap,
+    this.placeholder = false,
+    this.errorText,
+  });
 
   final String text;
   final IconData icon;
   final VoidCallback onTap;
   final bool placeholder;
+  final String? errorText;
 
   @override
   Widget build(BuildContext context) {
@@ -79,6 +87,7 @@ class SelectField extends StatelessWidget {
         decoration: InputDecoration(
           suffixIconConstraints: const BoxConstraints(minWidth: 34, minHeight: 20),
           suffixIcon: Icon(icon, size: 16, color: AppColors.faint),
+          errorText: errorText,
         ),
         child: Text(
           text,
@@ -120,6 +129,72 @@ class FormActionBar extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// أخطاء الحقول في نموذج واحد: رسالة تحت كل حقل مطلوب تُرك فارغاً، وتمرير إلى أولها.
+///
+/// تنبيه منفصل عن الحقل لا يكفي: قد يختفي خلف الورقة السفلية أو لوحة المفاتيح، ولا
+/// يقول أين المشكلة. هنا يُلوَّن الحقل نفسه وتظهر رسالته تحته.
+class FieldErrors {
+  final _messages = <String, String>{};
+  final _keys = <String, GlobalKey>{};
+
+  /// مفتاح يوضع على عنوان الحقل كي يُمرَّر إليه.
+  GlobalKey key(String field) => _keys.putIfAbsent(field, () => GlobalKey());
+
+  String? operator [](String field) => _messages[field];
+
+  bool get isEmpty => _messages.isEmpty;
+
+  /// يبدأ فحصاً جديداً ويُسقط أخطاء الفحص السابق.
+  void reset() => _messages.clear();
+
+  /// يسجّل [message] للحقل إن كان [invalid]. ترتيب الاستدعاء = ترتيب الحقول على الشاشة.
+  void check(String field, bool invalid, String message) {
+    if (invalid) _messages.putIfAbsent(field, () => message);
+  }
+
+  /// يُسقط خطأ الحقل حين يبدأ المستخدم تصحيحه. يعيد `true` إن كان فيه خطأ.
+  bool clear(String field) => _messages.remove(field) != null;
+
+  /// إن وُجدت أخطاء: يمرّر إلى أول حقل ناقص وينبّه أعلى الشاشة، ويعيد `true`.
+  bool report(BuildContext context) {
+    if (_messages.isEmpty) return false;
+    for (final field in _messages.keys) {
+      final target = _keys[field]?.currentContext;
+      if (target != null) {
+        Scrollable.ensureVisible(
+          target,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+          alignment: 0.1,
+        );
+        break;
+      }
+    }
+    // التنبيه عام، والتفصيل تحت كل حقل — لا تُكرَّر رسالة الحقل مرتين على الشاشة
+    showAppSnack(context, 'يرجى استكمال الحقول المحددة باللون الأحمر', error: true);
+    return true;
+  }
+}
+
+/// رسالة خطأ تحت عنصر ليس حقلاً نصياً (أيام، اختيار طالب) بشكل رسالة الحقل نفسها.
+class FormErrorText extends StatelessWidget {
+  const FormErrorText(this.message, {super.key});
+
+  final String? message;
+
+  @override
+  Widget build(BuildContext context) {
+    if (message == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(top: 6, start: 2),
+      child: Text(
+        message!,
+        style: const TextStyle(color: AppColors.danger, fontSize: 11.5, fontWeight: FontWeight.w600, height: 1.3),
       ),
     );
   }

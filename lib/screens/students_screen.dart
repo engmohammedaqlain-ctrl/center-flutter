@@ -199,7 +199,8 @@ class _StudentCard extends StatelessWidget {
             ],
           ),
           const SizedBox(width: 2),
-          // إشارة هادئة بأن البطاقة تفتح صفحة الطالب — تتجه يساراً مع الاتجاه العربي
+          // إشارة هادئة بأن البطاقة تفتح صفحة الطالب — «<» باتجاه التقدّم في العربية.
+          // أيقونات الأسهم تنعكس مع اتجاه النص: «التالي» (chevron_right) يُرسم يساراً
           const Icon(Icons.chevron_right, size: 20, color: AppColors.faint),
         ],
       ),

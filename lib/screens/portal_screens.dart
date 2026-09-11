@@ -7,6 +7,7 @@ import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
+import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
 
 /// ترويسة موحّدة لبوابتَي الطالب والمعلم.
@@ -698,42 +699,56 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   Future<void> _publish(TeacherClass c) async {
     final title = TextEditingController();
     final content = TextEditingController();
+    final errors = FieldErrors();
 
+    // التحقق داخل الورقة: كان بعد إغلاقها، فتُفقد الكتابة ويظهر التنبيه متأخراً
     final ok = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.white,
       isScrollControlled: true,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.viewInsetsOf(ctx).bottom + 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('إعلان لـ ${c.group.name}', style: AppText.cardTitle),
-            const SizedBox(height: Gap.md),
-            const FieldLabel('العنوان', requiredField: true),
-            TextField(controller: title),
-            const SizedBox(height: Gap.md),
-            const FieldLabel('النص'),
-            TextField(controller: content, maxLines: 4),
-            const SizedBox(height: Gap.lg),
-            PrimaryButton(
-              expand: true,
-              height: 42,
-              label: 'نشر',
-              icon: Icons.campaign_outlined,
-              onPressed: () => Navigator.pop(ctx, true),
-            ),
-          ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.viewInsetsOf(ctx).bottom + 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('إعلان لـ ${c.group.name}', style: AppText.cardTitle),
+              const SizedBox(height: Gap.md),
+              FieldLabel('العنوان', key: errors.key('title'), requiredField: true),
+              TextField(
+                controller: title,
+                onChanged: (_) {
+                  if (errors.clear('title')) setSt(() {});
+                },
+                decoration: InputDecoration(errorText: errors['title']),
+              ),
+              const SizedBox(height: Gap.md),
+              const FieldLabel('النص'),
+              TextField(controller: content, maxLines: 4),
+              const SizedBox(height: Gap.lg),
+              PrimaryButton(
+                expand: true,
+                height: 42,
+                label: 'نشر',
+                icon: Icons.campaign_outlined,
+                onPressed: () {
+                  setSt(() {
+                    errors
+                      ..reset()
+                      ..check('title', title.text.trim().isEmpty, 'يرجى إدخال عنوان الإعلان');
+                  });
+                  if (errors.report(ctx)) return;
+                  Navigator.pop(ctx, true);
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
 
     if (ok != true) return;
-    if (title.text.trim().isEmpty) {
-      if (mounted) showAppSnack(context, 'يرجى إدخال عنوان الإعلان', error: true);
-      return;
-    }
 
     try {
       await const PortalService().publishAnnouncement(
@@ -762,6 +777,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     final maxScore = TextEditingController(text: '100');
     final notes = TextEditingController();
     final date = isoDate(DateTime.now());
+    final errors = FieldErrors();
 
     final ok = await showModalBottomSheet<bool>(
       context: context,
@@ -770,81 +786,113 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) => Padding(
           padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.viewInsetsOf(ctx).bottom + 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('تقييم طالب في ${c.group.name}', style: AppText.cardTitle),
-              const SizedBox(height: Gap.md),
-              const FieldLabel('الطالب', requiredField: true),
-              AppDropdown<String>(
-                value: studentId,
-                items: [for (final s in c.students) DropdownMenuItem(value: s.id, child: Text(s.fullName))],
-                onChanged: (v) => setSt(() => studentId = v ?? studentId),
-              ),
-              const SizedBox(height: Gap.md),
-              const FieldLabel('عنوان التقييم', requiredField: true),
-              TextField(
-                controller: title,
-                decoration: const InputDecoration(hintText: 'مثال: اختبار الوحدة الأولى'),
-              ),
-              const SizedBox(height: Gap.md),
-              const FieldLabel('نوع التقييم'),
-              AppDropdown<String>(
-                value: type,
-                items: [
-                  for (final e in evaluationTypeNames.entries)
-                    DropdownMenuItem(value: e.key, child: Text(e.value)),
-                ],
-                onChanged: (v) => setSt(() => type = v ?? type),
-              ),
-              const SizedBox(height: Gap.md),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const FieldLabel('الدرجة'),
-                        TextField(controller: score, keyboardType: TextInputType.number),
-                      ],
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('تقييم طالب في ${c.group.name}', style: AppText.cardTitle),
+                const SizedBox(height: Gap.md),
+                const FieldLabel('الطالب', requiredField: true),
+                AppDropdown<String>(
+                  value: studentId,
+                  items: [for (final s in c.students) DropdownMenuItem(value: s.id, child: Text(s.fullName))],
+                  onChanged: (v) => setSt(() => studentId = v ?? studentId),
+                ),
+                const SizedBox(height: Gap.md),
+                FieldLabel('عنوان التقييم', key: errors.key('title'), requiredField: true),
+                TextField(
+                  controller: title,
+                  onChanged: (_) {
+                    if (errors.clear('title')) setSt(() {});
+                  },
+                  decoration: InputDecoration(hintText: 'مثال: اختبار الوحدة الأولى', errorText: errors['title']),
+                ),
+                const SizedBox(height: Gap.md),
+                const FieldLabel('نوع التقييم'),
+                AppDropdown<String>(
+                  value: type,
+                  items: [
+                    for (final e in evaluationTypeNames.entries)
+                      DropdownMenuItem(value: e.key, child: Text(e.value)),
+                  ],
+                  onChanged: (v) => setSt(() => type = v ?? type),
+                ),
+                const SizedBox(height: Gap.md),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          FieldLabel('الدرجة', key: errors.key('score')),
+                          TextField(
+                            controller: score,
+                            keyboardType: TextInputType.number,
+                            onChanged: (_) {
+                              if (errors.clear('score')) setSt(() {});
+                            },
+                            decoration: InputDecoration(errorText: errors['score']),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: Gap.sm),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const FieldLabel('الدرجة القصوى'),
-                        TextField(controller: maxScore, keyboardType: TextInputType.number),
-                      ],
+                    const SizedBox(width: Gap.sm),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          FieldLabel('الدرجة القصوى', key: errors.key('max')),
+                          TextField(
+                            controller: maxScore,
+                            keyboardType: TextInputType.number,
+                            onChanged: (_) {
+                              if (errors.clear('max')) setSt(() {});
+                            },
+                            decoration: InputDecoration(errorText: errors['max']),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: Gap.md),
-              const FieldLabel('ملاحظات'),
-              TextField(controller: notes, maxLines: 3),
-              const SizedBox(height: Gap.lg),
-              PrimaryButton(
-                expand: true,
-                height: 42,
-                label: 'حفظ التقييم',
-                icon: Icons.star_outline,
-                onPressed: () => Navigator.pop(ctx, true),
-              ),
-            ],
+                  ],
+                ),
+                const SizedBox(height: Gap.md),
+                const FieldLabel('ملاحظات'),
+                TextField(controller: notes, maxLines: 3),
+                const SizedBox(height: Gap.lg),
+                PrimaryButton(
+                  expand: true,
+                  height: 42,
+                  label: 'حفظ التقييم',
+                  icon: Icons.star_outline,
+                  onPressed: () {
+                    final max = double.tryParse(maxScore.text.trim());
+                    final raw = score.text.trim();
+                    final value = double.tryParse(raw);
+                    setSt(() {
+                      errors
+                        ..reset()
+                        ..check('title', title.text.trim().isEmpty, 'عنوان التقييم مطلوب')
+                        ..check(
+                          'score',
+                          raw.isNotEmpty && (value == null || value < 0 || (max != null && value > max)),
+                          'درجة غير صالحة',
+                        )
+                        ..check('max', max == null || max <= 0, 'درجة قصوى غير صالحة');
+                    });
+                    if (errors.report(ctx)) return;
+                    Navigator.pop(ctx, true);
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
 
     if (ok != true) return;
-    if (title.text.trim().isEmpty) {
-      if (mounted) showAppSnack(context, 'عنوان التقييم مطلوب', error: true);
-      return;
-    }
     try {
       await const PortalService().saveEvaluation(
         StudentEvaluation(

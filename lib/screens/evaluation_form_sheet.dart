@@ -4,6 +4,7 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
 
 /// نافذة «رصد درجات جديدة» — المقابل لـ `isRecordModalOpen` في Evaluations.tsx.
@@ -42,6 +43,7 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
 
   bool submitting = false;
   String? error;
+  final errors = FieldErrors();
 
   @override
   void dispose() {
@@ -57,6 +59,7 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
     setState(() {
       groupId = id ?? '';
       error = null;
+      errors.reset();
       for (final c in [...scores.values, ...notes.values]) {
         c.dispose();
       }
@@ -81,8 +84,13 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
   }
 
   void _save() {
-    setState(() => error = null);
-    final max = double.tryParse(maxScore.text.trim()) ?? 100;
+    final parsedMax = double.tryParse(maxScore.text.trim());
+    final max = parsedMax ?? 100;
+
+    errors.reset();
+    errors.check('group', groupId.isEmpty, 'يرجى اختيار الشعبة');
+    errors.check('title', title.text.trim().isEmpty, 'يرجى تحديد عنوان التقييم');
+    errors.check('max', parsedMax == null || parsedMax <= 0, 'درجة قصوى غير صالحة');
 
     final entered = <String, double>{};
     for (final entry in scores.entries) {
@@ -90,15 +98,23 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
       if (raw.isEmpty) continue;
       final value = double.tryParse(raw);
       if (value == null) {
-        setState(() => error = 'إحدى الدرجات ليست رقماً صحيحاً');
-        return;
+        errors.check('score:${entry.key}', true, 'ليست رقماً');
+      } else if (value < 0 || value > max) {
+        errors.check('score:${entry.key}', true, 'بين 0 و${trimNum(max)}');
+      } else {
+        entered[entry.key] = value;
       }
-      if (value < 0 || value > max) {
-        setState(() => error = 'الدرجة يجب أن تكون بين صفر و${trimNum(max)}');
-        return;
-      }
-      entered[entry.key] = value;
     }
+    // الفارغ لا يُحفظ صفراً: لا بد من درجة واحدة مرصودة على الأقل
+    final anyScoreError = scores.keys.any((id) => errors['score:$id'] != null);
+    errors.check(
+      'scores',
+      groupId.isNotEmpty && scores.isNotEmpty && entered.isEmpty && !anyScoreError,
+      'يرجى رصد درجة واحدة على الأقل',
+    );
+
+    setState(() => error = null);
+    if (errors.report(context)) return;
 
     setState(() => submitting = true);
     try {
@@ -159,10 +175,11 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                 shrinkWrap: true,
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                 children: [
-                  const FieldLabel('الشعبة المستهدفة *'),
+                  FieldLabel('الشعبة المستهدفة', key: errors.key('group'), requiredField: true),
                   AppDropdown<String>(
                     value: groupId.isEmpty ? null : groupId,
                     hint: 'اختر الشعبة',
+                    errorText: errors['group'],
                     items: [
                       for (final g in store.groups)
                         DropdownMenuItem(value: g.id, child: Text(g.name)),
@@ -171,11 +188,15 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                   ),
                   const SizedBox(height: 10),
 
-                  const FieldLabel('عنوان التقييم / الاختبار *'),
+                  FieldLabel('عنوان التقييم / الاختبار', key: errors.key('title'), requiredField: true),
                   TextField(
                     controller: title,
-                    decoration: const InputDecoration(
+                    onChanged: (_) {
+                      if (errors.clear('title')) setState(() {});
+                    },
+                    decoration: InputDecoration(
                       hintText: 'مثلاً: اختبار الشهر الأول، نشاط عملي...',
+                      errorText: errors['title'],
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -198,7 +219,7 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            const FieldLabel('الدرجة القصوى'),
+                            FieldLabel('الدرجة القصوى', key: errors.key('max')),
                             TextField(
                               controller: maxScore,
                               keyboardType:
@@ -206,7 +227,8 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                                     decimal: true,
                                   ),
                               style: const TextStyle(fontFamily: 'monospace'),
-                              onChanged: (_) => setState(() {}),
+                              onChanged: (_) => setState(() => errors.clear('max')),
+                              decoration: InputDecoration(errorText: errors['max']),
                             ),
                           ],
                         ),
@@ -271,7 +293,7 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                       ),
                     )
                   else ...[
-                    SectionTitle('طلاب الشعبة (${roster.length})'),
+                    KeyedSubtree(key: errors.key('scores'), child: SectionTitle('طلاب الشعبة (${roster.length})')),
                     const Padding(
                       padding: EdgeInsets.only(bottom: 6),
                       child: Text(
@@ -282,8 +304,11 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                         ),
                       ),
                     ),
+                    if (errors['scores'] != null)
+                      Padding(padding: const EdgeInsets.only(bottom: 8), child: FormErrorText(errors['scores'])),
                     for (final s in roster)
                       Padding(
+                        key: errors.key('score:${s.id}'),
                         padding: const EdgeInsets.only(bottom: 10),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -303,6 +328,9 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                                   width: 90,
                                   child: TextField(
                                     controller: scores[s.id],
+                                    onChanged: (_) {
+                                      if (errors.clear('score:${s.id}')) setState(() {});
+                                    },
                                     keyboardType:
                                         const TextInputType.numberWithOptions(
                                           decimal: true,
@@ -314,6 +342,7 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                                     ),
                                     decoration: InputDecoration(
                                       isDense: true,
+                                      errorText: errors['score:${s.id}'],
                                       hintText:
                                           'من ${trimNum(double.tryParse(maxScore.text.trim()) ?? 100)}',
                                       hintStyle: const TextStyle(

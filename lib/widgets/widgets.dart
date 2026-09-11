@@ -519,12 +519,15 @@ class FieldLabel extends StatelessWidget {
 }
 
 class AppDropdown<T> extends StatelessWidget {
-  const AppDropdown({super.key, required this.value, required this.items, required this.onChanged, this.hint});
+  const AppDropdown({super.key, required this.value, required this.items, required this.onChanged, this.hint, this.errorText});
 
   final T? value;
   final List<DropdownMenuItem<T>> items;
   final ValueChanged<T?> onChanged;
   final String? hint;
+
+  /// رسالة تحت القائمة وإطار أحمر — لاختيار مطلوب لم يُختر.
+  final String? errorText;
 
   @override
   Widget build(BuildContext context) {
@@ -536,9 +539,10 @@ class AppDropdown<T> extends StatelessWidget {
       onChanged: onChanged,
       isExpanded: true,
       dropdownColor: Colors.white,
-      decoration: const InputDecoration(
+      decoration: InputDecoration(
         isDense: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        errorText: errorText,
       ),
       hint: hint == null ? null : Text(hint!, style: const TextStyle(fontSize: 12, color: AppColors.faint)),
       style: const TextStyle(fontSize: 12, color: AppColors.text, fontWeight: FontWeight.w600),
@@ -601,17 +605,110 @@ class SectionTitle extends StatelessWidget {
   }
 }
 
+/// إشعار قصير أعلى الشاشة فوق كل شيء — فوق الأوراق السفلية ولوحة المفاتيح.
+///
+/// كان شريطاً سفلياً من `ScaffoldMessenger` يُرسم خلف الورقة السفلية المفتوحة:
+/// أخطاء النماذج داخل الأوراق لا تظهر أبداً، فيبدو زر الحفظ كأنه لا يعمل.
 void showAppSnack(BuildContext context, String msg, {bool error = false}) {
-  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(msg, style: const TextStyle(fontSize: 12.5)),
-      backgroundColor: error ? AppColors.danger : AppColors.navy,
-      behavior: SnackBarBehavior.floating,
-      margin: const EdgeInsets.all(12),
-      shape: RoundedRectangleBorder(borderRadius: _r),
+  final overlay = Overlay.maybeOf(context, rootOverlay: true);
+  if (overlay == null) return;
+  final previous = _toast;
+  if (previous != null && previous.mounted) previous.remove();
+
+  late final OverlayEntry entry;
+  entry = OverlayEntry(
+    builder: (_) => _Toast(
+      message: msg,
+      error: error,
+      onDone: () {
+        if (entry.mounted) entry.remove();
+        if (identical(_toast, entry)) _toast = null;
+      },
     ),
   );
+  _toast = entry;
+  overlay.insert(entry);
+}
+
+OverlayEntry? _toast;
+
+class _Toast extends StatefulWidget {
+  const _Toast({required this.message, required this.error, required this.onDone});
+
+  final String message;
+  final bool error;
+  final VoidCallback onDone;
+
+  @override
+  State<_Toast> createState() => _ToastState();
+}
+
+class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+
+  @override
+  void initState() {
+    super.initState();
+    // ظهور ثم بقاء ثم اختفاء في حركة واحدة — بلا مؤقّت يبقى معلّقاً بعد إغلاق الشاشة
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 3600))
+      ..addStatusListener((status) {
+        if (status == AnimationStatus.completed) widget.onDone();
+      })
+      ..forward();
+    _opacity = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0, end: 1), weight: 6),
+      TweenSequenceItem(tween: ConstantTween(1), weight: 88),
+      TweenSequenceItem(tween: Tween(begin: 1, end: 0), weight: 6),
+    ]).animate(_controller);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final shape = BorderRadius.circular(Corner.box);
+    return Positioned(
+      top: MediaQuery.paddingOf(context).top + 10,
+      left: 12,
+      right: 12,
+      child: FadeTransition(
+        opacity: _opacity,
+        child: Material(
+          color: widget.error ? AppColors.danger : AppColors.navy,
+          borderRadius: shape,
+          elevation: 3,
+          child: InkWell(
+            onTap: widget.onDone,
+            borderRadius: shape,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
+                children: [
+                  Icon(
+                    widget.error ? Icons.error_outline : Icons.check_circle_outline,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      widget.message,
+                      style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w600, height: 1.4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 Future<bool> confirmSheet(

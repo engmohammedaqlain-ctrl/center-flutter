@@ -66,6 +66,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   String studentIdPhoto = '';
   String birthCertificate = '';
   bool attachmentsLoaded = false;
+  final errors = FieldErrors();
 
   static const _gap = SizedBox(height: 12);
 
@@ -151,6 +152,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     if (nationalId.text != clean) {
       nationalId.value = TextEditingValue(text: clean, selection: TextSelection.collapsed(offset: clean.length));
     }
+    errors.clear('nationalId');
     if (clean.length == 9) {
       final dup = StoreScope.of(context).findByNationalId(clean, exclude: widget.student?.id);
       setState(() {
@@ -184,6 +186,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     setState(() {
       phonePrefix = prefix;
       phoneNumber = clean;
+      errors.clear('phone');
       _checkPhoneDup();
     });
   }
@@ -211,6 +214,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     setState(() {
       parentPhonePrefix = prefix;
       parentPhoneNumber = clean;
+      errors.clear('parentPhone');
     });
   }
 
@@ -261,47 +265,34 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   void _save() {
     final store = StoreScope.of(context);
     final trimmedFullName = name.text.trim();
-    if (trimmedFullName.isEmpty) {
-      showAppSnack(context, 'يرجى إدخال اسم الطالب الرباعي', error: true);
-      return;
-    }
     final cleanNatId = digitsOnly(nationalId.text);
-    if (cleanNatId.isEmpty) {
-      showAppSnack(context, 'يرجى إدخال رقم هوية الطالب (9 أرقام)', error: true);
-      return;
-    }
-    if (!isValidNationalId(cleanNatId)) {
-      showAppSnack(context, 'رقم الهوية غير صالح! يجب أن يتكون من 9 أرقام (المُدخل حالياً: ${cleanNatId.length} أرقام).', error: true);
-      return;
-    }
-    if (idDuplicateError != null) {
-      showAppSnack(context, idDuplicateError!, error: true);
-      return;
-    }
-    if (phoneNumber.trim().isEmpty) {
-      showAppSnack(context, 'يرجى إدخال رقم واتساب وجوال الطالب', error: true);
-      return;
-    }
-    if (!isPhoneComplete(phoneNumber, phonePrefix)) {
-      showAppSnack(
-        context,
-        'رقم جوال الطالب غير مكتمل! يجب إدخال ${phoneTargetLength(phonePrefix)} أرقام بعد المقدمة ($phonePrefix) - المُدخل حالياً: ${phoneNumber.trim().length} أرقام.',
-        error: true,
-      );
-      return;
-    }
-    if (phoneDuplicateError != null) {
-      showAppSnack(context, phoneDuplicateError!, error: true);
-      return;
-    }
-    if (parentPhoneNumber.trim().isNotEmpty && !isPhoneComplete(parentPhoneNumber, parentPhonePrefix)) {
-      showAppSnack(
-        context,
-        'رقم جوال ولي الأمر غير مكتمل! يجب إدخال ${phoneTargetLength(parentPhonePrefix)} أرقام بعد المقدمة ($parentPhonePrefix).',
-        error: true,
-      );
-      return;
-    }
+
+    // كل الحقول الناقصة دفعة واحدة، كلٌّ تحت حقله — لا رسالة واحدة تُخفي ما بعدها
+    setState(() {
+      errors
+        ..reset()
+        ..check('name', trimmedFullName.isEmpty, 'يرجى إدخال اسم الطالب الرباعي')
+        ..check('nationalId', cleanNatId.isEmpty, 'يرجى إدخال رقم هوية الطالب (9 أرقام)')
+        ..check(
+          'nationalId',
+          !isValidNationalId(cleanNatId),
+          'رقم الهوية غير صالح: يجب أن يتكون من 9 أرقام (المُدخل: ${cleanNatId.length})',
+        )
+        ..check('nationalId', idDuplicateError != null, idDuplicateError ?? '')
+        ..check('phone', phoneNumber.trim().isEmpty, 'يرجى إدخال رقم جوال وواتساب الطالب')
+        ..check(
+          'phone',
+          !isPhoneComplete(phoneNumber, phonePrefix),
+          'الرقم غير مكتمل: يجب إدخال ${phoneTargetLength(phonePrefix)} أرقام بعد المقدمة ($phonePrefix)',
+        )
+        ..check('phone', phoneDuplicateError != null, phoneDuplicateError ?? '')
+        ..check(
+          'parentPhone',
+          parentPhoneNumber.trim().isNotEmpty && !isPhoneComplete(parentPhoneNumber, parentPhonePrefix),
+          'الرقم غير مكتمل: يجب إدخال ${phoneTargetLength(parentPhonePrefix)} أرقام بعد المقدمة ($parentPhonePrefix)',
+        );
+    });
+    if (errors.report(context)) return;
 
     final parts = trimmedFullName.split(RegExp(r'\s+'));
     final firstName = parts.isEmpty ? '' : parts.first;
@@ -400,7 +391,6 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     final parentComplete = isPhoneComplete(parentPhoneNumber, parentPhonePrefix);
     final fullStudentPhone = combinePhoneAndPrefix(phoneNumber, phonePrefix);
     final matchingSections = store.rooms.where((r) => r.gradeLevel.trim().isEmpty || r.gradeLevel.trim() == (grade == 'أخرى (إدخال يدوي)' ? customGrade.text.trim() : grade).trim()).toList();
-    final canSave = idDuplicateError == null && phoneDuplicateError == null;
     final idLen = nationalId.text.length;
 
     return Scaffold(
@@ -409,7 +399,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
         title: Text(editing ? 'تعديل بيانات الطالب' : 'تسجيل طالب جديد'),
         titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
       ),
-      bottomNavigationBar: _actionBar(editing: editing, canSave: canSave),
+      bottomNavigationBar: _actionBar(editing: editing, canSave: true),
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         child: ListView(
@@ -417,16 +407,19 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           children: [
             // ── ١. البيانات الأساسية ──────────────────────────────────────────
             _section(Icons.badge_outlined, 'البيانات الأساسية', note: 'الحقول ذات * مطلوبة'),
-            const FieldLabel('الاسم الرباعي للطالب', requiredField: true),
+            FieldLabel('الاسم الرباعي للطالب', key: errors.key('name'), requiredField: true),
             TextField(
               controller: name,
               textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(hintText: 'مثال: محمد أحمد النجار'),
+              onChanged: (_) {
+                if (errors.clear('name')) setState(() {});
+              },
+              decoration: InputDecoration(hintText: 'مثال: محمد أحمد النجار', errorText: errors['name']),
             ),
             _gap,
             _pair(
               [
-                const FieldLabel('رقم الهوية', requiredField: true),
+                FieldLabel('رقم الهوية', key: errors.key('nationalId'), requiredField: true),
                 TextField(
                   controller: nationalId,
                   keyboardType: TextInputType.number,
@@ -435,6 +428,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                   decoration: InputDecoration(
                     hintText: '9 أرقام',
                     counterText: '',
+                    errorText: errors['nationalId'] ?? idDuplicateError,
                     fillColor: idDuplicateError != null
                         ? const Color(0xFFFFF1F2)
                         : (idLen == 9 ? const Color(0xFFF0FDF4) : Colors.white),
@@ -465,7 +459,6 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                 ),
               ],
             ),
-            if (idDuplicateError != null) _message(idDuplicateError!, AppColors.danger),
             _gap,
             _pair(
               [
@@ -502,13 +495,13 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
               ),
             ],
             _gap,
-            const FieldLabel('جوال وواتساب الطالب', requiredField: true),
+            FieldLabel('جوال وواتساب الطالب', key: errors.key('phone'), requiredField: true),
             _phoneRow(
               prefix: phonePrefix,
               controller: phoneCtl,
               target: studentLen,
               complete: studentComplete,
-              error: phoneDuplicateError != null,
+              error: errors['phone'] != null || phoneDuplicateError != null,
               onPrefix: (v) => setState(() {
                 phonePrefix = v;
                 phoneNumber = '';
@@ -519,7 +512,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
             ),
             _phoneHint(
               complete: studentComplete,
-              error: phoneDuplicateError,
+              error: errors['phone'] ?? phoneDuplicateError,
               length: phoneNumber.length,
               target: studentLen,
               okText: 'رقم صالح: $fullStudentPhone',
@@ -544,13 +537,13 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
               endFlex: 2,
             ),
             _gap,
-            const FieldLabel('جوال ولي الأمر'),
+            FieldLabel('جوال ولي الأمر', key: errors.key('parentPhone')),
             _phoneRow(
               prefix: parentPhonePrefix,
               controller: parentPhoneCtl,
               target: parentLen,
               complete: parentComplete,
-              error: false,
+              error: errors['parentPhone'] != null,
               onPrefix: (v) => setState(() {
                 parentPhonePrefix = v;
                 parentPhoneNumber = '';
@@ -560,7 +553,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
             ),
             _phoneHint(
               complete: parentComplete && parentPhoneNumber.isNotEmpty,
-              error: null,
+              error: errors['parentPhone'],
               length: parentPhoneNumber.length,
               target: parentLen,
               okText: 'رقم صالح: ${combinePhoneAndPrefix(parentPhoneNumber, parentPhonePrefix)}',

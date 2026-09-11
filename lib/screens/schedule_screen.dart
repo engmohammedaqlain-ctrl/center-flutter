@@ -6,6 +6,7 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
 
 /// الجداول والمجموعات — المقابل لـ `pages/Schedule.tsx` وملفات `features/schedule`.
@@ -234,6 +235,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     var startTime = existing?.startTime ?? '16:00';
     var endTime = existing?.endTime ?? '18:00';
     var groupStatus = existing?.status ?? 'active';
+    final errors = FieldErrors();
 
     await showModalBottomSheet<void>(
       context: context,
@@ -253,8 +255,14 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
                 ),
                 const SizedBox(height: 10),
-                const FieldLabel('اسم المجموعة', requiredField: true),
-                TextField(controller: name, decoration: const InputDecoration(hintText: 'مثال: رياضيات — توجيهي (أ)')),
+                FieldLabel('اسم المجموعة', key: errors.key('name'), requiredField: true),
+                TextField(
+                  controller: name,
+                  onChanged: (_) {
+                    if (errors.clear('name')) setSt(() {});
+                  },
+                  decoration: InputDecoration(hintText: 'مثال: رياضيات — توجيهي (أ)', errorText: errors['name']),
+                ),
                 const SizedBox(height: 8),
                 const FieldLabel('المادة الدراسية', requiredField: true),
                 AppDropdown<String>(
@@ -290,14 +298,17 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   onChanged: (v) => setSt(() => gradeLevel = v ?? ''),
                 ),
                 const SizedBox(height: 8),
-                const FieldLabel('أيام الدوام', requiredField: true),
+                FieldLabel('أيام الدوام', key: errors.key('days'), requiredField: true),
                 Wrap(
                   spacing: 6,
                   runSpacing: 6,
                   children: [
                     for (var d = 0; d < 7; d++)
                       InkWell(
-                        onTap: () => setSt(() => days.contains(d) ? days.remove(d) : days.add(d)),
+                        onTap: () => setSt(() {
+                          days.contains(d) ? days.remove(d) : days.add(d);
+                          errors.clear('days');
+                        }),
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
@@ -317,6 +328,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       ),
                   ],
                 ),
+                FormErrorText(errors['days']),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -348,8 +360,15 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const FieldLabel('السعر الشهري (₪)'),
-                          TextField(controller: price, keyboardType: TextInputType.number),
+                          FieldLabel('السعر الشهري (₪)', key: errors.key('price')),
+                          TextField(
+                            controller: price,
+                            keyboardType: TextInputType.number,
+                            onChanged: (_) {
+                              if (errors.clear('price')) setSt(() {});
+                            },
+                            decoration: InputDecoration(errorText: errors['price']),
+                          ),
                         ],
                       ),
                     ),
@@ -358,11 +377,14 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const FieldLabel('الحد الأقصى للطلاب'),
+                          FieldLabel('الحد الأقصى للطلاب', key: errors.key('max')),
                           TextField(
                             controller: maxStudents,
                             keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(hintText: 'بلا حد'),
+                            onChanged: (_) {
+                              if (errors.clear('max')) setSt(() {});
+                            },
+                            decoration: InputDecoration(hintText: 'بلا حد', errorText: errors['max']),
                           ),
                         ],
                       ),
@@ -389,6 +411,19 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       child: PrimaryButton(
                         label: existing == null ? 'إضافة المجموعة' : 'حفظ التعديلات',
                         onPressed: () {
+                          final priceText = price.text.trim();
+                          final priceValue = double.tryParse(priceText);
+                          final maxText = maxStudents.text.trim();
+                          final maxValue = int.tryParse(maxText);
+                          setSt(() {
+                            errors
+                              ..reset()
+                              ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المجموعة')
+                              ..check('days', days.isEmpty, 'يرجى اختيار يوم دوام واحد على الأقل')
+                              ..check('price', priceText.isNotEmpty && (priceValue == null || priceValue < 0), 'يرجى إدخال سعر صحيح')
+                              ..check('max', maxText.isNotEmpty && (maxValue == null || maxValue <= 0), 'عدد غير صالح');
+                          });
+                          if (errors.report(ctx)) return;
                           try {
                             store.upsertGroup(
                               Group(

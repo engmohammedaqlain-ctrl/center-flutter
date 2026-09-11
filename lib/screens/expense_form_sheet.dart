@@ -4,6 +4,7 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
 
 /// نافذة «تسجيل سند صرف جديد» — المقابل لـ `isExpenseModalOpen` في Finance.tsx.
@@ -36,6 +37,7 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
 
   bool submitting = false;
   String? error;
+  final errors = FieldErrors();
 
   @override
   void dispose() {
@@ -56,16 +58,15 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
   }
 
   void _save() {
-    setState(() => error = null);
     final value = double.tryParse(amount.text.trim()) ?? 0;
-    if (description.text.trim().isEmpty) {
-      setState(() => error = 'البيان / المستفيد مطلوب');
-      return;
-    }
-    if (value <= 0) {
-      setState(() => error = 'المبلغ يجب أن يكون أكبر من صفر');
-      return;
-    }
+    setState(() {
+      error = null;
+      errors
+        ..reset()
+        ..check('description', description.text.trim().isEmpty, 'البيان / المستفيد مطلوب')
+        ..check('amount', value <= 0, 'المبلغ يجب أن يكون أكبر من صفر');
+    });
+    if (errors.report(context)) return;
 
     setState(() => submitting = true);
     try {
@@ -121,11 +122,17 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
             ),
             const SizedBox(height: 10),
 
-            const FieldLabel('البيان / المستفيد:'),
+            FieldLabel('البيان / المستفيد:', key: errors.key('description'), requiredField: true),
             TextField(
               controller: description,
               textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(hintText: 'مثال: شراء أوراق وطباعة كشوفات...'),
+              onChanged: (_) {
+                if (errors.clear('description')) setState(() {});
+              },
+              decoration: InputDecoration(
+                hintText: 'مثال: شراء أوراق وطباعة كشوفات...',
+                errorText: errors['description'],
+              ),
             ),
             const SizedBox(height: 10),
 
@@ -136,12 +143,15 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const FieldLabel('المبلغ ($currency):'),
+                      FieldLabel('المبلغ ($currency):', key: errors.key('amount'), requiredField: true),
                       TextField(
                         controller: amount,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         style: const TextStyle(fontFamily: 'monospace'),
-                        decoration: const InputDecoration(hintText: '0.00'),
+                        onChanged: (_) {
+                          if (errors.clear('amount')) setState(() {});
+                        },
+                        decoration: InputDecoration(hintText: '0.00', errorText: errors['amount']),
                       ),
                     ],
                   ),
@@ -167,7 +177,14 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
                             children: [
                               const Icon(Icons.event, size: 15, color: AppColors.muted),
                               const SizedBox(width: 6),
-                              Text(date, style: const TextStyle(fontSize: 12.5, fontFamily: 'monospace')),
+                              Expanded(
+                                child: Text(
+                                  date,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 12.5, fontFamily: 'monospace'),
+                                ),
+                              ),
                             ],
                           ),
                         ),

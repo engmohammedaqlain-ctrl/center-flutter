@@ -40,6 +40,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
   DateTime? transferDate;
   String? installmentId;
   bool busy = false;
+  final errors = FieldErrors();
 
   static const _gap = SizedBox(height: 12);
 
@@ -68,8 +69,16 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
     super.dispose();
   }
 
-  Future<void> _save(AppStore store, Student selected) async {
+  Future<void> _save(AppStore store, Student? selected) async {
     final n = double.tryParse(amount.text.trim()) ?? 0;
+    setState(() {
+      errors
+        ..reset()
+        ..check('student', selected == null, 'يرجى اختيار الطالب أولاً')
+        ..check('amount', n <= 0, 'يرجى إدخال مبلغ صحيح أكبر من صفر')
+        ..check('customPurpose', purpose == 'other' && customPurpose.text.trim().isEmpty, 'يرجى كتابة غرض الدفع');
+    });
+    if (errors.report(context) || selected == null) return;
     setState(() => busy = true);
     try {
       final p = store.addPayment(
@@ -178,7 +187,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
           bottomNavigationBar: FormActionBar(
             label: 'اعتماد الدفعة وإصدار الوصل',
             busy: busy,
-            onSave: selected == null ? null : () => _save(store, selected),
+            onSave: () => _save(store, selected),
           ),
           body: GestureDetector(
             onTap: () => FocusScope.of(context).unfocus(),
@@ -193,12 +202,15 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                 const FormSection(icon: Icons.payments_outlined, title: 'بيانات الدفعة'),
                 FieldPair(
                   start: [
-                    const FieldLabel('المبلغ المقبوض (₪)', requiredField: true),
+                    FieldLabel('المبلغ المقبوض (₪)', key: errors.key('amount'), requiredField: true),
                     TextField(
                       controller: amount,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: AppColors.amber),
-                      decoration: const InputDecoration(hintText: '0'),
+                      onChanged: (_) {
+                        if (errors.clear('amount')) setState(() {});
+                      },
+                      decoration: InputDecoration(hintText: '0', errorText: errors['amount']),
                     ),
                   ],
                   end: [
@@ -238,8 +250,14 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                 ),
                 if (purpose == 'other') ...[
                   _gap,
-                  const FieldLabel('الغرض المخصص'),
-                  TextField(controller: customPurpose, decoration: const InputDecoration(hintText: 'اكتب سبب الدفع...')),
+                  FieldLabel('الغرض المخصص', key: errors.key('customPurpose'), requiredField: true),
+                  TextField(
+                    controller: customPurpose,
+                    onChanged: (_) {
+                      if (errors.clear('customPurpose')) setState(() {});
+                    },
+                    decoration: InputDecoration(hintText: 'اكتب سبب الدفع...', errorText: errors['customPurpose']),
+                  ),
                 ],
                 if (method == 'other') ...[
                   _gap,
@@ -375,12 +393,13 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
   List<Widget> _studentPicker(List<Student> matches) {
     final shown = matches.take(_pickerLimit).toList();
     return [
-      const FieldLabel('ابحث عن الطالب (غير المسددين والمطلوبين مالياً)', requiredField: true),
+      FieldLabel('ابحث عن الطالب (غير المسددين والمطلوبين مالياً)', key: errors.key('student'), requiredField: true),
       SearchField(
         controller: search,
         hint: 'الاسم، رقم الهاتف، أو المرحلة...',
         onChanged: (_) => setState(() {}),
       ),
+      FormErrorText(errors['student']),
       const SizedBox(height: 4),
       if (matches.isEmpty)
         const Padding(
@@ -411,6 +430,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
       onTap: () => setState(() {
         studentId = s.id;
         search.clear();
+        errors.clear('student');
       }),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10),
@@ -435,7 +455,8 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
             const SizedBox(width: 8),
             Text(money(s.balance), style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w800, fontSize: 12.5)),
             const SizedBox(width: 2),
-            const Icon(Icons.chevron_left, size: 18, color: AppColors.faint),
+            // «التالي» ينعكس مع الاتجاه فيُرسم «<»
+            const Icon(Icons.chevron_right, size: 18, color: AppColors.faint),
           ],
         ),
       ),
