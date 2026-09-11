@@ -106,6 +106,9 @@ void main() {
   test('marking attendance writes only the touched record', () async {
     final disk = FakeDisk();
     final s = await bigSchool(disk);
+    // ترحيلات الدخول (لقطات السندات وتنقية أسماء الشعب) تجري بعد الدخول بلا
+    // انتظار، فتُترك لتنتهي قبل قياس كتابات الرصد وحدها
+    await Future<void>.delayed(Duration.zero);
     await s.flush();
 
     final room = s.rooms.first;

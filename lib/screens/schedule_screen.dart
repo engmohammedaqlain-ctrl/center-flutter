@@ -165,16 +165,19 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   Future<void> _deleteGroup(BuildContext context, Group g) async {
     final store = StoreScope.of(context);
+    final hasHistory = store.enrollments.any((e) => e.groupId == g.id) || store.sessions.any((x) => x.groupId == g.id);
     final ok = await confirmSheet(
       context,
-      title: 'حذف المجموعة',
-      message: 'هل تريد حذف مجموعة «${g.name}» نهائياً؟',
-      confirmLabel: 'حذف',
+      title: hasHistory ? 'أرشفة المجموعة' : 'حذف المجموعة',
+      message: hasHistory
+          ? 'لمجموعة «${g.name}» تسجيلات وحصص سابقة، فتُؤرشف بدل حذفها حتى تبقى قيودها وسجلات حضورها. هل تتابع؟'
+          : 'هل تريد حذف مجموعة «${g.name}» نهائياً؟',
+      confirmLabel: hasHistory ? 'أرشفة' : 'حذف',
     );
     if (!ok || !context.mounted) return;
     try {
-      store.deleteGroup(g.id);
-      showAppSnack(context, 'تم حذف المجموعة');
+      final deleted = store.deleteGroup(g.id);
+      showAppSnack(context, deleted ? 'تم حذف المجموعة' : 'تمت أرشفة المجموعة مع الحفاظ على سجلاتها');
     } on StoreException catch (e) {
       showAppSnack(context, e.message, error: true);
     }
@@ -837,7 +840,7 @@ class StudentGroupsCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SectionTitle(
-            'المجموعات المسجّل بها (${mine.length})',
+            'الصفوف والمجموعات (${mine.length})',
             trailing: store.can('schedule.edit')
                 ? GhostButton(
                     label: 'تسجيل',
@@ -863,18 +866,40 @@ class StudentGroupsCard extends StatelessWidget {
                         children: [
                           Text(store.groupById(e.groupId)?.name ?? 'مجموعة محذوفة',
                               style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)),
-                          Text(
-                            [
-                              if (store.groupById(e.groupId) != null) store.groupById(e.groupId)!.daysLabel,
-                              if (e.discountReason.isNotEmpty) 'خصم: ${e.discountReason}',
-                            ].join('  ·  '),
-                            style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
-                          ),
+                          Builder(builder: (context) {
+                            final g = store.groupById(e.groupId);
+                            final subject = g == null ? '' : store.subjectName(g.subjectId);
+                            final teacher = g == null ? null : store.teacherById(g.teacherId);
+                            return Text(
+                              [
+                                if (subject.isNotEmpty) subject,
+                                if (teacher != null) teacher.name,
+                                if (g != null && !store.isSchool) g.daysLabel,
+                                if (e.discountReason.isNotEmpty) 'خصم: ${e.discountReason}',
+                              ].join('  ·  '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
+                            );
+                          }),
                         ],
                       ),
                     ),
-                    Text(money(e.appliedPrice ?? 0),
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.heading)),
+                    // السعر كما يعرضه `StudentDetail.tsx`: سعر التسجيل الخاص،
+                    // وإلا سعر المجموعة نفسها. الاكتفاء بـ `appliedPrice` كان
+                    // يُظهر «0 ₪» لكل تسجيل وصل من سطح المكتب بلا سعر مثبَّت.
+                    Builder(builder: (context) {
+                      final price = e.customPrice ?? store.groupById(e.groupId)?.pricePerMonth ?? 0;
+                      return Text(
+                        // مجموعة مادة الشعبة لا رسوم لها: رسوم المدرسة في أقساطها
+                        price > 0 ? money(price) : 'بلا رسوم',
+                        style: TextStyle(
+                          fontSize: price > 0 ? 12 : 11,
+                          fontWeight: FontWeight.w800,
+                          color: price > 0 ? AppColors.heading : AppColors.muted,
+                        ),
+                      );
+                    }),
                     if (store.can('schedule.edit')) ...[
                       const SizedBox(width: 6),
                       SquareIconButton(

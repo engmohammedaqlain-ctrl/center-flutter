@@ -87,3 +87,50 @@ Future<void> supabaseDelete(String table, Map<String, String> filters) async {
     throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
   }
 }
+
+/// تعديل حقول بعينها في الصفوف المطابقة — `update().eq()` في النسخة المكتبية.
+Future<void> supabaseUpdate(String table, Map<String, String> filters, Map<String, dynamic> patch) async {
+  final uri = Uri.parse('${SupabaseConfig.url}/rest/v1/$table').replace(queryParameters: filters);
+  final res = await http.patch(uri, headers: SupabaseConfig.headers, body: jsonEncode(patch));
+  if (res.statusCode >= 400) {
+    throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
+  }
+}
+
+// ── التخزين السحابي (Supabase Storage) ─────────────────────────────────────
+
+/// الرابط العام لملف في حاوية عامة — `getPublicUrl`.
+String storagePublicUrl(String bucket, String path) =>
+    '${SupabaseConfig.url}/storage/v1/object/public/$bucket/$path';
+
+/// رفع ملف إلى حاوية. يُعيد الرابط العام، ويرمي عند الرفض.
+Future<String> storageUpload(String bucket, String path, List<int> bytes, String contentType) async {
+  final uri = Uri.parse('${SupabaseConfig.url}/storage/v1/object/$bucket/$path');
+  final res = await http.post(
+    uri,
+    headers: {
+      'apikey': SupabaseConfig.key,
+      'Authorization': 'Bearer ${SupabaseConfig.key}',
+      'Content-Type': contentType,
+      // سنة كاملة: الملف لا يتغيّر بعد رفعه، اسمه فريد بالوقت
+      'cache-control': 'max-age=31536000',
+      'x-upsert': 'false',
+    },
+    body: bytes,
+  );
+  if (res.statusCode >= 400) {
+    throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
+  }
+  return storagePublicUrl(bucket, path);
+}
+
+/// حذف ملفات من حاوية. الفشل لا يوقف حذف السجل نفسه، فيُبتلع.
+Future<void> storageRemove(String bucket, List<String> paths) async {
+  if (paths.isEmpty) return;
+  try {
+    final uri = Uri.parse('${SupabaseConfig.url}/storage/v1/object/$bucket');
+    await http.delete(uri, headers: SupabaseConfig.headers, body: jsonEncode({'prefixes': paths}));
+  } catch (_) {
+    // ملف يتيم في التخزين أهون من سجل لا يُحذف
+  }
+}

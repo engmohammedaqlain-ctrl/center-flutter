@@ -7,22 +7,66 @@ import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
+import 'attendance_period_sheet.dart';
 import 'attendance_print.dart';
 
 /// كشف الحضور — مطابق لعرض الهاتف في `Attendance.tsx`:
 /// شريط أيام الأسبوع المدرسي، ثم إحصاء اليوم المختار، ثم صفوف الطلاب بزرّي
 /// لمس كبيرين. الشبكة الأسبوعية الكاملة تبقى في كشف الطباعة.
 class AttendanceScreen extends StatefulWidget {
-  const AttendanceScreen({super.key});
+  const AttendanceScreen({super.key, this.initialGrade, this.initialOwnerId});
+
+  /// المرحلة والصف المختاران سلفاً — حين تُفتح الشاشة من صفحة صف بعينه.
+  final String? initialGrade;
+  final String? initialOwnerId;
 
   @override
   State<AttendanceScreen> createState() => _AttendanceScreenState();
+}
+
+/// رصد حضور صف من صفحته: الشاشة نفسها والصف مختار، فلا يُعاد اختياره يدوياً.
+Future<void> openClassAttendance(BuildContext context, {required Classroom room}) {
+  return Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          titleSpacing: 0,
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'رصد الحضور',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                room.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 11, fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
+        ),
+        body: AttendanceScreen(initialGrade: room.gradeLevel, initialOwnerId: room.id),
+      ),
+    ),
+  );
 }
 
 class _AttendanceScreenState extends State<AttendanceScreen> {
   int weekOffset = 0;
   String? grade;
   String? ownerId;
+
+  @override
+  void initState() {
+    super.initState();
+    grade = widget.initialGrade?.trim().isEmpty ?? true ? null : widget.initialGrade;
+    ownerId = widget.initialOwnerId?.trim().isEmpty ?? true ? null : widget.initialOwnerId;
+  }
 
   /// اليوم المعروض في الشريط. يبدأ من اليوم الحالي.
   String selectedDate = isoDate(DateTime.now());
@@ -110,6 +154,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 currentGrade: currentGrade,
                 owners: owners,
                 currentOwner: currentOwner,
+                onCalendar: () => _openPeriod(
+                  store,
+                  ownerId: currentOwner,
+                  ownerName: ownerName,
+                  students: list,
+                  day: day.date,
+                ),
               ),
               _dayStrip(week, day),
               Expanded(
@@ -142,7 +193,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                             return Padding(
                               padding: const EdgeInsets.only(top: 5),
                               child: GhostButton(
-                                label: 'طباعة كشف الأسبوع',
+                                label: 'تنزيل كشف الأسبوع',
                                 icon: Icons.print_outlined,
                                 onPressed: currentOwner.isEmpty
                                     ? null
@@ -186,6 +237,36 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     );
   }
 
+  /// أسبوع الشريط هو أسبوع اليوم المختار: الانتقال إلى تاريخ بعيد يحرّك الشريط
+  /// معه بدل أن يبقى على أسبوع اليوم فلا يظهر ما اختير.
+  static int _weekOffsetOf(DateTime target) {
+    int saturdayOf(DateTime d) =>
+        dateOnly(d).subtract(Duration(days: (d.weekday + 1) % 7)).millisecondsSinceEpoch ~/ 86400000;
+    return ((saturdayOf(target) - saturdayOf(DateTime.now())) / 7).round();
+  }
+
+  Future<void> _openPeriod(
+    AppStore store, {
+    required String ownerId,
+    required String ownerName,
+    required List<Student> students,
+    required DateTime day,
+  }) async {
+    final jumpTo = await showAttendancePeriodSheet(
+      context,
+      store: store,
+      ownerId: ownerId,
+      ownerName: ownerName,
+      students: students,
+      initialDate: day,
+    );
+    if (jumpTo == null || !mounted) return;
+    setState(() {
+      weekOffset = _weekOffsetOf(jumpTo);
+      selectedDate = isoDate(jumpTo);
+    });
+  }
+
   Widget _pickers(
     AppStore store, {
     required bool school,
@@ -193,6 +274,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     required String? currentGrade,
     required List<dynamic> owners,
     required String currentOwner,
+    required VoidCallback onCalendar,
   }) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
@@ -224,6 +306,22 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   ),
               ],
               onChanged: (v) => setState(() => ownerId = v),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // التقويم: حضور فترة كاملة، والانتقال إلى يوم خارج الأسبوع المعروض
+          PressableScale(
+            onTap: onCalendar,
+            child: Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(Corner.box),
+                border: Border.all(color: AppColors.line),
+              ),
+              child: Icon(Icons.calendar_month_outlined, size: 18, color: AppColors.heading),
             ),
           ),
         ],
@@ -526,9 +624,10 @@ class _StudentRowState extends State<_StudentRow> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: LayoutBuilder(
         builder: (context, box) {
-          // ثلاثة أزرار بجوار الاسم تحتاج نحو 300 بكسل؛ دون ذلك تنزل تحته
-          // بعرض كامل فتبقى أهداف اللمس كبيرة ولا يُسحق الاسم.
-          if (box.maxWidth < 300) {
+          // ثلاثة أزرار بجوار الاسم لا تفي بها شاشة هاتف: عند 360 بكسل كان
+          // الاسم يُسحق إلى 15 بكسل ويطفح رقم المقعد. دون 340 تنزل الأزرار
+          // تحته بعرض كامل، فتبقى أهداف اللمس كبيرة ويُقرأ الاسم كاملاً.
+          if (box.maxWidth < 340) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,

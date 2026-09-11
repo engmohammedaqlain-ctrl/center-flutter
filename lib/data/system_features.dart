@@ -14,6 +14,7 @@ class SystemFeatures {
     this.enableExpenses = true,
     this.enableEvaluations = true,
     this.enableStudentPortal = true,
+    this.enableStudentAttachments = false,
   });
 
   /// تفعيل إدارة وتتبع المصروفات التشغيلية وصرف أجور المعلمين
@@ -25,17 +26,23 @@ class SystemFeatures {
   /// تفعيل بوابة الطالب
   final bool enableStudentPortal;
 
+  /// تفعيل مرفقات الطلاب (الصور والوثائق). مطفأة افتراضياً كما في النسخة
+  /// المكتبية: صور Base64 تُثقل السحابة والباندويث، فلا تُفتح إلا عند الحاجة.
+  final bool enableStudentAttachments;
+
   static const defaults = SystemFeatures();
 
   SystemFeatures copyWith({
     bool? enableExpenses,
     bool? enableEvaluations,
     bool? enableStudentPortal,
+    bool? enableStudentAttachments,
   }) {
     return SystemFeatures(
       enableExpenses: enableExpenses ?? this.enableExpenses,
       enableEvaluations: enableEvaluations ?? this.enableEvaluations,
       enableStudentPortal: enableStudentPortal ?? this.enableStudentPortal,
+      enableStudentAttachments: enableStudentAttachments ?? this.enableStudentAttachments,
     );
   }
 
@@ -43,6 +50,7 @@ class SystemFeatures {
         'enableExpenses': enableExpenses,
         'enableEvaluations': enableEvaluations,
         'enableStudentPortal': enableStudentPortal,
+        'enableStudentAttachments': enableStudentAttachments,
       };
 
   /// الحقل الغائب أو غير المنطقي يعود إلى قيمته الافتراضية — مطابق لدمج
@@ -63,6 +71,7 @@ class SystemFeatures {
       enableExpenses: read('enableExpenses', defaults.enableExpenses),
       enableEvaluations: read('enableEvaluations', defaults.enableEvaluations),
       enableStudentPortal: read('enableStudentPortal', defaults.enableStudentPortal),
+      enableStudentAttachments: read('enableStudentAttachments', defaults.enableStudentAttachments),
     );
   }
 
@@ -85,10 +94,11 @@ class SystemFeatures {
       other is SystemFeatures &&
       other.enableExpenses == enableExpenses &&
       other.enableEvaluations == enableEvaluations &&
-      other.enableStudentPortal == enableStudentPortal;
+      other.enableStudentPortal == enableStudentPortal &&
+      other.enableStudentAttachments == enableStudentAttachments;
 
   @override
-  int get hashCode => Object.hash(enableExpenses, enableEvaluations, enableStudentPortal);
+  int get hashCode => Object.hash(enableExpenses, enableEvaluations, enableStudentPortal, enableStudentAttachments);
 }
 
 /// مفتاح التخزين — مطابق حرفياً لـ `STORAGE_KEY` في systemFeatures.ts

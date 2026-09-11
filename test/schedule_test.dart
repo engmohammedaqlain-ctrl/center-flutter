@@ -194,23 +194,49 @@ void main() {
   });
 
   group('group deletion', () {
-    test('is refused while students are enrolled', () {
+    test('a group with enrolments is archived, not deleted', () {
       final s = seeded();
       final g = makeGroup(s);
       s.upsertGroup(g);
       s.enrollStudent(studentId: s.students.first.id, groupId: g.id);
-      expect(() => s.deleteGroup(g.id), throwsA(isA<StoreException>()));
+
+      // الحذف الجذري يمحو قيوداً مالية وسجلات حضور معلّقة بالمجموعة
+      expect(s.deleteGroup(g.id), isFalse);
+      expect(s.groupById(g.id)?.status, 'archived');
     });
 
-    test('succeeds once the group is empty, and clears its sessions', () {
+    test('a group that held sessions is archived with its sessions kept', () {
       final s = seeded();
       final g = makeGroup(s);
       s.upsertGroup(g);
       s.sessionFor(g.id, isoDate(DateTime.now()), school: false);
+
+      expect(s.deleteGroup(g.id), isFalse);
+      expect(s.groupById(g.id)?.status, 'archived');
       expect(s.sessions.where((x) => x.groupId == g.id), isNotEmpty);
-      s.deleteGroup(g.id);
+    });
+
+    test('a group with no history at all is deleted', () {
+      final s = seeded();
+      final g = makeGroup(s);
+      s.upsertGroup(g);
+
+      expect(s.deleteGroup(g.id), isTrue);
       expect(s.groupById(g.id), isNull);
-      expect(s.sessions.where((x) => x.groupId == g.id), isEmpty);
+    });
+
+    test('an enrolment fee lands on the balance and leaves when removed', () {
+      final s = seeded();
+      final g = makeGroup(s);
+      s.upsertGroup(g);
+      final stu = s.students.firstWhere((x) => s.paymentsOf(x.id).isEmpty);
+      final before = stu.balance;
+
+      final e = s.enrollStudent(studentId: stu.id, groupId: g.id);
+      expect(stu.balance, closeTo(before - (e.appliedPrice ?? 0), 0.01), reason: 'رسوم المجموعة مديونية');
+
+      s.deleteEnrollment(e.id);
+      expect(stu.balance, closeTo(before, 0.01));
     });
 
     test('deleting a student clears their enrollments', () {

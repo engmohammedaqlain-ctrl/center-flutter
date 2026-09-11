@@ -56,7 +56,8 @@ class StudentDetailScreen extends StatelessWidget {
           );
         }
 
-        final pays = store.payments.where((p) => p.studentId == student.id).toList();
+        // الأحدث أولاً: آخر سند هو ما يُبحث عنه عادةً
+        final pays = store.paymentsOf(student.id);
         final insts = store.installments.where((i) => i.studentId == student.id).toList()
           ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
         final marks = store.attendance.where((a) => a.studentId == student.id).toList();
@@ -192,37 +193,35 @@ class StudentDetailScreen extends StatelessWidget {
                       if (student.healthStatus.trim().isNotEmpty) _Field('الحالة الصحية', student.healthStatus.trim()),
                       if (student.housingStatus.trim().isNotEmpty) _Field('طبيعة السكن', student.housingStatus.trim()),
                       if (student.gpa.trim().isNotEmpty) _Field('المعدل', student.gpa.trim(), ltr: true),
-                      if (medical.isNotEmpty) _Field('تفاصيل الحالة الصحية', medical, wide: true),
+                      if (medical.isNotEmpty) _Field('تفاصيل الحالة الصحية', medical),
                       if (student.previousSchool.trim().isNotEmpty)
-                        _Field('المدرسة السابقة', student.previousSchool.trim(), wide: true),
-                      if (address.isNotEmpty) _Field('العنوان', address, wide: true),
+                        _Field('المدرسة السابقة', student.previousSchool.trim()),
+                      if (address.isNotEmpty) _Field('العنوان', address),
                       if (student.referralSource.trim().isNotEmpty)
-                        _Field('مصدر التعرف', student.referralSource.trim(), wide: true),
+                        _Field('مصدر التعرف', student.referralSource.trim()),
+                      // الملاحظة القصيرة خانة كبقيتها تُكمل الصف، والطويلة وحدها بعرض السطر
+                      if (student.notes.trim().isNotEmpty) _Field('ملاحظات', student.notes.trim()),
                       if (student.initialRating > 0)
                         _Field(
                           'التقييم المبدئي',
                           '',
-                          wide: true,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              for (var i = 1; i <= 5; i++)
-                                Icon(
-                                  i <= student.initialRating ? Icons.star_rounded : Icons.star_outline_rounded,
-                                  size: 17,
-                                  color: i <= student.initialRating ? const Color(0xFFF59E0B) : AppColors.lineStrong,
-                                ),
-                            ],
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                for (var i = 1; i <= 5; i++)
+                                  Icon(
+                                    i <= student.initialRating ? Icons.star_rounded : Icons.star_outline_rounded,
+                                    size: 17,
+                                    color: i <= student.initialRating ? const Color(0xFFF59E0B) : AppColors.lineStrong,
+                                  ),
+                              ],
+                            ),
                           ),
                         ),
                     ],
                   ),
-                  if (student.notes.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    InfoStrip(
-                      child: Text(student.notes, style: const TextStyle(color: Color(0xFF475569), fontSize: 12, height: 1.6)),
-                    ),
-                  ],
                 ],
               ),
 
@@ -268,22 +267,38 @@ class StudentDetailScreen extends StatelessWidget {
                       style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading)),
                   children: [
                     InfoStrip(
+                      // الأرقام تتقلّص ولا تطفح على الشاشات الضيقة
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
-                          TallyText('حضور', present, AppColors.success),
+                          Expanded(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: TallyText('حضور', present, AppColors.success),
+                            ),
+                          ),
                           const Text('•', style: TextStyle(color: AppColors.faint)),
-                          TallyText('غياب', absent, AppColors.danger),
+                          Expanded(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: TallyText('غياب', absent, AppColors.danger),
+                            ),
+                          ),
                           const Text('•', style: TextStyle(color: AppColors.faint)),
-                          TallyText('مأذون', excused, const Color(0xFFD97706)),
+                          Expanded(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: TallyText('مأذون', excused, const Color(0xFFD97706)),
+                            ),
+                          ),
                         ],
                       ),
                     ),
                   ],
                 ),
 
-              // ── المجموعات (للمراكز) ─────────────────────────────────────────
-              if (!store.isSchool && store.can('schedule.view')) ...[
+              // ── الصفوف والمجموعات: مواد الشعبة ومعلموها في المدرسة، ومجموعات المركز ──
+              if (store.can('schedule.view')) ...[
                 StudentGroupsCard(student: student),
                 const SizedBox(height: 10),
               ],
@@ -545,14 +560,17 @@ class _ContactCell extends StatelessWidget {
 
 /// حقل في الشبكة: عنوان صغير فوق قيمته.
 class _Field {
-  const _Field(this.label, this.value, {this.child, this.ltr = false, this.wide = false});
+  const _Field(this.label, this.value, {this.child, this.ltr = false, bool? wide}) : _wide = wide;
+
   final String label;
   final String value;
   final Widget? child;
   final bool ltr;
+  final bool? _wide;
 
-  /// يأخذ السطر كله — للنصوص الطويلة كالعنوان.
-  final bool wide;
+  /// النص الطويل وحده يأخذ السطر كاملاً؛ القصير خانة كبقيته فلا يبقى نصف السطر
+  /// فارغاً. «طبيعة السكن» و«ملاحظة قصيرة» كانا سطرين كاملين بلا داعٍ.
+  bool get wide => _wide ?? value.trim().length > 30;
 }
 
 /// شبكة صناديق بثلاثة أعمدة، محتوى كل صندوق في منتصفه. الصف الأخير الناقص
@@ -742,12 +760,32 @@ class _PaymentTile extends StatelessWidget {
             children: [
               Icon(Icons.receipt_long_outlined, size: 15, color: AppColors.amber),
               const SizedBox(width: 6),
-              Text(p.receiptNumber,
-                  textDirection: TextDirection.ltr,
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading)),
+              // الرقم والتاريخ في حيّز واحد يتقلّص قبل المبلغ — هو أهم ما في
+              // السطر. ولا يجوز أن يكونا مرنَين بجوار `Spacer`: الثلاثة يقتسمون
+              // الفراغ أثلاثاً، فما لا يستهلكه النص يبقى فجوة قبل المبلغ.
+              Expanded(
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(p.receiptNumber,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textDirection: TextDirection.ltr,
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading)),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        formatDate(p.date),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(width: 8),
-              Text(formatDate(p.date), style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
-              const Spacer(),
               Text(
                 money(p.amount),
                 style: TextStyle(
@@ -768,7 +806,7 @@ class _PaymentTile extends StatelessWidget {
               Expanded(
                 child: Text(
                   [
-                    paymentMethodNames[p.method] ?? p.method,
+                    StoreScope.of(context).paymentMethodLabel(p.method),
                     if (purpose.trim().isNotEmpty) purpose,
                     if (p.cancelled) 'ملغاة',
                   ].join('  •  '),
@@ -867,15 +905,37 @@ class _EvaluationsCard extends StatelessWidget {
   }
 }
 
-/// المرفقات الرسمية مع التكبير.
-class _AttachmentsCard extends StatelessWidget {
+/// المرفقات الرسمية مع التكبير — تُجلب عند فتح الملف، لا مع كل مزامنة.
+class _AttachmentsCard extends StatefulWidget {
   const _AttachmentsCard({required this.studentId});
   final String studentId;
 
   @override
+  State<_AttachmentsCard> createState() => _AttachmentsCardState();
+}
+
+class _AttachmentsCardState extends State<_AttachmentsCard> {
+  Future<StudentAttachments?>? _load;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final store = StoreScope.of(context);
+    if (_load != null || !store.features.enableStudentAttachments) return;
+    _load = store.loadAttachments(widget.studentId);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    final att = store.attachmentsOf(studentId);
+    if (!store.features.enableStudentAttachments) return const SizedBox.shrink();
+    return FutureBuilder<StudentAttachments?>(
+      future: _load,
+      builder: (context, snap) => _card(snap.data ?? store.attachmentsOf(widget.studentId)),
+    );
+  }
+
+  Widget _card(StudentAttachments? att) {
     if (att == null || att.isEmpty) return const SizedBox.shrink();
 
     final items = <(String, String)>[

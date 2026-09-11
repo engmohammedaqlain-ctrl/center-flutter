@@ -45,17 +45,20 @@ abstract final class Gap {
 ///
 /// كل زاوية في التطبيق تُؤخذ من هنا، فلا أرقام متناثرة في الشاشات.
 abstract final class Corner {
-  /// الشارات وحبوب الحالة الصغيرة.
-  static const chip = 4.0;
+  /// الشارات وحبوب الحالة — كـ `rounded-btn` في النسخة المكتبية.
+  static const chip = 6.0;
 
-  /// الحقول والأزرار.
+  /// الأزرار.
   static const field = 6.0;
 
+  /// الحقول النصية — `rounded-base`.
+  static const input = 4.0;
+
   /// الصناديق الداخلية والبلاطات داخل البطاقات.
-  static const box = 6.0;
+  static const box = 4.0;
 
   /// البطاقات.
-  static const card = 8.0;
+  static const card = 4.0;
 
   /// النوافذ الحوارية.
   static const dialog = 12.0;
@@ -69,7 +72,8 @@ abstract final class Corner {
 const cardShadow = <BoxShadow>[];
 
 abstract final class AppTheme {
-  static final radius = BorderRadius.circular(Corner.field);
+  /// حدّ الحقول النصية — أهدأ من الأزرار بدرجة، كما في النسخة المكتبية.
+  static final radius = BorderRadius.circular(Corner.input);
 
   static ThemeData build() {
     final base = GoogleFonts.ibmPlexSansArabicTextTheme();

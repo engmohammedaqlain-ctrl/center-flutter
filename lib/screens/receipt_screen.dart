@@ -31,7 +31,7 @@ class ReceiptScreen {
       ..writeln('نحيطكم علماً بأنه تم تسديد دفعة مالية وتوثيق وصل رسمي:')
       ..writeln('📄 *رقم الوصل:* ${payment.receiptNumber}')
       ..writeln('💰 *المبلغ:* ${money(payment.amount)}')
-      ..writeln('💳 *طريقة الدفع:* ${paymentMethodNames[payment.method] ?? payment.method}')
+      ..writeln('💳 *طريقة الدفع:* ${StoreScope.of(context).paymentMethodLabel(payment.method)}')
       ..writeln('📌 *البيان / الغرض:* ${paymentPurposeNames[payment.purpose] ?? payment.purpose}');
     if (payment.senderName.isNotEmpty) msg.writeln('👤 *اسم المحول منه:* ${payment.senderName}');
     if (payment.reference.isNotEmpty) msg.writeln('🔢 *الرقم المرجعي:* ${payment.reference}');
@@ -103,12 +103,12 @@ class _ReceiptSheet extends StatelessWidget {
                   const SizedBox(height: 12),
                   const Divider(color: AppColors.line),
                   const SizedBox(height: 8),
-                  _row('وصلنا من', student?.fullName ?? (payment.notes.isEmpty ? 'سند عام' : payment.notes)),
+                  _row('وصلنا من', _payerName(payment, student)),
                   _row('المرحلة', student?.gradeLevel ?? '—'),
                   _row('المبلغ المقبوض', money(payment.amount)),
                   // «وقدره كتابةً» — بند رسمي في السند لا يجوز إسقاطه
                   _row('وقدره كتابةً', amountInArabicWords(payment.amount)),
-                  _row('طريقة السداد', paymentMethodNames[payment.method] ?? payment.method),
+                  _row('طريقة السداد', store.paymentMethodLabel(payment.method)),
                   _row('وذلك عن', paymentPurposeNames[payment.purpose] ?? payment.purpose),
                   if (payment.senderName.isNotEmpty) _row('اسم المحول منه', payment.senderName),
                   if (payment.reference.isNotEmpty) _row('الرقم المرجعي', payment.reference),
@@ -122,7 +122,7 @@ class _ReceiptSheet extends StatelessWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: Text('المستلم: ${store.receiptReceiver}',
+                        child: Text('المستلم: ${_receiverName(payment, store)}',
                             style: const TextStyle(fontSize: 11, color: AppColors.muted)),
                       ),
                       const Text('التوقيع: ....................',
@@ -157,7 +157,7 @@ class _ReceiptSheet extends StatelessWidget {
               children: [
                 Expanded(
                   child: GhostButton(
-                    label: 'طباعة',
+                    label: 'تنزيل السند (PDF)',
                     icon: Icons.print_outlined,
                     onPressed: () => _print(context, store, student),
                   ),
@@ -249,11 +249,11 @@ class _ReceiptSheet extends StatelessWidget {
 
   Future<void> _print(BuildContext context, AppStore store, Student? student) async {
     final rows = <List<String>>[
-      ['وصلنا من', student?.fullName ?? 'سند عام'],
+      ['وصلنا من', _payerName(payment, student)],
       if (student != null) ['المرحلة الدراسية', student.gradeLevel],
       ['المبلغ المقبوض', money(payment.amount)],
       ['وقدره كتابةً', amountInArabicWords(payment.amount)],
-      ['طريقة السداد', paymentMethodNames[payment.method] ?? payment.method],
+      ['طريقة السداد', store.paymentMethodLabel(payment.method)],
       ['وذلك عن', paymentPurposeNames[payment.purpose] ?? payment.purpose],
       if (payment.senderName.isNotEmpty) ['اسم المحول منه', payment.senderName],
       if (payment.reference.isNotEmpty) ['الرقم المرجعي', payment.reference],
@@ -294,7 +294,7 @@ class _ReceiptSheet extends StatelessWidget {
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text('المستلم: ${store.receiptReceiver}', style: const pw.TextStyle(fontSize: 9)),
+            pw.Text('المستلم: ${_receiverName(payment, store)}', style: const pw.TextStyle(fontSize: 9)),
             pw.Text('التوقيع: ....................', style: const pw.TextStyle(fontSize: 9)),
           ],
         ),
@@ -308,4 +308,17 @@ class _ReceiptSheet extends StatelessWidget {
   /// إرسال الإيصال بالواتساب لولي الأمر — مطابق لـ `handleSendWhatsAppReceipt`.
   Future<void> _whatsapp(BuildContext context, AppStore store, Student student) =>
       ReceiptScreen.sendWhatsApp(context, payment, student);
+}
+
+/// اسم دافع السند: المجمَّد وقت الإصدار أولاً، فلا يتغيّر وصل قديم إن تغيّر اسم الطالب.
+String _payerName(Payment payment, Student? student) {
+  final frozen = payment.studentName.trim();
+  if (frozen.isNotEmpty) return frozen;
+  return student?.fullName ?? (payment.notes.isEmpty ? 'سند عام' : payment.notes);
+}
+
+/// اسم المستلم: المجمَّد وقت الإصدار، وإلا مستلم هذا الجهاز الآن.
+String _receiverName(Payment payment, AppStore store) {
+  final frozen = payment.receivedByName.trim();
+  return frozen.isEmpty ? store.receiptReceiver : frozen;
 }

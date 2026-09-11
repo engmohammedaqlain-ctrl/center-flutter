@@ -13,6 +13,7 @@ import '../widgets/panels.dart';
 import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import 'developer_settings_screen.dart';
+import 'payment_methods_tab.dart';
 import 'settings_forms.dart';
 
 /// الإعدادات — المقابل لـ `pages/Settings.tsx`.
@@ -46,6 +47,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// التبويبات بترتيب Settings.tsx — تُخفى بحسب الصلاحية ونوع المنشأة.
   static const _allTabs = [
     _Tab('grade_fees', Icons.payments_outlined, 'الرسوم والمراحل', capability: 'settings.fees', schoolOnly: true),
+    _Tab('payment_methods', Icons.credit_card_outlined, 'وسائل الدفع'),
     _Tab('teachers', Icons.school_outlined, 'المدرسين'),
     _Tab('subjects', Icons.menu_book_outlined, 'المواد الدراسية'),
     _Tab('rooms', Icons.meeting_room_outlined, 'القاعات', centerOnly: true),
@@ -80,6 +82,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Expanded(
                 child: switch (active.id) {
                   'grade_fees' => const _FeesTab(),
+                  'payment_methods' => const PaymentMethodsTab(),
                   'subjects' => const _SubjectsTab(),
                   'rooms' => const _HallsTab(),
                   'users' => const _UsersTab(),
@@ -103,6 +106,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           label: 'إضافة مدرس',
           icon: Icons.person_add_alt_1_outlined,
           onPressed: () => open(const TeacherFormScreen()),
+        ),
+      'payment_methods' => ThumbAction(
+          label: 'وسيلة دفع',
+          icon: Icons.add,
+          onPressed: () => addPaymentMethod(context),
         ),
       'subjects' => ThumbAction(label: 'إضافة مادة', icon: Icons.add, onPressed: () => open(const SubjectFormScreen())),
       'rooms' => ThumbAction(label: 'إضافة قاعة', icon: Icons.add, onPressed: () => open(const HallFormScreen())),

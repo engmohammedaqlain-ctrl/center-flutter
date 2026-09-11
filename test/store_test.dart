@@ -92,6 +92,18 @@ void main() {
     expect(p.cancelled, isTrue);
   });
 
+  test('balance is recomputed from records, not accumulated', () {
+    final s = seeded();
+    final student = s.students.firstWhere((e) => e.balance < 0);
+    final correct = s.computeStudentBalance(student.id);
+
+    // رقم غريب كما لو كتبه جهاز آخر كان يعمل بلا اتصال
+    student.balance = 999;
+    expect(s.recalculateAllBalances(), greaterThan(0));
+    expect(student.balance, closeTo(correct, 0.01));
+    expect(student.balance, lessThan(0), reason: 'أقساط المدرسة مديونية على الطالب');
+  });
+
   test('student national id must be unique 9 digits', () {
     final s = seeded();
     expect(

@@ -92,10 +92,15 @@ void injectDemoData(AppStore store) {
       final fee = store.feeFor(grade)?.monthlyFee ?? 200;
       final pattern = row[4] as int;
       var totalPaid = 0.0;
+
+      /// الأقساط التي حان موعدها وحدها — القسط القادم ليس ديناً بعد، فلو حُسب
+      /// هنا لاختلف الرصيد المعروض عمّا يحسبه `computeStudentBalance`.
+      var dueSoFar = 0.0;
       const instCount = 4;
 
       for (var p = 1; p <= instCount; p++) {
         final due = DateTime(today.year, today.month + (p - 3), 10);
+        if (!dateOnly(due).isAfter(dateOnly(today))) dueSoFar += fee;
         var paid = 0.0;
         if (pattern == 0) {
           paid = fee;
@@ -150,7 +155,7 @@ void injectDemoData(AppStore store) {
         neighborhood: neighborhoods[i % (neighborhoods.length - 1)],
         detailedAddress: i == 0 ? 'شارع النفق، بجوار مسجد الهدى' : '',
         referralSource: referralSources[i % referralSources.length],
-        balance: totalPaid - (fee * instCount),
+        balance: totalPaid - dueSoFar,
         gender: i.isOdd ? 'أنثى' : 'ذكر',
         notes: i == 3 ? 'لديه شقيق في المدرسة - خصم إخوة' : 'طالب منتظم في الدوام',
         enrolledAt: today.subtract(const Duration(days: 60)),

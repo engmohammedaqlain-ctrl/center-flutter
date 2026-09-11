@@ -6,6 +6,8 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
+import '../models/models.dart';
+
 /// أساس الطباعة و PDF — المقابل لـ `window.print()` وأزرار «تنزيل PDF»
 /// في ReceiptModal و ClassPrintRoster و SchedulePDFModal و Reports.
 ///
@@ -98,6 +100,11 @@ class PdfKit {
                 pw.Text(title, style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
                 if (subtitle != null && subtitle.isNotEmpty)
                   pw.Text(subtitle, style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
+                // العام الدراسي يتبع التاريخ، فلا يُكتب عاماً ثابتاً يُقادم
+                pw.Text(
+                  'العام الدراسي ${academicYear()}',
+                  style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
+                ),
               ],
             ),
           ),

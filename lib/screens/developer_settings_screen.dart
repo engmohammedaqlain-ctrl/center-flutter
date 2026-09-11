@@ -444,6 +444,12 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
         onChanged: (v) => store.saveFeatures(enableEvaluations: v),
       ),
       _featureRow(
+        title: 'مرفقات الطلاب (الصور والوثائق)',
+        hint: 'تخزين صورة الهوية وشهادة الميلاد. الصور ثقيلة وتُرفع مباشرةً للسحابة، وتُجلب عند فتح ملف الطالب.',
+        value: f.enableStudentAttachments,
+        onChanged: (v) => store.saveFeatures(enableStudentAttachments: v),
+      ),
+      _featureRow(
         title: 'بوابة الطالب الإلكترونية',
         hint: 'تمكين الطلاب وأولياء الأمور من الدخول برقم الهوية ورمز الدخول لاستعراض الحضور والرسوم والمواد.',
         value: f.enableStudentPortal,

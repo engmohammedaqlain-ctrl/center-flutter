@@ -55,7 +55,7 @@ Future<void> printWeeklyAttendance(
       ),
       pw.SizedBox(height: 8),
       pw.Text(
-        'الرموز: ✓ حاضر · ✗ غائب · م متأخر · ع معذور',
+        'الرموز: ✓ حاضر · ✗ غائب · م مأذون',
         style: const pw.TextStyle(fontSize: 8),
       ),
     ],

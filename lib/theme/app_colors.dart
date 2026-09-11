@@ -42,6 +42,10 @@ abstract final class AppColors {
   static const muted = Color(0xFF64748B);
   static const faint = Color(0xFF94A3B8);
 
+  /// اسم المنشأة على الشريط العلوي الداكن: رمادي هادئ لا يزاحم عنوان القسم.
+  /// لا يُغمَّق أكثر من هذا — الشريط نفسه داكن، وما دونه يذوب فيه فلا يُقرأ.
+  static const headerMuted = Color(0xFF94A3B8);
+
   static const success = Color(0xFF16A34A);
   static const successSoft = Color(0xFFDCFCE7);
   static const successBorder = Color(0xFFBBF7D0);

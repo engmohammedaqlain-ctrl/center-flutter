@@ -22,7 +22,18 @@ Future<void> _pump(WidgetTester tester, AppStore s, Widget home, {double width =
   await tester.pump(const Duration(milliseconds: 300));
 }
 
+/// شريط التبويبات يُمرَّر أفقياً، وما خرج عن الشاشة لا يُبنى أصلاً — فيُسحب
+/// الشريط حتى يظهر التبويب المطلوب قبل لمسه.
 Future<void> _openTab(WidgetTester tester, String label) async {
+  final bar = find.byType(Scrollable).first;
+  for (var i = 0; i < 14 && find.text(label).evaluate().isEmpty; i++) {
+    await tester.drag(bar, const Offset(-70, 0));
+    await tester.pump();
+  }
+  for (var i = 0; i < 20 && find.text(label).evaluate().isEmpty; i++) {
+    await tester.drag(bar, const Offset(70, 0));
+    await tester.pump();
+  }
   await tester.ensureVisible(find.text(label));
   await tester.pump();
   await tester.tap(find.text(label));
@@ -37,6 +48,7 @@ void main() {
 
       const expected = {
         'الرسوم والمراحل': 'مرحلة جديدة',
+        'وسائل الدفع': 'وسيلة دفع',
         'المدرسين': 'إضافة مدرس',
         'المواد الدراسية': 'إضافة مادة',
         'المستخدمين والصلاحيات': 'مستخدم جديد',

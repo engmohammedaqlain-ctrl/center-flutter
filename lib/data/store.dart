@@ -9,6 +9,7 @@ import '../models/models.dart';
 import '../theme/app_colors.dart';
 import 'institution.dart';
 import 'local_db.dart';
+import 'payment_methods.dart';
 import 'permissions.dart';
 import 'system_features.dart';
 import 'phone.dart';
@@ -572,6 +573,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       amount: amount,
       expenseDate: expenseDate,
       recordedByUserId: currentUserId,
+      recordedByName: receiptReceiver,
       method: method,
       notes: notes.trim(),
       syncStatus: 'pending',
@@ -608,11 +610,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     bool? enableExpenses,
     bool? enableEvaluations,
     bool? enableStudentPortal,
+    bool? enableStudentAttachments,
   }) async {
     final next = features.copyWith(
       enableExpenses: enableExpenses,
       enableEvaluations: enableEvaluations,
       enableStudentPortal: enableStudentPortal,
+      enableStudentAttachments: enableStudentAttachments,
     );
     await db.setSetting(systemFeaturesKey, next.encode());
     notifyListeners();
@@ -642,6 +646,51 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     } catch (_) {
       return {};
     }
+  }
+
+  // ── وسائل الدفع وقواعد الخصم (المقابل لـ finance/paymentMethods.ts) ───────
+
+  /// وسائل الدفع كما ضبطتها المنشأة، أو الأساسية إن لم تُضبط.
+  ///
+  /// تُقرأ من إعداد الجهاز أولاً، فإن لم يوجد فمن كائن ألوان المنشأة المتزامن —
+  /// وهو الطريق الذي تصل به ضبطات سطح المكتب إلى الجوال.
+  List<PaymentMethodItem> get paymentMethods {
+    final local = db.settings[customPaymentMethodsKey];
+    if (local != null && local.trim().isNotEmpty) return decodePaymentMethods(local);
+    return decodePaymentMethods(_storedColorsMap[customPaymentMethodsColorKey]);
+  }
+
+  /// الوسائل المعروضة عند القبض — المعطّلة تبقى للسندات القديمة ولا تُعرض.
+  List<PaymentMethodItem> get activePaymentMethods => paymentMethods.where((m) => m.enabled).toList();
+
+  /// مسمّى وسيلة الدفع كما ضبطته المنشأة — مطابق لـ `getPaymentMethodLabel`.
+  String paymentMethodLabel(String? key) {
+    final id = (key ?? '').trim();
+    if (id.isEmpty) return '-';
+    final found = paymentMethods.where((m) => m.id == id).firstOrNull;
+    // سند قديم بوسيلة حُذفت: يبقى اسمها المعروف بدل معرّف خام في الوصل
+    return found?.name ?? paymentMethodNames[id] ?? id;
+  }
+
+  Future<void> savePaymentMethods(List<PaymentMethodItem> methods) async {
+    requireCapability('settings.view');
+    final encoded = encodePaymentMethods(methods);
+    await db.setSetting(customPaymentMethodsKey, encoded);
+    // ومعها نسخة في ألوان المنشأة كي تصل بقية الأجهزة، كما تفعل النسخة المكتبية
+    await db.setSetting(
+      institutionColorsKey,
+      jsonEncode({..._storedColorsMap, customPaymentMethodsColorKey: jsonDecode(encoded)}),
+    );
+    _persistInstitutionRow();
+    notifyListeners();
+  }
+
+  SchoolDiscountRules get discountRules => SchoolDiscountRules.decode(db.settings[discountRulesKey]);
+
+  Future<void> saveDiscountRules(SchoolDiscountRules rules) async {
+    requireCapability('settings.view');
+    await db.setSetting(discountRulesKey, rules.encode());
+    notifyListeners();
   }
 
   Future<void> saveInstitution({
@@ -837,6 +886,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     await migrateReceiptNumbers();
     await migrateAttendanceIds();
     await migrateCapabilities();
+    await migratePaymentSnapshots();
+    await migrateSectionNames();
     dedupeAttendance();
     if (!networkEnabled) return;
     // الاستماع أولاً: لا يتوقف على نجاح خطوات الشبكة التي تليه
@@ -990,6 +1041,55 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   StudentAttachments? attachmentsOf(String studentId) => attachmentsByStudent[studentId];
+
+  /// جلب مرفقات الطالب عند الطلب — المقابل لـ `getAttachments` بعد تحويلها إلى
+  /// On-Demand. صور Base64 ثقيلة: سحبها مع كل مزامنة يستهلك الباندويث ويُبطئ كل
+  /// شيء، فتُجلب عند فتح ملف الطالب وحده وتبقى مخبّأة بعدها.
+  Future<StudentAttachments?> loadAttachments(String studentId) async {
+    final local = attachmentsByStudent[studentId];
+    if (local != null && !local.isEmpty) return local;
+    if (!networkEnabled || tenantId == null) return local;
+
+    try {
+      final rows = await supabaseSelect(
+        'student_attachments',
+        filters: {'id': 'eq.$studentId'},
+        limit: 1,
+      );
+      if (rows == null || rows.isEmpty) return local;
+      final fetched = StudentAttachments.fromCloud(rows.first);
+      if (fetched.isEmpty) return local;
+      attachmentsByStudent[studentId] = fetched;
+      markDirty('student_attachments');
+      notifyListeners();
+      return fetched;
+    } catch (_) {
+      return local;
+    }
+  }
+
+  /// رفع المرفق مباشرةً لا عبر طابور المزامنة: صورة واحدة تزن أضعاف الطابور
+  /// كله، فتُبطئ كل رفع وتُعاد مع كل محاولة فاشلة.
+  Future<void> _pushAttachments(String studentId, StudentAttachments a) async {
+    final tid = tenantId;
+    if (!networkEnabled || tid == null) return;
+    try {
+      await supabaseUpsert('student_attachments', [
+        {...a.toCloud(), 'id': studentId, 'tenant_id': tid},
+      ]);
+    } catch (_) {
+      // تعذّر الرفع الآن: النسخة المحلية باقية، ويعيد الحفظ التالي المحاولة
+    }
+  }
+
+  Future<void> _removeCloudAttachments(String studentId) async {
+    if (!networkEnabled || tenantId == null) return;
+    try {
+      await supabaseDelete('student_attachments', {'id': 'eq.$studentId'});
+    } catch (_) {
+      // الحذف المحلي تم، والسحابي يُعاد عند الحذف التالي
+    }
+  }
 
   /// دفعات الطالب مرتّبة بالأحدث — مطابق لـ `FinanceService.getPaymentsByStudent`.
   List<Payment> paymentsOf(String studentId) {
@@ -1323,15 +1423,15 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       if (!hasAny) {
         if (existed) {
           attachmentsByStudent.remove(incoming.id);
-          _queue('student_attachments', incoming.id, 'DELETE', null);
           markDirty('student_attachments');
+          unawaited(_removeCloudAttachments(incoming.id));
         }
       } else {
         attachments.updatedAt = _nowIso();
-        attachments.syncStatus = 'pending';
+        attachments.syncStatus = 'synced';
         attachmentsByStudent[incoming.id] = attachments;
-        _queue('student_attachments', incoming.id, existed ? 'UPDATE' : 'INSERT', attachments.toCloud());
         markDirty('student_attachments');
+        unawaited(_pushAttachments(incoming.id, attachments));
       }
     }
     markDirty('students');
@@ -1370,7 +1470,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     attendance.removeWhere((a) => a.studentId == id);
     enrollments.removeWhere((e) => e.studentId == id);
     if (attachmentsByStudent.remove(id) != null) {
-      queuePendingSync(pendingSyncs, tableName: 'student_attachments', recordId: id, action: 'DELETE', payload: null);
+      unawaited(_removeCloudAttachments(id));
     }
     _queue('students', id, 'DELETE', null);
     markDirty('students');
@@ -1417,6 +1517,25 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (rows == null) return;
     final cloudMax = maxSerialFor(year, rows.map((r) => '${r['receipt_number'] ?? ''}'));
     if (cloudMax > _cloudSerialHint) _cloudSerialHint = cloudMax;
+  }
+
+  /// منح سند رقماً جديداً بعد تعارض رقمه مع سند آخر صدر بلا اتصال.
+  ///
+  /// الرقم الورقي الأول يبقى في بيان السند: الوصل المطبوع بيد ولي الأمر يحمله،
+  /// فلا يضيع أثره حين يتغيّر الرقم في النظام.
+  @override
+  String? reissueReceiptNumber(String paymentId) {
+    final p = payments.where((x) => x.id == paymentId).firstOrNull;
+    if (p == null) return null;
+
+    final old = p.receiptNumber;
+    final fresh = _nextReceipt();
+    p.receiptNumber = fresh;
+    final mark = 'رقم ورقي: $old';
+    p.notes = p.notes.trim().isEmpty ? '($mark)' : '${p.notes.trim()} ($mark)';
+    p.updatedAt = _nowIso();
+    markDirty('payments');
+    return fresh;
   }
 
   String _nextReceipt() {
@@ -1578,10 +1697,6 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (stu == null) throw StoreException('يرجى اختيار الطالب أولاً');
 
     final totalDue = stu.balance < 0 ? stu.balance.abs() : 0.0;
-    stu.balance += amount;
-    stu.updatedAt = _nowIso();
-    stu.syncStatus = 'pending';
-    final remaining = stu.balance < 0 ? stu.balance.abs() : 0.0;
 
     if (installmentId != null) {
       for (final inst in installments) {
@@ -1599,6 +1714,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final p = Payment(
       id: newId(),
       receiptNumber: _nextReceipt(),
+      // لقطة وقت الإصدار: اسم الطالب والمستلم لا يتغيّران بأثر رجعي
+      studentName: stu.fullName,
+      receivedByName: receiptReceiver,
       studentId: studentId,
       amount: amount,
       method: method,
@@ -1614,13 +1732,18 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       groupId: groupId,
       enrollmentId: enrollmentId,
       receivedByUserId: currentUserId,
-      remainingAfter: remaining == 0 && totalDue == 0 ? 0 : remaining,
+      remainingAfter: 0,
       totalDueAtPayment: totalDue,
       syncStatus: 'pending',
       createdAt: _nowIso(),
       updatedAt: _nowIso(),
     );
     payments.insert(0, p);
+    // الرصيد من السجلات بعد إضافة السند — لا جمع تراكمي يتضارب بين الأجهزة
+    stu.balance = computeStudentBalance(stu.id);
+    stu.updatedAt = _nowIso();
+    stu.syncStatus = 'pending';
+    p.remainingAfter = stu.balance < 0 ? stu.balance.abs() : 0;
     queuePendingSync(pendingSyncs, tableName: 'payments', recordId: p.id, action: 'INSERT', payload: p.toCloud());
     queuePendingSync(pendingSyncs, tableName: 'students', recordId: stu.id, action: 'UPDATE', payload: stu.toCloud());
     markDirty('payments');
@@ -1639,7 +1762,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     p.syncStatus = 'pending';
     final stu = studentById(p.studentId);
     if (stu != null) {
-      stu.balance -= p.amount;
+      stu.balance = computeStudentBalance(stu.id);
       stu.updatedAt = _nowIso();
       stu.syncStatus = 'pending';
       queuePendingSync(pendingSyncs, tableName: 'students', recordId: stu.id, action: 'UPDATE', payload: stu.toCloud());
@@ -1661,6 +1784,104 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     markDirty('students');
   }
 
+  /// رصيد الطالب محسوباً من سجلاته الفعلية — المقابل لـ `computeStudentBalance`.
+  ///
+  ///   الرصيد = (السندات غير الملغاة + خصوماتها)
+  ///            − (أقساط المدرسة التي حان موعدها + رسوم تسجيلات المركز النشطة)
+  ///            + رسم حجز المقعد إن دُفع
+  ///
+  /// القسط لا يصير ديناً قبل موعده: من سدّد ما استُحق عليه لا شيء، وقسط الأسبوع
+  /// القادم يصير مطلوباً حين يحلّ موعده.
+  ///
+  /// جمعه وطرحه تراكمياً مع كل حركة كان يتضارب بين جهازين يعملان بلا اتصال:
+  /// آخر رقم يصل السحابة يفوز فتضيع حركة الجهاز الآخر. الحساب من السجلات يعطي
+  /// النتيجة نفسها على كل جهاز مهما اختلف ترتيب وصول السجلات.
+  ///
+  /// الأقساط داخلة في المديونية خلافاً للنسخة المكتبية التي تحسب التسجيلات
+  /// وحدها: مديونية طالب المدرسة كلها في أقساطه، وإسقاطها كان يقلب رصيد من
+  /// سدّد قسطاً إلى «له» بدل «عليه».
+  double computeStudentBalance(String studentId) {
+    var paid = 0.0;
+    for (final p in payments) {
+      if (p.studentId != studentId || p.cancelled) continue;
+      paid += p.amount + p.discountAmount;
+    }
+
+    final today = dateOnly(DateTime.now());
+    var dues = 0.0;
+    for (final inst in installments) {
+      if (inst.studentId != studentId) continue;
+      if (dateOnly(inst.dueDate).isAfter(today)) continue;
+      dues += inst.amount;
+    }
+    for (final e in enrollments) {
+      if (e.studentId != studentId) continue;
+      if (e.status != 'active' && e.status != 'completed') continue;
+      dues += e.appliedPrice ?? e.customPrice ?? 0;
+    }
+
+    final student = studentById(studentId);
+    final seat = (student?.seatReservationPaid ?? false) ? seatReservationFee : 0.0;
+    return paid - dues + seat;
+  }
+
+  /// إعادة حساب أرصدة كل الطلاب من سجلاتهم — تُستدعى بعد كل سحب.
+  ///
+  /// تصحيح محلي لا يُرفع: كل جهاز يصل إلى النتيجة نفسها من السجلات نفسها، فلا
+  /// داعي لجولة كتابة جديدة تُشعل تضارباً آخر. تعيد عدد الأرصدة المصحَّحة.
+  @override
+  int recalculateAllBalances() {
+    final paidByStudent = <String, double>{};
+    for (final p in payments) {
+      if (p.cancelled || p.studentId.isEmpty) continue;
+      paidByStudent[p.studentId] = (paidByStudent[p.studentId] ?? 0) + p.amount + p.discountAmount;
+    }
+
+    final today = dateOnly(DateTime.now());
+    final duesByStudent = <String, double>{};
+    for (final inst in installments) {
+      if (inst.studentId.isEmpty) continue;
+      // القسط القادم ليس ديناً بعد
+      if (dateOnly(inst.dueDate).isAfter(today)) continue;
+      duesByStudent[inst.studentId] = (duesByStudent[inst.studentId] ?? 0) + inst.amount;
+    }
+    for (final e in enrollments) {
+      if (e.studentId.isEmpty) continue;
+      if (e.status != 'active' && e.status != 'completed') continue;
+      duesByStudent[e.studentId] = (duesByStudent[e.studentId] ?? 0) + (e.appliedPrice ?? e.customPrice ?? 0);
+    }
+
+    final fee = seatReservationFee;
+    var corrected = 0;
+    for (final student in students) {
+      final seat = student.seatReservationPaid ? fee : 0.0;
+      final computed = (paidByStudent[student.id] ?? 0) - (duesByStudent[student.id] ?? 0) + seat;
+      // فرق أقل من قرش لا يستحق كتابة
+      if ((student.balance - computed).abs() <= 0.01) continue;
+      student.balance = computed;
+      student.updatedAt = _nowIso();
+      corrected++;
+    }
+
+    if (corrected > 0) {
+      markDirty('students');
+      notifyListeners();
+    }
+    return corrected;
+  }
+
+  /// تحديث رصيد الطالب المخبّأ من سجلاته ورفعه إن تغيّر.
+  void _refreshBalance(Student student) {
+    final computed = computeStudentBalance(student.id);
+    if ((student.balance - computed).abs() <= 0.01) return;
+    student.balance = computed;
+    student.updatedAt = _nowIso();
+    student.syncStatus = 'pending';
+    queuePendingSync(pendingSyncs, tableName: 'students', recordId: student.id, action: 'UPDATE', payload: student.toCloud());
+    markDirty('students');
+    markDirty(_pendingTable);
+  }
+
   List<DueItem> dueItems() {
     // تُستدعى من شريط التنقّل في كل إعادة رسم، وحسابها يمرّ على كل الأقساط
     // والطلاب. النتيجة تُحفظ حتى التعديل التالي.
@@ -1680,7 +1901,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       final student = studentById(inst.studentId);
       if (student == null) continue;
       withInst.add(student.id);
-      final late = dateOnly(inst.dueDate).isBefore(today);
+      final due = dateOnly(inst.dueDate);
       list.add(
         DueItem(
           id: inst.id,
@@ -1688,7 +1909,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
           title: inst.title,
           amount: inst.remaining,
           dueDate: inst.dueDate,
-          late: late,
+          late: due.isBefore(today),
+          scheduled: due.isAfter(today),
           exception: inst.exception || student.hasException,
           installmentId: inst.id,
         ),
@@ -1795,28 +2017,157 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return null;
   }
 
-  /// حذف مجموعة. التسجيلات القائمة تمنع الحذف حتى لا تُترك يتيمة.
-  void deleteGroup(String id) {
+  /// حذف مجموعة، أو أرشفتها إن كان لها تاريخ.
+  ///
+  /// المجموعة التي لها تسجيلات أو حصص سابقة تُؤرشف بدل حذفها حتى لا تُمحى قيود
+  /// مالية وسجلات حضور مرتبطة بها — مطابق لـ `ScheduleService.deleteGroup` بعد
+  /// «منع تعديل البيانات بأثر رجعي». تعيد `true` إن حُذفت فعلاً، و`false` إن أُرشفت.
+  bool deleteGroup(String id) {
     requireCapability('schedule.edit');
-    final active = enrollmentCount(id);
-    if (active > 0) {
-      throw StoreException(
-        'لا يمكن حذف هذه المجموعة لأن بها $active طالباً مسجَّلاً. '
-        'ألغِ تسجيل الطلاب أولاً، أو غيّر حالة المجموعة إلى "مؤرشفة".',
-      );
+    final hasHistory = enrollments.any((e) => e.groupId == id) || sessions.any((s) => s.groupId == id);
+
+    if (hasHistory) {
+      final group = groupById(id);
+      if (group == null) return false;
+      group.status = 'archived';
+      group.updatedAt = _nowIso();
+      group.syncStatus = 'pending';
+      _queue('groups', id, 'UPDATE', group.toCloud());
+      markDirty('groups');
+      return false;
     }
-    for (final e in enrollments.where((e) => e.groupId == id)) {
-      queuePendingSync(pendingSyncs, tableName: 'enrollments', recordId: e.id, action: 'DELETE', payload: null);
-    }
-    for (final sess in sessions.where((s) => s.groupId == id)) {
-      queuePendingSync(pendingSyncs, tableName: 'sessions', recordId: sess.id, action: 'DELETE', payload: null);
-    }
-    enrollments.removeWhere((e) => e.groupId == id);
-    sessions.removeWhere((s) => s.groupId == id);
+
     groups.removeWhere((g) => g.id == id);
     _queue('groups', id, 'DELETE', null);
+    return true;
+  }
+
+  // ─── مواد الشعبة ومعلموها ──────────────────────────────────────────────
+  //
+  // في المدرسة لكل شعبة موادها، ولكل مادة معلمها. تُمثَّل — كما في النسخة
+  // المكتبية — بمجموعة لكل (مادة، شعبة) بلا أيام ولا رسوم: وعاء يربط المعلم
+  // بطلاب الشعبة كي يظهروا له في البوابة والتقييمات والرصد، دون أن يقيَّد على
+  // الطالب قرش واحد.
+
+  /// مجموعات مواد الشعبة النشطة — مطابق لـ `SettingsService.getSectionSubjectGroups`.
+  List<Group> sectionSubjectGroups(String roomId) =>
+      groups.where((g) => g.roomId == roomId && g.isActive).toList();
+
+  /// المواد التي تنطبق على مرحلة — مطابق لـ `getGradeApplicableSubjects`.
+  /// «عام / كل المراحل» ينطبق على الجميع، والمرحلة تُطابَق باحتواء الاسم.
+  List<SubjectItem> gradeApplicableSubjects(String? gradeLevel) {
+    final grade = (gradeLevel ?? '').trim().toLowerCase();
+    if (grade.isEmpty) return List.of(subjects);
+    return subjects.where((s) {
+      final raw = s.gradeLevel.trim();
+      if (raw.isEmpty || raw == 'عام / كل المراحل') return true;
+      final low = raw.toLowerCase();
+      return low == grade || low.contains(grade) || grade.contains(low);
+    }).toList();
+  }
+
+  /// معلمو الشعبة: مربّيها ومعلمو موادها بلا تكرار.
+  Set<String> sectionTeacherIds(Classroom room) {
+    final ids = <String>{};
+    if (room.teacherId.trim().isNotEmpty && teacherById(room.teacherId) != null) {
+      ids.add(room.teacherId.trim());
+    }
+    for (final g in sectionSubjectGroups(room.id)) {
+      if (g.teacherId.trim().isNotEmpty) ids.add(g.teacherId.trim());
+    }
+    return ids;
+  }
+
+  /// حفظ إسناد معلمي مواد الشعبة — مطابق لـ `saveSectionSubjectAssignments`.
+  ///
+  /// [assignments] معرّف المادة ← معرّف المعلم؛ المادة بلا معلم تعني رفع
+  /// الإسناد. مجموعة المادة المرفوعة تُؤرشف ولا تُحذف: لها حضور وتقييمات.
+  /// تُعيد عدد المواد المسندة.
+  int saveSectionSubjectAssignments({
+    required String roomId,
+    required String gradeLevel,
+    required String roomName,
+    required Map<String, String> assignments,
+  }) {
+    requireCapability('schedule.edit');
+    final room = roomById(roomId);
+    if (room == null) throw StoreException('لم يتم العثور على الصف');
+
+    final now = _nowIso();
+    final existing = sectionSubjectGroups(roomId);
+    final active = <String, String>{
+      for (final e in assignments.entries)
+        if (e.value.trim().isNotEmpty) e.key: e.value.trim(),
+    };
+
+    for (final g in existing) {
+      if (active.containsKey(g.subjectId)) continue;
+      g.status = 'archived';
+      g.updatedAt = now;
+      g.syncStatus = 'pending';
+      _queue('groups', g.id, 'UPDATE', g.toCloud());
+    }
+
+    final roster = studentsOf(room);
+
+    for (final entry in active.entries) {
+      final name = '${subjectName(entry.key)} - ${roomName.trim()}';
+      var group = existing.where((g) => g.subjectId == entry.key).firstOrNull;
+
+      if (group != null) {
+        group.name = name;
+        group.teacherId = entry.value;
+        group.gradeLevel = gradeLevel;
+        group.status = 'active';
+        group.updatedAt = now;
+        group.syncStatus = 'pending';
+        _queue('groups', group.id, 'UPDATE', group.toCloud());
+      } else {
+        // لا تمرّ على `upsertGroup`: تلك تشترط أياماً ومواعيد لا وجود لها هنا
+        group = Group(
+          id: newId(),
+          name: name,
+          subjectId: entry.key,
+          teacherId: entry.value,
+          roomId: roomId,
+          gradeLevel: gradeLevel,
+          startTime: '',
+          endTime: '',
+          syncStatus: 'pending',
+          createdAt: now,
+          updatedAt: now,
+        );
+        groups.add(group);
+        _queue('groups', group.id, 'INSERT', group.toCloud());
+      }
+
+      for (final st in roster) {
+        final e = enrollments.where((x) => x.groupId == group!.id && x.studentId == st.id).firstOrNull;
+        if (e == null) {
+          final enrollment = StudentEnrollment(
+            id: newId(),
+            studentId: st.id,
+            groupId: group.id,
+            customPrice: 0,
+            appliedPrice: 0,
+            syncStatus: 'pending',
+            createdAt: now,
+            updatedAt: now,
+          );
+          enrollments.add(enrollment);
+          _queue('enrollments', enrollment.id, 'INSERT', enrollment.toCloud());
+        } else if (!e.isActive) {
+          e.status = 'active';
+          e.updatedAt = now;
+          e.syncStatus = 'pending';
+          _queue('enrollments', e.id, 'UPDATE', e.toCloud());
+        }
+      }
+    }
+
+    markDirty('groups');
     markDirty('enrollments');
-    markDirty('sessions');
+    return active.length;
   }
 
   /// تسجيل طالب في مجموعة.
@@ -1861,6 +2212,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     );
     enrollments.add(enrollment);
     _queue('enrollments', enrollment.id, 'INSERT', enrollment.toCloud());
+    // رسوم المجموعة مديونية على الطالب — كانت لا تُقيَّد على الرصيد إطلاقاً
+    _refreshBalance(student);
     return enrollment;
   }
 
@@ -1872,6 +2225,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     e.updatedAt = _nowIso();
     e.syncStatus = 'pending';
     _queue('enrollments', e.id, 'UPDATE', e.toCloud());
+    // الملغى لا تُحتسب رسومه، والنشط تُحتسب
+    final owner = studentById(e.studentId);
+    if (owner != null) _refreshBalance(owner);
   }
 
   void deleteEnrollment(String enrollmentId) {
@@ -1882,8 +2238,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         'لا يمكن إلغاء هذا التسجيل لأن عليه $linked سند قبض مسجَّل. ألغِ السندات أولاً.',
       );
     }
+    final removed = enrollments.where((e) => e.id == enrollmentId).firstOrNull;
     enrollments.removeWhere((e) => e.id == enrollmentId);
     _queue('enrollments', enrollmentId, 'DELETE', null);
+    final owner = removed == null ? null : studentById(removed.studentId);
+    if (owner != null) _refreshBalance(owner);
   }
 
   // ── الجلسات (المقابل لـ attendance.service.ts) ──────────────────────────────
@@ -1963,18 +2322,73 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   void upsertRoom(Classroom r) {
     requireCapability('schedule.edit', ['settings.view']);
     if (r.name.trim().isEmpty) throw StoreException('يرجى إدخال اسم الصف / الشعبة');
+    // المرحلة في حقلها: تكرارها داخل اسم الشعبة يُنتج «ثاني عشر علمي (ثاني عشر علمي أ)»
+    r.name = r.gradeLevel.trim().isEmpty ? r.name.trim() : sanitizeSectionName(r.name, r.gradeLevel);
     r.updatedAt = _nowIso();
     r.syncStatus = 'pending';
     final i = rooms.indexWhere((e) => e.id == r.id);
     if (i >= 0) {
+      final oldName = rooms[i].name.trim();
       r.createdAt = rooms[i].createdAt;
       rooms[i] = r;
       _queue('rooms', r.id, 'UPDATE', r.toCloud());
+      // شعبة الطلاب تتبع اسم الصف: إبقاؤها على الاسم القديم كان يُفرغ الصف من طلابه
+      if (oldName.isNotEmpty && oldName != r.name) _renameStudentSection(oldName, r.name);
     } else {
       r.createdAt = _nowIso();
       rooms.add(r);
       _queue('rooms', r.id, 'INSERT', r.toCloud());
     }
+  }
+
+  /// نقل طلاب شعبة إلى اسمها الجديد بعد تغييره.
+  void _renameStudentSection(String oldName, String newName) {
+    for (final s in students) {
+      if (s.section.trim() != oldName) continue;
+      s.section = newName;
+      s.updatedAt = _nowIso();
+      s.syncStatus = 'pending';
+      queuePendingSync(pendingSyncs, tableName: 'students', recordId: s.id, action: 'UPDATE', payload: s.toCloud());
+    }
+    markDirty('students');
+    markDirty(_pendingTable);
+  }
+
+  /// تنقية أسماء الشعب والمجموعات المحفوظة سابقاً — مرة واحدة لكل جهاز.
+  Future<int> migrateSectionNames() async {
+    if (db.settings[sectionNameMigrationKey] == 'true') return 0;
+
+    var changed = 0;
+    for (final r in rooms) {
+      if (r.gradeLevel.trim().isEmpty) continue;
+      final clean = sanitizeSectionName(r.name, r.gradeLevel);
+      if (clean.isEmpty || clean == r.name) continue;
+      final oldName = r.name.trim();
+      r.name = clean;
+      r.updatedAt = _nowIso();
+      r.syncStatus = 'pending';
+      queuePendingSync(pendingSyncs, tableName: 'rooms', recordId: r.id, action: 'UPDATE', payload: r.toCloud());
+      _renameStudentSection(oldName, clean);
+      changed++;
+    }
+
+    for (final g in groups) {
+      final clean = sanitizeGroupName(g.name, subject: subjectName(g.subjectId), gradeLevel: g.gradeLevel);
+      if (clean.isEmpty || clean == g.name) continue;
+      g.name = clean;
+      g.updatedAt = _nowIso();
+      g.syncStatus = 'pending';
+      queuePendingSync(pendingSyncs, tableName: 'groups', recordId: g.id, action: 'UPDATE', payload: g.toCloud());
+      changed++;
+    }
+
+    if (changed > 0) {
+      markDirty('rooms');
+      markDirty('groups');
+      markDirty(_pendingTable);
+    }
+    await db.setSetting(sectionNameMigrationKey, 'true');
+    return changed;
   }
 
   void deleteRoom(String id) {
@@ -2154,6 +2568,35 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     await hydrateInstitution();
     notifyListeners();
     return res.pulled;
+  }
+
+  /// تجميد لقطات السندات القديمة — المقابل لـ `freezeHistoricalPaymentSnapshots`.
+  ///
+  /// السند المحاسبي يحفظ اسم الطالب واسم المستلم كما كانا وقت القبض. قراءتهما من
+  /// السجل الحالي عند كل عرض كانت تُغيّر سندات قديمة بأثر رجعي إذا تغيّر اسم
+  /// الطالب أو هوية الجهاز. تُكتب محلياً فقط ولا تُرفع (لا عمود لها في السحابة).
+  Future<int> migratePaymentSnapshots() async {
+    if (db.settings[paymentSnapshotKey] == 'true') return 0;
+
+    var changed = 0;
+    for (final p in payments) {
+      if (p.studentName.trim().isEmpty) {
+        final student = studentById(p.studentId);
+        if (student != null) {
+          p.studentName = student.fullName;
+          changed++;
+        }
+      }
+      if (p.receivedByName.trim().isEmpty) {
+        final issuer = users.where((u) => u.id == p.receivedByUserId).firstOrNull;
+        p.receivedByName = issuer?.name ?? 'الإدارة';
+        changed++;
+      }
+    }
+
+    if (changed > 0) markDirty('payments');
+    await db.setSetting(paymentSnapshotKey, 'true');
+    return changed;
   }
 
   /// المستخدمون النشطون المتاحون لاختيار هوية الجهاز.

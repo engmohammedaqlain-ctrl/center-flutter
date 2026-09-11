@@ -102,11 +102,12 @@ void main() {
     await tester.tap(find.text('فتح'));
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField).first, 'اسم معدّل');
+    await tester.enterText(find.byType(TextField).first, 'ج');
     await tester.tap(find.text('حفظ التعديلات'));
     await tester.pumpAndSettle();
 
-    expect(s.rooms.firstWhere((r) => r.id == room.id).name, 'اسم معدّل');
+    // المرحلة في حقلها: يُكتب رمز الشعبة وحده ويُوحَّد شكله «شعبة (ج)»
+    expect(s.rooms.firstWhere((r) => r.id == room.id).name, 'شعبة (ج)');
     expect(find.byType(RoomFormScreen), findsNothing, reason: 'يعود بعد الحفظ');
 
     // انتهاء إشعار الحفظ قبل هدم الشجرة

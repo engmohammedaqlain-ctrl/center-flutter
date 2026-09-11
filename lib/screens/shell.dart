@@ -135,8 +135,8 @@ class _Header extends StatelessWidget {
                   store.institutionName.isEmpty ? 'إدارة المدارس' : store.institutionName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppColors.accent,
+                  style: const TextStyle(
+                    color: AppColors.headerMuted,
                     fontSize: 10.5,
                     fontWeight: FontWeight.w600,
                     height: 1.2,

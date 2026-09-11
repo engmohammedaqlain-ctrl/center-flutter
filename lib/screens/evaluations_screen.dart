@@ -59,7 +59,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
             title: const Text('الدرجات والتقييمات'),
             actions: [
               IconButton(
-                tooltip: 'طباعة الكشف',
+                tooltip: 'تنزيل الكشف',
                 icon: const Icon(Icons.print_outlined),
                 onPressed: list.isEmpty
                     ? null

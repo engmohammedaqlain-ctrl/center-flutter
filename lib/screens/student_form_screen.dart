@@ -113,7 +113,12 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
       setState(() => attachmentsLoaded = true);
       return;
     }
-    final att = StoreScope.of(context).attachmentsOf(s.id);
+    final store = StoreScope.of(context);
+    if (!store.features.enableStudentAttachments) {
+      setState(() => attachmentsLoaded = true);
+      return;
+    }
+    final att = await store.loadAttachments(s.id);
     if (!mounted) return;
     setState(() {
       studentIdPhoto = att?.studentIdPhoto ?? '';
@@ -742,21 +747,24 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           ],
         ),
       ),
-      _gap,
-      const FieldLabel('المرفقات والوثائق'),
-      Row(
-        children: [
-          Expanded(
-            child: _attachBox('صورة هوية الطالب', studentIdPhoto, () => _pickAttachment((v) => studentIdPhoto = v),
-                () => setState(() => studentIdPhoto = '')),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _attachBox('شهادة الميلاد', birthCertificate, () => _pickAttachment((v) => birthCertificate = v),
-                () => setState(() => birthCertificate = '')),
-          ),
-        ],
-      ),
+      // المرفقات ميزة تُفعَّل من إعدادات المطور: صور ثقيلة لا تُخزَّن لكل منشأة
+      if (StoreScope.of(context).features.enableStudentAttachments) ...[
+        _gap,
+        const FieldLabel('المرفقات والوثائق'),
+        Row(
+          children: [
+            Expanded(
+              child: _attachBox('صورة هوية الطالب', studentIdPhoto, () => _pickAttachment((v) => studentIdPhoto = v),
+                  () => setState(() => studentIdPhoto = '')),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _attachBox('شهادة الميلاد', birthCertificate, () => _pickAttachment((v) => birthCertificate = v),
+                  () => setState(() => birthCertificate = '')),
+            ),
+          ],
+        ),
+      ],
       _gap,
       Row(
         children: [

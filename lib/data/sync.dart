@@ -75,7 +75,8 @@ const tableAllowedColumns = <String, List<String>>{
   ],
   'payments': [
     'id', 'receipt_number', 'student_id', 'enrollment_id', 'group_id',
-    'installment_id', 'amount', 'payment_method', 'payment_date',
+    'installment_id', 'amount', 'original_amount', 'discount_amount', 'discount_reason',
+    'payment_method', 'payment_date',
     'received_by_user_id', 'payment_purpose', 'transfer_channel',
     'transfer_date', 'custom_method_notes',
     'sender_name', 'reference_number', 'total_due_at_payment',
@@ -130,8 +131,8 @@ const nonTextColumns = <String, List<String>>{
   ],
   'institution_settings': ['colors', 'created_at', 'tenant_id', 'updated_at'],
   'payments': [
-    'amount', 'created_at', 'is_cancelled', 'payment_date', 'remaining_balance_after',
-    'tenant_id', 'total_due_at_payment', 'transfer_date', 'updated_at',
+    'amount', 'created_at', 'discount_amount', 'is_cancelled', 'original_amount', 'payment_date',
+    'remaining_balance_after', 'tenant_id', 'total_due_at_payment', 'transfer_date', 'updated_at',
   ],
   'rooms': ['capacity', 'created_at', 'tenant_id', 'updated_at'],
   'sessions': ['created_at', 'end_time', 'session_date', 'start_time', 'tenant_id', 'updated_at'],
@@ -408,6 +409,14 @@ final _transientError = RegExp(
 /// سليمة تماماً في «المتعثرة» ولا يُعاد رفعها تلقائياً أبداً.
 bool isTransientSyncError(Object error) => _transientError.hasMatch(error.toString());
 
+/// تعارض رقم سند صدر مرتين من جهازين كانا يعملان بلا اتصال —
+/// قيد `uq_payments_tenant_receipt` في السحابة.
+bool isDuplicateReceiptError(Object error) {
+  final raw = error.toString().toLowerCase();
+  final duplicate = raw.contains('duplicate key') || raw.contains('23505');
+  return duplicate && raw.contains('receipt');
+}
+
 String describeSupabaseError(Object error, String tableName) {
   final raw = error.toString();
   final table = tableLabelsAr[tableName] ?? tableName;
@@ -455,6 +464,13 @@ abstract class SyncLocalStore {
 
   /// ما يجري بعد اكتمال سحب: قراءة الإعدادات التي وصلت مع الصفوف.
   Future<void> onPulled();
+
+  /// إعادة حساب أرصدة الطلاب من سجلاتهم بعد السحب. تعيد عدد ما صُحِّح.
+  int recalculateAllBalances();
+
+  /// منح سند رقماً جديداً متاحاً بعد تعارض رقمه مع سند آخر. يعيد الرقم الجديد،
+  /// أو `null` إن لم يعد السند موجوداً.
+  String? reissueReceiptNumber(String paymentId);
 }
 
 class SyncService {
@@ -843,6 +859,15 @@ class SyncService {
               local.pendingSyncs.removeWhere((p) => p.id == kept[k].id);
               local.markSynced(tableName, kept[k].recordId);
             } catch (rowErr) {
+              // سندان برقم واحد صدرا من جهازين بلا اتصال: يُمنح هذا السند رقماً
+              // متاحاً ويُحفظ رقمه الورقي في بيانه، بدل انتظار تدخل يدوي من المدير
+              if (tableName == 'payments' && isDuplicateReceiptError(rowErr)) {
+                final reissued = await _retryWithFreshReceipt(kept[k], tenantId);
+                if (reissued) {
+                  pushed++;
+                  continue;
+                }
+              }
               rowFailed++;
               _markFailed(
                 [kept[k]],
@@ -857,6 +882,21 @@ class SyncService {
     }
 
     return (pushed: pushed, failed: failed + (all.length - actions.length));
+  }
+
+  /// إعادة رفع سند برقم جديد بعد تعارض رقمه. يعيد `true` إن نجح الرفع.
+  Future<bool> _retryWithFreshReceipt(PendingSync action, String tenantId) async {
+    if (local.reissueReceiptNumber(action.recordId) == null) return false;
+    final updated = local.recordOf('payments', action.recordId);
+    if (updated == null) return false;
+    try {
+      await _upsert('payments', [sanitizePayload('payments', updated, tenantId)]);
+      local.pendingSyncs.removeWhere((p) => p.id == action.id);
+      local.markSynced('payments', action.recordId);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// تسجيل فشل محاولة رفع.
@@ -907,6 +947,8 @@ class SyncService {
     final failedTables = <String, String>{};
 
     for (final cloud in syncedTables) {
+      // مرفقات الطلاب لا تُسحب دورياً: صور Base64 تُجلب عند فتح ملف الطالب وحده
+      if (cloud == 'student_attachments') continue;
       // الجدول بلا `updated_at` لا يقبل الترشيح التزايدي فيُسحب كاملاً
       final isIncremental = incrementalPull && tableHasUpdatedAt(cloud);
       try {
@@ -1054,6 +1096,10 @@ class SyncService {
         failedTables[cloud] = describeSupabaseError(err, cloud);
       }
     }
+
+    // أرصدة الطلاب تُعاد من السجلات بعد كل سحب: أجهزة مختلفة قد تكون كتبت
+    // أرقاماً مختلفة للرصيد نفسه، والحساب من السجلات يوحّدها بلا كتابة جديدة.
+    if (totalPulled > 0) local.recalculateAllBalances();
 
     remotePendingIds.clear();
     lastRemoteCheck = DateTime.now();

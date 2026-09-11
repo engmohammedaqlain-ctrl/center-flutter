@@ -33,7 +33,13 @@ class _FinanceScreenState extends State<FinanceScreen> {
   String dueStage = '';
 
   static const _statusOptions = {'': 'كل الحالات', 'active': 'مقبوضة', 'cancelled': 'ملغاة'};
-  static const _stageOptions = {'': 'كل الحالات', 'due': 'مستحق', 'late': 'متأخر عن السداد', 'exception': 'استثناء'};
+  static const _stageOptions = {
+    '': 'كل الحالات',
+    'due': 'مستحق',
+    'late': 'متأخر عن السداد',
+    'scheduled': 'مجدول',
+    'exception': 'استثناء',
+  };
 
   @override
   void dispose() {
@@ -263,7 +269,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
             groups: [
               FilterGroup(
                 title: 'طريقة الدفع',
-                options: {'': 'كل طرق الدفع', ...paymentMethodNames},
+                options: {'': 'كل طرق الدفع', for (final m in store.paymentMethods) m.id: m.name},
                 value: method,
                 onSelected: (v) => setState(() => method = v),
               ),
@@ -336,15 +342,18 @@ class _FinanceScreenState extends State<FinanceScreen> {
           d.title.toLowerCase().contains(q);
       final matchS = dueStage.isEmpty ||
           (dueStage == 'late' && d.late && !d.exception) ||
-          (dueStage == 'due' && !d.late && !d.exception) ||
+          (dueStage == 'due' && !d.late && !d.scheduled && !d.exception) ||
+          (dueStage == 'scheduled' && d.scheduled && !d.exception) ||
           (dueStage == 'exception' && d.exception);
       return matchQ && matchS;
     }).toList();
 
-    final total = dues.fold<double>(0, (a, d) => a + d.amount);
-    final debtors = dues.map((d) => d.student.id).toSet().length;
+    // المطلوب اليوم: القسط الذي لم يحن موعده ليس ديناً على الطالب
+    final total = dues.where((d) => !d.scheduled).fold<double>(0, (a, d) => a + d.amount);
+    final debtors = dues.where((d) => !d.scheduled).map((d) => d.student.id).toSet().length;
     final lateCount = all.where((d) => d.late && !d.exception).length;
-    final dueCount = all.where((d) => !d.late && !d.exception).length;
+    final dueCount = all.where((d) => !d.late && !d.scheduled && !d.exception).length;
+    final scheduledCount = all.where((d) => d.scheduled && !d.exception).length;
     final exceptionCount = all.where((d) => d.exception).length;
     final canCollect = store.can('finance.collect');
     final canOpenStudent = store.can('students.view');
@@ -387,6 +396,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
                     Expanded(child: _tally('متأخر', lateCount, AppColors.danger)),
                     const Text('•', style: TextStyle(color: AppColors.faint)),
                     Expanded(child: _tally('مستحق', dueCount, AppColors.amber)),
+                    const Text('•', style: TextStyle(color: AppColors.faint)),
+                    Expanded(child: _tally('مجدول', scheduledCount, AppColors.muted)),
                     const Text('•', style: TextStyle(color: AppColors.faint)),
                     Expanded(child: _tally('استثناء', exceptionCount, _teal)),
                   ],
@@ -515,7 +526,9 @@ StatusChip _stageChip(DueItem d) {
   if (d.exception) {
     return const StatusChip(label: 'استثناء', fg: _teal, bg: Color(0xFFE0F2F1), border: Color(0xFF80CBC4));
   }
-  return d.late ? StatusChip.danger(d.stageLabel) : StatusChip.amber(d.stageLabel);
+  if (d.late) return StatusChip.danger(d.stageLabel);
+  // المجدول ليس مطلوباً بعد، فلا يُلوَّن بلون المطالبة
+  return d.scheduled ? StatusChip.muted(d.stageLabel) : StatusChip.amber(d.stageLabel);
 }
 
 /// سند قبض: الطالب مقابل المبلغ، ثم رقم الوصل وتاريخه مقابل طريقة الدفع، ثم خط
@@ -532,7 +545,7 @@ class _PaymentCard extends StatelessWidget {
     final p = payment;
     final name = student?.fullName ?? (p.notes.trim().isEmpty ? 'سند عام' : p.notes.trim());
     final method = [
-      paymentMethodNames[p.method] ?? p.method,
+      StoreScope.of(context).paymentMethodLabel(p.method),
       if (p.reference.trim().isNotEmpty) '#${p.reference.trim()}',
     ].join('  ');
 

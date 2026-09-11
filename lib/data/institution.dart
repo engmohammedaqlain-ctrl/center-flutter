@@ -19,6 +19,14 @@ const capabilityMigrationKey = 'capabilities_migrated_v1';
 /// علامة إتمام التهيئة الأولية لهذا الجهاز — المقابل لـ `initial_setup_done_<tenantId>`.
 String initialSetupKey(String tenantId) => 'initial_setup_done_$tenantId';
 
+/// تجميد لقطات السندات القديمة مرة واحدة لكل جهاز — مطابق لـ
+/// `SNAPSHOT_MIGRATION_FLAG` في finance.service.ts
+const paymentSnapshotKey = 'payment_snapshots_frozen_v1';
+
+/// تنقية أسماء الشعب والمجموعات القديمة مرة واحدة لكل جهاز — مطابق لـ
+/// `sanitizeExistingGroupAndRoomNames` في db.ts
+const sectionNameMigrationKey = 'section_names_sanitized_v1';
+
 /// `school` = نظام مدرسة (صفوف وشعب ورسوم مراحل).
 /// `center` = نظام مركز تعليمي (مجموعات وقاعات وجداول).
 const institutionTypes = {

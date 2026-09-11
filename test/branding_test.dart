@@ -56,8 +56,19 @@ void main() {
     expect(AppColors.amber, const Color(0xFFB91C1C), reason: 'actionButton');
     expect(AppColors.bg, const Color(0xFFFFF9F9), reason: 'appBg');
     // index.css يُحيل `text-[#E88C15]` و`text-[#F39C12]` و`bg-[#FFF7ED]` —
-    // اسم المنشأة والقسم المفتوح في الهاتف — إلى لون العمليات لا إلى activeItem
+    // القسم المفتوح في الهاتف — إلى لون العمليات لا إلى activeItem
     expect(AppColors.accent, const Color(0xFFB91C1C), reason: 'التمييز يتبع لون العمليات');
+  });
+
+  test('اسم المنشأة في الترويسة رمادي ثابت لا يتبع لون الهوية', () {
+    AppColors.apply(_red);
+    expect(AppColors.headerMuted, const Color(0xFF94A3B8));
+    expect(AppColors.headerMuted, isNot(AppColors.accent));
+    // رمادي يُقرأ على الشريط الداكن: ما دون هذه الدرجة يذوب في الخلفية
+    expect(
+      AppColors.headerMuted.computeLuminance(),
+      greaterThan(AppColors.navy.computeLuminance() * 3),
+    );
   });
 
   test('activeItem is kept for the portals but does not recolour mobile highlights', () {

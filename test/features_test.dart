@@ -6,11 +6,13 @@ import 'persistence_test.dart' show FakeDisk;
 
 void main() {
   group('أعلام الميزات', () {
-    test('كل الميزات مفعّلة قبل أن يمسّها أحد', () {
+    test('كل الميزات مفعّلة قبل أن يمسّها أحد، عدا المرفقات', () {
       const f = SystemFeatures.defaults;
       expect(f.enableExpenses, isTrue);
       expect(f.enableEvaluations, isTrue);
       expect(f.enableStudentPortal, isTrue);
+      // الصور ثقيلة على السحابة والباندويث: تُفتح عند الحاجة لا افتراضاً
+      expect(f.enableStudentAttachments, isFalse);
     });
 
     test('المفتاح والحقول مطابقة لما يكتبه سطح المكتب', () {
@@ -19,7 +21,7 @@ void main() {
       expect(systemFeaturesKey, 'center_system_features');
       expect(
         const SystemFeatures().toMap().keys.toList(),
-        ['enableExpenses', 'enableEvaluations', 'enableStudentPortal'],
+        ['enableExpenses', 'enableEvaluations', 'enableStudentPortal', 'enableStudentAttachments'],
       );
     });
 

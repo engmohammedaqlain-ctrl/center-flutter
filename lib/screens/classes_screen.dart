@@ -9,6 +9,7 @@ import '../widgets/panels.dart';
 import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import 'attendance_print.dart';
+import 'attendance_screen.dart';
 import 'room_form_screen.dart';
 import 'student_detail_screen.dart';
 
@@ -261,6 +262,229 @@ Future<void> _assignTeacher(BuildContext context, Classroom room) async {
   );
 }
 
+/// «٣ معلمين» بصيغة عربية سليمة — الرقم وحده يقرأ ركيكاً في البطاقة.
+String _teachersLabel(int n) => switch (n) {
+      1 => 'معلم واحد',
+      2 => 'معلمان',
+      <= 10 => '$n معلمين',
+      _ => '$n معلماً',
+    };
+
+/// إسناد معلمي مواد الشعبة — المقابل لـ `SectionSubjectTeachersModal`.
+///
+/// كل مادة في سطرها ومعلمها أمامها. المادة بلا معلم تُرفع عن الشعبة عند الحفظ،
+/// والمسندة تُنشئ مجموعتها تلقائياً ويُربط بها طلاب الشعبة بلا رسوم.
+Future<void> _assignSubjectTeachers(BuildContext context, Classroom room) async {
+  final store = StoreScope.of(context);
+  await showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.white,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
+    builder: (_) => _SubjectTeachersSheet(store: store, room: room),
+  );
+}
+
+class _SubjectTeachersSheet extends StatefulWidget {
+  const _SubjectTeachersSheet({required this.store, required this.room});
+
+  final AppStore store;
+  final Classroom room;
+
+  @override
+  State<_SubjectTeachersSheet> createState() => _SubjectTeachersSheetState();
+}
+
+class _SubjectTeachersSheetState extends State<_SubjectTeachersSheet> {
+  /// معرّف المادة ← معرّف معلمها؛ الفارغ يعني «بلا معلم».
+  late final Map<String, String> rows;
+  String adding = '';
+
+  @override
+  void initState() {
+    super.initState();
+    final store = widget.store;
+    final existing = store.sectionSubjectGroups(widget.room.id);
+    if (existing.isNotEmpty) {
+      rows = {for (final g in existing) g.subjectId: g.teacherId};
+    } else {
+      // شعبة جديدة: تُبدأ بمواد مرحلتها، فلا يُبنى الجدول من الصفر كل مرة
+      rows = {for (final s in store.gradeApplicableSubjects(widget.room.gradeLevel)) s.id: ''};
+    }
+  }
+
+  void _save() {
+    try {
+      final count = widget.store.saveSectionSubjectAssignments(
+        roomId: widget.room.id,
+        gradeLevel: widget.room.gradeLevel,
+        roomName: widget.room.name,
+        assignments: rows,
+      );
+      Navigator.pop(context);
+      showAppSnack(context, count == 0 ? 'تم رفع إسناد جميع المواد' : 'تم إسناد $count مادة لمعلميها');
+    } on StoreException catch (e) {
+      showAppSnack(context, e.message, error: true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = widget.store;
+    final subjects = store.subjects;
+    final available = subjects.where((s) => !rows.containsKey(s.id)).toList();
+    final assigned = rows.values.where((t) => t.trim().isNotEmpty).length;
+
+    return SafeArea(
+      top: false,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.85),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+              child: Row(
+                children: [
+                  Icon(Icons.menu_book_outlined, size: 18, color: AppColors.amber),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'معلمو مواد ${widget.room.name}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.cardTitle,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'المواد: ${rows.length}  ·  المسندة: $assigned',
+                          style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SquareIconButton(icon: Icons.close, onTap: () => Navigator.pop(context)),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: AppColors.line),
+            if (subjects.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 28),
+                child: Text(
+                  'لا توجد مواد دراسية بعد. تُضاف من «الإعدادات ← المواد الدراسية».',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.muted, fontSize: 12, height: 1.6),
+                ),
+              )
+            else
+              Flexible(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                  shrinkWrap: true,
+                  children: [
+                    for (final entry in rows.entries)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Container(
+                          padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+                          decoration: tileDecoration(),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: 92,
+                                child: Text(
+                                  store.subjectName(entry.key),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: AppDropdown<String>(
+                                  value: store.teacherById(entry.value) == null ? '' : entry.value,
+                                  items: [
+                                    const DropdownMenuItem(value: '', child: Text('بلا معلم')),
+                                    for (final t in store.teachers)
+                                      DropdownMenuItem(
+                                        value: t.id,
+                                        child: Text(t.name, overflow: TextOverflow.ellipsis),
+                                      ),
+                                  ],
+                                  onChanged: (v) => setState(() => rows[entry.key] = v ?? ''),
+                                ),
+                              ),
+                              SquareIconButton(
+                                icon: Icons.close,
+                                color: AppColors.danger,
+                                onTap: () => setState(() => rows.remove(entry.key)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    if (available.isNotEmpty)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: AppDropdown<String>(
+                              value: adding.isEmpty ? null : adding,
+                              hint: 'إضافة مادة للشعبة',
+                              items: [
+                                for (final s in available)
+                                  DropdownMenuItem(value: s.id, child: Text(s.name, overflow: TextOverflow.ellipsis)),
+                              ],
+                              onChanged: (v) => setState(() => adding = v ?? ''),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          PrimaryButton(
+                            label: 'إضافة',
+                            icon: Icons.add,
+                            onPressed: adding.isEmpty
+                                ? null
+                                : () => setState(() {
+                                      rows[adding] = '';
+                                      adding = '';
+                                    }),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            const Divider(height: 1, color: AppColors.line),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+              child: Row(
+                children: [
+                  Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(context))),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 2,
+                    child: PrimaryButton(
+                      label: 'حفظ الإسناد',
+                      icon: Icons.check,
+                      height: 44,
+                      onPressed: subjects.isEmpty ? null : _save,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 Future<void> _confirmDeleteRoom(BuildContext context, Classroom room, {VoidCallback? onDeleted}) async {
   final store = StoreScope.of(context);
   final ok = await confirmSheet(
@@ -298,6 +522,7 @@ PopupMenuItem<String> _menuItem(String value, IconData icon, String label, {bool
 List<PopupMenuEntry<String>> _manageItems(Teacher? teacher) => [
       _menuItem('edit', Icons.edit_outlined, 'تعديل بيانات الصف'),
       _menuItem('assign', Icons.school_outlined, teacher == null ? 'تعيين مربي' : 'تغيير المربي'),
+      _menuItem('subjects', Icons.menu_book_outlined, 'معلمو مواد الصف'),
       const PopupMenuDivider(height: 8),
       _menuItem('delete', Icons.delete_outline, 'حذف الصف', danger: true),
     ];
@@ -331,7 +556,11 @@ class _RoomCard extends StatelessWidget {
     final seats = _seatsOf(room);
     final full = students.length >= seats;
     final debtors = students.where((s) => s.isDebtor).length;
-    final grade = room.gradeLevel.trim().isEmpty ? 'مرحلة غير محددة' : room.gradeLevel.trim();
+    final teacherCount = store.sectionTeacherIds(room).length;
+    final grade = [
+      room.gradeLevel.trim().isEmpty ? 'مرحلة غير محددة' : room.gradeLevel.trim(),
+      if (teacherCount > 0) _teachersLabel(teacherCount),
+    ].join('  ·  ');
 
     return AppCard(
       onTap: onOpen,
@@ -363,14 +592,18 @@ class _RoomCard extends StatelessWidget {
                 icon: const Icon(Icons.more_vert, size: 18, color: AppColors.muted),
                 constraints: const BoxConstraints(minWidth: 190),
                 onSelected: (v) {
+                  if (v == 'attendance') openClassAttendance(context, room: room);
                   if (v == 'print') printClassRoster(context, store: store, room: room, students: students);
                   if (v == 'codes') showClassPortalCodes(context, room: room, students: students);
                   if (v == 'edit') _openRoomForm(context, room);
                   if (v == 'assign') _assignTeacher(context, room);
+                  if (v == 'subjects') _assignSubjectTeachers(context, room);
                   if (v == 'delete') _confirmDeleteRoom(context, room);
                 },
                 itemBuilder: (_) => [
-                  _menuItem('print', Icons.print_outlined, 'طباعة كشف الصف'),
+                  if (store.can('attendance.view'))
+                    _menuItem('attendance', Icons.fact_check_outlined, 'رصد الحضور'),
+                  _menuItem('print', Icons.download_outlined, 'تنزيل كشف الصف (PDF)'),
                   _menuItem('codes', Icons.vpn_key_outlined, 'رموز دخول الطلاب'),
                   if (canEdit) ...[const PopupMenuDivider(height: 8), ..._manageItems(teacher)],
                 ],
@@ -545,8 +778,8 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
             ),
             actions: [
               IconButton(
-                tooltip: 'طباعة كشف الصف',
-                icon: const Icon(Icons.print_outlined, size: 20),
+                tooltip: 'تنزيل كشف الصف',
+                icon: const Icon(Icons.download_outlined, size: 20),
                 onPressed: () => printClassRoster(context, store: store, room: room, students: roster),
               ),
               IconButton(
@@ -563,6 +796,7 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
                   onSelected: (v) {
                     if (v == 'edit') _openRoomForm(context, room);
                     if (v == 'assign') _assignTeacher(context, room);
+                    if (v == 'subjects') _assignSubjectTeachers(context, room);
                     if (v == 'delete') {
                       _confirmDeleteRoom(context, room, onDeleted: () => Navigator.pop(context));
                     }
@@ -607,8 +841,39 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
                                   value: '$debtors',
                                   color: debtors > 0 ? AppColors.danger : AppColors.heading,
                                 ),
+                                StatCard(
+                                  label: 'المعلمون',
+                                  value: '${store.sectionTeacherIds(room).length}',
+                                  color: AppColors.heading,
+                                ),
                               ],
                             ),
+                            const SizedBox(height: 8),
+                            // الرصد أول ما يُطلب من صفحة الصف، فيكون أول زر فيها
+                            Row(
+                              children: [
+                                if (store.can('attendance.view'))
+                                  Expanded(
+                                    child: PrimaryButton(
+                                      label: 'رصد الحضور',
+                                      icon: Icons.fact_check_outlined,
+                                      height: 40,
+                                      expand: true,
+                                      onPressed: () => openClassAttendance(context, room: room),
+                                    ),
+                                  ),
+                                if (store.can('attendance.view') && canEdit) const SizedBox(width: 8),
+                                if (canEdit)
+                                  Expanded(
+                                    child: GhostButton(
+                                      label: 'معلمو المواد',
+                                      icon: Icons.menu_book_outlined,
+                                      onPressed: () => _assignSubjectTeachers(context, room),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            _SubjectTeachersCard(room: room),
                             if (room.notes.trim().isNotEmpty) ...[
                               const SizedBox(height: 8),
                               InfoStrip(
@@ -658,6 +923,62 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+/// مواد الصف ومعلموها — سطر لكل مادة. لا تظهر قبل أن يُسند شيء.
+class _SubjectTeachersCard extends StatelessWidget {
+  const _SubjectTeachersCard({required this.room});
+
+  final Classroom room;
+
+  @override
+  Widget build(BuildContext context) {
+    final store = StoreScope.of(context);
+    final assigned = store.sectionSubjectGroups(room.id).where((g) => g.teacherId.trim().isNotEmpty).toList()
+      ..sort((a, b) => store.subjectName(a.subjectId).compareTo(store.subjectName(b.subjectId)));
+    if (assigned.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: AppCard(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SectionTitle('مواد الصف ومعلموها (${assigned.length})'),
+            for (final g in assigned)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    const Icon(Icons.menu_book_outlined, size: 14, color: AppColors.faint),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        store.subjectName(g.subjectId),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        store.teacherName(g.teacherId),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.end,
+                        style: const TextStyle(fontSize: 11.5, color: AppColors.muted),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

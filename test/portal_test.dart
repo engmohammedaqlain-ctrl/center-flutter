@@ -1,7 +1,40 @@
 import 'package:center_mobile/data/institution.dart';
+import 'package:center_mobile/data/payment_methods.dart';
 import 'package:center_mobile/data/portal.dart';
 import 'package:center_mobile/models/models.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+Installment _inst(String id, double amount, DateTime due, {double paid = 0, String status = 'unpaid'}) => Installment(
+      id: id,
+      studentId: 's1',
+      title: 'القسط $id',
+      amount: amount,
+      dueDate: due,
+      paidAmount: paid,
+      status: status,
+    );
+
+Payment _pay(String id, double amount, {bool cancelled = false, DateTime? date}) => Payment(
+      id: id,
+      receiptNumber: '2026/$id',
+      studentId: 's1',
+      amount: amount,
+      method: 'cash',
+      date: date ?? DateTime(2026, 9, 1),
+      cancelled: cancelled,
+    );
+
+Student _student({String section = 'شعبة (1)', String grade = 'عاشر', String status = 'active'}) => Student(
+      id: 'st',
+      fullName: 'طالب',
+      gradeLevel: grade,
+      section: section,
+      phone: '0599000000',
+      parentName: 'ولي',
+      parentPhone: '0598000000',
+      balance: 0,
+      status: status,
+    );
 
 void main() {
   group('دخول البوابة', () {
@@ -34,18 +67,6 @@ void main() {
   });
 
   group('حساب البوابة', () {
-    test('الدور يميّز المعلم عن الطالب', () {
-      const teacher = PortalUser(
-        id: 't1',
-        name: 'أ. محمود',
-        nationalId: '111111111',
-        portalCode: '222222',
-        role: 'teacher',
-        tenantId: 'x',
-      );
-      expect(teacher.isTeacher, isTrue);
-    });
-
     test('الحساب يمرّ عبر JSON بلا فقدان', () {
       const original = PortalUser(
         id: 's1',
@@ -61,8 +82,6 @@ void main() {
       final back = PortalUser.fromJson(original.toJson());
       expect(back.id, original.id);
       expect(back.name, original.name);
-      expect(back.nationalId, original.nationalId);
-      expect(back.portalCode, original.portalCode);
       expect(back.gradeLevel, original.gradeLevel);
       expect(back.tenantName, original.tenantName);
       expect(back.isTeacher, isFalse);
@@ -71,7 +90,6 @@ void main() {
 
   group('إحصاء الحضور', () {
     test('الالتزام يحتسب الحاضر وحده', () {
-      // «متأخر» أُلغيت من النظام؛ المأذون لا يُحتسب حضوراً
       const a = PortalAttendance(total: 10, present: 7, absent: 2, excused: 1);
       expect(a.rate, 70);
     });
@@ -81,29 +99,193 @@ void main() {
     });
   });
 
-  group('الإعلانات والتقييمات', () {
-    test('الإعلان يمرّ عبر شكل السحابة', () {
-      const a = ClassAnnouncement(
-        id: 'a1',
-        groupId: 'g1',
-        title: 'اختبار الأسبوع',
-        content: 'يوم الأحد',
-        teacherId: 't1',
+  group('المعرّفات الحتمية للحضور', () {
+    test('مطابقة لـ AttendanceService في النسخة المكتبية', () {
+      final session = PortalService.sessionIdFor('g1', '2026-09-12');
+      expect(session, 'ses_g1_2026-09-12');
+      expect(PortalService.attendanceIdFor(session, 'st7'), 'att_ses_g1_2026-09-12_st7');
+    });
+  });
+
+  group('مالية الطالب — مطابقة لـ getStudentPortalData', () {
+    final today = DateTime(2026, 9, 12);
+
+    test('الإجمالي مجموع الأقساط، والمسدَّد يستبعد الملغى', () {
+      final f = PortalFinance.compute(
+        studentBalance: 0,
+        installments: [
+          _inst('1', 230, DateTime(2026, 8, 23)),
+          _inst('2', 230, DateTime(2026, 9, 22)),
+          _inst('3', 230, DateTime(2026, 10, 22)),
+          _inst('4', 230, DateTime(2026, 11, 21)),
+        ],
+        payments: [_pay('a', 230), _pay('b', 200), _pay('c', 47), _pay('x', 999, cancelled: true)],
+        today: today,
       );
-      final back = ClassAnnouncement.fromCloud(a.toCloud());
-      expect(back.title, 'اختبار الأسبوع');
-      expect(back.content, 'يوم الأحد');
-      expect(back.groupId, 'g1');
-      expect(back.teacherId, 't1');
+      expect(f.totalDue, 920);
+      expect(f.totalPaid, 477);
+      expect(f.remainingBalance, 443);
+      expect(f.payments.any((p) => p.cancelled), isFalse);
     });
 
-    test('الحقول الفارغة تُرسل null لا نصاً فارغاً', () {
-      const a = ClassAnnouncement(id: 'a1', groupId: 'g1', title: 'عنوان', content: '');
-      final row = a.toCloud();
-      expect(row['teacher_id'], isNull);
-      expect(row['image_url'], isNull);
+    test('المستحق حالياً هو دين الطالب المسجَّل حين يكون عليه دين', () {
+      final f = PortalFinance.compute(
+        studentBalance: -443,
+        installments: [_inst('1', 920, DateTime(2026, 12, 1))],
+        payments: [_pay('a', 477)],
+        today: today,
+      );
+      expect(f.currentDue, 443);
     });
 
+    test('بلا دين مسجَّل: ما حلّ موعده ناقص المسدَّد، والقادم لا يُطلب', () {
+      final f = PortalFinance.compute(
+        studentBalance: 0,
+        installments: [
+          _inst('1', 230, DateTime(2026, 8, 23)),
+          _inst('2', 230, DateTime(2026, 9, 12)),
+          _inst('3', 230, DateTime(2026, 10, 22)),
+        ],
+        payments: [_pay('a', 300)],
+        today: today,
+      );
+      expect(f.currentDue, 160, reason: 'قسطا 23/8 و12/9 (460) ناقص 300');
+      expect(f.installments[1].isDueNow, isTrue, reason: 'يوم الاستحقاق نفسه مطلوب');
+      expect(f.installments[2].isDueNow, isFalse);
+    });
+
+    test('المستحق حالياً لا يتجاوز المتبقي ولا ينزل تحت الصفر', () {
+      final f = PortalFinance.compute(
+        studentBalance: 0,
+        installments: [_inst('1', 200, DateTime(2026, 8, 1))],
+        payments: [_pay('a', 500)],
+        today: today,
+      );
+      expect(f.currentDue, 0);
+      expect(f.remainingBalance, 0);
+    });
+
+    test('الأقساط مرتّبة بالاستحقاق وحالتها المجهولة «غير مسددة»', () {
+      final f = PortalFinance.compute(
+        studentBalance: 0,
+        installments: [
+          _inst('late', 100, DateTime(2026, 11, 1), status: 'pending'),
+          _inst('early', 100, DateTime(2026, 8, 1), status: 'paid'),
+        ],
+        payments: const [],
+        today: today,
+      );
+      expect(f.installments.map((i) => i.id), ['early', 'late']);
+      expect(f.installments.last.status, 'unpaid');
+      expect(f.installments.first.status, 'paid');
+    });
+  });
+
+  group('طلاب الشعبة بديلاً عن التسجيلات', () {
+    test('الشعبة والمرحلة متطابقتان', () {
+      expect(PortalService.studentInRoom(_student(), roomName: 'شعبة (1)', roomGrade: 'عاشر'), isTrue);
+    });
+
+    test('مرحلة مختلفة لا تُحتسب', () {
+      expect(PortalService.studentInRoom(_student(grade: 'حادي عشر'), roomName: 'شعبة (1)', roomGrade: 'عاشر'), isFalse);
+    });
+
+    test('الطالب غير النشط لا يظهر للمعلم', () {
+      expect(
+        PortalService.studentInRoom(_student(status: 'withdrawn'), roomName: 'شعبة (1)', roomGrade: 'عاشر'),
+        isFalse,
+      );
+    });
+
+    test('شعبة أخرى لا تُحتسب', () {
+      expect(PortalService.studentInRoom(_student(section: 'شعبة (2)'), roomName: 'شعبة (1)', roomGrade: 'عاشر'), isFalse);
+    });
+  });
+
+  group('اسم الشعبة المنظّف — cleanGroupName', () {
+    test('أعمق قوسين يحملان حرف الشعبة', () {
+      expect(cleanGroupName('فصل عاشر (عاشر (أ))', 'عاشر'), 'شعبة (أ)');
+    });
+
+    test('تكرار المرحلة يُزال', () {
+      expect(cleanGroupName('ثاني عشر علمي (12 علمي)', 'ثاني عشر علمي'), 'شعبة 1');
+    });
+
+    test('«فصل» في البداية تُحذف', () {
+      expect(cleanGroupName('فصل الرياضيات'), 'الرياضيات');
+    });
+
+    test('الاسم الفارغ «شعبة»', () {
+      expect(cleanGroupName(''), 'شعبة');
+      expect(cleanGroupName(null), 'شعبة');
+    });
+  });
+
+  group('المودل', () {
+    test('المادة تمرّ عبر شكل السحابة', () {
+      const item = CourseItem(
+        id: 'i1',
+        tenantId: 't1',
+        sectionId: 's1',
+        groupId: 'g1',
+        title: 'ورقة عمل',
+        type: 'assignment',
+        description: 'ص 12',
+        dueDate: '2026-09-20',
+      );
+      final back = CourseItem.fromCloud(item.toCloud());
+      expect(back.title, 'ورقة عمل');
+      expect(back.type, 'assignment');
+      expect(back.dueDate, '2026-09-20');
+      expect(back.typeLabel, 'واجب منزلي');
+      expect(item.toCloud()['content_url'], isNull, reason: 'الحقل الفارغ يُرسل null');
+    });
+
+    test('موعد التسليم المنتهي، وشارة «جديد» خلال 48 ساعة', () {
+      final now = DateTime(2026, 9, 12, 10);
+      const due = CourseItem(id: 'i', sectionId: 's', groupId: 'g', title: 't', type: 'assignment', dueDate: '2026-09-11');
+      expect(due.isOverdue(now), isTrue);
+      const today = CourseItem(id: 'i', sectionId: 's', groupId: 'g', title: 't', type: 'assignment', dueDate: '2026-09-12');
+      expect(today.isOverdue(now), isFalse, reason: 'يوم التسليم نفسه ليس منتهياً');
+
+      final fresh = CourseItem(id: 'i', sectionId: 's', groupId: 'g', title: 't', type: 'note', createdAt: DateTime(2026, 9, 11, 12).toIso8601String());
+      final old = CourseItem(id: 'i', sectionId: 's', groupId: 'g', title: 't', type: 'note', createdAt: DateTime(2026, 9, 9).toIso8601String());
+      expect(fresh.isNew(now), isTrue);
+      expect(old.isNew(now), isFalse);
+    });
+
+    test('القسم يمرّ عبر شكل السحابة، والمخفي يبقى مخفياً', () {
+      const sec = CourseSection(id: 'c1', tenantId: 't', groupId: 'g', term: 'term_2', title: 'الوحدة الأولى', isVisible: false);
+      final back = CourseSection.fromCloud(sec.toCloud());
+      expect(back.isVisible, isFalse);
+      expect(back.termLabel, 'الفصل الثاني');
+      expect(CourseSection.fromCloud(const {'id': 'x', 'term': 'general'}).termLabel, 'أخرى');
+    });
+
+    test('مسار الملف في الحاوية يُستخرج من رابطه العام فقط', () {
+      expect(
+        PortalService.materialPath('https://x.supabase.co/storage/v1/object/public/course_materials/t1/170_ab.pdf'),
+        't1/170_ab.pdf',
+      );
+      expect(PortalService.materialPath('https://youtube.com/watch?v=1'), isNull);
+    });
+
+    test('الأنواع المسموحة PDF والصور وحدها', () {
+      expect(PortalService.materialMime('ملخص.PDF'), 'application/pdf');
+      expect(PortalService.materialMime('صورة.jpeg'), 'image/jpeg');
+      expect(PortalService.materialMime('عرض.pptx'), isNull);
+    });
+
+    test('الملف الكبير يُرفض قبل أي رفع', () async {
+      const service = PortalService();
+      await expectLater(
+        service.uploadMaterial(bytes: List.filled(PortalService.maxMaterialBytes + 1, 0), fileName: 'a.pdf', tenantId: 't'),
+        throwsA(isA<PortalException>().having((e) => e.message, 'message', contains('10 ميجابايت'))),
+      );
+    });
+  });
+
+  group('التقييمات', () {
     test('التقييم يمرّ عبر شكل السحابة', () {
       const e = StudentEvaluation(
         id: 'e1',
@@ -118,32 +300,28 @@ void main() {
       expect(back.notes, 'ممتاز');
       expect(back.subjectId, 'sub1');
     });
+
+    test('أسماء المادة والمعلم للعرض لا تُرفع', () {
+      const e = StudentEvaluation(id: 'e1', studentId: 's1');
+      final named = e.withNames(subjectName: 'الكيمياء', teacherName: 'أ. محمود');
+      expect(named.subjectName, 'الكيمياء');
+      expect(named.toCloud().containsKey('subject_name'), isFalse);
+    });
   });
 
   group('هوية البوابة', () {
-    test('الافتراضي اسم النظام وألوانه', () {
+    test('الافتراضي اسم النظام وألوانه ووسائل الدفع الأساسية', () {
       const b = PortalBranding();
       expect(b.name, appName);
       expect(b.colors.actionButton, InstitutionColors.defaults.actionButton);
+      expect(b.methodLabel('palpay'), 'محفظة بال بي');
     });
 
-    test('ألوان المنشأة تُقرأ كما حفظها سطح المكتب', () {
-      final colors = InstitutionColors.fromMap(const {
-        'sidebarBg': '#4A0E17',
-        'activeItem': '#DC2626',
-        'primaryButton': '#4A0E17',
-        'actionButton': '#B91C1C',
-        'appBg': '#FFF9F9',
-      });
-      expect(colors.sidebarBg, '#4A0E17');
-      expect(colors.actionButton, '#B91C1C');
-    });
-  });
-
-  group('مالية الطالب', () {
-    test('المتبقي مستقل عن مجموع الأقساط', () {
-      const f = PortalFinance(totalDue: 800, totalPaid: 500, remaining: 300);
-      expect(f.totalDue - f.totalPaid, f.remaining);
+    test('مسمّى الوسيلة يتبع ضبط المنشأة', () {
+      const b = PortalBranding(paymentMethods: [PaymentMethodItem(id: 'cash', name: 'كاش', type: 'cash')]);
+      expect(b.methodLabel('cash'), 'كاش');
+      expect(b.methodLabel('bop'), 'بنك فلسطين', reason: 'وسيلة محذوفة تُقرأ باسمها المعروف');
+      expect(b.methodLabel(''), '-');
     });
   });
 }

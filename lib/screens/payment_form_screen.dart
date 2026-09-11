@@ -241,9 +241,16 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                     const FieldLabel('طريقة الدفع', requiredField: true),
                     AppDropdown<String>(
                       value: method,
-                      items: paymentMethodNames.entries
-                          .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value, overflow: TextOverflow.ellipsis)))
-                          .toList(),
+                      // الوسائل المفعّلة وحدها، ومعها وسيلة السند المعروض إن عُطّلت لاحقاً
+                      items: [
+                        for (final m in store.activePaymentMethods)
+                          DropdownMenuItem(value: m.id, child: Text(m.name, overflow: TextOverflow.ellipsis)),
+                        if (store.activePaymentMethods.every((m) => m.id != method))
+                          DropdownMenuItem(
+                            value: method,
+                            child: Text(store.paymentMethodLabel(method), overflow: TextOverflow.ellipsis),
+                          ),
+                      ],
                       onChanged: _onMethod,
                     ),
                   ],

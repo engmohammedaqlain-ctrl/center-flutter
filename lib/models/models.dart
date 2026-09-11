@@ -130,6 +130,68 @@ String trimNum(num value) =>
 ///
 /// بعض السجلات تصل من السحابة بالإنجليزية (`male`/`female`) من مصدر غير
 /// النسختين؛ تُقرأ هنا بالعربية، ويعود حفظها بالعربية عند أول تعديل.
+/// اسم المرحلة بلا لاحقة الجنس — «ثاني عشر علمي ذكور» ← «ثاني عشر علمي».
+String _gradeCore(String grade) =>
+    grade.replaceAll(RegExp(r'\s*(ذكور|إناث|بنين|بنات)\s*'), ' ').trim();
+
+const _gradeWords =
+    r'\(?(12 علمي|11 علمي|11 أدبي|12 أدبي|ثاني عشر|حادي عشر|توجيهي|عاشر|تاسع|ثامن|سابع|سادس|خامس|رابع|ثالث|ثاني|أول)\)?';
+const _branchWords = r'\(?(علمي|أدبي|شرعي|صناعي|تجاري|ريادة|أعمال|بنين|بنات|ذكور|إناث)\)?';
+
+/// تنقية اسم الشعبة ومنع تكرار اسم المرحلة داخله — مطابق لـ `sanitizeSectionName`.
+///
+/// المرحلة محدَّدة في حقلها، فكتابتها داخل الاسم تُنتج «ثاني عشر علمي — ثاني عشر
+/// علمي (أ)» في الكشوف والجداول. «أ» أو «عاشر أ» أو «شعبة أ» كلها ← «شعبة (أ)».
+String sanitizeSectionName(String rawName, [String gradeLevel = '']) {
+  if (rawName.trim().isEmpty) return '';
+  var clean = rawName.trim().replaceAll(RegExp(r'^(فصل|صف)\s+'), '').trim();
+
+  final grade = _gradeCore(gradeLevel);
+  if (grade.isNotEmpty) {
+    clean = clean.replaceAll(RegExp(RegExp.escape(grade)), '').trim();
+  }
+
+  clean = clean.replaceAll(RegExp(_gradeWords), '').trim();
+  clean = clean.replaceAll(RegExp(_branchWords), '').trim();
+  clean = clean.replaceAll(RegExp(r'^[(\-\s]+|[)\-\s]+$'), '').trim();
+
+  if (RegExp(r'^[\u0621-\u064A0-9]$').hasMatch(clean)) return 'شعبة ($clean)';
+  if (clean.isEmpty) return 'شعبة (1)';
+  if (RegExp(r'^(شعبة|قاعة|مجموعة|غرفة)').hasMatch(clean)) return clean;
+  return 'شعبة $clean';
+}
+
+/// تنقية اسم المجموعة ومنع تكرار المادة أو المرحلة — مطابق لـ `sanitizeGroupName`.
+String sanitizeGroupName(String rawName, {String subject = '', String gradeLevel = ''}) {
+  if (rawName.trim().isEmpty) return '';
+  var clean = rawName.trim();
+
+  if (subject.trim().isNotEmpty) {
+    clean = clean.replaceAll(RegExp(RegExp.escape(subject.trim())), '').trim();
+  }
+  final grade = _gradeCore(gradeLevel);
+  if (grade.isNotEmpty) {
+    clean = clean.replaceAll(RegExp(RegExp.escape(grade)), '').trim();
+  }
+
+  clean = clean.replaceAll(RegExp(r'\(?(12 علمي|11 علمي|11 أدبي|12 أدبي|عاشر)\)?'), '').trim();
+  clean = clean.replaceAll(RegExp(r'^[(\-\s]+|[)\-\s]+$'), '').trim();
+
+  if (clean.isEmpty) return 'المجموعة 1';
+  if (RegExp(r'^[\u0621-\u064A0-9]$').hasMatch(clean)) return 'شعبة ($clean)';
+  return clean;
+}
+
+/// العام الدراسي من التاريخ — مطابق لـ `getAcademicYear` في utils.ts.
+///
+/// يبدأ العام مع آب: من آب إلى كانون الأول «السنة / السنة+1»، ومن كانون الثاني
+/// إلى تموز «السنة-1 / السنة». كتابته ثابتة في الكشوف كانت تُقادم مع كل عام.
+String academicYear([DateTime? at]) {
+  final date = at ?? DateTime.now();
+  if (date.month >= 8) return '${date.year} / ${date.year + 1}';
+  return '${date.year - 1} / ${date.year}';
+}
+
 String genderLabel(String? raw) {
   final v = (raw ?? '').trim().toLowerCase();
   if (v.isEmpty) return 'ذكر';
@@ -709,6 +771,11 @@ class Payment {
     this.channel = '',
     this.transferDate = '',
     this.customMethodNotes = '',
+    this.discountAmount = 0,
+    this.discountReason = '',
+    this.originalAmount,
+    this.studentName = '',
+    this.receivedByName = '',
     this.installmentId,
     this.groupId,
     this.enrollmentId,
@@ -729,12 +796,25 @@ class Payment {
   final String method;
   final DateTime date;
   final String purpose;
-  final String notes;
+  String notes;
   final String reference;
   final String senderName;
   final String channel;
   String transferDate;
   String customMethodNotes;
+
+  /// خصم مطبَّق على هذه الدفعة — يُحتسب ائتماناً كالمبلغ عند حساب الرصيد.
+  final double discountAmount;
+  final String discountReason;
+
+  /// المبلغ قبل الخصم إن وُجد.
+  final double? originalAmount;
+
+  /// لقطة وقت الإصدار: اسم الطالب واسم المستلم كما كانا حينها، فلا يتغيّر سند
+  /// قديم بأثر رجعي إذا تغيّر الاسم أو هوية الجهاز لاحقاً. محلية لكل جهاز كما في
+  /// النسخة المكتبية — لا عمود لها في السحابة فتُصفّى عند الرفع.
+  String studentName;
+  String receivedByName;
   final String? installmentId;
   final String? groupId;
   final String? enrollmentId;
@@ -764,6 +844,11 @@ class Payment {
         'transfer_channel': channel,
         'transfer_date': transferDate,
         'custom_method_notes': customMethodNotes,
+        'discount_amount': discountAmount,
+        'discount_reason': discountReason.isEmpty ? null : discountReason,
+        'original_amount': originalAmount,
+        'student_name': studentName.isEmpty ? null : studentName,
+        'received_by_name': receivedByName.isEmpty ? null : receivedByName,
         'sender_name': senderName,
         'reference_number': reference,
         'total_due_at_payment': totalDueAtPayment,
@@ -789,6 +874,11 @@ class Payment {
         channel: '${m['transfer_channel'] ?? ''}',
         transferDate: '${m['transfer_date'] ?? ''}'.split('T').first,
         customMethodNotes: '${m['custom_method_notes'] ?? ''}',
+        discountAmount: (m['discount_amount'] as num?)?.toDouble() ?? 0,
+        discountReason: '${m['discount_reason'] ?? ''}',
+        originalAmount: (m['original_amount'] as num?)?.toDouble(),
+        studentName: '${m['student_name'] ?? ''}',
+        receivedByName: '${m['received_by_name'] ?? ''}',
         installmentId: m['installment_id']?.toString(),
         groupId: m['group_id']?.toString(),
         enrollmentId: m['enrollment_id']?.toString(),
@@ -925,6 +1015,7 @@ class Expense {
     required this.amount,
     required this.expenseDate,
     this.recordedByUserId = '',
+    this.recordedByName = '',
     this.method = 'cash',
     this.notes = '',
     this.syncStatus = 'synced',
@@ -938,6 +1029,9 @@ class Expense {
   double amount;
   String expenseDate;
   String recordedByUserId;
+
+  /// اسم من سجّل السند لحظة تسجيله — لقطة محلية لا تتغير بأثر رجعي.
+  String recordedByName;
   String method;
   String notes;
   String syncStatus;
@@ -951,6 +1045,7 @@ class Expense {
         'amount': amount,
         'expense_date': expenseDate,
         'recorded_by_user_id': recordedByUserId.isEmpty ? null : recordedByUserId,
+        'recorded_by_name': recordedByName.isEmpty ? null : recordedByName,
         'payment_method': method,
         'notes': notes.isEmpty ? null : notes,
         'created_at': createdAt,
@@ -965,6 +1060,7 @@ class Expense {
         amount: (m['amount'] as num?)?.toDouble() ?? 0,
         expenseDate: '${m['expense_date'] ?? ''}'.split('T').first,
         recordedByUserId: '${m['recorded_by_user_id'] ?? ''}',
+        recordedByName: '${m['recorded_by_name'] ?? ''}',
         method: '${m['payment_method'] ?? 'cash'}',
         notes: '${m['notes'] ?? ''}',
         syncStatus: '${m['sync_status'] ?? 'synced'}',
@@ -984,6 +1080,8 @@ class TeacherPayout {
     this.periodStart = '',
     this.periodEnd = '',
     this.paidByUserId = '',
+    this.teacherName = '',
+    this.paidByName = '',
     this.method = 'cash',
     this.notes = '',
     this.syncStatus = 'synced',
@@ -999,6 +1097,10 @@ class TeacherPayout {
   String periodEnd;
   String paymentDate;
   String paidByUserId;
+
+  /// لقطة وقت الصرف: اسم المعلم واسم من صرف، محليتان لا تتغيران بأثر رجعي.
+  String teacherName;
+  String paidByName;
   String method;
   String notes;
   String syncStatus;
@@ -1014,6 +1116,8 @@ class TeacherPayout {
         'period_end': periodEnd.isEmpty ? null : periodEnd,
         'payment_date': paymentDate,
         'paid_by_user_id': paidByUserId.isEmpty ? null : paidByUserId,
+        'teacher_name': teacherName.isEmpty ? null : teacherName,
+        'paid_by_name': paidByName.isEmpty ? null : paidByName,
         'payment_method': method,
         'notes': notes.isEmpty ? null : notes,
         'created_at': createdAt,
@@ -1030,6 +1134,8 @@ class TeacherPayout {
         periodEnd: '${m['period_end'] ?? ''}'.split('T').first,
         paymentDate: '${m['payment_date'] ?? ''}'.split('T').first,
         paidByUserId: '${m['paid_by_user_id'] ?? ''}',
+        teacherName: '${m['teacher_name'] ?? ''}',
+        paidByName: '${m['paid_by_name'] ?? ''}',
         method: '${m['payment_method'] ?? 'cash'}',
         notes: '${m['notes'] ?? ''}',
         syncStatus: '${m['sync_status'] ?? 'synced'}',
@@ -1332,6 +1438,15 @@ String daysNames(List<int> days) {
   return sorted.map((d) => daysOfWeek[d % 7]).join('، ');
 }
 
+/// «16:00:00» → «16:00»، والفارغ يبقى فارغاً.
+///
+/// مجموعات مواد الشعب تُنشأ بلا وقت في النسخة المكتبية، وقصّ الفارغ كان يرمي
+/// `RangeError` فيتوقّف السحب كله عند أول مجموعة منها.
+String _hhmm(Object? raw) {
+  final text = '${raw ?? ''}'.trim();
+  return text.length < 5 ? '' : text.substring(0, 5);
+}
+
 /// المجموعة الدراسية — مطابق لـ `Group` في types/common.ts.
 class Group {
   Group({
@@ -1374,7 +1489,11 @@ class Group {
 
   String get daysLabel => daysNames(days);
 
-  String get timeLabel => '$startTime - $endTime';
+  String get timeLabel => startTime.isEmpty || endTime.isEmpty ? 'غير محدد' : '$startTime - $endTime';
+
+  /// مجموعة مادة شعبة: وعاء يربط معلم المادة بطلاب الشعبة، بلا أيام ولا رسوم.
+  /// تُميَّز عن مجموعة المركز بأنها معلّقة على صف ولا موعد لها.
+  bool get isSectionSubject => roomId.isNotEmpty && days.isEmpty;
 
   Map<String, dynamic> toCloud() => {
         'id': id,
@@ -1412,8 +1531,8 @@ class Group {
       pricePerMonth: (m['price_per_month'] as num?)?.toDouble() ?? 0,
       maxStudents: (m['max_students'] as num?)?.toInt(),
       days: days,
-      startTime: '${m['start_time'] ?? '16:00'}'.substring(0, 5),
-      endTime: '${m['end_time'] ?? '18:00'}'.substring(0, 5),
+      startTime: _hhmm(m['start_time']),
+      endTime: _hhmm(m['end_time']),
       status: '${m['status'] ?? 'active'}',
       syncStatus: '${m['sync_status'] ?? 'synced'}',
       createdAt: m['created_at']?.toString(),
@@ -1562,6 +1681,7 @@ class DueItem {
     required this.dueDate,
     required this.late,
     required this.exception,
+    this.scheduled = false,
     this.installmentId,
   });
 
@@ -1572,11 +1692,15 @@ class DueItem {
   final DateTime dueDate;
   final bool late;
   final bool exception;
+
+  /// قسط لم يحن موعده بعد: مسجَّل ومعروف، لكنه ليس مطلوباً اليوم.
+  final bool scheduled;
   final String? installmentId;
 
   String get stageLabel {
     if (exception) return 'استثناء';
     if (late) return 'متأخر عن السداد';
+    if (scheduled) return 'مجدول';
     return 'مستحق';
   }
 }
