@@ -1,6 +1,7 @@
 import 'package:center_mobile/data/demo_data.dart';
 import 'package:center_mobile/data/permissions.dart';
 import 'package:center_mobile/data/store.dart';
+import 'package:center_mobile/main.dart' show SplashScreen;
 import 'package:center_mobile/models/models.dart';
 import 'package:center_mobile/screens/device_setup_screen.dart';
 import 'package:flutter/material.dart';
@@ -44,12 +45,14 @@ void main() {
     expect(second.needsInitialSetup, isFalse, reason: 'إعادة التشغيل ليست دخولاً جديداً');
   });
 
-  test('a device carrying data from before this feature is grandfathered in', () async {
+  test('a device carrying data and an identity from before this feature is grandfathered in', () async {
     final disk = FakeDisk();
     final first = await loggedIn(disk);
+    // جهاز قديم: جلسة وبيانات وهوية مثبّتة، بلا أي علامة تهيئة
+    await first.setDeviceIdentity(first.users.first, '');
+    await first.db.setSetting('device_setup_pending', null);
     await first.flush();
 
-    // إقلاع بجلسة قائمة وبيانات محلية وبلا علامة تهيئة
     final second = AppStore.forTesting();
     await second.bootstrap(disk);
     expect(second.students, isNotEmpty);
@@ -185,6 +188,10 @@ void main() {
     expect(find.text('كلمة مرور المدير الرئيسية:'), findsOneWidget);
 
     // الضغط بلا كلمة مرور يرفض ولا يثبّت الهوية
+    // تمدّد البطاقة من حالة التحميل إلى النموذج يأخذ 220ms
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.ensureVisible(find.text('تأكيد وبدء العمل على الجهاز'));
+    await tester.pump();
     await tester.tap(find.text('تأكيد وبدء العمل على الجهاز'));
     await tester.pump();
     expect(find.text('كلمة مرور المدير غير صحيحة'), findsOneWidget);
@@ -219,5 +226,91 @@ void main() {
     final s = await loggedIn(FakeDisk(), withStudents: false);
     s.networkEnabled = false;
     expect(() => s.initialPull(), throwsA(isA<StoreException>()));
+  });
+
+  group('لا دخول بلا كلمة مرور بعد تهيئة لم تكتمل', () {
+    test('closing the app during the initial download reopens on the setup screen', () async {
+      // السحب الأولي يملأ الطلاب قبل اختيار الهوية؛ الإقلاع بعده كان يعدّ
+      // الجهاز «قديماً مهيَّأً» فيدخل بصلاحية مدير كاملة بلا كلمة مرور
+      final disk = FakeDisk();
+      final first = await loggedIn(disk, withStudents: false);
+      injectDemoData(first); // ما نزل قبل الانقطاع
+      await first.flush();
+
+      final second = AppStore.forTesting();
+      await second.bootstrap(disk);
+      expect(second.loggedIn, isTrue);
+      expect(second.students, isNotEmpty);
+      expect(second.needsInitialSetup, isTrue);
+    });
+
+    test('an earlier identity does not carry an unfinished setup through', () async {
+      final disk = FakeDisk();
+      final first = await loggedIn(disk);
+      await first.completeInitialSetup(first.setupCandidates.first);
+      await first.logout();
+      // دخول جديد ثم إغلاق قبل الاختيار: هوية السابق وعلامة إتمامه باقيتان
+      await first.login('amal', 'amal2026');
+      await first.flush();
+
+      final second = AppStore.forTesting();
+      await second.bootstrap(disk);
+      expect(second.loggedIn, isTrue);
+      expect(second.needsInitialSetup, isTrue);
+    });
+
+    test('a restored session with no pinned identity must be set up', () async {
+      final disk = FakeDisk();
+      final first = await loggedIn(disk);
+      await first.db.setSetting('device_setup_pending', null); // جلسة من قبل العلامة
+      await first.flush();
+
+      final second = AppStore.forTesting();
+      await second.bootstrap(disk);
+      expect(second.deviceUser, isNull);
+      expect(second.needsInitialSetup, isTrue, reason: 'الجهاز بلا هوية يعمل بصلاحية المدير الكاملة');
+    });
+
+    test('reopening setup from settings survives a restart', () async {
+      final disk = FakeDisk();
+      final first = await loggedIn(disk);
+      await first.completeInitialSetup(first.setupCandidates.first);
+      await first.resetInitialSetup();
+      await first.flush();
+
+      final second = AppStore.forTesting();
+      await second.bootstrap(disk);
+      expect(second.needsInitialSetup, isTrue);
+    });
+  });
+
+  testWidgets('the setup screen fits a narrow phone with the keyboard open', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+    addTearDown(tester.view.reset);
+
+    final s = await loggedIn(FakeDisk(), withStudents: false);
+    await tester.pumpWidget(StoreScope(
+      store: s,
+      child: const MaterialApp(
+        home: Directionality(textDirection: TextDirection.rtl, child: DeviceSetupScreen()),
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // أي طفح يُفشل الاختبار بنفسه ويسمّي العنصر المسبّب
+    expect(find.text('تأكيد وبدء العمل على الجهاز'), findsOneWidget);
+    expect(find.text('العودة لتسجيل الدخول'), findsOneWidget);
+
+    await s.flush();
+  });
+
+  testWidgets('the splash box sits exactly where the native splash draws it', (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: SplashScreen()));
+    final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
+    expect(tester.getCenter(find.byIcon(Icons.school_outlined)), screen.center(Offset.zero));
+    expect(tester.getSize(find.byIcon(Icons.school_outlined)), const Size(42, 42));
   });
 }

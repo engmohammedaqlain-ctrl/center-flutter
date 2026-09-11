@@ -7,6 +7,7 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/panels.dart';
 import '../widgets/widgets.dart';
 import 'payment_form_screen.dart';
 import 'receipt_screen.dart';
@@ -135,7 +136,7 @@ class StudentDetailScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Expanded(
-                        child: _Stat(
+                        child: StatCard(
                           label: 'الرصيد المالي الحالي',
                           value: student.isDebtor
                               ? 'عليه ${money(student.balance)}'
@@ -147,7 +148,7 @@ class StudentDetailScreen extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: _Stat(label: 'إجمالي المقبوضات', value: money(totalPaid), color: AppColors.heading),
+                        child: StatCard(label: 'إجمالي المقبوضات', value: money(totalPaid), color: AppColors.heading),
                       ),
                     ],
                   ),
@@ -218,7 +219,7 @@ class StudentDetailScreen extends StatelessWidget {
                   ),
                   if (student.notes.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    _Strip(
+                    InfoStrip(
                       child: Text(student.notes, style: const TextStyle(color: Color(0xFF475569), fontSize: 12, height: 1.6)),
                     ),
                   ],
@@ -266,15 +267,15 @@ class StudentDetailScreen extends StatelessWidget {
                   trailing: Text('الالتزام: $rate%',
                       style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading)),
                   children: [
-                    _Strip(
+                    InfoStrip(
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
-                          _Tally('حضور', present, AppColors.success),
+                          TallyText('حضور', present, AppColors.success),
                           const Text('•', style: TextStyle(color: AppColors.faint)),
-                          _Tally('غياب', absent, AppColors.danger),
+                          TallyText('غياب', absent, AppColors.danger),
                           const Text('•', style: TextStyle(color: AppColors.faint)),
-                          _Tally('مأذون', excused, const Color(0xFFD97706)),
+                          TallyText('مأذون', excused, const Color(0xFFD97706)),
                         ],
                       ),
                     ),
@@ -434,60 +435,8 @@ class _Rule extends StatelessWidget {
   }
 }
 
-/// شريط رمادي فاتح بإطار رفيع — للملخصات والملاحظات، كما في Center.
-class _Strip extends StatelessWidget {
-  const _Strip({required this.child});
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.bg, border: Border.all(color: AppColors.line)),
-      child: child,
-    );
-  }
-}
-
-/// بلاطة عنصر متكرر: خلفية فاتحة وإطار رفيع.
-BoxDecoration _tile({bool white = false}) => BoxDecoration(
-      borderRadius: BorderRadius.circular(Corner.box),
-      color: white ? Colors.white : AppColors.bg,
-      border: Border.all(color: AppColors.line),
-    );
-
 /// صندوق خانة واحدة: خلفية رمادية خفيفة وإطار رفيع، ومحتوى في المنتصف.
 BoxDecoration _cellBox() => BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.bg, border: Border.all(color: AppColors.line));
-
-/// رقم إحصائي في بطاقة المالية: صندوق، عنوان صغير فوق قيمة بارزة بلونها، في المنتصف.
-class _Stat extends StatelessWidget {
-  const _Stat({required this.label, required this.value, required this.color});
-  final String label;
-  final String value;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-          const SizedBox(height: 4),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(value, style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 17)),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 /// كود البوابة شارةً في رأس بطاقة البيانات — كشارة «كود البوابة» في رأس الملف بـ Center.
 class _PortalCodeChip extends StatelessWidget {
@@ -693,25 +642,6 @@ class _FieldGrid extends StatelessWidget {
   }
 }
 
-/// «حضور: 12» بلون الحالة — ملخص الحضور في سطر واحد.
-class _Tally extends StatelessWidget {
-  const _Tally(this.label, this.value, this.color);
-  final String label;
-  final int value;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text.rich(
-      TextSpan(
-        text: '$label: ',
-        children: [TextSpan(text: '$value', style: const TextStyle(fontWeight: FontWeight.w900))],
-      ),
-      style: TextStyle(color: color, fontSize: 12.5, fontWeight: FontWeight.w700),
-    );
-  }
-}
-
 /// قسط مجدول — بلاطة مستقلة: العنوان وحالته، ثم الاستحقاق مقابل المبالغ.
 /// غير المسدد أبيض ويُفتح للتسديد لمن يملك القبض، والمسدد رمادي فاتح.
 class _InstallmentTile extends StatelessWidget {
@@ -740,7 +670,7 @@ class _InstallmentTile extends StatelessWidget {
             : null,
         child: Container(
           padding: const EdgeInsets.all(10),
-          decoration: _tile(white: !inst.isPaid),
+          decoration: tileDecoration(white: !inst.isPaid),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -804,7 +734,7 @@ class _PaymentTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.all(10),
-      decoration: _tile(),
+      decoration: tileDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -848,7 +778,7 @@ class _PaymentTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              _TileButton(
+              TileButton(
                 label: 'الوصل',
                 icon: const Icon(Icons.print_outlined, size: 13),
                 color: AppColors.heading,
@@ -858,7 +788,7 @@ class _PaymentTile extends StatelessWidget {
               ),
               if (!p.cancelled) ...[
                 const SizedBox(width: 5),
-                _TileButton(
+                TileButton(
                   label: 'واتساب',
                   icon: const MessageCircleIcon(color: AppColors.success, size: 12),
                   color: AppColors.success,
@@ -870,45 +800,6 @@ class _PaymentTile extends StatelessWidget {
             ],
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// زر صغير داخل البلاطة: أيقونة ونص بإطار.
-class _TileButton extends StatelessWidget {
-  const _TileButton({
-    required this.label,
-    required this.icon,
-    required this.color,
-    required this.background,
-    required this.border,
-    required this.onTap,
-  });
-
-  final String label;
-  final Widget icon;
-  final Color color;
-  final Color background;
-  final Color border;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        height: 26,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: background, border: Border.all(color: border)),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconTheme(data: IconThemeData(color: color), child: icon),
-            const SizedBox(width: 4),
-            Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w800)),
-          ],
-        ),
       ),
     );
   }
@@ -936,7 +827,7 @@ class _EvaluationsCard extends StatelessWidget {
             Container(
               margin: const EdgeInsets.only(bottom: 6),
               padding: const EdgeInsets.all(10),
-              decoration: _tile(),
+              decoration: tileDecoration(),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -1055,7 +946,7 @@ class _Thumb extends StatelessWidget {
           Container(
             height: 90,
             clipBehavior: Clip.antiAlias,
-            decoration: _tile(),
+            decoration: tileDecoration(),
             child: Image.memory(bytes, fit: BoxFit.cover),
           ),
           const SizedBox(height: 5),

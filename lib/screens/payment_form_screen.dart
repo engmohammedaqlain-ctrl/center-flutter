@@ -3,10 +3,15 @@ import 'package:flutter/material.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
-import '../theme/app_theme.dart';
+import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
 import 'receipt_screen.dart';
 
+/// تسديد دفعة — المقابل لـ `PaymentForm` في النسخة المكتبية.
+///
+/// بتخطيط نموذج تسجيل الطالب: الحقول على الصفحة مباشرة في أقسام يفصلها عنوان
+/// وخط، والقصيرة متجاورة، واعتماد الدفعة ثابت أسفل الشاشة. لا بطاقة تحبس
+/// الحقول ولا صندوق قائمة داخلها.
 class PaymentFormScreen extends StatefulWidget {
   const PaymentFormScreen({super.key, this.studentId, this.installmentId, this.amount});
 
@@ -35,6 +40,11 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
   DateTime? transferDate;
   String? installmentId;
   bool busy = false;
+
+  static const _gap = SizedBox(height: 12);
+
+  /// أقصى عدد من الطلاب يُعرض قبل أن يُطلب تضييق البحث.
+  static const _pickerLimit = 8;
 
   @override
   void initState() {
@@ -86,12 +96,68 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
     }
   }
 
+  Future<DateTime?> _pickDay(DateTime initial) {
+    return showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+  }
+
+  void _onPurpose(String? v) {
+    setState(() {
+      purpose = v ?? purpose;
+      if (purpose == 'seat_reservation') {
+        amount.text = '50';
+        notes.text = 'سداد رسم حجز مقعد (تُخصم من رسوم الشهر الأول)';
+        installmentId = null;
+      } else if (purpose == 'monthly_fee') {
+        installmentId = null;
+      }
+    });
+  }
+
+  void _onMethod(String? v) {
+    setState(() {
+      method = v ?? method;
+      if (method == 'bop') {
+        channelCtl.text = 'بنك فلسطين';
+      } else if (method == 'palpay') {
+        channelCtl.text = 'محفظة بال بي';
+      } else if (method == 'jawwal_pay') {
+        channelCtl.text = 'جوال بي';
+      } else if (method == 'cash') {
+        channelCtl.text = '';
+      }
+    });
+  }
+
+  void _onInstallment(List<Installment> insts, String? v) {
+    setState(() {
+      installmentId = (v == null || v.isEmpty) ? null : v;
+      if (installmentId != null) {
+        final inst = insts.firstWhere((i) => i.id == installmentId);
+        amount.text = inst.remaining.toStringAsFixed(0);
+        purpose = 'installment';
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     return ListenableBuilder(
       listenable: store,
       builder: (context, _) {
+        if (!store.can('finance.collect')) {
+          return Scaffold(
+            backgroundColor: Colors.white,
+            appBar: AppBar(title: const Text('تسديد دفعة')),
+            body: NoAccess(section: 'finance', roleName: store.roleName),
+          );
+        }
+
         final q = search.text.trim();
         final unpaid = store.students.where((s) {
           final isUnpaid = s.balance < 0 || s.paymentStatus == 'unpaid' || s.paymentStatus == 'in_progress';
@@ -103,243 +169,276 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
         final insts = selected == null ? <Installment>[] : store.installments.where((i) => i.studentId == selected.id).toList();
         final electronic = method != 'cash';
 
-        final scope = StoreScope.of(context);
-        if (!scope.can('finance.collect')) {
-          return Scaffold(
-            appBar: AppBar(title: const Text('تسديد دفعة')),
-            body: NoAccess(section: 'finance', roleName: scope.roleName),
-          );
-        }
         return Scaffold(
           backgroundColor: Colors.white,
           appBar: AppBar(
             title: Text(selected == null ? 'تسديد دفعة جديدة' : 'تسديد دفعة للطالب: ${selected.fullName}'),
-            // شريط الهوية الغامق كبقية الشاشات
-            titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13.5),
+            titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
           ),
-          body: ListView(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-            children: [
-              AppCard(
-                color: selected == null ? Colors.white : AppColors.amberSoft,
-                child: selected != null
-                    ? Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('الطالب المحدد', style: TextStyle(color: AppColors.muted, fontSize: 11)),
-                                Text(selected.fullName, style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
-                                Text(
-                                  selected.balance < 0 ? '${money(selected.balance)} مطلوبة' : '${money(selected.balance)} رصيد دائن',
-                                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: selected.balance < 0 ? AppColors.danger : AppColors.amber),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (widget.studentId == null)
-                            GhostButton(
-                              label: 'تغيير الطالب',
-                              onPressed: () => setState(() {
-                                studentId = null;
-                                installmentId = null;
-                              }),
-                            ),
-                        ],
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          FieldLabel('البحث عن الطالب (الطلاب غير المسددين والمطلوبين مالياً فقط) *'),
-                          SearchField(controller: search, hint: 'اكتب الاسم، رقم الهاتف، أو المرحلة...', onChanged: (_) => setState(() {})),
-                          const SizedBox(height: 8),
-                          Container(
-                            constraints: const BoxConstraints(maxHeight: 220),
-                            decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), border: Border.all(color: AppColors.line)),
-                            child: unpaid.isEmpty
-                                ? const Padding(
-                                    padding: EdgeInsets.all(12),
-                                    child: Text('لا يوجد طلاب غير مسددين مطابقين للبحث', style: TextStyle(color: AppColors.muted, fontSize: 12)),
-                                  )
-                                : ListView.builder(
-                                    shrinkWrap: true,
-                                    itemCount: unpaid.length,
-                                    itemBuilder: (_, i) {
-                                      final s = unpaid[i];
-                                      return InkWell(
-                                        onTap: () => setState(() => studentId = s.id),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                          decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.line))),
-                                          child: Row(
-                                            children: [
-                                              Expanded(
-                                                child: Text('${s.fullName}  (${s.gradeLevel})', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
-                                              ),
-                                              Text(money(s.balance), style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w800, fontSize: 12)),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                          ),
-                        ],
-                      ),
-              ),
-              if (insts.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      FieldLabel('أقساط مجدولة مسجلة للطالب (${insts.length})'),
-                      AppDropdown<String>(
-                        value: installmentId ?? '',
-                        items: [
-                          const DropdownMenuItem(value: '', child: Text('-- دفعة رسوم عامة بدون ربط بقسط مجدول --')),
-                          ...insts.map(
-                            (i) => DropdownMenuItem(
-                              value: i.id,
-                              child: Text('${i.title} — المتبقي: ${money(i.remaining)}${i.isPaid ? ' ✓' : ''}'),
-                            ),
-                          ),
-                        ],
-                        onChanged: (v) {
-                          setState(() {
-                            installmentId = (v == null || v.isEmpty) ? null : v;
-                            if (installmentId != null) {
-                              final inst = insts.firstWhere((i) => i.id == installmentId);
-                              amount.text = inst.remaining.toStringAsFixed(0);
-                              purpose = 'installment';
-                            }
-                          });
+          bottomNavigationBar: FormActionBar(
+            label: 'اعتماد الدفعة وإصدار الوصل',
+            busy: busy,
+            onSave: selected == null ? null : () => _save(store, selected),
+          ),
+          body: GestureDetector(
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              children: [
+                // ── ١. الطالب ─────────────────────────────────────────────────
+                const FormSection(icon: Icons.person_outline, title: 'الطالب', note: 'الحقول ذات * مطلوبة'),
+                if (selected != null) ..._selectedStudent(selected, insts) else ..._studentPicker(unpaid),
+
+                // ── ٢. بيانات الدفعة ──────────────────────────────────────────
+                const FormSection(icon: Icons.payments_outlined, title: 'بيانات الدفعة'),
+                FieldPair(
+                  start: [
+                    const FieldLabel('المبلغ المقبوض (₪)', requiredField: true),
+                    TextField(
+                      controller: amount,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: AppColors.amber),
+                      decoration: const InputDecoration(hintText: '0'),
+                    ),
+                  ],
+                  end: [
+                    const FieldLabel('تاريخ الدفع', requiredField: true),
+                    SelectField(
+                      text: isoDate(date),
+                      icon: Icons.calendar_today_outlined,
+                      onTap: () async {
+                        final picked = await _pickDay(date);
+                        if (picked != null) setState(() => date = picked);
+                      },
+                    ),
+                  ],
+                ),
+                _gap,
+                FieldPair(
+                  start: [
+                    const FieldLabel('غرض الدفع', requiredField: true),
+                    AppDropdown<String>(
+                      value: purpose,
+                      items: paymentPurposeNames.entries
+                          .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value, overflow: TextOverflow.ellipsis)))
+                          .toList(),
+                      onChanged: _onPurpose,
+                    ),
+                  ],
+                  end: [
+                    const FieldLabel('طريقة الدفع', requiredField: true),
+                    AppDropdown<String>(
+                      value: method,
+                      items: paymentMethodNames.entries
+                          .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value, overflow: TextOverflow.ellipsis)))
+                          .toList(),
+                      onChanged: _onMethod,
+                    ),
+                  ],
+                ),
+                if (purpose == 'other') ...[
+                  _gap,
+                  const FieldLabel('الغرض المخصص'),
+                  TextField(controller: customPurpose, decoration: const InputDecoration(hintText: 'اكتب سبب الدفع...')),
+                ],
+                if (method == 'other') ...[
+                  _gap,
+                  const FieldLabel('تفاصيل طريقة الدفع الأخرى'),
+                  TextField(controller: customMethod, decoration: const InputDecoration(hintText: 'اكتب طريقة الدفع...')),
+                ],
+                _gap,
+                const FieldLabel('البيان'),
+                TextField(
+                  controller: notes,
+                  minLines: 1,
+                  maxLines: 3,
+                  decoration: const InputDecoration(hintText: 'تفاصيل إضافية عن الدفعة...'),
+                ),
+
+                // ── ٣. تفاصيل التحويل (للدفع غير النقدي) ──────────────────────
+                if (electronic) ...[
+                  const FormSection(icon: Icons.account_balance_outlined, title: 'تفاصيل التحويل'),
+                  FieldPair(
+                    start: [
+                      const FieldLabel('جهة التحويل'),
+                      TextField(controller: channelCtl, decoration: const InputDecoration(hintText: 'البنك أو المحفظة')),
+                    ],
+                    end: [
+                      const FieldLabel('تاريخ التحويل'),
+                      SelectField(
+                        text: isoDate(transferDate ?? date),
+                        icon: Icons.calendar_today_outlined,
+                        onTap: () async {
+                          final picked = await _pickDay(transferDate ?? date);
+                          if (picked != null) setState(() => transferDate = picked);
                         },
                       ),
                     ],
                   ),
-                ),
-              ],
-              const SizedBox(height: 8),
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const FieldLabel('المبلغ المقبوض (₪) *'),
-                    TextField(
-                      controller: amount,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.amber),
-                      decoration: const InputDecoration(hintText: '0'),
-                    ),
-                    const SizedBox(height: 10),
-                    const FieldLabel('سبب/غرض الدفع *'),
-                    AppDropdown<String>(
-                      value: purpose,
-                      items: paymentPurposeNames.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
-                      onChanged: (v) => setState(() {
-                        purpose = v ?? purpose;
-                        if (purpose == 'seat_reservation') {
-                          amount.text = '50';
-                          notes.text = 'سداد رسم حجز مقعد (تُخصم من رسوم الشهر الأول)';
-                          installmentId = null;
-                        } else if (purpose == 'monthly_fee') {
-                          installmentId = null;
-                        }
-                      }),
-                    ),
-                    if (purpose == 'other') ...[
-                      const SizedBox(height: 10),
-                      const FieldLabel('الغرض المخصص'),
-                      TextField(controller: customPurpose, decoration: const InputDecoration(hintText: 'اكتب سبب الدفع...')),
-                    ],
-                    const SizedBox(height: 10),
-                    const FieldLabel('تاريخ الدفع', requiredField: true),
-                    InkWell(
-                      onTap: () async {
-                        final picked = await showDatePicker(
-                          context: context,
-                          initialDate: date,
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime.now().add(const Duration(days: 1)),
-                        );
-                        if (picked != null) setState(() => date = picked);
-                      },
-                      child: InputDecorator(
-                        decoration: const InputDecoration(),
-                        child: Text(isoDate(date), style: const TextStyle(fontSize: 13, fontFamily: 'monospace')),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const FieldLabel('طريقة الدفع *'),
-                    AppDropdown<String>(
-                      value: method,
-                      items: paymentMethodNames.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
-                      onChanged: (v) => setState(() {
-                        method = v ?? method;
-                        if (method == 'bop') {
-                          channelCtl.text = 'بنك فلسطين';
-                        } else if (method == 'palpay') {
-                          channelCtl.text = 'محفظة بال بي';
-                        } else if (method == 'jawwal_pay') {
-                          channelCtl.text = 'جوال بي';
-                        } else if (method == 'cash') {
-                          channelCtl.text = '';
-                        }
-                      }),
-                    ),
-                    if (electronic) ...[
-                      const SizedBox(height: 10),
-                      const FieldLabel('جهة التحويل'),
-                      TextField(controller: channelCtl, decoration: const InputDecoration(hintText: 'اسم البنك أو المحفظة')),
-                      const SizedBox(height: 10),
-                      const FieldLabel('تاريخ التحويل'),
-                      InkWell(
-                        onTap: () async {
-                          final picked = await showDatePicker(
-                            context: context,
-                            initialDate: transferDate ?? date,
-                            firstDate: DateTime(2020),
-                            lastDate: DateTime.now().add(const Duration(days: 1)),
-                          );
-                          if (picked != null) setState(() => transferDate = picked);
-                        },
-                        child: InputDecorator(
-                          decoration: const InputDecoration(),
-                          child: Text(transferDate == null ? isoDate(date) : isoDate(transferDate!), style: const TextStyle(fontSize: 13)),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
+                  _gap,
+                  FieldPair(
+                    start: [
                       const FieldLabel('اسم المحول منه'),
-                      TextField(controller: sender),
-                      const SizedBox(height: 10),
+                      TextField(controller: sender, decoration: const InputDecoration(hintText: 'كما في الحوالة')),
+                    ],
+                    end: [
                       const FieldLabel('الرقم المرجعي'),
                       TextField(controller: reference, decoration: const InputDecoration(hintText: 'رقم الحركة')),
                     ],
-                    if (method == 'other') ...[
-                      const SizedBox(height: 10),
-                      const FieldLabel('تفاصيل طريقة الدفع الأخرى'),
-                      TextField(controller: customMethod, decoration: const InputDecoration(hintText: 'اكتب طريقة الدفع...')),
-                    ],
-                    const SizedBox(height: 10),
-                    const FieldLabel('البيان'),
-                    TextField(controller: notes, maxLines: 2),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              PrimaryButton(
-                expand: true,
-                busy: busy,
-                label: 'اعتماد الدفعة وإصدار الوصل',
-                icon: Icons.check,
-                onPressed: selected == null ? null : () => _save(store, selected),
-              ),
-            ],
+                  ),
+                ],
+              ],
+            ),
           ),
         );
       },
+    );
+  }
+
+  /// الطالب المختار في سطر: الاسم ومرحلته ورصيده بلونه، وزر تغييره.
+  List<Widget> _selectedStudent(Student s, List<Installment> insts) {
+    final owes = s.balance < 0;
+    return [
+      Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  s.fullName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
+                ),
+                const SizedBox(height: 2),
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      if (s.gradeLevel.trim().isNotEmpty) TextSpan(text: '${s.gradeLevel.trim()}  ·  '),
+                      TextSpan(
+                        text: owes
+                            ? 'عليه ${money(s.balance)}'
+                            : s.balance > 0
+                                ? 'له ${money(s.balance)}'
+                                : 'مسدد بالكامل',
+                        style: TextStyle(fontWeight: FontWeight.w800, color: owes ? AppColors.danger : AppColors.success),
+                      ),
+                    ],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          if (widget.studentId == null)
+            TextButton.icon(
+              onPressed: () => setState(() {
+                studentId = null;
+                installmentId = null;
+              }),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.amber,
+                textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+              ),
+              icon: const Icon(Icons.swap_horiz, size: 16),
+              label: const Text('تغيير الطالب'),
+            ),
+        ],
+      ),
+      if (insts.isNotEmpty) ...[
+        _gap,
+        FieldLabel('القسط المجدول (${insts.length})'),
+        AppDropdown<String>(
+          value: installmentId ?? '',
+          items: [
+            const DropdownMenuItem(value: '', child: Text('دفعة رسوم عامة بدون ربط بقسط', overflow: TextOverflow.ellipsis)),
+            ...insts.map(
+              (i) => DropdownMenuItem(
+                value: i.id,
+                child: Text(
+                  '${i.title} — المتبقي: ${money(i.remaining)}${i.isPaid ? ' ✓' : ''}',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ],
+          onChanged: (v) => _onInstallment(insts, v),
+        ),
+      ],
+    ];
+  }
+
+  /// البحث عن الطالب ثم نتائجه صفوفاً مسطّحة على الصفحة — لا صندوق قائمة داخل بطاقة.
+  List<Widget> _studentPicker(List<Student> matches) {
+    final shown = matches.take(_pickerLimit).toList();
+    return [
+      const FieldLabel('ابحث عن الطالب (غير المسددين والمطلوبين مالياً)', requiredField: true),
+      SearchField(
+        controller: search,
+        hint: 'الاسم، رقم الهاتف، أو المرحلة...',
+        onChanged: (_) => setState(() {}),
+      ),
+      const SizedBox(height: 4),
+      if (matches.isEmpty)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 16),
+          child: Text(
+            'لا يوجد طلاب غير مسددين مطابقين للبحث',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppColors.muted, fontSize: 12),
+          ),
+        )
+      else ...[
+        for (final s in shown) _studentRow(s),
+        if (matches.length > shown.length)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'يظهر ${shown.length} من ${matches.length} — اكتب للبحث عن غيرهم',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.faint, fontSize: 11),
+            ),
+          ),
+      ],
+    ];
+  }
+
+  Widget _studentRow(Student s) {
+    return InkWell(
+      onTap: () => setState(() {
+        studentId = s.id;
+        search.clear();
+      }),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.line))),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    s.fullName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.text),
+                  ),
+                  if (s.gradeLevel.trim().isNotEmpty)
+                    Text(s.gradeLevel.trim(), style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(money(s.balance), style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w800, fontSize: 12.5)),
+            const SizedBox(width: 2),
+            const Icon(Icons.chevron_left, size: 18, color: AppColors.faint),
+          ],
+        ),
+      ),
     );
   }
 }

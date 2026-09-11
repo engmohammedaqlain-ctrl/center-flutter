@@ -388,6 +388,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   static const _kCustomUser = 'custom_app_username';
   static const _kCustomPass = 'custom_app_password';
 
+  /// تهيئة بدأت ولم تكتمل — تُكتب على القرص قبل الجلسة نفسها.
+  static const _kSetupPending = 'device_setup_pending';
+
   String get lastUsername => db.settings[_kLastUsername] ?? '';
 
   void _restoreSession() {
@@ -925,6 +928,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     roleName = me == null ? 'مدير النظام' : roleLabel(me.role);
     notifyListeners();
 
+    // علامة التهيئة المعلّقة قبل حفظ الجلسة: لو أُغلق التطبيق أو انقطع الاتصال
+    // أثناء السحب الأولي، يُقلع على شاشة التهيئة لا على شاشة العمل
+    await db.setSetting(_kSetupPending, tenant.id);
     await db.setSetting(_kCustomUser, tenant.username);
     await db.setSetting(_kCustomPass, tenant.password);
     // اسم العرض يُكتب مرة واحدة: لو خصّصه المدير فلا يُدهس عند كل دخول
@@ -2074,11 +2080,22 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       _setupPending = true;
       return;
     }
+    // تهيئة بدأت ولم تكتمل: السحب الأولي يملأ الطلاب قبل اختيار الهوية، فلو
+    // حُسمت البوابة بوجود البيانات لدخل من أغلق التطبيق أثناءه بلا كلمة مرور
+    if (db.settings[_kSetupPending] != null) {
+      _setupPending = true;
+      return;
+    }
+    // بلا هوية مثبَّتة لا دخول: الجهاز بلا هوية يعمل بصلاحية المدير الكاملة
+    if (deviceUser == null) {
+      _setupPending = true;
+      return;
+    }
     if (db.settings[initialSetupKey(tid)] == 'true') {
       _setupPending = false;
       return;
     }
-    // جهاز يحمل بيانات محلية من قبل هذه الميزة يُعتبر مهيَّأً
+    // جهاز يحمل بيانات وهوية من قبل هذه الميزة يُعتبر مهيَّأً
     if (students.isNotEmpty) {
       await db.setSetting(initialSetupKey(tid), 'true');
       _setupPending = false;
@@ -2162,6 +2179,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     await setDeviceIdentity(user, user.name);
     final tid = tenantId;
     if (tid != null) await db.setSetting(initialSetupKey(tid), 'true');
+    await db.setSetting(_kSetupPending, null);
     _setupPending = false;
     await flush();
     notifyListeners();
@@ -2170,7 +2188,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// إعادة فتح التهيئة (لتغيير هوية الجهاز لاحقاً من الإعدادات).
   Future<void> resetInitialSetup() async {
     final tid = tenantId;
-    if (tid != null) await db.setSetting(initialSetupKey(tid), null);
+    if (tid != null) {
+      await db.setSetting(initialSetupKey(tid), null);
+      await db.setSetting(_kSetupPending, tid);
+    }
     _setupPending = loggedIn && !isMasterAdmin && tid != null;
     notifyListeners();
   }

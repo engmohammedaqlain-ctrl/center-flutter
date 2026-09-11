@@ -205,6 +205,12 @@ const syncedTables = [
   'student_evaluations',
 ];
 
+/// هل ردّ الخادم أن الجدول غير موجود في القاعدة؟ (PostgREST: `PGRST205`)
+///
+/// يحدث حين تُضاف ميزة في الكود ولم تُطبَّق هجرتها على قاعدة المنشأة بعد —
+/// كجدول `class_announcements`. يُميَّز عن بقية الأعطال لأنه لا يُصلَح بإعادة المحاولة.
+bool isMissingTableError(int status, String body) => status == 404 && body.contains('PGRST205');
+
 /// هل يحمل الجدول عمود `updated_at`؟
 ///
 /// السحب التزايدي يرشّح بـ `updated_at=gt.<الختم>`، وسؤال جدول لا يملك العمود
@@ -458,6 +464,11 @@ class SyncService {
   bool _syncing = false;
   final remotePendingIds = <String>{};
 
+  /// جداول غير منشورة في قاعدة هذه المنشأة — هجرتها لم تُطبَّق بعد. تُتخطّى في
+  /// السحب والفحص بدل أن تُعدّ عطلاً: وإلا بقي كل سحب «ناقصاً» فلا يتقدّم ختمه،
+  /// ويُعاد جلب التعديلات نفسها في كل مرة، ولا يُعلَن «متزامن» أبداً.
+  final missingTables = <String>{};
+
   int get remotePendingCount => remotePendingIds.length;
   bool get isSyncing => _syncing;
 
@@ -557,7 +568,7 @@ class SyncService {
             order: 'updated_at.desc',
           );
           if (page == null) {
-            failed = true;
+            if (!missingTables.contains(cloud)) failed = true;
             break;
           }
           for (final row in page) {
@@ -927,6 +938,8 @@ class SyncService {
         }
 
         if (!fetchComplete) {
+          // جدول لم تُنشر هجرته: لا بيانات فيه ولا يُحسب عطلاً
+          if (missingTables.contains(cloud)) continue;
           failedTables[cloud] = 'تعذّر جلب بيانات ${tableLabelsAr[cloud] ?? cloud} من السحابة.';
           continue;
         }
@@ -1079,7 +1092,10 @@ class SyncService {
     final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(queryParameters: params);
     try {
       final res = await http.get(uri, headers: {..._headers, 'Range': '$from-$to'});
-      if (res.statusCode >= 400) return null;
+      if (res.statusCode >= 400) {
+        if (isMissingTableError(res.statusCode, res.body)) missingTables.add(table);
+        return null;
+      }
       final data = jsonDecode(res.body);
       if (data is! List) return [];
       return data.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();

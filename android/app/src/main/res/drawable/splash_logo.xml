@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- صندوق الشعار على شاشة البداية حتى Android 11 — مطابق لـ SplashScreen في lib/main.dart:
+     84dp، زاوية 8، حدّ #E2E8F0، وأيقونة المدرسة 42dp بلون #64748B -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="84dp"
+    android:height="84dp"
+    android:viewportWidth="84"
+    android:viewportHeight="84">
+    <path
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#E2E8F0"
+        android:strokeWidth="1"
+        android:pathData="M8.5,0.5L75.5,0.5A8,8 0,0 1,83.5 8.5L83.5,75.5A8,8 0,0 1,75.5 83.5L8.5,83.5A8,8 0,0 1,0.5 75.5L0.5,8.5A8,8 0,0 1,8.5 0.5Z" />
+    <group
+        android:translateX="21"
+        android:translateY="21"
+        android:scaleX="1.75"
+        android:scaleY="1.75">
+        <path
+            android:fillColor="#64748B"
+            android:pathData="M12,3L1,9L5,11.18L5,17.18L12,21L19,17.18L19,11.18L21,10.09L21,17L23,17L23,9L12,3ZM18.82,9L12,12.72L5.18,9L12,5.28L18.82,9ZM17,15.99L12,18.72L7,15.99L7,12.27L12,15L17,12.27L17,15.99Z" />
+    </group>
+</vector>

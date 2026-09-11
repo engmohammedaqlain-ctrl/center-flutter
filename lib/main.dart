@@ -15,8 +15,8 @@ import 'screens/portal_screens.dart';
 import 'screens/shell.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
+import 'widgets/auth_frame.dart';
 import 'widgets/animated_count.dart';
-import 'widgets/widgets.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -183,63 +183,56 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
 }
 
 /// شاشة الإقلاع — تظهر فوراً بينما تُفتح قاعدة البيانات المحلية وتُقرأ الجلسة.
+///
+/// امتداد لشاشة البداية الأصلية (`launch_background` و`splash_icon`): الصندوق
+/// نفسه بمقاسه ولونه في منتصف الشاشة تماماً، فلا قفزة لحظة تسليم النظام لـ Flutter.
+/// الاسم والمؤشر تحته لا يزحزحانه.
 class SplashScreen extends StatelessWidget {
   const SplashScreen({super.key});
 
+  /// مقاس الصندوق في الموارد الأصلية (84dp) — يُغيَّران معاً.
+  static const logoBox = 84.0;
+
   @override
   Widget build(BuildContext context) {
+    // تظهر قبل أن تُقرأ ألوان المنشأة من القرص، فتبقى محايدة: خلفية بيضاء بلا لون
+    // هوية كان سيومض بالافتراضي ثم يتبدّل حين تُحمَّل ألوان المنشأة
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF0D2A50), AppColors.navyDark, Color(0xFF05162A)],
-            stops: [0, 0.55, 1],
-          ),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 92,
-                height: 92,
+      backgroundColor: Colors.white,
+      body: LayoutBuilder(
+        builder: (context, box) => Stack(
+          children: [
+            Center(
+              child: Container(
+                width: logoBox,
+                height: logoBox,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(Corner.box),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.35),
-                      blurRadius: 26,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
+                  borderRadius: BorderRadius.circular(Corner.card),
+                  border: Border.all(color: AppColors.line),
                 ),
-                child: Icon(Icons.school, color: AppColors.amber, size: 50),
+                child: const Icon(Icons.school_outlined, color: AppColors.muted, size: logoBox / 2),
               ),
-              const SizedBox(height: 22),
-              Text(
-                appName,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.3,
-                ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              top: box.maxHeight / 2 + logoBox / 2 + 18,
+              child: const Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(appName, style: TextStyle(color: AppColors.text, fontSize: 16, fontWeight: FontWeight.w800)),
+                  SizedBox(height: 16),
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.lineStrong),
+                  ),
+                ],
               ),
-              const SizedBox(height: 18),
-              SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.2,
-                  color: AppColors.amber.withValues(alpha: 0.9),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -338,141 +331,26 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
+  static const _fieldText = TextStyle(color: AppColors.text, fontSize: 13.5);
+
   @override
   Widget build(BuildContext context) {
     final store = AppStore.instance;
-    final logo = decodeLogo(store.institutionLogo);
-
-    return Scaffold(
-      body: Container(
-        // تدرّج هادئ بدل لون مصمت — العمق هو ما يميّز الشاشة الرسمية
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF0D2A50), AppColors.navyDark, Color(0xFF05162A)],
-            stops: [0, 0.55, 1],
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 380),
-                child: Column(
-                  children: [
-                    // شعار المنشأة إن رُفع، وإلا رمز النظام
-                    Container(
-                      width: 104,
-                      height: 104,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(Corner.box),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.35),
-                            blurRadius: 26,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(Corner.box),
-                        child: logo == null
-                            ? Icon(Icons.school, color: AppColors.amber, size: 56)
-                            : Image.memory(logo, fit: BoxFit.contain, gaplessPlayback: true),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      store.institutionName.isEmpty ? appName : store.institutionName,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.3,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'بوابة تسجيل الدخول الرسمية',
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12),
-                    ),
-                    const SizedBox(height: 26),
-                    _tabs(),
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(Corner.box),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.25),
-                            blurRadius: 24,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: portalTab
-                          ? _portalForm()
-                          : Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _label('اسم المستخدم:'),
-                          const SizedBox(height: 7),
-                          TextField(
-                            controller: user,
-                            autofocus: true,
-                            textInputAction: TextInputAction.next,
-                            style: const TextStyle(color: Colors.white, fontSize: 13.5),
-                            decoration: _deco('أدخل اسم المستخدم...', Icons.person_outline),
-                          ),
-                          const SizedBox(height: 14),
-                          _label('كلمة المرور:'),
-                          const SizedBox(height: 7),
-                          TextField(
-                            controller: pass,
-                            obscureText: true,
-                            onSubmitted: (_) => _submit(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13.5,
-                              fontFamily: 'monospace',
-                            ),
-                            decoration: _deco('أدخل كلمة المرور...', Icons.lock_outline),
-                          ),
-                          _errorBox(),
-                          const SizedBox(height: 18),
-                          _submitButton(
-                            label: busy ? 'جارِ التحقق...' : 'تسجيل الدخول',
-                            icon: Icons.login,
-                            onTap: busy ? null : _submit,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    Text(
-                      'الإصدار $appVersion',
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.28), fontSize: 10.5),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
+    return AuthFrame(
+      title: store.institutionName.isEmpty ? appName : store.institutionName,
+      subtitle: 'بوابة تسجيل الدخول الرسمية',
+      logo: store.institutionLogo,
+      footer: Text('الإصدار $appVersion', style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
+      children: [
+        _tabs(),
+        const SizedBox(height: 12),
+        AuthCard(child: portalTab ? _portalForm() : _adminForm()),
+      ],
     );
   }
 
-  /// شريط اختيار البوابة — مطابق لـ LandingPage: بوابة الطلاب والمعلمين
-  /// إلى جانب دخول الإدارة.
+  /// شريط اختيار البوابة — مطابق لـ LandingPage: بوابة الطلاب والمعلمين إلى جانب
+  /// دخول الإدارة، بشكل مفتاح مقسوم يمتلئ خياره المختار بلون الهوية.
   Widget _tabs() {
     Widget tab(String label, IconData icon, bool selected, VoidCallback onTap) {
       return Expanded(
@@ -480,27 +358,20 @@ class _LoginScreenState extends State<LoginScreen> {
           onTap: onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
-            height: 44,
+            height: 40,
             alignment: Alignment.center,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(Corner.box),
-              color: selected ? AppColors.amber : Colors.white.withValues(alpha: 0.06),
-              border: Border.all(
-                color: selected ? AppColors.amber : Colors.white.withValues(alpha: 0.12),
-              ),
-            ),
             padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.navy : Colors.transparent,
+              borderRadius: BorderRadius.circular(Corner.box),
+            ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  icon,
-                  size: 14,
-                  color: selected ? Colors.white : Colors.white.withValues(alpha: 0.65),
-                ),
+                Icon(icon, size: 15, color: selected ? Colors.white : AppColors.muted),
                 const SizedBox(width: 5),
-                // «بوابة الطلاب والمعلمين» أطول من نصف الشاشة على الأجهزة
-                // الضيقة، فيلزم أن ينكمش بدل أن يفيض
+                // «بوابة الطلاب والمعلمين» أطول من نصف الشاشة على الأجهزة الضيقة،
+                // فيلزم أن ينكمش بدل أن يفيض
                 Flexible(
                   child: Text(
                     label,
@@ -508,7 +379,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: selected ? Colors.white : Colors.white.withValues(alpha: 0.65),
+                      color: selected ? Colors.white : AppColors.muted,
                       fontSize: 11.5,
                       fontWeight: FontWeight.w800,
                     ),
@@ -521,23 +392,68 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     }
 
-    return Row(
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppColors.bg,
+        borderRadius: BorderRadius.circular(Corner.field),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Row(
+        children: [
+          tab('بوابة الطلاب والمعلمين', Icons.school_outlined, portalTab, () {
+            setState(() {
+              portalTab = true;
+              error = null;
+              choices = const [];
+            });
+          }),
+          const SizedBox(width: 4),
+          tab('دخول الإدارة', Icons.lock_outline, !portalTab, () {
+            setState(() {
+              portalTab = false;
+              error = null;
+              choices = const [];
+            });
+          }),
+        ],
+      ),
+    );
+  }
+
+  /// نموذج دخول الإدارة: اسم المستخدم وكلمة المرور.
+  Widget _adminForm() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        tab('بوابة الطلاب والمعلمين', Icons.school_outlined, portalTab, () {
-          setState(() {
-            portalTab = true;
-            error = null;
-            choices = const [];
-          });
-        }),
-        const SizedBox(width: 8),
-        tab('دخول الإدارة', Icons.lock_outline, !portalTab, () {
-          setState(() {
-            portalTab = false;
-            error = null;
-            choices = const [];
-          });
-        }),
+        authLabel('اسم المستخدم:'),
+        const SizedBox(height: 6),
+        TextField(
+          controller: user,
+          autofocus: true,
+          textInputAction: TextInputAction.next,
+          style: _fieldText,
+          decoration: authFieldDecoration('أدخل اسم المستخدم...', Icons.person_outline),
+        ),
+        const SizedBox(height: 14),
+        authLabel('كلمة المرور:'),
+        const SizedBox(height: 6),
+        TextField(
+          controller: pass,
+          obscureText: true,
+          onSubmitted: (_) => _submit(),
+          style: _fieldText.copyWith(fontFamily: 'monospace'),
+          decoration: authFieldDecoration('أدخل كلمة المرور...', Icons.lock_outline),
+        ),
+        AuthErrorBox(message: error),
+        const SizedBox(height: 16),
+        AuthSubmitButton(
+          busy: busy,
+          label: busy ? 'جارِ التحقق...' : 'تسجيل الدخول',
+          icon: Icons.login,
+          onTap: busy ? null : _submit,
+        ),
       ],
     );
   }
@@ -548,32 +464,32 @@ class _LoginScreenState extends State<LoginScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        _label('رقم الهوية:'),
-        const SizedBox(height: 7),
+        authLabel('رقم الهوية:'),
+        const SizedBox(height: 6),
         TextField(
           controller: portalId,
           keyboardType: TextInputType.number,
           textInputAction: TextInputAction.next,
-          style: const TextStyle(color: Colors.white, fontSize: 13.5),
-          decoration: _deco('أدخل رقم الهوية...', Icons.badge_outlined),
+          style: _fieldText,
+          decoration: authFieldDecoration('أدخل رقم الهوية...', Icons.badge_outlined),
         ),
         const SizedBox(height: 14),
-        _label('رمز الدخول (الكود):'),
-        const SizedBox(height: 7),
+        authLabel('رمز الدخول (الكود):'),
+        const SizedBox(height: 6),
         TextField(
           controller: portalCode,
           keyboardType: TextInputType.number,
           obscureText: true,
           onSubmitted: (_) => _portalSubmit(),
-          style: const TextStyle(color: Colors.white, fontSize: 13.5, fontFamily: 'monospace'),
-          decoration: _deco('أدخل رمز الدخول...', Icons.vpn_key_outlined),
+          style: _fieldText.copyWith(fontFamily: 'monospace'),
+          decoration: authFieldDecoration('أدخل رمز الدخول...', Icons.vpn_key_outlined),
         ),
-        _errorBox(),
+        AuthErrorBox(message: error),
         // أكثر من حساب لنفس الرقم: يختار المستخدم منشأته أو دوره
         if (choices.isNotEmpty) ...[
           const SizedBox(height: 12),
-          _label('اختر الحساب:'),
-          const SizedBox(height: 7),
+          authLabel('اختر الحساب:'),
+          const SizedBox(height: 6),
           for (final account in choices)
             Padding(
               padding: const EdgeInsets.only(bottom: 7),
@@ -582,17 +498,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Container(
                   padding: const EdgeInsets.all(11),
                   decoration: BoxDecoration(
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(Corner.box),
-                    color: Colors.white.withValues(alpha: 0.06),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+                    border: Border.all(color: AppColors.line),
                   ),
                   child: Row(
                     children: [
-                      Icon(
-                        account.isTeacher ? Icons.school : Icons.person,
-                        size: 16,
-                        color: AppColors.amber,
-                      ),
+                      Icon(account.isTeacher ? Icons.school : Icons.person, size: 16, color: AppColors.amber),
                       const SizedBox(width: 9),
                       Expanded(
                         child: Column(
@@ -603,141 +515,32 @@ class _LoginScreenState extends State<LoginScreen> {
                               account.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w800,
-                              ),
+                              style: TextStyle(color: AppColors.heading, fontSize: 12.5, fontWeight: FontWeight.w800),
                             ),
                             Text(
                               '${account.isTeacher ? 'معلم' : 'طالب'} · ${account.tenantName}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.55),
-                                fontSize: 10.5,
-                              ),
+                              style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
                             ),
                           ],
                         ),
                       ),
-                      Icon(
-                        Icons.arrow_forward,
-                        size: 15,
-                        color: Colors.white.withValues(alpha: 0.4),
-                      ),
+                      const Icon(Icons.arrow_forward, size: 15, color: AppColors.faint),
                     ],
                   ),
                 ),
               ),
             ),
         ],
-        const SizedBox(height: 18),
-        _submitButton(
+        const SizedBox(height: 16),
+        AuthSubmitButton(
+          busy: busy,
           label: busy ? 'جارِ التحقق...' : 'دخول البوابة',
           icon: Icons.login,
           onTap: busy ? null : _portalSubmit,
         ),
       ],
-    );
-  }
-
-  /// صندوق الخطأ المشترك بين النموذجين.
-  Widget _errorBox() {
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOut,
-      child: error == null
-          ? const SizedBox(width: double.infinity)
-          : Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Container(
-                padding: const EdgeInsets.all(11),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(Corner.box),
-                  color: const Color(0xFF4C0519).withValues(alpha: 0.75),
-                  border: Border.all(color: const Color(0xFFF43F5E).withValues(alpha: 0.45)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.error_outline, color: Color(0xFFFB7185), size: 16),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        error!,
-                        style: const TextStyle(color: Color(0xFFFECDD3), fontSize: 12, height: 1.5),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-    );
-  }
-
-  Widget _submitButton({required String label, required IconData icon, VoidCallback? onTap}) {
-    return PressableScale(
-      onTap: onTap,
-      child: Container(
-        height: 46,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: AppColors.amber,
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.amber.withValues(alpha: 0.4),
-              blurRadius: 16,
-              offset: const Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (busy)
-              const SizedBox(
-                width: 17,
-                height: 17,
-                child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white),
-              )
-            else
-              Icon(icon, size: 18, color: Colors.white),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _label(String text) => Text(
-        text,
-        style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.85),
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-        ),
-      );
-
-  InputDecoration _deco(String hint, IconData icon) {
-    OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
-          borderRadius: BorderRadius.circular(Corner.box),
-          borderSide: BorderSide(color: c, width: w),
-        );
-
-    return InputDecoration(
-      hintText: hint,
-      hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.32), fontSize: 12.5),
-      prefixIcon: Icon(icon, size: 17, color: Colors.white.withValues(alpha: 0.45)),
-      filled: true,
-      fillColor: Colors.white.withValues(alpha: 0.06),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      enabledBorder: border(Colors.white.withValues(alpha: 0.12)),
-      focusedBorder: border(AppColors.amber, 1.4),
-      border: border(Colors.white.withValues(alpha: 0.12)),
     );
   }
 }

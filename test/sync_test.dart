@@ -81,6 +81,15 @@ void main() {
     }
   });
 
+  test('جدول غير منشور يُميَّز عن أعطال السحب الأخرى', () {
+    // الرد الفعلي من القاعدة حين لم تُطبَّق هجرة جدول الإعلانات
+    const body = r'{"code":"PGRST205","message":"Could not find the table public.class_announcements in the schema cache"}';
+    expect(isMissingTableError(404, body), isTrue);
+    expect(isMissingTableError(404, r'{"code":"PGRST116"}'), isFalse, reason: 'غياب صف لا غياب جدول');
+    expect(isMissingTableError(500, body), isFalse, reason: 'عطل الخادم يبقى عطلاً');
+    expect(isMissingTableError(401, r'{"message":"JWT expired"}'), isFalse);
+  });
+
   test('phone prefix helpers match Center phoneUtils', () {
     expect(combinePhoneAndPrefix('9111222', '059'), '0599111222');
     expect(parsePhoneAndPrefix('0599111222').prefix, '059');

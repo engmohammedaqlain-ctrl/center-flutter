@@ -9,6 +9,7 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
 
 class StudentFormScreen extends StatefulWidget {
@@ -813,29 +814,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     ];
   }
 
-  /// عنوان قسم: أيقونة واسم وخط رفيع — بديل البطاقة التي كانت تحبس الحقول.
-  Widget _section(IconData icon, String title, {String? note}) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 20, bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 18, color: AppColors.amber),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(title, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: AppColors.heading)),
-              ),
-              if (note != null) Text(note, style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Container(height: 1, color: AppColors.line),
-        ],
-      ),
-    );
-  }
+  Widget _section(IconData icon, String title, {String? note}) => FormSection(icon: icon, title: title, note: note);
 
   Widget _extraHeader() {
     // الهوامش خارج منطقة اللمس: أثر الضغط يغطي سطر العنوان وحده، لا الفراغ
@@ -877,36 +856,11 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     );
   }
 
-  /// حقلان متجاوران بعنوانيهما — للحقول القصيرة التي تهدر سطراً كاملاً وحدها.
-  Widget _pair(List<Widget> start, List<Widget> end, {int startFlex = 1, int endFlex = 1}) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(flex: startFlex, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: start)),
-        const SizedBox(width: 10),
-        Expanded(flex: endFlex, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: end)),
-      ],
-    );
-  }
+  Widget _pair(List<Widget> start, List<Widget> end, {int startFlex = 1, int endFlex = 1}) =>
+      FieldPair(start: start, end: end, startFlex: startFlex, endFlex: endFlex);
 
-  /// حقل اختيار يُفتح بلمسة (تاريخ، حي) بشكل الحقول النصية نفسه.
-  Widget _selectField({required String text, required IconData icon, required VoidCallback onTap, bool placeholder = false}) {
-    return InkWell(
-      onTap: onTap,
-      child: InputDecorator(
-        decoration: InputDecoration(
-          suffixIconConstraints: const BoxConstraints(minWidth: 34, minHeight: 20),
-          suffixIcon: Icon(icon, size: 16, color: AppColors.faint),
-        ),
-        child: Text(
-          text,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: 13, color: placeholder ? AppColors.faint : AppColors.text),
-        ),
-      ),
-    );
-  }
+  Widget _selectField({required String text, required IconData icon, required VoidCallback onTap, bool placeholder = false}) =>
+      SelectField(text: text, icon: icon, onTap: onTap, placeholder: placeholder);
 
   /// عدّاد الأرقام داخل طرف الحقل بدل سطر مستقل تحته.
   Widget _counter(int length, int target) {
@@ -949,33 +903,8 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     );
   }
 
-  Widget _actionBar({required bool editing, required bool canSave}) {
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: AppColors.line)),
-        ),
-        child: Row(
-          children: [
-            Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(context))),
-            const SizedBox(width: 10),
-            Expanded(
-              flex: 2,
-              child: PrimaryButton(
-                label: editing ? 'حفظ التعديل' : 'تسجيل الطالب',
-                icon: Icons.check,
-                height: 44,
-                onPressed: canSave ? _save : null,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _actionBar({required bool editing, required bool canSave}) =>
+      FormActionBar(label: editing ? 'حفظ التعديل' : 'تسجيل الطالب', onSave: canSave ? _save : null);
 
   Widget _toggle(String label, bool on, Color color, VoidCallback tap) {
     return InkWell(
