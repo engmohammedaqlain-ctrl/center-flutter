@@ -9,9 +9,18 @@ import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/form_layout.dart';
+import '../widgets/panels.dart';
+import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import 'developer_settings_screen.dart';
+import 'settings_forms.dart';
 
+/// الإعدادات — المقابل لـ `pages/Settings.tsx`.
+///
+/// بتنسيق بقية الأقسام: شريط تبويبات بعرض الشاشة، ثم لكل تبويب بحث وعدد في سطر
+/// واحد، وبطاقات مرتبة تُفتح للتعديل. زر الإضافة ثابت في متناول الإبهام ويتبع
+/// التبويب، والنماذج صفحات كاملة بتخطيط نموذج الطالب. تسجيل الخروج في القائمة
+/// السريعة (⋮) وحدها — لا يتكرر أسفل الإعدادات.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -19,40 +28,30 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-/// تبويب في شاشة الإعدادات، مع صلاحيته ونوع المنشأة الذي يظهر فيه.
+/// تبويب في الإعدادات، مع صلاحيته ونوع المنشأة الذي يظهر فيه.
 class _Tab {
-  const _Tab(this.id, this.icon, this.label, this.body, {this.capability, this.schoolOnly, this.centerOnly = false});
+  const _Tab(this.id, this.icon, this.label, {this.capability, this.schoolOnly = false, this.centerOnly = false});
+
   final String id;
   final IconData icon;
   final String label;
-  final Widget body;
   final String? capability;
-  final bool? schoolOnly;
+  final bool schoolOnly;
   final bool centerOnly;
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
   String current = 'teachers';
 
-  /// التبويبات المتاحة — تُخفى بحسب الصلاحية ونوع المنشأة، تماماً كما في Settings.tsx.
-  List<_Tab> _tabs(AppStore store) {
-    final school = store.isSchool;
-    final all = <_Tab>[
-      const _Tab('grade_fees', Icons.payments_outlined, 'الرسوم والمراحل', _FeesTab(),
-          capability: 'settings.fees', schoolOnly: true),
-      const _Tab('teachers', Icons.school_outlined, 'المدرسين', _TeachersTab()),
-      const _Tab('subjects', Icons.menu_book_outlined, 'المواد الدراسية', _SubjectsTab()),
-      const _Tab('rooms', Icons.meeting_room_outlined, 'القاعات', _RoomsTab(), centerOnly: true),
-      const _Tab('users', Icons.groups_outlined, 'المستخدمين والصلاحيات', _UsersTab(), capability: 'settings.users'),
-      const _Tab('backup', Icons.storage_outlined, 'البيانات والمطور', _BackupTab(), capability: 'settings.backup'),
-    ];
-    return all.where((t) {
-      if (t.schoolOnly == true && !school) return false;
-      if (t.centerOnly && school) return false;
-      if (t.capability != null && !store.can(t.capability!)) return false;
-      return true;
-    }).toList();
-  }
+  /// التبويبات بترتيب Settings.tsx — تُخفى بحسب الصلاحية ونوع المنشأة.
+  static const _allTabs = [
+    _Tab('grade_fees', Icons.payments_outlined, 'الرسوم والمراحل', capability: 'settings.fees', schoolOnly: true),
+    _Tab('teachers', Icons.school_outlined, 'المدرسين'),
+    _Tab('subjects', Icons.menu_book_outlined, 'المواد الدراسية'),
+    _Tab('rooms', Icons.meeting_room_outlined, 'القاعات', centerOnly: true),
+    _Tab('users', Icons.manage_accounts_outlined, 'المستخدمين والصلاحيات', capability: 'settings.users'),
+    _Tab('backup', Icons.storage_outlined, 'البيانات والمطور', capability: 'settings.backup'),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -63,102 +62,302 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (!store.canOpenSection('settings')) {
           return NoAccess(section: 'settings', roleName: store.roleName);
         }
-        final tabs = _tabs(store);
+        final tabs = _allTabs.where((t) {
+          if (t.schoolOnly && !store.isSchool) return false;
+          if (t.centerOnly && store.isSchool) return false;
+          if (t.capability != null && !store.can(t.capability!)) return false;
+          return true;
+        }).toList();
         if (tabs.isEmpty) return NoAccess(section: 'settings', roleName: store.roleName);
-        var tab = tabs.indexWhere((t) => t.id == current);
-        if (tab < 0) tab = 0;
+        // من فقد صلاحية التبويب المفتوح يعود إلى أول تبويب مسموح
+        final active = tabs.firstWhere((t) => t.id == current, orElse: () => tabs.first);
 
-        return Column(
-      children: [
-        Container(
-          margin: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: Colors.white, border: Border.all(color: AppColors.line)),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Row(
-              children: [
-                for (var i = 0; i < tabs.length; i++)
-                  InkWell(
-                    onTap: () => setState(() => current = tabs[i].id),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                      decoration: BoxDecoration(
-                        border: Border(bottom: BorderSide(color: tab == i ? AppColors.accent : Colors.transparent, width: 2)),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(tabs[i].icon, size: 14, color: tab == i ? AppColors.accent : AppColors.muted),
-                          const SizedBox(width: 5),
-                          Text(tabs[i].label, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: tab == i ? AppColors.heading : AppColors.muted)),
-                        ],
-                      ),
-                    ),
-                  ),
-                if (store.currentTenant?.code.isNotEmpty == true)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Text(
-                      'رمز المنشأة: ${store.currentTenant!.code}',
-                      style: const TextStyle(fontSize: 10.5, color: AppColors.muted, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-              ],
-            ),
+        return ThumbActionLayer(
+          action: _actionFor(context, active.id),
+          child: Column(
+            children: [
+              _tabBar(tabs, active.id),
+              Expanded(
+                child: switch (active.id) {
+                  'grade_fees' => const _FeesTab(),
+                  'subjects' => const _SubjectsTab(),
+                  'rooms' => const _HallsTab(),
+                  'users' => const _UsersTab(),
+                  'backup' => const _DataTab(),
+                  _ => const _TeachersTab(),
+                },
+              ),
+            ],
           ),
-        ),
-        Expanded(
-          child: IndexedStack(
-            index: tab,
-            children: [for (final t in tabs) t.body],
-          ),
-        ),
-        _LogoutBar(store: store),
-      ],
         );
       },
     );
   }
+
+  /// زر الإضافة يتبع التبويب — تبويب البيانات بلا إضافة.
+  ThumbAction? _actionFor(BuildContext context, String tab) {
+    void open(Widget page) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    return switch (tab) {
+      'grade_fees' => ThumbAction(label: 'مرحلة جديدة', icon: Icons.add, onPressed: () => open(const GradeFeeFormScreen())),
+      'teachers' => ThumbAction(
+          label: 'إضافة مدرس',
+          icon: Icons.person_add_alt_1_outlined,
+          onPressed: () => open(const TeacherFormScreen()),
+        ),
+      'subjects' => ThumbAction(label: 'إضافة مادة', icon: Icons.add, onPressed: () => open(const SubjectFormScreen())),
+      'rooms' => ThumbAction(label: 'إضافة قاعة', icon: Icons.add, onPressed: () => open(const HallFormScreen())),
+      'users' => ThumbAction(
+          label: 'مستخدم جديد',
+          icon: Icons.person_add_alt_1_outlined,
+          onPressed: () => open(const UserFormScreen()),
+        ),
+      _ => null,
+    };
+  }
+
+  Widget _tabBar(List<_Tab> tabs, String active) {
+    return Container(
+      height: 46,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: AppColors.line)),
+      ),
+      // تمرير التبويبات أفقياً لا يُخفي زر الإضافة
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (_) => true,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          children: [
+            for (final t in tabs)
+              InkWell(
+                onTap: () => setState(() => current = t.id),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: t.id == active ? AppColors.accent : Colors.transparent, width: 2),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(t.icon, size: 15, color: t.id == active ? AppColors.heading : AppColors.muted),
+                      const SizedBox(width: 5),
+                      Text(
+                        t.label,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: t.id == active ? AppColors.heading : AppColors.muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-/// قسم إنهاء الجلسة — مكان مخصص محمي بتأكيد، كما في أسفل Settings.tsx.
-class _LogoutBar extends StatelessWidget {
-  const _LogoutBar({required this.store});
-  final AppStore store;
+// ═══ عناصر مشتركة ═══════════════════════════════════════════════════════════
+
+TextStyle get _titleStyle => TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading);
+
+const _metaStyle = TextStyle(color: AppColors.muted, fontSize: 11);
+
+void _open(BuildContext context, Widget page) {
+  Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+}
+
+/// خط رفيع يفصل رأس البطاقة عن تفاصيلها.
+class _Rule extends StatelessWidget {
+  const _Rule();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: AppColors.line)),
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 8),
+      child: Divider(height: 1, color: Color(0xFFF1F5F9)),
+    );
+  }
+}
+
+/// البحث وعدد النتائج في سطر واحد أعلى القائمة.
+class _Toolbar extends StatelessWidget {
+  const _Toolbar({
+    required this.controller,
+    required this.hint,
+    required this.shown,
+    required this.total,
+    required this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final String hint;
+  final int shown;
+  final int total;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+      child: SearchField(
+        controller: controller,
+        hint: hint,
+        onChanged: onChanged,
+        trailing: Text(
+          shown == total ? '$total' : '$shown/$total',
+          style: const TextStyle(color: AppColors.muted, fontSize: 11, fontWeight: FontWeight.w700),
+        ),
       ),
-      child: Row(
+    );
+  }
+}
+
+/// قائمة بطاقات تُبنى على قدر ما يظهر، بأرقام اختيارية في رأسها.
+Widget _cardList({
+  List<Widget> header = const [],
+  required int count,
+  required Widget empty,
+  required IndexedWidgetBuilder item,
+}) {
+  final offset = header.isEmpty ? 0 : 1;
+  return ListView.builder(
+    padding: const EdgeInsets.fromLTRB(12, 10, 12, thumbActionClearance),
+    itemCount: offset + (count == 0 ? 1 : count),
+    itemBuilder: (context, i) {
+      if (offset == 1 && i == 0) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: header),
+        );
+      }
+      if (count == 0) return SizedBox(height: 220, child: empty);
+      return Padding(padding: const EdgeInsets.only(bottom: 8), child: item(context, i - offset));
+    },
+  );
+}
+
+/// سهم «فتح» في طرف البطاقة — «التالي» ينعكس مع الاتجاه فيُرسم «<».
+const _chevron = Icon(Icons.chevron_right, size: 18, color: AppColors.faint);
+
+// ═══ الرسوم والمراحل (للمدارس) ══════════════════════════════════════════════
+
+class _FeesTab extends StatelessWidget {
+  const _FeesTab();
+
+  @override
+  Widget build(BuildContext context) {
+    final store = StoreScope.of(context);
+    final fees = store.gradeFees;
+    return _cardList(
+      header: [
+        StatRow(
+          children: [
+            StatCard(label: 'المراحل الدراسية', value: '${fees.length}', color: AppColors.heading),
+            StatCard(label: 'الشعب', value: '${store.rooms.length}', color: AppColors.heading),
+          ],
+        ),
+      ],
+      count: fees.length,
+      empty: const EmptyState(message: 'لا توجد مراحل دراسية مسجلة.'),
+      item: (context, i) => _GradeFeeCard(fee: fees[i]),
+    );
+  }
+}
+
+/// مرحلة دراسية: الاسم ومرحلتها الكبرى وعدد طلابها مقابل الرسم الشهري، ثم خط
+/// رفيع، ثم شعبها وزر إضافة شعبة، ثم التعديل والحذف.
+class _GradeFeeCard extends StatelessWidget {
+  const _GradeFeeCard({required this.fee});
+
+  final GradeFee fee;
+
+  @override
+  Widget build(BuildContext context) {
+    final store = StoreScope.of(context);
+    final f = fee;
+    final sections = store.rooms.where((r) => r.gradeLevel == f.gradeName).toList();
+    final students = store.students.where((s) => s.gradeLevel.trim() == f.gradeName.trim()).length;
+
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('جلسة العمل على هذا الجهاز',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading)),
-                Text('تسجيل الخروج ينهي جلستك ويتطلب إدخال بيانات الدخول مرة أخرى.',
-                    style: TextStyle(color: AppColors.faint, fontSize: 10.5)),
-              ],
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(f.gradeName, maxLines: 1, overflow: TextOverflow.ellipsis, style: _titleStyle),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${stageTierLabel(f.tier)}  ·  $students طالب',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _metaStyle,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(money(f.monthlyFee), style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: AppColors.heading)),
+                  const Text('شهرياً', style: TextStyle(color: AppColors.faint, fontSize: 10.5)),
+                ],
+              ),
+            ],
           ),
-          GhostButton(
-            label: 'تسجيل الخروج',
-            icon: Icons.logout,
-            onPressed: () async {
-              final ok = await confirmSheet(
-                context,
-                title: 'تسجيل الخروج',
-                message: 'هل أنت متأكد من رغبتك في تسجيل الخروج من النظام على هذا الجهاز؟',
-                confirmLabel: 'خروج',
-              );
-              if (ok) await store.logout();
-            },
+          const _Rule(),
+          Wrap(
+            spacing: 5,
+            runSpacing: 5,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (final r in sections) StatusChip.muted(r.name),
+              TileButton(
+                label: 'شعبة',
+                icon: const Icon(Icons.add, size: 13),
+                color: AppColors.amber,
+                background: AppColors.amberSoft,
+                border: AppColors.amberBorder,
+                onTap: () => _addSection(context, f),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TileButton(
+                label: 'تعديل',
+                icon: const Icon(Icons.edit_outlined, size: 13),
+                color: AppColors.heading,
+                background: Colors.white,
+                border: AppColors.lineStrong,
+                onTap: () => _open(context, GradeFeeFormScreen(fee: f)),
+              ),
+              const SizedBox(width: 6),
+              TileButton(
+                label: 'حذف',
+                icon: const Icon(Icons.delete_outline, size: 13),
+                color: AppColors.danger,
+                background: Colors.white,
+                border: AppColors.dangerBorder,
+                onTap: () => _deleteFee(context, f),
+              ),
+            ],
           ),
         ],
       ),
@@ -166,340 +365,107 @@ class _LogoutBar extends StatelessWidget {
   }
 }
 
-class _FeesTab extends StatefulWidget {
-  const _FeesTab();
-  @override
-  State<_FeesTab> createState() => _FeesTabState();
+Future<void> _deleteFee(BuildContext context, GradeFee f) async {
+  final store = StoreScope.of(context);
+  final ok = await confirmSheet(
+    context,
+    title: 'حذف المرحلة',
+    message: 'هل أنت متأكد من حذف مرحلة «${f.gradeName}»؟',
+    confirmLabel: 'حذف',
+  );
+  if (!ok || !context.mounted) return;
+  try {
+    store.deleteGradeFee(f);
+    showAppSnack(context, 'تم حذف المرحلة');
+  } on StoreException catch (e) {
+    showAppSnack(context, e.message, error: true);
+  }
 }
 
-class _FeesTabState extends State<_FeesTab> {
-  bool adding = false;
-  final name = TextEditingController();
-  final fee = TextEditingController();
-  final section = TextEditingController();
-  String tier = 'secondary';
-  final addErrors = FieldErrors();
-
-  @override
-  void dispose() {
-    name.dispose();
-    fee.dispose();
-    section.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final store = StoreScope.of(context);
-    return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-          children: [
-            AppCard(
-              child: Row(
-                children: [
-                  Container(width: 36, height: 36, color: AppColors.amberSoft, child: Icon(Icons.payments, color: AppColors.amber, size: 18)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('المراحل الدراسية والرسوم والشعب', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading)),
-                        Text('إدارة المراحل الدراسية ورسومها الشهرية والشعب التابعة لكل مرحلة', style: TextStyle(color: AppColors.muted, fontSize: 11)),
-                      ],
-                    ),
-                  ),
-                  PrimaryButton(label: 'إضافة مرحلة دراسية جديدة', icon: Icons.add, onPressed: () => setState(() => adding = true)),
-                ],
-              ),
-            ),
-            if (adding) ...[
-              const SizedBox(height: 8),
-              AppCard(
-                color: AppColors.bg,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Expanded(child: Text('إضافة مرحلة دراسية جديدة للنظام', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5))),
-                        IconButton(icon: const Icon(Icons.close, size: 16), onPressed: () => setState(() => adding = false)),
-                      ],
-                    ),
-                    FieldLabel('اسم المرحلة أو الصف الدراسي', key: addErrors.key('name'), requiredField: true),
-                    TextField(
-                      controller: name,
-                      onChanged: (_) {
-                        if (addErrors.clear('name')) setState(() {});
-                      },
-                      decoration: InputDecoration(hintText: 'مثال: الصف الثاني عشر...', errorText: addErrors['name']),
-                    ),
-                    const SizedBox(height: 8),
-                    const FieldLabel('المرحلة التعليمية الكبرى', requiredField: true),
-                    AppDropdown<String>(
-                      value: tier,
-                      items: educationalStageTiers.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
-                      onChanged: (v) => setState(() => tier = v ?? tier),
-                    ),
-                    const SizedBox(height: 8),
-                    FieldLabel('الرسوم الشهرية المعتمدة (₪)', key: addErrors.key('fee'), requiredField: true),
-                    TextField(
-                      controller: fee,
-                      keyboardType: TextInputType.number,
-                      onChanged: (_) {
-                        if (addErrors.clear('fee')) setState(() {});
-                      },
-                      decoration: InputDecoration(hintText: 'مثال: 200', errorText: addErrors['fee']),
-                    ),
-                    const SizedBox(height: 8),
-                    const FieldLabel('الشعبة الأولى (اختياري)'),
-                    TextField(controller: section, decoration: const InputDecoration(hintText: 'مثال: الشعبة (أ)')),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => setState(() => adding = false))),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: PrimaryButton(
-                            label: 'حفظ المرحلة وإدراجها',
-                            onPressed: () {
-                              final feeValue = double.tryParse(fee.text.trim());
-                              setState(() {
-                                addErrors
-                                  ..reset()
-                                  ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المرحلة أو الصف')
-                                  ..check('fee', feeValue == null || feeValue < 0, 'يرجى إدخال رسم شهري صحيح');
-                              });
-                              if (addErrors.report(context)) return;
-                              try {
-                                store.addGradeFee(
-                                  GradeFee(
-                                    id: store.newId(),
-                                    gradeName: name.text.trim(),
-                                    monthlyFee: double.tryParse(fee.text.trim()) ?? -1,
-                                    tier: tier,
-                                    isCustom: true,
-                                    orderIndex: store.gradeFees.length + 1,
-                                  ),
-                                  initialSection: section.text.trim(),
-                                );
-                                name.clear();
-                                fee.clear();
-                                section.clear();
-                                setState(() => adding = false);
-                                showAppSnack(context, 'تم إضافة المرحلة الدراسية بنجاح');
-                              } on StoreException catch (e) {
-                                showAppSnack(context, e.message, error: true);
-                              }
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            const SizedBox(height: 8),
-            for (final f in store.gradeFees)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(f.gradeName, style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
-                                const SizedBox(height: 4),
-                                StatusChip.muted(stageTierLabel(f.tier)),
-                              ],
-                            ),
-                          ),
-                          Text(money(f.monthlyFee), style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: AppColors.amber)),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: [
-                          for (final r in store.rooms.where((r) => r.gradeLevel == f.gradeName))
-                            StatusChip.amber(r.name),
-                          InkWell(
-                            onTap: () => _quickSection(context, f.gradeName, f.tier),
-                            child: StatusChip(label: '+ شعبة', fg: AppColors.navy, bg: AppColors.amberSoft, border: AppColors.amberBorder),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          GhostButton(label: 'تعديل', icon: Icons.edit_outlined, onPressed: () => _edit(context, f)),
-                          const SizedBox(width: 8),
-                          GhostButton(
-                            label: 'حذف',
-                            icon: Icons.delete_outline,
-                            onPressed: () async {
-                              final ok = await confirmSheet(context, title: 'حذف المرحلة', message: 'هل أنت متأكد من حذف مرحلة "${f.gradeName}"؟', confirmLabel: 'حذف');
-                              if (!ok) return;
-                              try {
-                                store.deleteGradeFee(f);
-                              } on StoreException catch (e) {
-                                if (context.mounted) showAppSnack(context, e.message, error: true);
-                              }
-                            },
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void> _quickSection(BuildContext context, String gradeName, String tier) async {
-    final store = StoreScope.of(context);
-    final ctl = TextEditingController();
-    final errors = FieldErrors();
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSt) => Padding(
-          padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
+/// إضافة شعبة لمرحلة — حقل واحد، فورقة قصيرة لا صفحة.
+Future<void> _addSection(BuildContext context, GradeFee f) async {
+  final store = StoreScope.of(context);
+  final ctl = TextEditingController();
+  final errors = FieldErrors();
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setSt) => Padding(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 12 + MediaQuery.viewInsetsOf(ctx).bottom),
+        child: SafeArea(
+          top: false,
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('إضافة شعبة لمرحلة: $gradeName', style: const TextStyle(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 8),
+              Text(
+                'إضافة شعبة لمرحلة: ${f.gradeName}',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
+              ),
+              const SizedBox(height: 12),
               FieldLabel('اسم الشعبة', key: errors.key('name'), requiredField: true),
               TextField(
                 controller: ctl,
+                autofocus: true,
                 onChanged: (_) {
                   if (errors.clear('name')) setSt(() {});
                 },
                 decoration: InputDecoration(hintText: 'مثال: الشعبة (ب)', errorText: errors['name']),
               ),
-              const SizedBox(height: 10),
-              PrimaryButton(
-                expand: true,
-                label: 'حفظ الشعبة',
-                onPressed: () {
-                  setSt(() {
-                    errors
-                      ..reset()
-                      ..check('name', ctl.text.trim().isEmpty, 'يرجى إدخال اسم الشعبة');
-                  });
-                  if (errors.report(ctx)) return;
-                  try {
-                    store.upsertRoom(Classroom(id: store.newId(), name: ctl.text.trim(), gradeLevel: gradeName, teacherId: '', capacity: 25, tier: tier));
-                    Navigator.pop(ctx);
-                    showAppSnack(context, 'تم إضافة الشعبة "${ctl.text.trim()}" إلى مرحلة $gradeName');
-                  } on StoreException catch (e) {
-                    showAppSnack(ctx, e.message, error: true);
-                  }
-                },
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx))),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 2,
+                    child: PrimaryButton(
+                      label: 'حفظ الشعبة',
+                      icon: Icons.check,
+                      height: 44,
+                      onPressed: () {
+                        setSt(() {
+                          errors
+                            ..reset()
+                            ..check('name', ctl.text.trim().isEmpty, 'يرجى إدخال اسم الشعبة');
+                        });
+                        if (errors.report(ctx)) return;
+                        try {
+                          store.upsertRoom(
+                            Classroom(
+                              id: store.newId(),
+                              name: ctl.text.trim(),
+                              gradeLevel: f.gradeName,
+                              teacherId: '',
+                              capacity: 25,
+                              tier: f.tier,
+                            ),
+                          );
+                          Navigator.pop(ctx);
+                          showAppSnack(context, 'تمت إضافة الشعبة «${ctl.text.trim()}» إلى ${f.gradeName}');
+                        } on StoreException catch (e) {
+                          showAppSnack(ctx, e.message, error: true);
+                        }
+                      },
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
       ),
-    );
-  }
-
-  Future<void> _edit(BuildContext context, GradeFee f) async {
-    final store = StoreScope.of(context);
-    final name = TextEditingController(text: f.gradeName);
-    final fee = TextEditingController(text: f.monthlyFee.toStringAsFixed(0));
-    var tier = educationalStageTiers.containsKey(f.tier) ? f.tier : 'secondary';
-    final errors = FieldErrors();
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
-          child: StatefulBuilder(
-            builder: (ctx, setSt) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('تعديل مرحلة ${f.gradeName}', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
-                  const SizedBox(height: 10),
-                  FieldLabel('اسم المرحلة الدراسية', key: errors.key('name'), requiredField: true),
-                  TextField(
-                    controller: name,
-                    onChanged: (_) {
-                      if (errors.clear('name')) setSt(() {});
-                    },
-                    decoration: InputDecoration(errorText: errors['name']),
-                  ),
-                  const SizedBox(height: 8),
-                  const FieldLabel('المرحلة التعليمية الكبرى'),
-                  AppDropdown<String>(
-                    value: tier,
-                    items: educationalStageTiers.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
-                    onChanged: (v) => setSt(() => tier = v ?? tier),
-                  ),
-                  const SizedBox(height: 8),
-                  FieldLabel('الرسم الشهري (₪)', key: errors.key('fee'), requiredField: true),
-                  TextField(
-                    controller: fee,
-                    keyboardType: TextInputType.number,
-                    onChanged: (_) {
-                      if (errors.clear('fee')) setSt(() {});
-                    },
-                    decoration: InputDecoration(errorText: errors['fee']),
-                  ),
-                  const SizedBox(height: 12),
-                  PrimaryButton(
-                    expand: true,
-                    label: 'حفظ',
-                    onPressed: () {
-                      final feeValue = double.tryParse(fee.text.trim());
-                      setSt(() {
-                        errors
-                          ..reset()
-                          ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المرحلة الدراسية')
-                          ..check('fee', feeValue == null || feeValue < 0, 'يرجى إدخال رسم شهري صحيح');
-                      });
-                      if (errors.report(ctx)) return;
-                      try {
-                        store.updateGradeFee(GradeFee(id: f.id, gradeName: name.text.trim(), monthlyFee: feeValue ?? f.monthlyFee, tier: tier, orderIndex: f.orderIndex, isCustom: f.isCustom));
-                        Navigator.pop(ctx);
-                      } on StoreException catch (e) {
-                        showAppSnack(context, e.message, error: true);
-                      }
-                    },
-                  ),
-                ],
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
+    ),
+  );
 }
+
+// ═══ المدرسون ═══════════════════════════════════════════════════════════════
 
 class _TeachersTab extends StatefulWidget {
   const _TeachersTab();
+
   @override
   State<_TeachersTab> createState() => _TeachersTabState();
 }
@@ -516,337 +482,116 @@ class _TeachersTabState extends State<_TeachersTab> {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
-        final q = search.text.trim();
-        final list = store.teachers.where((t) {
-          if (q.isEmpty) return true;
-          return t.name.contains(q) || t.phone.contains(q) || t.email.toLowerCase().contains(q.toLowerCase());
-        }).toList();
-        return Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: Row(
-                children: [
-                  Expanded(child: SearchField(controller: search, hint: 'بحث باسم المعلم أو رقم الهاتف...', onChanged: (_) => setState(() {}))),
-                  const SizedBox(width: 8),
-                  Text('${list.length} مدرس', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: AppColors.heading)),
-                  const SizedBox(width: 8),
-                  PrimaryButton(label: 'إضافة مدرس', icon: Icons.add, onPressed: () => _edit(context)),
-                ],
-              ),
-            ),
-            Expanded(
-              child: list.isEmpty
-                  ? const EmptyState(message: 'لا يوجد مدرسين مسجلين.')
-                  : ListView(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-                      children: [
-                        for (var i = 0; i < list.length; i++)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: AppCard(
-                              onTap: () => _edit(context, list[i]),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Text('#${i + 1}', style: const TextStyle(color: AppColors.muted, fontSize: 11, fontFamily: 'monospace')),
-                                      const SizedBox(width: 6),
-                                      Expanded(child: Text(list[i].name, style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading, fontSize: 13))),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(formatPhoneDisplay(list[i].phone), textDirection: TextDirection.ltr, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                                  if (list[i].subjectIds.isNotEmpty || list[i].subject.isNotEmpty) ...[
-                                    const SizedBox(height: 6),
-                                    Wrap(
-                                      spacing: 4,
-                                      runSpacing: 4,
-                                      children: [
-                                        for (final s in store.subjects.where((s) => list[i].subjectIds.contains(s.id) || s.name == list[i].subject))
-                                          StatusChip.amber(s.name),
-                                      ],
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-            ),
-          ],
-        );
-      },
-    );
-  }
+    final q = search.text.trim();
+    final list = store.teachers.where((t) {
+      if (q.isEmpty) return true;
+      return t.name.contains(q) || t.phone.contains(q) || t.email.toLowerCase().contains(q.toLowerCase());
+    }).toList();
 
-  Future<void> _edit(BuildContext context, [Teacher? t]) async {
-    final store = StoreScope.of(context);
-    final parsed = parsePhoneAndPrefix(t?.phone);
-    final name = TextEditingController(text: t?.name ?? '');
-    final phone = TextEditingController(text: parsed.number);
-    final email = TextEditingController(text: t?.email ?? '');
-    final notes = TextEditingController(text: t?.notes ?? '');
-    final teacherNationalId = TextEditingController(text: t?.nationalId ?? '');
-    final teacherPortalCode = TextEditingController(
-      text: (t?.portalCode.isNotEmpty ?? false) ? t!.portalCode : store.newPortalCode(),
-    );
-    final rate = TextEditingController(text: '${t?.rate ?? 70}');
-    var prefix = parsed.prefix;
-    var paymentType = teacherPaymentTypes.containsKey(t?.paymentType) ? t!.paymentType : 'percentage';
-    var salaryOpen = false;
-    final errors = FieldErrors();
-    final subjectIds = [...?t?.subjectIds];
-    if (subjectIds.isEmpty && (t?.subject ?? '').isNotEmpty) {
-      subjectIds.addAll(store.subjects.where((s) => s.name == t!.subject).map((s) => s.id));
-    }
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
-          child: StatefulBuilder(
-            builder: (ctx, setSt) {
-              return SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(t == null ? 'إضافة مدرس جديد' : 'تعديل بيانات: ${t.name}', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
-                    const SizedBox(height: 10),
-                    FieldLabel('اسم المدرس', key: errors.key('name'), requiredField: true),
-                    TextField(
-                      controller: name,
-                      onChanged: (_) {
-                        if (errors.clear('name')) setSt(() {});
-                      },
-                      decoration: InputDecoration(hintText: 'مثال: أ. محمد العلي', errorText: errors['name']),
-                    ),
-                    const SizedBox(height: 8),
-                    FieldLabel('رقم الهاتف (بالمقدمة)', key: errors.key('phone'), requiredField: true),
-                    Row(
-                      children: [
-                        SizedBox(
-                          width: 88,
-                          child: Directionality(
-                            textDirection: TextDirection.ltr,
-                            child: AppDropdown<String>(
-                              value: prefix,
-                              items: phonePrefixes.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
-                              onChanged: (v) => setSt(() => prefix = v ?? prefix),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Directionality(
-                            textDirection: TextDirection.ltr,
-                            child: TextField(
-                              controller: phone,
-                              keyboardType: TextInputType.phone,
-                              onChanged: (_) {
-                                if (errors.clear('phone')) setSt(() {});
-                              },
-                              decoration: const InputDecoration(hintText: 'xxxxxxx'),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    FormErrorText(errors['phone']),
-                    const SizedBox(height: 8),
-                    const FieldLabel('البريد الإلكتروني'),
-                    TextField(controller: email, keyboardType: TextInputType.emailAddress),
-                    const SizedBox(height: 8),
-                    // بيانات دخول المعلم إلى بوابته
-                    FieldLabel('رقم الهوية', key: errors.key('nationalId')),
-                    TextField(
-                      controller: teacherNationalId,
-                      keyboardType: TextInputType.number,
-                      maxLength: 9,
-                      onChanged: (_) {
-                        if (errors.clear('nationalId')) setSt(() {});
-                      },
-                      decoration: InputDecoration(hintText: '9 أرقام', counterText: '', errorText: errors['nationalId']),
-                    ),
-                    const SizedBox(height: 8),
-                    const FieldLabel('رمز الدخول للبوابة'),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: teacherPortalCode,
-                            keyboardType: TextInputType.number,
-                            maxLength: 10,
-                            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                            decoration: const InputDecoration(hintText: 'رمز من 6 أرقام', counterText: ''),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        GhostButton(
-                          label: 'توليد',
-                          icon: Icons.autorenew,
-                          onPressed: () => setSt(() {
-                            teacherPortalCode.text = store.newPortalCode();
-                          }),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    InkWell(
-                      onTap: () => setSt(() => salaryOpen = !salaryOpen),
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.bg, border: Border.all(color: AppColors.line)),
-                        child: Row(
-                          children: [
-                            Icon(Icons.payments_outlined, size: 16, color: AppColors.amber),
-                            const SizedBox(width: 6),
-                            const Expanded(child: Text('نظام المحاسبة والراتب (بيانات إضافية)', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12))),
-                            Text(salaryOpen ? 'طي الإعدادات' : 'توسيع لتعديل الراتب', style: const TextStyle(fontSize: 10.5, color: AppColors.muted)),
-                            Icon(salaryOpen ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 16, color: AppColors.muted),
-                          ],
-                        ),
-                      ),
-                    ),
-                    if (salaryOpen) ...[
-                      const SizedBox(height: 8),
-                      const FieldLabel('نظام المحاسبة والراتب', requiredField: true),
-                      AppDropdown<String>(
-                        value: paymentType,
-                        items: teacherPaymentTypes.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
-                        onChanged: (v) => setSt(() => paymentType = v ?? paymentType),
-                      ),
-                      const SizedBox(height: 8),
-                      FieldLabel(
-                        paymentType == 'percentage' ? 'النسبة (%)' : 'المبلغ (₪)',
-                        key: errors.key('rate'),
-                        requiredField: true,
-                      ),
-                      TextField(
-                        controller: rate,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        onChanged: (_) {
-                          if (errors.clear('rate')) setSt(() {});
-                        },
-                        decoration: InputDecoration(errorText: errors['rate']),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    const FieldLabel('المواد التي يدرّسها المعلم:'),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        for (final s in store.subjects)
-                          InkWell(
-                            onTap: () => setSt(() {
-                              if (subjectIds.contains(s.id)) {
-                                subjectIds.remove(s.id);
-                              } else {
-                                subjectIds.add(s.id);
-                              }
-                            }),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(Corner.box),
-                                color: subjectIds.contains(s.id) ? AppColors.amber : Colors.white,
-                                border: Border.all(color: subjectIds.contains(s.id) ? AppColors.amber : AppColors.line),
-                              ),
-                              child: Text(subjectIds.contains(s.id) ? '${s.name} ✓' : s.name, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: subjectIds.contains(s.id) ? Colors.white : AppColors.heading)),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    const FieldLabel('ملاحظات'),
-                    TextField(controller: notes),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        if (t != null)
-                          Expanded(
-                            child: GhostButton(
-                              label: 'حذف',
-                              onPressed: () async {
-                                final ok = await confirmSheet(context, title: 'حذف المعلم', message: 'سيتم فك ارتباط المعلم بالمجموعات وحذف بياناته نهائياً.', confirmLabel: 'تأكيد الحذف');
-                                if (ok) {
-                                  store.deleteTeacher(t.id);
-                                  if (ctx.mounted) Navigator.pop(ctx);
-                                }
-                              },
-                            ),
-                          ),
-                        if (t != null) const SizedBox(width: 8),
-                        Expanded(
-                          child: PrimaryButton(
-                            label: t == null ? 'إضافة المدرس' : 'حفظ التعديلات',
-                            onPressed: () {
-                              final rateValue = double.tryParse(rate.text.trim());
-                              final idDigits = digitsOnly(teacherNationalId.text);
-                              setSt(() {
-                                errors
-                                  ..reset()
-                                  ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المدرس')
-                                  ..check('phone', phone.text.trim().isEmpty, 'يرجى إدخال رقم هاتف المدرس')
-                                  ..check('nationalId', idDigits.isNotEmpty && idDigits.length != 9, 'رقم الهوية يجب أن يتكون من 9 أرقام')
-                                  ..check(
-                                    'rate',
-                                    rateValue == null || rateValue < 0,
-                                    paymentType == 'percentage' ? 'يرجى إدخال نسبة صحيحة' : 'يرجى إدخال مبلغ صحيح',
-                                  );
-                                // خطأ الراتب في قسم مطوي يُفتح قسمه كي يُرى
-                                if (errors['rate'] != null) salaryOpen = true;
-                              });
-                              if (errors.report(ctx)) return;
-                              try {
-                                final names = store.subjects.where((s) => subjectIds.contains(s.id)).map((s) => s.name).toList();
-                                store.upsertTeacher(
-                                  Teacher(
-                                    id: t?.id ?? store.newId(),
-                                    name: name.text.trim(),
-                                    phone: combinePhoneAndPrefix(phone.text.trim(), prefix),
-                                    subject: names.isEmpty ? '' : names.first,
-                                    rate: double.tryParse(rate.text.trim()) ?? 70,
-                                    email: email.text.trim(),
-                                    paymentType: paymentType,
-                                    notes: notes.text.trim(),
-                                    nationalId: digitsOnly(teacherNationalId.text),
-                                    portalCode: teacherPortalCode.text.trim(),
-                                    subjectIds: [...subjectIds],
-                                  ),
-                                );
-                                Navigator.pop(ctx);
-                              } on StoreException catch (e) {
-                                showAppSnack(context, e.message, error: true);
-                              }
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              );
-            },
+    return Column(
+      children: [
+        _Toolbar(
+          controller: search,
+          hint: 'ابحث باسم المدرس أو رقم الهاتف...',
+          shown: list.length,
+          total: store.teachers.length,
+          onChanged: (_) => setState(() {}),
+        ),
+        Expanded(
+          child: _cardList(
+            count: list.length,
+            empty: EmptyState(message: q.isEmpty ? 'لا يوجد مدرسون مسجلون.' : 'لا يوجد مدرسون مطابقون للبحث.'),
+            item: (context, i) => _TeacherCard(teacher: list[i]),
           ),
-        );
-      },
+        ),
+      ],
     );
   }
 }
 
+/// مدرس: الاسم ورقمه مقابل أيقونتي التواصل وسهم الفتح، ثم خط رفيع، ثم موادّه.
+class _TeacherCard extends StatelessWidget {
+  const _TeacherCard({required this.teacher});
+
+  final Teacher teacher;
+
+  @override
+  Widget build(BuildContext context) {
+    final store = StoreScope.of(context);
+    final t = teacher;
+    final phone = t.phone.trim();
+    final subjects = store.subjects.where((s) => t.subjectIds.contains(s.id) || s.name == t.subject).toList();
+    final groups = store.groups.where((g) => g.teacherId == t.id && g.isActive).length;
+    final meta = [
+      phone.isEmpty ? 'بلا رقم هاتف' : formatPhoneDisplay(phone),
+      if (groups > 0) '$groups مجموعة',
+    ];
+
+    return AppCard(
+      onTap: () => _open(context, TeacherFormScreen(teacher: t)),
+      padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 6, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(t.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: _titleStyle),
+                    const SizedBox(height: 2),
+                    Text(
+                      meta.join('  ·  '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _metaStyle,
+                    ),
+                  ],
+                ),
+              ),
+              if (phone.isNotEmpty) ...[
+                ContactIconButton(
+                  tooltip: 'اتصال',
+                  onTap: () => launchTel(phone),
+                  child: const Icon(Icons.phone_outlined, size: 18, color: AppColors.muted),
+                ),
+                ContactIconButton(
+                  tooltip: 'واتساب',
+                  onTap: () => launchWa(phone),
+                  child: const MessageCircleIcon(color: AppColors.success),
+                ),
+              ],
+              _chevron,
+            ],
+          ),
+          if (subjects.isNotEmpty)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(end: 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const _Rule(),
+                  Wrap(
+                    spacing: 5,
+                    runSpacing: 5,
+                    children: [for (final s in subjects) StatusChip.muted(s.name)],
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══ المواد ═════════════════════════════════════════════════════════════════
+
 class _SubjectsTab extends StatefulWidget {
   const _SubjectsTab();
+
   @override
   State<_SubjectsTab> createState() => _SubjectsTabState();
 }
@@ -863,162 +608,156 @@ class _SubjectsTabState extends State<_SubjectsTab> {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
-        final q = search.text.trim();
-        final list = store.subjects.where((s) {
-          if (q.isEmpty) return true;
-          return s.name.contains(q) || s.code.toLowerCase().contains(q.toLowerCase()) || s.gradeLevel.contains(q);
-        }).toList();
-        return Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: Row(
-                children: [
-                  Expanded(child: SearchField(controller: search, hint: 'بحث باسم المادة، الرمز، أو المرحلة...', onChanged: (_) => setState(() {}))),
-                  const SizedBox(width: 8),
-                  Text('${list.length} مادة', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5)),
-                  const SizedBox(width: 8),
-                  PrimaryButton(label: 'إضافة مادة', icon: Icons.add, onPressed: () => _edit(context)),
-                ],
-              ),
-            ),
-            Expanded(
-              child: list.isEmpty
-                  ? const EmptyState(message: 'لا توجد مواد دراسية مسجلة.')
-                  : ListView(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-                      children: [
-                        for (final s in list)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: AppCard(
-                              onTap: () => _edit(context, s),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 48,
-                                    height: 36,
-                                    alignment: Alignment.center,
-                                    color: const Color(0xFFF1F5F9),
-                                    child: Text(s.code.isEmpty ? '—' : s.code, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 10, color: AppColors.navy)),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(s.name, style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
-                                        Text(s.gradeLevel.isEmpty ? 'عام / كل المراحل' : s.gradeLevel, style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
-                                        if (s.description.isNotEmpty) Text(s.description, style: const TextStyle(color: AppColors.faint, fontSize: 11)),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-            ),
-          ],
-        );
-      },
+    final q = search.text.trim();
+    final list = store.subjects.where((s) {
+      if (q.isEmpty) return true;
+      return s.name.contains(q) || s.code.toLowerCase().contains(q.toLowerCase()) || s.gradeLevel.contains(q);
+    }).toList();
+
+    return Column(
+      children: [
+        _Toolbar(
+          controller: search,
+          hint: 'ابحث باسم المادة، الرمز، أو المرحلة...',
+          shown: list.length,
+          total: store.subjects.length,
+          onChanged: (_) => setState(() {}),
+        ),
+        Expanded(
+          child: _cardList(
+            count: list.length,
+            empty: EmptyState(message: q.isEmpty ? 'لا توجد مواد دراسية مسجلة.' : 'لا توجد مواد مطابقة للبحث.'),
+            item: (context, i) => _SubjectCard(subject: list[i]),
+          ),
+        ),
+      ],
     );
   }
+}
 
-  Future<void> _edit(BuildContext context, [SubjectItem? s]) async {
+/// مادة: رمزها في صندوق صغير، ثم اسمها ومرحلتها ووصفها، مقابل عدد مدرّسيها وسهم الفتح.
+class _SubjectCard extends StatelessWidget {
+  const _SubjectCard({required this.subject});
+
+  final SubjectItem subject;
+
+  @override
+  Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    final grades = <String>{'عام / كل المراحل', ...store.gradeFees.map((g) => g.gradeName), ...store.rooms.map((r) => r.gradeLevel)};
-    final name = TextEditingController(text: s?.name ?? '');
-    final code = TextEditingController(text: s?.code ?? '');
-    final desc = TextEditingController(text: s?.description ?? '');
-    var grade = s?.gradeLevel.isNotEmpty == true ? s!.gradeLevel : (store.gradeFees.isNotEmpty ? store.gradeFees.first.gradeName : 'عام / كل المراحل');
-    if (!grades.contains(grade)) grades.add(grade);
-    final errors = FieldErrors();
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
-          child: StatefulBuilder(
-            builder: (ctx, setSt) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(s == null ? 'إضافة مادة دراسية جديدة' : 'تعديل مادة: ${s.name}', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
-                  const SizedBox(height: 10),
-                  FieldLabel('اسم المادة الدراسية', key: errors.key('name'), requiredField: true),
-                  TextField(
-                    controller: name,
-                    onChanged: (_) {
-                      if (errors.clear('name')) setSt(() {});
-                    },
-                    decoration: InputDecoration(hintText: 'مثال: الرياضيات، الفيزياء...', errorText: errors['name']),
+    final s = subject;
+    final teachers = store.teachers.where((t) => t.subjectIds.contains(s.id) || t.subject == s.name).length;
+
+    return AppCard(
+      onTap: () => _open(context, SubjectFormScreen(subject: s)),
+      padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 6, 10),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 34,
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            decoration: tileDecoration(),
+            child: Text(
+              s.code.isEmpty ? '—' : s.code,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 10.5, fontFamily: 'monospace', color: AppColors.heading),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(s.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: _titleStyle),
+                const SizedBox(height: 2),
+                Text(
+                  s.gradeLevel.isEmpty ? 'عام / كل المراحل' : s.gradeLevel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _metaStyle,
+                ),
+                if (s.description.trim().isNotEmpty)
+                  Text(
+                    s.description.trim(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppColors.faint, fontSize: 11),
                   ),
-                  const SizedBox(height: 8),
-                  const FieldLabel('رمز المادة (اختياري)'),
-                  TextField(controller: code, decoration: const InputDecoration(hintText: 'مثال: MATH-1')),
-                  const SizedBox(height: 8),
-                  const FieldLabel('المرحلة الدراسية'),
-                  AppDropdown<String>(
-                    value: grade,
-                    items: grades.map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
-                    onChanged: (v) => setSt(() => grade = v ?? grade),
-                  ),
-                  const SizedBox(height: 8),
-                  const FieldLabel('وصف أو ملاحظات'),
-                  TextField(controller: desc, decoration: const InputDecoration(hintText: 'ملاحظات توضيحية عن المنهاج...')),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      if (s != null)
-                        Expanded(
-                          child: GhostButton(
-                            label: 'حذف',
-                            onPressed: () {
-                              store.deleteSubject(s.id);
-                              Navigator.pop(ctx);
-                            },
-                          ),
-                        ),
-                      if (s != null) const SizedBox(width: 8),
-                      Expanded(
-                        child: PrimaryButton(
-                          label: s == null ? 'إضافة المادة' : 'حفظ التعديلات',
-                          onPressed: () {
-                            setSt(() {
-                              errors
-                                ..reset()
-                                ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المادة');
-                            });
-                            if (errors.report(ctx)) return;
-                            try {
-                              store.upsertSubject(SubjectItem(id: s?.id ?? store.newId(), name: name.text.trim(), code: code.text.trim(), gradeLevel: grade, description: desc.text.trim()));
-                              Navigator.pop(ctx);
-                            } on StoreException catch (e) {
-                              showAppSnack(context, e.message, error: true);
-                            }
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              );
-            },
+              ],
+            ),
+          ),
+          if (teachers > 0) ...[
+            const SizedBox(width: 6),
+            Text('$teachers مدرس', style: _metaStyle),
+          ],
+          const SizedBox(width: 2),
+          _chevron,
+        ],
+      ),
+    );
+  }
+}
+
+// ═══ القاعات (للمراكز) ══════════════════════════════════════════════════════
+
+class _HallsTab extends StatelessWidget {
+  const _HallsTab();
+
+  @override
+  Widget build(BuildContext context) {
+    final store = StoreScope.of(context);
+    final rooms = [...store.rooms]..sort((a, b) => a.name.compareTo(b.name));
+    return _cardList(
+      count: rooms.length,
+      empty: const EmptyState(message: 'لا توجد قاعات مسجلة بعد.'),
+      item: (context, i) {
+        final r = rooms[i];
+        final groups = store.groups.where((g) => g.roomId == r.id && g.isActive).length;
+        return AppCard(
+          onTap: () => _open(context, HallFormScreen(room: r)),
+          padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 6, 10),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: tileDecoration(),
+                child: Icon(Icons.meeting_room_outlined, size: 18, color: AppColors.amber),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(r.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: _titleStyle),
+                    const SizedBox(height: 2),
+                    Text(
+                      ['السعة: ${r.capacity}', if (r.notes.trim().isNotEmpty) r.notes.trim()].join('  ·  '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _metaStyle,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text('$groups مجموعة', style: _metaStyle),
+              const SizedBox(width: 2),
+              _chevron,
+            ],
           ),
         );
       },
     );
   }
 }
+
+// ═══ المستخدمون والصلاحيات ══════════════════════════════════════════════════
 
 class _UsersTab extends StatelessWidget {
   const _UsersTab();
@@ -1026,721 +765,604 @@ class _UsersTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
-        final active = store.users.where((u) => u.id == store.deviceUserId).firstOrNull ?? store.users.firstOrNull;
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-          children: [
-            AppCard(
-              color: const Color(0xFFFAF5FF),
-              child: Row(
-                children: [
-                  const Icon(Icons.verified_user, color: Color(0xFF6B21A8), size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('صلاحية هذا الجهاز', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF6B21A8), fontSize: 12.5)),
-                        Text(active == null ? store.roleName : '${roleLabel(active.role)} · ${active.name}', style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
-                        if (store.receiptReceiverLabel.isNotEmpty)
-                          Text('اسم المستلم على السند: ${store.receiptReceiverLabel}', style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: PrimaryButton(label: 'مستخدم جديد', icon: Icons.add, onPressed: () => _add(context)),
-            ),
-            const SizedBox(height: 8),
-            for (final u in store.users)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.badge_outlined, color: AppColors.navy, size: 18),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(u.name, style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
-                                Text(roleLabel(u.role), style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
-                              ],
-                            ),
-                          ),
-                          StatusChip.success(u.isActive ? 'نشط' : 'موقوف'),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          GhostButton(label: 'تثبيت على الجهاز', onPressed: () => _setIdentity(context, u)),
-                          const SizedBox(width: 8),
-                          GhostButton(label: 'الصلاحيات', onPressed: () => _editCaps(context, u)),
-                          if (store.users.length > 1) ...[
-                            const SizedBox(width: 8),
-                            GhostButton(
-                              label: 'حذف',
-                              onPressed: () async {
-                                final ok = await confirmSheet(context, title: 'حذف المستخدم', message: 'حذف ${u.name}؟', confirmLabel: 'حذف');
-                                if (ok) {
-                                  try {
-                                    store.deleteUser(u.id);
-                                  } on StoreException catch (e) {
-                                    if (context.mounted) showAppSnack(context, e.message, error: true);
-                                  }
-                                }
-                              },
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
+    final users = store.users;
+    return _cardList(
+      header: const [_DeviceCard()],
+      count: users.length,
+      empty: const EmptyState(message: 'لا يوجد مستخدمون.'),
+      item: (context, i) => _UserCard(
+        user: users[i],
+        isThisDevice: users[i].id == store.deviceUserId,
+        canDelete: users.length > 1,
+      ),
     );
   }
+}
 
-  Future<void> _setIdentity(BuildContext context, AppUser u) async {
+/// المستخدم المثبَّت على هذا الجهاز — من تُطبَّق صلاحياته ويظهر اسمه على السندات.
+class _DeviceCard extends StatelessWidget {
+  const _DeviceCard();
+
+  @override
+  Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    final label = TextEditingController(text: store.receiptReceiverLabel.isEmpty ? u.name : store.receiptReceiverLabel);
-    if (normalizeRole(u.role) == 'admin') {
-      final pass = TextEditingController();
-      String? passError;
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.white,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
-        builder: (ctx) => StatefulBuilder(
-          builder: (ctx, setSt) => Padding(
-            padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
+    final me = store.deviceUser;
+    final label = store.receiptReceiverLabel.trim();
+
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(Corner.box),
+              color: AppColors.amberSoft,
+              border: Border.all(color: AppColors.amberBorder),
+            ),
+            child: Icon(Icons.phonelink_lock_outlined, size: 19, color: AppColors.amber),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('المستخدم المثبَّت على هذا الجهاز', style: TextStyle(color: AppColors.muted, fontSize: 11)),
+                const SizedBox(height: 2),
+                Text(
+                  me == null ? 'لم يُثبَّت مستخدم بعد' : me.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _titleStyle,
+                ),
+                if (me != null)
+                  Text(
+                    [roleLabel(me.role), if (label.isNotEmpty) 'المستلم على السند: $label'].join('  ·  '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: _metaStyle,
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// مستخدم: الاسم وشارة «هذا الجهاز» مقابل حالته، ودوره وعدد صلاحياته، ثم خط رفيع
+/// وأزرار التثبيت والصلاحيات والحذف.
+class _UserCard extends StatelessWidget {
+  const _UserCard({required this.user, required this.isThisDevice, required this.canDelete});
+
+  final AppUser user;
+  final bool isThisDevice;
+  final bool canDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final u = user;
+    final caps = effectiveCapabilities(u.capabilities, u.role).length;
+
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(child: Text(u.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: _titleStyle)),
+                        if (isThisDevice) ...[
+                          const SizedBox(width: 6),
+                          StatusChip.success('هذا الجهاز'),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${roleLabel(u.role)}  ·  $caps من ${allCapabilities.length} صلاحية',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _metaStyle,
+                    ),
+                  ],
+                ),
+              ),
+              if (!u.isActive) StatusChip.danger('موقوف'),
+            ],
+          ),
+          const _Rule(),
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              alignment: WrapAlignment.end,
+              children: [
+                if (!isThisDevice)
+                  TileButton(
+                    label: 'تثبيت على الجهاز',
+                    icon: const Icon(Icons.phonelink_lock_outlined, size: 13),
+                    color: AppColors.amber,
+                    background: AppColors.amberSoft,
+                    border: AppColors.amberBorder,
+                    onTap: () => _pinUser(context, u),
+                  ),
+                TileButton(
+                  label: 'الصلاحيات',
+                  icon: const Icon(Icons.tune, size: 13),
+                  color: AppColors.heading,
+                  background: Colors.white,
+                  border: AppColors.lineStrong,
+                  onTap: () => _open(context, CapabilitiesScreen(user: u)),
+                ),
+                if (canDelete && !isThisDevice)
+                  TileButton(
+                    label: 'حذف',
+                    icon: const Icon(Icons.delete_outline, size: 13),
+                    color: AppColors.danger,
+                    background: Colors.white,
+                    border: AppColors.dangerBorder,
+                    onTap: () => _deleteUser(context, u),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// تثبيت مستخدم على الجهاز — بكلمة مرور المدير لكل الأدوار، كما في تهيئة الجهاز:
+/// تثبيت سكرتير بلا كلمة مرور كان يغيّر صلاحيات الجهاز لأي حامل له.
+Future<void> _pinUser(BuildContext context, AppUser u) async {
+  final store = StoreScope.of(context);
+  final label = TextEditingController(text: u.name);
+  final pass = TextEditingController();
+  String? passError;
+
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setSt) {
+        void submit() {
+          final entered = pass.text.trim();
+          if (entered.isEmpty) {
+            setSt(() => passError = 'يرجى إدخال كلمة مرور المدير');
+            return;
+          }
+          if (!store.isAdminSetupPasswordValid(entered)) {
+            setSt(() => passError = 'كلمة المرور غير صحيحة');
+            return;
+          }
+          store.setDeviceIdentity(u, label.text);
+          Navigator.pop(ctx);
+          showAppSnack(context, 'تم تثبيت «${u.name}» على هذا الجهاز');
+        }
+
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 12 + MediaQuery.viewInsetsOf(ctx).bottom),
+          child: SafeArea(
+            top: false,
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text('تأكيد كلمة مرور المدير', style: TextStyle(fontWeight: FontWeight.w800)),
-                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(Icons.phonelink_lock_outlined, size: 18, color: AppColors.amber),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'تثبيت «${u.name}» على هذا الجهاز',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'تُطبَّق صلاحياته على هذا الجهاز، ويظهر الاسم التالي مستلماً على سندات القبض.',
+                  style: TextStyle(color: AppColors.muted, fontSize: 11.5, height: 1.5),
+                ),
+                const SizedBox(height: 14),
                 const FieldLabel('اسم المستلم على سند القبض'),
                 TextField(controller: label),
-                const SizedBox(height: 8),
-                const FieldLabel('كلمة مرور المنشأة', requiredField: true),
+                const SizedBox(height: 12),
+                const FieldLabel('كلمة مرور المدير الرئيسية', requiredField: true),
                 TextField(
                   controller: pass,
                   obscureText: true,
                   onChanged: (_) {
                     if (passError != null) setSt(() => passError = null);
                   },
-                  decoration: InputDecoration(errorText: passError),
+                  onSubmitted: (_) => submit(),
+                  decoration: InputDecoration(hintText: 'مطلوبة لتثبيت أي مستخدم', errorText: passError),
                 ),
-                const SizedBox(height: 10),
-                PrimaryButton(
-                  expand: true,
-                  label: 'تثبيت',
-                  onPressed: () {
-                    final entered = pass.text.trim();
-                    if (entered.isEmpty) {
-                      setSt(() => passError = 'يرجى إدخال كلمة مرور المنشأة');
-                      return;
-                    }
-                    // المقبول نفسه في تهيئة الجهاز — لا كلمة افتراضية مكتوبة هنا
-                    if (!store.isAdminSetupPasswordValid(entered)) {
-                      setSt(() => passError = 'كلمة المرور غير صحيحة');
-                      return;
-                    }
-                    store.setDeviceIdentity(u, label.text);
-                    Navigator.pop(ctx);
-                    showAppSnack(context, 'تم تثبيت هوية الجهاز');
-                  },
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx))),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 2,
+                      child: PrimaryButton(label: 'تثبيت على الجهاز', icon: Icons.check, height: 44, onPressed: submit),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
+        );
+      },
+    ),
+  );
+}
+
+Future<void> _deleteUser(BuildContext context, AppUser u) async {
+  final store = StoreScope.of(context);
+  final ok = await confirmSheet(
+    context,
+    title: 'حذف المستخدم',
+    message: 'هل تريد حذف «${u.name}» نهائياً؟',
+    confirmLabel: 'حذف',
+  );
+  if (!ok || !context.mounted) return;
+  try {
+    store.deleteUser(u.id);
+    showAppSnack(context, 'تم حذف المستخدم');
+  } on StoreException catch (e) {
+    showAppSnack(context, e.message, error: true);
+  }
+}
+
+// ═══ البيانات والمطور ═══════════════════════════════════════════════════════
+
+class _DataTab extends StatelessWidget {
+  const _DataTab();
+
+  @override
+  Widget build(BuildContext context) {
+    final store = StoreScope.of(context);
+    final failed = store.sync.getFailedActions();
+    final tenant = store.currentTenant;
+    final counts = <(String, int)>[
+      ('الطلاب', store.students.length),
+      (store.isSchool ? 'الصفوف' : 'القاعات', store.rooms.length),
+      ('المدرسون', store.teachers.length),
+      ('المواد', store.subjects.length),
+      ('المقبوضات', store.payments.length),
+      ('الأقساط', store.installments.length),
+      ('الحضور', store.attendance.length),
+      store.isSchool ? ('المراحل', store.gradeFees.length) : ('المجموعات', store.groups.length),
+    ];
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+      children: [
+        const FormSection(icon: Icons.cloud_sync_outlined, title: 'المزامنة مع السحابة'),
+        StatRow(
+          children: [
+            StatCard(
+              label: 'بانتظار الرفع',
+              value: '${store.pendingPush}',
+              color: store.pendingPush > 0 ? AppColors.amber : AppColors.success,
+            ),
+            StatCard(
+              label: 'عمليات متعثرة',
+              value: '${failed.length}',
+              color: failed.isEmpty ? AppColors.success : AppColors.danger,
+            ),
+          ],
         ),
-      );
-      return;
-    }
-    store.setDeviceIdentity(u, label.text);
-    showAppSnack(context, 'تم تثبيت هوية الجهاز');
-  }
+        if (failed.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _FailedActions(failed: failed),
+        ],
 
-  Future<void> _editCaps(BuildContext context, AppUser u) async {
-    final store = StoreScope.of(context);
-    final selected = {...effectiveCapabilities(u.capabilities, u.role)};
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.paddingOf(ctx).bottom),
-          child: StatefulBuilder(
-            builder: (ctx, setSt) {
-              return SizedBox(
-                height: 480,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('صلاحيات ${u.name}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: ListView(
-                        children: [
-                          for (final g in capabilityGroups) ...[
-                            Text(g.label, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.navy)),
-                            for (final item in g.items)
-                              CheckboxListTile(
-                                dense: true,
-                                contentPadding: EdgeInsets.zero,
-                                value: selected.contains(item.id),
-                                title: Text(item.label, style: const TextStyle(fontSize: 12.5)),
-                                subtitle: item.hint == null ? null : Text(item.hint!, style: const TextStyle(fontSize: 10.5, color: AppColors.muted)),
-                                onChanged: (v) => setSt(() {
-                                  if (v == true) {
-                                    selected.add(item.id);
-                                  } else {
-                                    selected.remove(item.id);
-                                  }
-                                }),
-                              ),
-                            const SizedBox(height: 8),
-                          ],
-                        ],
-                      ),
-                    ),
-                    PrimaryButton(
-                      expand: true,
-                      label: 'حفظ الصلاحيات',
-                      onPressed: () {
-                        store.updateUser(AppUser(id: u.id, name: u.name, role: u.role, email: u.email, isActive: u.isActive, capabilities: selected.toList()));
-                        Navigator.pop(ctx);
-                      },
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
+        const FormSection(icon: Icons.storage_outlined, title: 'البيانات المحلية على هذا الجهاز'),
+        _CountGrid(counts: counts),
 
-  Future<void> _add(BuildContext context) async {
-    final store = StoreScope.of(context);
-    final name = TextEditingController();
-    var role = 'receptionist';
-    final caps = {...receptionistCapabilities};
-    final errors = FieldErrors();
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
-          child: StatefulBuilder(
-            builder: (ctx, setSt) {
-              return SizedBox(
-                height: 460,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('مستخدم جديد', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
-                    const SizedBox(height: 10),
-                    FieldLabel('الاسم', key: errors.key('name'), requiredField: true),
-                    TextField(
-                      controller: name,
-                      onChanged: (_) {
-                        if (errors.clear('name')) setSt(() {});
-                      },
-                      decoration: InputDecoration(errorText: errors['name']),
-                    ),
-                    const SizedBox(height: 8),
-                    const FieldLabel('الدور (قالب بداية)'),
-                    AppDropdown<String>(
-                      value: role,
-                      items: const [
-                        DropdownMenuItem(value: 'admin', child: Text('مدير النظام')),
-                        DropdownMenuItem(value: 'receptionist', child: Text('سكرتير')),
-                      ],
-                      onChanged: (v) => setSt(() {
-                        role = v ?? role;
-                        caps
-                          ..clear()
-                          ..addAll(defaultCapsFor(role));
-                      }),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text('الصلاحيات', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
-                    Expanded(
-                      child: ListView(
-                        children: [
-                          for (final g in capabilityGroups)
-                            for (final item in g.items)
-                              CheckboxListTile(
-                                dense: true,
-                                contentPadding: EdgeInsets.zero,
-                                value: caps.contains(item.id),
-                                title: Text(item.label, style: const TextStyle(fontSize: 12)),
-                                onChanged: (v) => setSt(() {
-                                  if (v == true) {
-                                    caps.add(item.id);
-                                  } else {
-                                    caps.remove(item.id);
-                                  }
-                                }),
-                              ),
-                        ],
-                      ),
-                    ),
-                    PrimaryButton(
-                      expand: true,
-                      label: 'حفظ',
-                      onPressed: () {
-                        setSt(() {
-                          errors
-                            ..reset()
-                            ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المستخدم');
-                        });
-                        if (errors.report(ctx)) return;
-                        try {
-                          store.addUser(AppUser(id: store.newId(), name: name.text.trim(), role: role, capabilities: caps.toList()));
-                          Navigator.pop(ctx);
-                        } on StoreException catch (e) {
-                          showAppSnack(context, e.message, error: true);
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
-}
+        const FormSection(icon: Icons.backup_outlined, title: 'النسخ الاحتياطي'),
+        _NavTile(
+          icon: Icons.download_outlined,
+          title: 'تصدير نسخة احتياطية',
+          subtitle: 'حفظ بيانات هذا الجهاز كاملة في ملف',
+          onTap: () => _export(context, store),
+        ),
+        const SizedBox(height: 8),
+        _NavTile(
+          icon: Icons.upload_file_outlined,
+          title: 'استرجاع نسخة احتياطية',
+          subtitle: 'استبدال بيانات الجهاز بمحتوى ملف سابق',
+          onTap: () => _restore(context, store),
+        ),
 
-class _BackupTab extends StatelessWidget {
-  const _BackupTab();
-
-  @override
-  Widget build(BuildContext context) {
-    final store = StoreScope.of(context);
-    return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
-        final counts = {
-          'الطلاب': store.students.length,
-          'الشعب والصفوف': store.rooms.length,
-          'المراحل الدراسية': store.gradeFees.length,
-          'المدرسين': store.teachers.length,
-          'المواد': store.subjects.length,
-          'المقبوضات': store.payments.length,
-          'الأقساط': store.installments.length,
-          'الحضور': store.attendance.length,
-        };
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-          children: [
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SectionTitle('حالة المزامنة مع السحابة'),
-                  Text(
-                    store.pendingPush == 0 ? 'لا توجد تعديلات متعثرة للرفع.' : '${store.pendingPush} تعديلات محلية بانتظار الرفع',
-                    style: TextStyle(color: store.pendingPush == 0 ? AppColors.muted : AppColors.amber, fontWeight: FontWeight.w700, fontSize: 12),
-                  ),
-                  if (store.sync.getFailedActions().isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      'عمليات متعثرة بعد $maxSyncRetries محاولات: ${store.sync.getFailedActions().length}',
-                      style: const TextStyle(color: AppColors.danger, fontSize: 12, fontWeight: FontWeight.w700),
-                    ),
-                    for (final a in store.sync.getFailedActions().take(5))
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          '${tableLabelsAr[a.tableName] ?? a.tableName}: ${a.lastError ?? ''}',
-                          style: const TextStyle(color: AppColors.danger, fontSize: 11),
-                        ),
-                      ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: PrimaryButton(
-                            label: 'إعادة محاولة الرفع',
-                            icon: Icons.refresh,
-                            onPressed: () async {
-                              final count = store.sync.retryFailedActions();
-                              final result = await store.sync.push();
-                              if (!context.mounted) return;
-                              showAppSnack(
-                                context,
-                                count == 0 ? 'لا توجد عمليات متعثرة' : result.message,
-                                error: !result.success,
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: GhostButton(
-                            label: 'تجاهل المتعثرة',
-                            icon: Icons.delete_outline,
-                            onPressed: () async {
-                              final failed = store.sync.getFailedActions();
-                              final ok = await confirmSheet(
-                                context,
-                                title: 'تجاهل العمليات المتعثرة',
-                                message:
-                                    'سيتم إسقاط ${failed.length} عملية من طابور الرفع نهائياً. '
-                                    'التعديلات تبقى على هذا الجهاز لكنها لن تصل السحابة.',
-                                confirmLabel: 'تجاهل',
-                              );
-                              if (!ok) return;
-                              for (final a in failed) {
-                                store.sync.discardAction(a);
-                              }
-                              store.markAllDirty();
-                              if (!context.mounted) return;
-                              showAppSnack(context, 'تم إسقاط ${failed.length} عملية متعثرة');
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SectionTitle('حالة البيانات المحلية'),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      for (final e in counts.entries)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.bg, border: Border.all(color: AppColors.line)),
-                          child: Column(
-                            children: [
-                              Text('${e.value}', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
-                              Text(e.key, style: const TextStyle(color: AppColors.muted, fontSize: 10)),
-                            ],
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SectionTitle('النسخ الاحتياطي والبيانات'),
-                  PrimaryButton(
-                    expand: true,
-                    label: 'تصدير نسخة احتياطية',
-                    icon: Icons.download,
-                    onPressed: () => _export(context, store),
-                  ),
-                  const SizedBox(height: 8),
-                  GhostButton(
-                    label: 'استرجاع نسخة احتياطية',
-                    icon: Icons.upload_file_outlined,
-                    onPressed: () => _restore(context, store),
-                  ),
-                  if (store.can('settings.branding')) ...[
-                    const SizedBox(height: 8),
-                    GhostButton(
-                      label: 'إعدادات المطور وهوية المنشأة',
-                      icon: Icons.tune,
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const DeveloperSettingsScreen()),
-                        );
-                      },
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void> _export(BuildContext context, AppStore store) async {
-    try {
-      final path = await const BackupService().export(store);
-      if (!context.mounted) return;
-      showAppSnack(context, 'تم حفظ النسخة الاحتياطية في: $path');
-    } catch (e) {
-      if (!context.mounted) return;
-      showAppSnack(context, 'تعذّر تصدير النسخة: $e', error: true);
-    }
-  }
-
-  Future<void> _restore(BuildContext context, AppStore store) async {
-    const service = BackupService();
-    String? json;
-    try {
-      json = await service.pickFile();
-    } catch (e) {
-      if (!context.mounted) return;
-      showAppSnack(context, 'تعذّر فتح الملف: $e', error: true);
-      return;
-    }
-    if (json == null || !context.mounted) return;
-
-    Map<String, int> summary;
-    try {
-      summary = service.summarize(json);
-    } catch (_) {
-      if (!context.mounted) return;
-      showAppSnack(context, 'الملف ليس نسخة احتياطية صالحة', error: true);
-      return;
-    }
-
-    final lines = summary.entries.map((e) => '${tableLabelsAr[e.key] ?? e.key}: ${e.value}').join('\n');
-    final ok = await confirmSheet(
-      context,
-      title: 'استرجاع نسخة احتياطية',
-      message: 'سيتم استبدال كل البيانات المحلية بمحتوى الملف:\n\n$lines\n\n'
-          'لا يمكن التراجع عن هذه العملية. هل تريد المتابعة؟',
-      confirmLabel: 'استرجاع',
-    );
-    if (!ok || !context.mounted) return;
-
-    try {
-      final count = await service.restore(store, json);
-      if (!context.mounted) return;
-      showAppSnack(context, 'تم استرجاع $count سجلاً بنجاح');
-    } catch (e) {
-      if (!context.mounted) return;
-      showAppSnack(context, 'فشل الاسترجاع: $e', error: true);
-    }
-  }
-}
-
-/// إدارة القاعات — المقابل لـ `features/settings/Rooms.tsx` (نظام المركز).
-class _RoomsTab extends StatelessWidget {
-  const _RoomsTab();
-
-  @override
-  Widget build(BuildContext context) {
-    final store = StoreScope.of(context);
-    return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
-        final rooms = [...store.rooms]..sort((a, b) => a.name.compareTo(b.name));
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-          children: [
-            AppCard(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('القاعات الدراسية',
-                            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading)),
-                        Text('القاعات التي تُحجز للمجموعات في الجدول الأسبوعي',
-                            style: TextStyle(color: AppColors.muted, fontSize: 11)),
-                      ],
-                    ),
-                  ),
-                  PrimaryButton(label: 'إضافة قاعة', icon: Icons.add, onPressed: () => _edit(context, null)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            if (rooms.isEmpty)
-              const EmptyState(message: 'لا توجد قاعات مسجلة بعد')
-            else
-              for (final r in rooms)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: AppCard(
-                    padding: const EdgeInsets.all(12),
-                    onTap: () => _edit(context, r),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(r.name,
-                                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading)),
-                              Text(
-                                [
-                                  'السعة: ${r.capacity}',
-                                  if (r.notes.isNotEmpty) r.notes,
-                                ].join('  ·  '),
-                                style: const TextStyle(color: AppColors.muted, fontSize: 11),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Text(
-                          '${store.groups.where((g) => g.roomId == r.id && g.isActive).length} مجموعة',
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.muted),
-                        ),
-                        const SizedBox(width: 6),
-                        const Icon(Icons.chevron_left, size: 18, color: AppColors.muted),
-                      ],
-                    ),
-                  ),
-                ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void> _edit(BuildContext context, Classroom? room) async {
-    final store = StoreScope.of(context);
-    final name = TextEditingController(text: room?.name ?? '');
-    final capacity = TextEditingController(text: '${room?.capacity ?? 25}');
-    final notes = TextEditingController(text: room?.notes ?? '');
-    final errors = FieldErrors();
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSt) => Padding(
-          padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
+        const FormSection(icon: Icons.apartment_outlined, title: 'المنشأة'),
+        InfoStrip(
           child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(room == null ? 'إضافة قاعة جديدة' : 'تعديل: ${room.name}',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
-              const SizedBox(height: 10),
-              FieldLabel('اسم القاعة', key: errors.key('name'), requiredField: true),
-              TextField(
-                controller: name,
-                onChanged: (_) {
-                  if (errors.clear('name')) setSt(() {});
-                },
-                decoration: InputDecoration(hintText: 'مثال: القاعة (أ)', errorText: errors['name']),
-              ),
-              const SizedBox(height: 8),
-              FieldLabel('السعة', key: errors.key('capacity')),
-              TextField(
-                controller: capacity,
-                keyboardType: TextInputType.number,
-                onChanged: (_) {
-                  if (errors.clear('capacity')) setSt(() {});
-                },
-                decoration: InputDecoration(errorText: errors['capacity']),
-              ),
-              const SizedBox(height: 8),
-              const FieldLabel('ملاحظات وتجهيزات'),
-              TextField(controller: notes, decoration: const InputDecoration(hintText: 'الطابق، التجهيزات...')),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  if (room != null)
-                    Expanded(
-                      child: GhostButton(
-                        label: 'حذف',
-                        icon: Icons.delete_outline,
-                        onPressed: () async {
-                          final used = store.groups.where((g) => g.roomId == room.id).length;
-                          if (used > 0) {
-                            showAppSnack(ctx, 'لا يمكن حذف القاعة لارتباطها بـ $used مجموعة', error: true);
-                            return;
-                          }
-                          final ok = await confirmSheet(ctx,
-                              title: 'حذف القاعة', message: 'حذف «${room.name}»؟', confirmLabel: 'حذف');
-                          if (!ok || !ctx.mounted) return;
-                          store.deleteRoom(room.id);
-                          Navigator.pop(ctx);
-                        },
-                      ),
-                    ),
-                  if (room != null) const SizedBox(width: 8),
-                  Expanded(
-                    child: PrimaryButton(
-                      label: room == null ? 'إضافة القاعة' : 'حفظ',
-                      onPressed: () {
-                        final seats = int.tryParse(capacity.text.trim());
-                        setSt(() {
-                          errors
-                            ..reset()
-                            ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم القاعة')
-                            ..check(
-                              'capacity',
-                              capacity.text.trim().isNotEmpty && (seats == null || seats <= 0),
-                              'يرجى إدخال سعة صحيحة',
-                            );
-                        });
-                        if (errors.report(ctx)) return;
-                        try {
-                          store.upsertRoom(
-                            Classroom(
-                              id: room?.id ?? store.newId(),
-                              name: name.text.trim(),
-                              gradeLevel: room?.gradeLevel ?? '',
-                              teacherId: room?.teacherId ?? '',
-                              capacity: seats ?? 25,
-                              notes: notes.text.trim(),
-                              tier: room?.tier ?? 'secondary',
-                              createdAt: room?.createdAt,
-                            ),
-                          );
-                          Navigator.pop(ctx);
-                        } on StoreException catch (e) {
-                          showAppSnack(ctx, e.message, error: true);
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ),
+              _infoRow('المنشأة', tenant?.name ?? (store.institutionName.isEmpty ? '—' : store.institutionName)),
+              _infoRow('رمز المنشأة', tenant?.code.isNotEmpty == true ? tenant!.code : '—'),
+              _infoRow('المستخدم على الجهاز', store.deviceUser?.name ?? '—'),
             ],
           ),
         ),
+        if (store.can('settings.branding')) ...[
+          const SizedBox(height: 8),
+          _NavTile(
+            icon: Icons.tune,
+            title: 'تخصيص المنشأة وأدوات المطور',
+            subtitle: 'الاسم والشعار والألوان والميزات',
+            onTap: () => _open(context, const DeveloperSettingsScreen()),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+Widget _infoRow(String label, String value) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 3),
+    child: Row(
+      children: [
+        Text(label, style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.end,
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// أعداد السجلات المحلية في شبكة من أربعة أعمدة متساوية.
+class _CountGrid extends StatelessWidget {
+  const _CountGrid({required this.counts});
+
+  final List<(String, int)> counts;
+
+  static const _columns = 4;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <Widget>[];
+    for (var i = 0; i < counts.length; i += _columns) {
+      final slice = counts.sublist(i, (i + _columns).clamp(0, counts.length));
+      rows.add(
+        Row(
+          children: [
+            for (var j = 0; j < _columns; j++) ...[
+              if (j > 0) const SizedBox(width: 6),
+              Expanded(child: j < slice.length ? _cell(slice[j]) : const SizedBox.shrink()),
+            ],
+          ],
+        ),
+      );
+    }
+    return Column(
+      children: [
+        for (var i = 0; i < rows.length; i++) ...[
+          if (i > 0) const SizedBox(height: 6),
+          rows[i],
+        ],
+      ],
+    );
+  }
+
+  Widget _cell((String, int) c) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
+      decoration: tileDecoration(),
+      child: Column(
+        children: [
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text('${c.$2}', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: AppColors.heading)),
+          ),
+          const SizedBox(height: 2),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(c.$1, style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
+          ),
+        ],
       ),
     );
-    name.dispose();
-    capacity.dispose();
-    notes.dispose();
+  }
+}
+
+/// سطر يُفتح بلمسة: أيقونة في صندوق، وعنوان وشرح، وسهم الفتح.
+class _NavTile extends StatelessWidget {
+  const _NavTile({required this.icon, required this.title, required this.subtitle, required this.onTap});
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      onTap: onTap,
+      padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 6, 10),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            decoration: tileDecoration(),
+            child: Icon(icon, size: 18, color: AppColors.amber),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(title, style: _titleStyle),
+                const SizedBox(height: 1),
+                Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: _metaStyle),
+              ],
+            ),
+          ),
+          _chevron,
+        ],
+      ),
+    );
+  }
+}
+
+/// العمليات التي تعذّر رفعها بعد كل المحاولات، مع إعادة المحاولة أو التجاهل.
+class _FailedActions extends StatelessWidget {
+  const _FailedActions({required this.failed});
+
+  final List<PendingSync> failed;
+
+  @override
+  Widget build(BuildContext context) {
+    final store = StoreScope.of(context);
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'تعذّر رفع ${failed.length} عملية بعد $maxSyncRetries محاولات',
+            style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w800, fontSize: 12.5),
+          ),
+          const SizedBox(height: 4),
+          for (final a in failed.take(5))
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Text(
+                '${tableLabelsAr[a.tableName] ?? a.tableName}: ${a.lastError ?? ''}',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: _metaStyle,
+              ),
+            ),
+          const _Rule(),
+          Row(
+            children: [
+              Expanded(
+                child: PrimaryButton(
+                  label: 'إعادة المحاولة',
+                  icon: Icons.refresh,
+                  onPressed: () async {
+                    final count = store.sync.retryFailedActions();
+                    final result = await store.sync.push();
+                    if (!context.mounted) return;
+                    showAppSnack(
+                      context,
+                      count == 0 ? 'لا توجد عمليات متعثرة' : result.message,
+                      error: !result.success,
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: GhostButton(
+                  label: 'تجاهل المتعثرة',
+                  icon: Icons.delete_outline,
+                  onPressed: () async {
+                    final ok = await confirmSheet(
+                      context,
+                      title: 'تجاهل العمليات المتعثرة',
+                      message: 'سيتم إسقاط ${failed.length} عملية من طابور الرفع نهائياً. '
+                          'التعديلات تبقى على هذا الجهاز لكنها لن تصل السحابة.',
+                      confirmLabel: 'تجاهل',
+                    );
+                    if (!ok) return;
+                    for (final a in failed) {
+                      store.sync.discardAction(a);
+                    }
+                    store.markAllDirty();
+                    if (!context.mounted) return;
+                    showAppSnack(context, 'تم إسقاط ${failed.length} عملية متعثرة');
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Future<void> _export(BuildContext context, AppStore store) async {
+  try {
+    final path = await const BackupService().export(store);
+    if (!context.mounted) return;
+    showAppSnack(context, 'تم حفظ النسخة الاحتياطية في: $path');
+  } catch (e) {
+    if (!context.mounted) return;
+    showAppSnack(context, 'تعذّر تصدير النسخة: $e', error: true);
+  }
+}
+
+Future<void> _restore(BuildContext context, AppStore store) async {
+  const service = BackupService();
+  String? json;
+  try {
+    json = await service.pickFile();
+  } catch (e) {
+    if (!context.mounted) return;
+    showAppSnack(context, 'تعذّر فتح الملف: $e', error: true);
+    return;
+  }
+  if (json == null || !context.mounted) return;
+
+  Map<String, int> summary;
+  try {
+    summary = service.summarize(json);
+  } catch (_) {
+    if (!context.mounted) return;
+    showAppSnack(context, 'الملف ليس نسخة احتياطية صالحة', error: true);
+    return;
+  }
+
+  final lines = summary.entries.map((e) => '${tableLabelsAr[e.key] ?? e.key}: ${e.value}').join('\n');
+  final ok = await confirmSheet(
+    context,
+    title: 'استرجاع نسخة احتياطية',
+    message: 'سيتم استبدال كل البيانات المحلية بمحتوى الملف:\n\n$lines\n\n'
+        'لا يمكن التراجع عن هذه العملية. هل تريد المتابعة؟',
+    confirmLabel: 'استرجاع',
+  );
+  if (!ok || !context.mounted) return;
+
+  try {
+    final count = await service.restore(store, json);
+    if (!context.mounted) return;
+    showAppSnack(context, 'تم استرجاع $count سجلاً بنجاح');
+  } catch (e) {
+    if (!context.mounted) return;
+    showAppSnack(context, 'فشل الاسترجاع: $e', error: true);
   }
 }

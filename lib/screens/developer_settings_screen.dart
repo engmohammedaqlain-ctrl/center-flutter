@@ -11,12 +11,15 @@ import '../data/supabase.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/form_layout.dart';
+import '../widgets/panels.dart';
 import '../widgets/widgets.dart';
 
 /// إعدادات المطور — المقابل لـ `features/settings/DeveloperSettings.tsx`.
 ///
-/// محمية بكلمة مرور المطور، وتضم: نوع المنشأة، الاسم، الشعار، ألوان الهوية،
-/// البيانات التجريبية، تصفير القاعدة، ومعلومات النظام.
+/// محمية بكلمة مرور المطور. بتخطيط النماذج: أقسام بعنوان وخط لا بطاقات، وحفظ
+/// هوية المنشأة ثابت أسفل الشاشة. الميزات تُحفظ فور تبديلها، وأدوات البيانات
+/// تُنفَّذ بتأكيد.
 class DeveloperSettingsScreen extends StatefulWidget {
   const DeveloperSettingsScreen({super.key});
 
@@ -38,6 +41,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
   late TextEditingController seatFee;
   late TextEditingController supabaseUrlCtrl;
   late TextEditingController supabaseKeyCtrl;
+  final errors = FieldErrors();
 
   bool busy = false;
 
@@ -49,7 +53,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
     name = TextEditingController(text: store.institutionName);
     logo = store.institutionLogo;
     colors = store.institutionColors;
-    seatFee = TextEditingController(text: '${store.seatReservationFee}');
+    seatFee = TextEditingController(text: trimNum(store.seatReservationFee));
     supabaseUrlCtrl = TextEditingController(text: store.db.settings[SupabaseConfig.urlSettingKey] ?? '');
     supabaseKeyCtrl = TextEditingController(text: store.db.settings[SupabaseConfig.keySettingKey] ?? '');
   }
@@ -69,51 +73,73 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
     final store = StoreScope.of(context);
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(title: const Text('تخصيص المنشأة وأدوات المطور')),
-      body: unlocked ? _body(context, store) : _gate(context),
+      appBar: AppBar(
+        title: const Text('تخصيص المنشأة وأدوات المطور'),
+        titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+      ),
+      bottomNavigationBar: unlocked
+          ? FormActionBar(
+              label: 'حفظ وتطبيق الإعدادات',
+              icon: Icons.save_outlined,
+              busy: busy,
+              onSave: busy ? null : () => _save(store),
+            )
+          : null,
+      body: unlocked ? _body(context, store) : _gate(),
     );
   }
 
-  Widget _gate(BuildContext context) {
+  // ── بوابة كلمة المرور ───────────────────────────────────────────────────
+
+  Widget _gate() {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 340),
-          child: AppCard(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Icon(Icons.lock_outline, size: 32, color: AppColors.amber),
-                const SizedBox(height: 10),
-                Text(
-                  'هذا القسم خاص بالمطور',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(Corner.card),
+                    color: AppColors.amberSoft,
+                    border: Border.all(color: AppColors.amberBorder),
+                  ),
+                  child: Icon(Icons.lock_outline, size: 26, color: AppColors.amber),
                 ),
-                const SizedBox(height: 4),
-                const Text(
-                  'أدخل كلمة مرور المطور للوصول إلى إعدادات الهوية وأدوات البيانات.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.muted, fontSize: 11.5),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: gate,
-                  obscureText: true,
-                  onSubmitted: (_) => _unlock(),
-                  decoration: const InputDecoration(hintText: 'كلمة مرور المطور'),
-                ),
-                if (gateError != null) ...[
-                  const SizedBox(height: 8),
-                  Text(gateError!, style: const TextStyle(color: AppColors.danger, fontSize: 12)),
-                ],
-                const SizedBox(height: 12),
-                PrimaryButton(expand: true, label: 'فتح القسم', icon: Icons.key, onPressed: _unlock),
-              ],
-            ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'هذا القسم خاص بالمطور',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: AppColors.heading),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'أدخل كلمة مرور المطور للوصول إلى هوية المنشأة وأدوات البيانات.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.muted, fontSize: 12, height: 1.5),
+              ),
+              const SizedBox(height: 18),
+              const FieldLabel('كلمة مرور المطور', requiredField: true),
+              TextField(
+                controller: gate,
+                obscureText: true,
+                onSubmitted: (_) => _unlock(),
+                onChanged: (_) {
+                  if (gateError != null) setState(() => gateError = null);
+                },
+                decoration: InputDecoration(hintText: '••••••••', errorText: gateError),
+              ),
+              const SizedBox(height: 14),
+              PrimaryButton(expand: true, height: 44, label: 'فتح القسم', icon: Icons.key, onPressed: _unlock),
+            ],
           ),
         ),
       ),
@@ -121,135 +147,138 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
   }
 
   void _unlock() {
-    if (gate.text.trim() == _devPassword) {
+    final entered = gate.text.trim();
+    if (entered.isEmpty) {
+      setState(() => gateError = 'يرجى إدخال كلمة مرور المطور');
+    } else if (entered != _devPassword) {
+      setState(() => gateError = 'كلمة المرور غير صحيحة');
+    } else {
       setState(() {
         unlocked = true;
         gateError = null;
       });
-    } else {
-      setState(() => gateError = 'كلمة المرور غير صحيحة');
     }
   }
 
+  // ── المحتوى ──────────────────────────────────────────────────────────────
+
   Widget _body(BuildContext context, AppStore store) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-      children: [
-        _institutionType(store),
-        const SizedBox(height: 8),
-        _identity(store),
-        const SizedBox(height: 8),
-        _colors(store),
-        const SizedBox(height: 8),
-        _financeRules(store),
-        const SizedBox(height: 8),
-        _features(store),
-        const SizedBox(height: 8),
-        _connection(store),
-        const SizedBox(height: 8),
-        _tools(context, store),
-        const SizedBox(height: 8),
-        _systemInfo(store),
-      ],
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        children: [
+          ..._institutionType(),
+          ..._identity(),
+          ..._colors(),
+          ..._financeRules(),
+          ..._connection(),
+          ..._features(store),
+          ..._tools(context, store),
+          ..._systemInfo(store),
+        ],
+      ),
     );
   }
 
-  Widget _institutionType(AppStore store) {
-    return AppCard(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SectionTitle('نوع المنشأة التشغيلي'),
-          for (final e in institutionTypes.entries)
-            InkWell(
+  List<Widget> _institutionType() => [
+        const FormSection(icon: Icons.apartment_outlined, title: 'نوع المنشأة التشغيلي'),
+        for (final e in institutionTypes.entries)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: _choiceTile(
+              selected: type == e.key,
+              title: e.value,
+              subtitle: institutionTypeHints[e.key] ?? '',
               onTap: () => setState(() => type = e.key),
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 6),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(Corner.box),
-                  color: type == e.key ? AppColors.amberSoft : Colors.white,
-                  border: Border.all(color: type == e.key ? AppColors.amber : AppColors.line),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      type == e.key ? Icons.radio_button_checked : Icons.radio_button_off,
-                      size: 16,
-                      color: type == e.key ? AppColors.amber : AppColors.faint,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(e.value, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)),
-                          Text(institutionTypeHints[e.key] ?? '',
-                              style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+            ),
+          ),
+        const Text(
+          'تغيير النوع يبدّل قسم «الصفوف» بقسم «الجدول والمجموعات» وبالعكس.',
+          style: TextStyle(color: AppColors.faint, fontSize: 10.5),
+        ),
+      ];
+
+  Widget _choiceTile({
+    required bool selected,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(Corner.box),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(Corner.box),
+          color: selected ? AppColors.amberSoft : Colors.white,
+          border: Border.all(color: selected ? AppColors.amber : AppColors.line),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              selected ? Icons.radio_button_checked : Icons.radio_button_off,
+              size: 18,
+              color: selected ? AppColors.amber : AppColors.faint,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading)),
+                  if (subtitle.isNotEmpty)
+                    Text(subtitle, style: const TextStyle(color: AppColors.muted, fontSize: 11, height: 1.4)),
+                ],
               ),
             ),
-          const Text(
-            'تغيير النوع يبدّل قسم «الصفوف» بقسم «الجدول والمجموعات» وبالعكس.',
-            style: TextStyle(color: AppColors.faint, fontSize: 10.5),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _identity(AppStore store) {
-    return AppCard(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SectionTitle('اسم المنشأة وشعارها'),
-          const FieldLabel('اسم المنشأة والترويسة الرسمية'),
-          TextField(controller: name, decoration: const InputDecoration(hintText: 'مثال: مدرسة الأمل الخاصة')),
-          const SizedBox(height: 10),
-          const FieldLabel('شعار المنشأة'),
-          Row(
-            children: [
-              InstitutionBadge(logo: logo, size: 56, onDark: false),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    GhostButton(label: 'رفع شعار جديد', icon: Icons.upload_outlined, onPressed: _pickLogo),
-                    if (logo.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      GhostButton(
-                        label: 'إزالة الشعار',
-                        icon: Icons.delete_outline,
-                        onPressed: () => setState(() => logo = ''),
-                      ),
-                    ],
-                  ],
-                ),
+  List<Widget> _identity() => [
+        const FormSection(icon: Icons.badge_outlined, title: 'اسم المنشأة وشعارها'),
+        const FieldLabel('اسم المنشأة والترويسة الرسمية'),
+        TextField(controller: name, decoration: const InputDecoration(hintText: 'مثال: مدرسة الأمل الخاصة')),
+        const SizedBox(height: 12),
+        const FieldLabel('شعار المنشأة'),
+        Row(
+          children: [
+            InstitutionBadge(logo: logo, size: 56, onDark: false),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  TileButton(
+                    label: logo.isEmpty ? 'رفع شعار' : 'تغيير الشعار',
+                    icon: const Icon(Icons.upload_outlined, size: 13),
+                    color: AppColors.heading,
+                    background: Colors.white,
+                    border: AppColors.lineStrong,
+                    onTap: _pickLogo,
+                  ),
+                  if (logo.isNotEmpty)
+                    TileButton(
+                      label: 'إزالة',
+                      icon: const Icon(Icons.delete_outline, size: 13),
+                      color: AppColors.danger,
+                      background: Colors.white,
+                      border: AppColors.dangerBorder,
+                      onTap: () => setState(() => logo = ''),
+                    ),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          PrimaryButton(
-            expand: true,
-            label: 'حفظ وتطبيق إعدادات المنشأة',
-            icon: Icons.save_outlined,
-            busy: busy,
-            onPressed: () => _save(store),
-          ),
-        ],
-      ),
-    );
-  }
+            ),
+          ],
+        ),
+      ];
 
-  Widget _colors(AppStore store) {
+  List<Widget> _colors() {
     final swatches = <(String, String, String)>[
       ('sidebarBg', colors.sidebarBg, 'خلفية الترويسة والقوائم'),
       ('activeItem', colors.activeItem, 'تمييز القسم المفتوح'),
@@ -258,132 +287,169 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
       ('appBg', colors.appBg, 'خلفية مساحة العمل'),
     ];
 
-    return AppCard(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SectionTitle('ألوان هوية المنشأة'),
-          for (final s in swatches)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => _pickColor(s.$1, s.$2),
-                    child: Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(Corner.box),
-                        color: parseHexColor(s.$2) ?? Colors.white,
-                        border: Border.all(color: AppColors.lineStrong),
+    return [
+      const FormSection(icon: Icons.palette_outlined, title: 'ألوان هوية المنشأة', note: 'اضغط اللون لتغييره'),
+      Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(Corner.card),
+          border: Border.all(color: AppColors.line),
+        ),
+        child: Column(
+          children: [
+            for (var i = 0; i < swatches.length; i++)
+              InkWell(
+                onTap: () => _pickColor(swatches[i].$1, swatches[i].$2),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                  decoration: BoxDecoration(
+                    border: i == swatches.length - 1
+                        ? null
+                        : const Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(Corner.box),
+                          color: parseHexColor(swatches[i].$2) ?? Colors.white,
+                          border: Border.all(color: AppColors.lineStrong),
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(s.$3, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
-                        Text(s.$2, style: const TextStyle(fontSize: 10.5, color: AppColors.muted)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          const SizedBox(height: 4),
-          const Text('تشكيلات جاهزة:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final preset in colorPresets)
-                InkWell(
-                  onTap: () => setState(() => colors = preset.$2),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: Colors.white, border: Border.all(color: AppColors.line)),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(width: 12, height: 12, color: parseHexColor(preset.$2.sidebarBg)),
-                        Container(width: 12, height: 12, color: parseHexColor(preset.$2.actionButton)),
-                        const SizedBox(width: 6),
-                        Text(preset.$1, style: const TextStyle(fontSize: 10.5)),
-                      ],
-                    ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          swatches[i].$3,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.text),
+                        ),
+                      ),
+                      Text(
+                        swatches[i].$2.toUpperCase(),
+                        textDirection: TextDirection.ltr,
+                        style: const TextStyle(fontSize: 11, color: AppColors.muted, fontFamily: 'monospace'),
+                      ),
+                      const SizedBox(width: 2),
+                      const Icon(Icons.chevron_right, size: 18, color: AppColors.faint),
+                    ],
                   ),
                 ),
-            ],
-          ),
+              ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 12),
+      const FieldLabel('تشكيلات جاهزة'),
+      Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          for (final preset in colorPresets)
+            InkWell(
+              onTap: () => setState(() => colors = preset.$2),
+              borderRadius: BorderRadius.circular(Corner.box),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: tileDecoration(white: true),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _dot(preset.$2.sidebarBg),
+                    const SizedBox(width: 2),
+                    _dot(preset.$2.actionButton),
+                    const SizedBox(width: 6),
+                    Text(preset.$1, style: const TextStyle(fontSize: 11, color: AppColors.text)),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
-    );
+    ];
   }
 
-  Widget _financeRules(AppStore store) {
-    return AppCard(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SectionTitle('القواعد المالية'),
-          const FieldLabel('رسم حجز المقعد (₪)'),
-          TextField(controller: seatFee, keyboardType: TextInputType.number),
-          const SizedBox(height: 4),
-          const Text(
-            'يُضاف إلى رصيد الطالب عند تعليم «تم تسديد حجز المقعد». اتركه صفراً إن لم تعتمد الإدارة رسماً.',
-            style: TextStyle(color: AppColors.faint, fontSize: 10.5),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _dot(String hex) => Container(
+        width: 14,
+        height: 14,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(Corner.chip),
+          color: parseHexColor(hex) ?? Colors.white,
+        ),
+      );
+
+  List<Widget> _financeRules() => [
+        const FormSection(icon: Icons.payments_outlined, title: 'القواعد المالية'),
+        FieldLabel('رسم حجز المقعد (₪)', key: errors.key('seatFee')),
+        TextField(
+          controller: seatFee,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onChanged: (_) {
+            if (errors.clear('seatFee')) setState(() {});
+          },
+          decoration: InputDecoration(errorText: errors['seatFee']),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'يُضاف إلى رصيد الطالب عند تعليم «تم تسديد حجز المقعد». اتركه صفراً إن لم تعتمد الإدارة رسماً.',
+          style: TextStyle(color: AppColors.faint, fontSize: 10.5, height: 1.4),
+        ),
+      ];
+
+  List<Widget> _connection() => [
+        const FormSection(icon: Icons.cloud_outlined, title: 'الاتصال بالسحابة'),
+        FieldLabel('عنوان Supabase', key: errors.key('url')),
+        TextField(
+          controller: supabaseUrlCtrl,
+          keyboardType: TextInputType.url,
+          textDirection: TextDirection.ltr,
+          onChanged: (_) {
+            if (errors.clear('url')) setState(() {});
+          },
+          decoration: InputDecoration(hintText: SupabaseConfig.defaultUrl, errorText: errors['url']),
+        ),
+        const SizedBox(height: 12),
+        const FieldLabel('مفتاح النشر'),
+        TextField(
+          controller: supabaseKeyCtrl,
+          textDirection: TextDirection.ltr,
+          decoration: const InputDecoration(hintText: 'اتركه فارغاً للمفتاح الافتراضي'),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          SupabaseConfig.isCustom ? 'يعمل حالياً على عنوان مخصص.' : 'يعمل حالياً على العنوان الافتراضي.',
+          style: const TextStyle(color: AppColors.faint, fontSize: 10.5),
+        ),
+      ];
 
   /// خيارات التحكم بالميزات — المقابل لتبويب «features» في DeveloperSettings.tsx.
   ///
   /// الحفظ محلي لكل جهاز كما في سطح المكتب: `institution_settings` المشترك
   /// لا يحمل عموداً لها، فإرسالها فيه كان يُسقطها صامتاً.
-  Widget _features(AppStore store) {
+  List<Widget> _features(AppStore store) {
     final f = store.features;
-    return AppCard(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SectionTitle('خيارات التحكم بالميزات والموديولات'),
-          const Padding(
-            padding: EdgeInsets.only(bottom: 4),
-            child: Text(
-              'تفعيل أو تعطيل الأقسام والوظائف بحسب متطلبات واحتياجات المدرسة',
-              style: TextStyle(color: AppColors.faint, fontSize: 10.5),
-            ),
-          ),
-          _featureRow(
-            title: 'إدارة المصروفات وأجور المعلمين',
-            hint: 'إظهار تبويب وسجلات المصروفات وسندات الصرف وأجور المعلمين داخل الشاشة المالية.',
-            value: f.enableExpenses,
-            onChanged: (v) => store.saveFeatures(enableExpenses: v),
-          ),
-          _featureRow(
-            title: 'تقييمات ودرجات الطلاب (موديول أكاديمي)',
-            hint: 'إتاحة رصد درجات الطلاب للمعلم، وظهور تبويب التقييمات بالإدارة، وعرض النتائج في بوابة وملف الطالب.',
-            value: f.enableEvaluations,
-            onChanged: (v) => store.saveFeatures(enableEvaluations: v),
-          ),
-          _featureRow(
-            title: 'بوابة الطالب الإلكترونية',
-            hint: 'تمكين الطلاب وأولياء الأمور من الدخول برقم الهوية ورمز الدخول لاستعراض الحضور والرسوم والمواد.',
-            value: f.enableStudentPortal,
-            onChanged: (v) => store.saveFeatures(enableStudentPortal: v),
-          ),
-        ],
+    return [
+      const FormSection(icon: Icons.toggle_on_outlined, title: 'الميزات والموديولات', note: 'تُحفظ فور تبديلها'),
+      _featureRow(
+        title: 'إدارة المصروفات وأجور المعلمين',
+        hint: 'إظهار تبويب وسجلات المصروفات وسندات الصرف وأجور المعلمين داخل الشاشة المالية.',
+        value: f.enableExpenses,
+        onChanged: (v) => store.saveFeatures(enableExpenses: v),
       ),
-    );
+      _featureRow(
+        title: 'تقييمات ودرجات الطلاب',
+        hint: 'إتاحة رصد درجات الطلاب للمعلم، وظهور التقييمات بالإدارة، وعرض النتائج في بوابة وملف الطالب.',
+        value: f.enableEvaluations,
+        onChanged: (v) => store.saveFeatures(enableEvaluations: v),
+      ),
+      _featureRow(
+        title: 'بوابة الطالب الإلكترونية',
+        hint: 'تمكين الطلاب وأولياء الأمور من الدخول برقم الهوية ورمز الدخول لاستعراض الحضور والرسوم والمواد.',
+        value: f.enableStudentPortal,
+        onChanged: (v) => store.saveFeatures(enableStudentPortal: v),
+      ),
+    ];
   }
 
   Widget _featureRow({
@@ -393,45 +459,26 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
     required ValueChanged<bool> onChanged,
   }) {
     return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.all(10),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 6, 10),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(Corner.box),
-        color: AppColors.bg,
-        border: Border.all(color: AppColors.line),
+        borderRadius: BorderRadius.circular(Corner.card),
+        color: Colors.white,
+        border: Border.all(color: value ? AppColors.successBorder : AppColors.line),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        title,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 11.5,
-                          color: AppColors.heading,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    value ? StatusChip.success('مفعل') : StatusChip.muted('معطل'),
-                  ],
-                ),
+                Text(title, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading)),
                 const SizedBox(height: 3),
-                Text(
-                  hint,
-                  style: const TextStyle(color: AppColors.muted, fontSize: 10.5, height: 1.5),
-                ),
+                Text(hint, style: const TextStyle(color: AppColors.muted, fontSize: 11, height: 1.5)),
               ],
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Switch(
             value: value,
             activeThumbColor: Colors.white,
@@ -443,143 +490,134 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
     );
   }
 
-  Widget _connection(AppStore store) {
-    return AppCard(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SectionTitle('الاتصال بالسحابة'),
-          const FieldLabel('عنوان Supabase'),
-          TextField(
-            controller: supabaseUrlCtrl,
-            decoration: InputDecoration(hintText: SupabaseConfig.defaultUrl),
-          ),
-          const SizedBox(height: 8),
-          const FieldLabel('مفتاح النشر'),
-          TextField(
-            controller: supabaseKeyCtrl,
-            decoration: const InputDecoration(hintText: 'اتركه فارغاً للمفتاح الافتراضي'),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            SupabaseConfig.isCustom ? 'يعمل حالياً على عنوان مخصص.' : 'يعمل حالياً على العنوان الافتراضي.',
-            style: const TextStyle(color: AppColors.faint, fontSize: 10.5),
-          ),
-        ],
+  List<Widget> _tools(BuildContext context, AppStore store) => [
+        const FormSection(icon: Icons.build_outlined, title: 'أدوات الاختبار والبيانات'),
+        _toolTile(
+          icon: Icons.science_outlined,
+          title: 'حقن بيانات تجريبية',
+          subtitle: 'تغذية النظام بسجلات للتجربة والاختبار',
+          onTap: () async {
+            final ok = await confirmSheet(
+              context,
+              title: 'حقن بيانات تجريبية',
+              message: 'ستُضاف منشآت وطلاب ومدرّسون تجريبيون إلى قاعدة البيانات المحلية. هل تريد المتابعة؟',
+              confirmLabel: 'حقن',
+            );
+            if (!ok || !context.mounted) return;
+            injectDemoData(store);
+            await store.flush();
+            if (context.mounted) showAppSnack(context, 'تم حقن البيانات التجريبية');
+          },
+        ),
+        const SizedBox(height: 8),
+        _toolTile(
+          icon: Icons.delete_forever_outlined,
+          title: 'تصفير القاعدة المحلية',
+          subtitle: 'حذف كل السجلات من هذا الجهاز — بيانات السحابة لا تتأثر',
+          danger: true,
+          onTap: () async {
+            final ok = await confirmSheet(
+              context,
+              title: 'تصفير قاعدة البيانات',
+              message: 'سيتم حذف كل الطلاب والدفعات والحضور من هذا الجهاز نهائياً. '
+                  'البيانات المرفوعة للسحابة تبقى كما هي. هل أنت متأكد؟',
+              confirmLabel: 'تصفير',
+            );
+            if (!ok || !context.mounted) return;
+            await store.wipeAllData();
+            if (context.mounted) showAppSnack(context, 'تم تصفير قاعدة البيانات المحلية');
+          },
+        ),
+      ];
+
+  Widget _toolTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    bool danger = false,
+  }) {
+    final color = danger ? AppColors.danger : AppColors.amber;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(Corner.card),
+      child: Container(
+        padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 6, 10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(Corner.card),
+          color: danger ? AppColors.dangerSoft : Colors.white,
+          border: Border.all(color: danger ? AppColors.dangerBorder : AppColors.line),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: color),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12.5,
+                      color: danger ? AppColors.danger : AppColors.heading,
+                    ),
+                  ),
+                  Text(subtitle, style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, size: 18, color: danger ? AppColors.danger : AppColors.faint),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _tools(BuildContext context, AppStore store) {
-    return AppCard(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SectionTitle('أدوات الاختبار والبيانات'),
-          Container(
-            padding: const EdgeInsets.all(10),
-            margin: const EdgeInsets.only(bottom: 8),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.bg, border: Border.all(color: AppColors.line)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('توليد بيانات تجريبية',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading)),
-                const Text('تغذية النظام بسجلات للتجربة والاختبار',
-                    style: TextStyle(color: AppColors.muted, fontSize: 10.5)),
-                const SizedBox(height: 8),
-                GhostButton(
-                  label: 'حقن البيانات التجريبية',
-                  icon: Icons.science_outlined,
-                  onPressed: () async {
-                    final ok = await confirmSheet(
-                      context,
-                      title: 'حقن بيانات تجريبية',
-                      message: 'ستُضاف منشآت وطلاب ومدرّسون تجريبيون إلى قاعدة البيانات المحلية. هل تريد المتابعة؟',
-                      confirmLabel: 'حقن',
-                    );
-                    if (!ok || !context.mounted) return;
-                    injectDemoData(store);
-                    await store.flush();
-                    if (context.mounted) showAppSnack(context, 'تم حقن البيانات التجريبية');
-                  },
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.dangerSoft, border: Border.all(color: AppColors.dangerBorder)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text('مسح وتصفير قاعدة البيانات',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.danger)),
-                const Text('حذف كل السجلات المحلية للبدء بقاعدة نظيفة',
-                    style: TextStyle(color: AppColors.muted, fontSize: 10.5)),
-                const SizedBox(height: 8),
-                GhostButton(
-                  label: 'تصفير القاعدة المحلية',
-                  icon: Icons.delete_forever_outlined,
-                  onPressed: () async {
-                    final ok = await confirmSheet(
-                      context,
-                      title: 'تصفير قاعدة البيانات',
-                      message: 'سيتم حذف كل الطلاب والدفعات والحضور من هذا الجهاز نهائياً. '
-                          'البيانات المرفوعة للسحابة تبقى كما هي. هل أنت متأكد؟',
-                      confirmLabel: 'تصفير',
-                    );
-                    if (!ok || !context.mounted) return;
-                    await store.wipeAllData();
-                    if (context.mounted) showAppSnack(context, 'تم تصفير قاعدة البيانات المحلية');
-                  },
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _systemInfo(AppStore store) {
+  List<Widget> _systemInfo(AppStore store) {
+    final tenant = store.currentTenant;
     final rows = <(String, String)>[
       ('إصدار المنظومة', appVersion),
       ('قاعدة البيانات المحلية', 'SQLite'),
       ('وضع التخزين', 'محلي / مستقل (Offline Ready)'),
-      ('المنشأة الحالية', store.currentTenant?.name ?? '—'),
-      ('رمز المنشأة', store.currentTenant?.code ?? '—'),
-      ('نوع الاشتراك', store.currentTenant == null
-          ? '—'
-          : (store.currentTenant!.isLifetime ? 'دائم' : 'محدد المدة')),
+      ('المنشأة الحالية', tenant?.name ?? '—'),
+      ('رمز المنشأة', tenant?.code ?? '—'),
+      ('نوع الاشتراك', tenant == null ? '—' : (tenant.isLifetime ? 'دائم' : 'محدد المدة')),
       ('تعديلات معلّقة', '${store.pendingPush}'),
     ];
 
-    return AppCard(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SectionTitle('معلومات النظام وبيئة التشغيل'),
-          for (final r in rows)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 5),
-              child: Row(
-                children: [
-                  SizedBox(width: 130, child: Text(r.$1, style: const TextStyle(color: AppColors.muted, fontSize: 11.5))),
-                  Expanded(
-                    child: Text(r.$2,
-                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: AppColors.heading)),
-                  ),
-                ],
+    return [
+      const FormSection(icon: Icons.info_outline, title: 'معلومات النظام وبيئة التشغيل'),
+      InfoStrip(
+        child: Column(
+          children: [
+            for (final r in rows)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    Text(r.$1, style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        r.$2,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.end,
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
-    );
+    ];
   }
+
+  // ── الإجراءات ────────────────────────────────────────────────────────────
 
   Future<void> _pickLogo() async {
     final picked = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 512, imageQuality: 85);
@@ -598,6 +636,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
         title: const Text('لون مخصص', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
         content: TextField(
           controller: ctrl,
+          textDirection: TextDirection.ltr,
           decoration: const InputDecoration(hintText: '#0B2545'),
         ),
         actions: [
@@ -606,8 +645,11 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
         ],
       ),
     );
-    ctrl.dispose();
-    if (picked == null || parseHexColor(picked) == null) return;
+    if (picked == null) return;
+    if (parseHexColor(picked) == null) {
+      if (mounted) showAppSnack(context, 'صيغة اللون غير صحيحة — مثال: #0B2545', error: true);
+      return;
+    }
     setState(() {
       colors = switch (key) {
         'sidebarBg' => colors.copyWith(sidebarBg: picked),
@@ -620,11 +662,25 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
   }
 
   Future<void> _save(AppStore store) async {
+    final fee = seatFee.text.trim();
+    final feeValue = double.tryParse(fee);
+    final url = supabaseUrlCtrl.text.trim();
+    setState(() {
+      errors
+        ..reset()
+        ..check('seatFee', fee.isNotEmpty && (feeValue == null || feeValue < 0), 'يرجى إدخال رسم صحيح')
+        ..check('url', url.isNotEmpty && !url.startsWith('https://'), 'العنوان يجب أن يبدأ بـ https://');
+    });
+    if (errors.report(context)) return;
+
     setState(() => busy = true);
     await store.saveInstitution(type: type, name: name.text, logo: logo, colors: colors);
-    await store.setSeatReservationFee(double.tryParse(seatFee.text.trim()) ?? 0);
-    await store.db.setSetting(SupabaseConfig.urlSettingKey, supabaseUrlCtrl.text.trim().isEmpty ? null : supabaseUrlCtrl.text.trim());
-    await store.db.setSetting(SupabaseConfig.keySettingKey, supabaseKeyCtrl.text.trim().isEmpty ? null : supabaseKeyCtrl.text.trim());
+    await store.setSeatReservationFee(feeValue ?? 0);
+    await store.db.setSetting(SupabaseConfig.urlSettingKey, url.isEmpty ? null : url);
+    await store.db.setSetting(
+      SupabaseConfig.keySettingKey,
+      supabaseKeyCtrl.text.trim().isEmpty ? null : supabaseKeyCtrl.text.trim(),
+    );
     SupabaseConfig.applyOverrides(store.db.settings);
     if (!mounted) return;
     setState(() => busy = false);
