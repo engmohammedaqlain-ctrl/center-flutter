@@ -2,13 +2,44 @@ import '../models/models.dart';
 import 'permissions.dart';
 import 'store.dart';
 
+/// حساب تجريبي جاهز للدخول إلى البوابة.
+class DemoAccount {
+  const DemoAccount({required this.name, required this.nationalId, required this.portalCode});
+
+  final String name;
+  final String nationalId;
+  final String portalCode;
+}
+
+/// حصيلة التوليد — تُعرض للمطوّر ليدخل بها البوابة فوراً بلا بحث في الجداول،
+/// مطابقة لِما تعرضه `DeveloperSettings.tsx` بعد `injectDemoData`.
+class DemoDataStats {
+  const DemoDataStats({
+    required this.students,
+    required this.groups,
+    required this.evaluations,
+    required this.teacher,
+    required this.student,
+    required this.parent,
+  });
+
+  final int students;
+  final int groups;
+  final int evaluations;
+  final DemoAccount teacher;
+  final DemoAccount student;
+
+  /// ولي أمر الطالب نفسه: رقم هوية ابنه وكلمة ولي الأمر.
+  final DemoAccount parent;
+}
+
 /// البيانات التجريبية — المقابل لـ `lib/demoData.ts` في النسخة المكتبية.
 ///
 /// لا تُحقن تلقائياً. النسخة المكتبية تحقنها بضغطة زر صريحة من
-/// «الإعدادات ← البيانات والمطور ← توليد بيانات تجريبية»، ويقابلها زر تصفير.
+/// «الإعدادات ← البيانات والنسخ ← توليد بيانات تجريبية»، ويقابلها زر تصفير.
 /// زرعها في مُنشئ المخزن كان يُظهر مدرسة وهمية وطلاباً وهميين لكل مستخدم
 /// عند كل إقلاع، وتُرفع إلى نفس قاعدة Supabase التي يستعملها التطبيق المكتبي.
-void injectDemoData(AppStore store) {
+DemoDataStats injectDemoData(AppStore store) {
 
     store.tenants.addAll([
       Tenant(
@@ -37,11 +68,11 @@ void injectDemoData(AppStore store) {
     ]);
 
     store.teachers.addAll([
-      Teacher(id: 't1', name: 'أ. محمود الزهار', phone: '0599123456', subject: 'الرياضيات', rate: 70, paymentType: 'percentage', email: 'mahmoud@school.ps', subjectIds: ['s1']),
-      Teacher(id: 't2', name: 'أ. وفاء عاشور', phone: '0568112233', subject: 'اللغة العربية', rate: 70, paymentType: 'percentage', subjectIds: ['s2']),
-      Teacher(id: 't3', name: 'أ. رامي البيطار', phone: '0598776655', subject: 'اللغة الإنجليزية', rate: 70, paymentType: 'percentage', subjectIds: ['s3']),
-      Teacher(id: 't4', name: 'د. كمال الشرفا', phone: '0592881122', subject: 'الفيزياء', rate: 70, paymentType: 'percentage', subjectIds: ['s4']),
-      Teacher(id: 't5', name: 'أ. مريم النجار', phone: '0569443322', subject: 'الكيمياء', rate: 70, paymentType: 'percentage', subjectIds: ['s5']),
+      Teacher(id: 't1', name: 'أ. محمود الزهار', phone: '0599123456', subject: 'الرياضيات', rate: 70, paymentType: 'percentage', email: 'mahmoud@school.ps', subjectIds: ['s1'], nationalId: '900100001', portalCode: '210001'),
+      Teacher(id: 't2', name: 'أ. وفاء عاشور', phone: '0568112233', subject: 'اللغة العربية', rate: 70, paymentType: 'percentage', subjectIds: ['s2'], nationalId: '900100002', portalCode: '210002'),
+      Teacher(id: 't3', name: 'أ. رامي البيطار', phone: '0598776655', subject: 'اللغة الإنجليزية', rate: 70, paymentType: 'percentage', subjectIds: ['s3'], nationalId: '900100003', portalCode: '210003'),
+      Teacher(id: 't4', name: 'د. كمال الشرفا', phone: '0592881122', subject: 'الفيزياء', rate: 70, paymentType: 'percentage', subjectIds: ['s4'], nationalId: '900100004', portalCode: '210004'),
+      Teacher(id: 't5', name: 'أ. مريم النجار', phone: '0569443322', subject: 'الكيمياء', rate: 70, paymentType: 'percentage', subjectIds: ['s5'], nationalId: '900100005', portalCode: '210005'),
     ]);
 
     store.subjects.addAll([
@@ -152,6 +183,8 @@ void injectDemoData(AppStore store) {
         parentPhone: '0598${(200000 + i * 137).toString().padLeft(6, '0')}',
         parentPhonePrefix: '059',
         nationalId: '${400000000 + i * 1357}',
+        portalCode: '${100000 + i * 7321}',
+        parentPortalCode: '${200000 + i * 5171}',
         neighborhood: neighborhoods[i % (neighborhoods.length - 1)],
         detailedAddress: i == 0 ? 'شارع النفق، بجوار مسجد الهدى' : '',
         referralSource: referralSources[i % referralSources.length],
@@ -179,6 +212,88 @@ void injectDemoData(AppStore store) {
 
     store.payments.sort((a, b) => b.date.compareTo(a.date));
 
+    // مجموعة مادة لكل شعبة، بلا أيام ولا رسوم: وعاء يربط المعلم بطلاب شعبته
+    // كما يفعل إسناد معلمي المواد، فتعمل البوابتان على بيانات واقعية دون أن
+    // يُقيَّد على الطالب قرش أو يتعارض موعد مع موعد
+    final demoGroups = <Group>[];
+    for (final room in store.rooms) {
+      final teacher = store.teacherById(room.teacherId);
+      if (teacher == null) continue;
+      final subjectId = teacher.subjectIds.isNotEmpty ? teacher.subjectIds.first : store.subjects.first.id;
+      final group = Group(
+        id: 'grp-${room.id}',
+        name: '${store.subjectName(subjectId)} - ${room.name}',
+        subjectId: subjectId,
+        teacherId: teacher.id,
+        roomId: room.id,
+        gradeLevel: room.gradeLevel,
+        startTime: '',
+        endTime: '',
+      );
+      store.groups.add(group);
+      demoGroups.add(group);
+      for (final st in store.studentsOf(room)) {
+        store.enrollments.add(StudentEnrollment(
+          id: 'enr-${group.id}-${st.id}',
+          studentId: st.id,
+          groupId: group.id,
+          customPrice: 0,
+          appliedPrice: 0,
+        ));
+      }
+    }
+
+    // درجات مرصودة كي لا تكون بوابة الطالب وكشف الدرجات فارغَين
+    final evaluationRows = store.extraCloud.putIfAbsent('student_evaluations', () => []);
+    var evaluations = 0;
+    for (final group in demoGroups.take(3)) {
+      final enrolled = store.studentsInGroup(group.id);
+      for (var i = 0; i < enrolled.length; i++) {
+        evaluationRows.add(
+          Evaluation(
+            id: 'ev-${group.id}-${enrolled[i].id}',
+            studentId: enrolled[i].id,
+            groupId: group.id,
+            subjectId: group.subjectId,
+            teacherId: group.teacherId,
+            title: 'اختبار الشهر الأول',
+            score: (60 + (i * 9) % 40).toDouble(),
+            maxScore: 100,
+            evaluationDate: isoDate(today.subtract(Duration(days: 7 + i))),
+            type: 'monthly',
+          ).toCloud(),
+        );
+        evaluations++;
+      }
+    }
+
+  // الأرصدة والمسدَّد من كل قسط من السجلات نفسها: رقمٌ مكتوب باليد كان يخالف
+  // ما تعطيه المعادلة، فتقفز أرصدة الديمو عند أول حركة مالية
+  store.recalculateAllBalances();
+
   store.markAllDirty();
   store.notifySync();
+
+  final demoTeacher = store.teachers.first;
+  final demoStudent = store.students.first;
+  return DemoDataStats(
+    students: store.students.length,
+    groups: demoGroups.length,
+    evaluations: evaluations,
+    teacher: DemoAccount(
+      name: demoTeacher.name,
+      nationalId: demoTeacher.nationalId,
+      portalCode: demoTeacher.portalCode,
+    ),
+    student: DemoAccount(
+      name: demoStudent.fullName,
+      nationalId: demoStudent.nationalId,
+      portalCode: demoStudent.portalCode,
+    ),
+    parent: DemoAccount(
+      name: demoStudent.parentName.trim().isEmpty ? 'ولي الأمر' : demoStudent.parentName,
+      nationalId: demoStudent.nationalId,
+      portalCode: demoStudent.parentPortalCode,
+    ),
+  );
 }

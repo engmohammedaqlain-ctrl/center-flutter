@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../data/institution.dart';
 import '../data/portal.dart';
 import '../data/printing.dart';
+import '../theme/app_theme.dart';
 import '../models/models.dart';
 import '../widgets/widgets.dart';
 
@@ -114,7 +115,7 @@ class _PortalHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          InstitutionBadge(logo: branding.logo, size: 40, radius: 12, onDark: false),
+          InstitutionBadge(logo: branding.logo, size: 40, radius: Corner.card, onDark: false),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -141,12 +142,12 @@ class _PortalHeader extends StatelessWidget {
           Material(
             color: _C.rose50,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(Corner.field),
               side: const BorderSide(color: _C.rose200),
             ),
             child: InkWell(
               onTap: onExit,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(Corner.field),
               child: const SizedBox(
                 height: 32,
                 child: Padding(
@@ -255,7 +256,7 @@ class _Card extends StatelessWidget {
       padding: padding,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(Corner.card),
         border: Border.all(color: _C.line),
         boxShadow: const [BoxShadow(color: Color(0x0A0F172A), blurRadius: 3, offset: Offset(0, 1))],
       ),
@@ -293,7 +294,7 @@ class _Select<T> extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: _C.bg,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(Corner.input),
         border: Border.all(color: _C.lineStrong),
       ),
       child: DropdownButtonHideUnderline(
@@ -303,7 +304,7 @@ class _Select<T> extends StatelessWidget {
           onChanged: onChanged,
           isExpanded: true,
           dropdownColor: Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(Corner.input),
           icon: const Icon(Icons.keyboard_arrow_down, size: 18, color: _C.muted),
           style: _base(context).copyWith(color: _C.text, fontSize: 12, fontWeight: FontWeight.w800),
         ),
@@ -340,7 +341,7 @@ class _Input extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     OutlineInputBorder outline(Color c, [double w = 1]) =>
-        OutlineInputBorder(borderRadius: BorderRadius.circular(dense ? 8 : 12), borderSide: BorderSide(color: c, width: w));
+        OutlineInputBorder(borderRadius: BorderRadius.circular(Corner.input), borderSide: BorderSide(color: c, width: w));
 
     return TextField(
       controller: controller,
@@ -381,7 +382,7 @@ class _DateBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final current = parseIsoDate(date) ?? DateTime.now();
     return InkWell(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(Corner.input),
       onTap: () async {
         final picked = await showDatePicker(
           context: context,
@@ -398,7 +399,7 @@ class _DateBox extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
           color: _C.bg,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(Corner.input),
           border: Border.all(color: _C.lineStrong),
         ),
         child: Row(
@@ -429,7 +430,7 @@ class _Solid extends StatelessWidget {
     this.icon,
     this.height = 44,
     this.busy = false,
-    this.radius = 12,
+    this.radius = Corner.field,
   });
 
   final String label;
@@ -496,7 +497,7 @@ class _Soft extends StatelessWidget {
     this.bg = Colors.white,
     this.border = _C.lineStrong,
     this.height = 40,
-    this.radius = 12,
+    this.radius = Corner.field,
   });
 
   final String label;
@@ -551,7 +552,7 @@ class _Stat extends StatelessWidget {
     required this.border,
     required this.labelColor,
     required this.valueColor,
-    this.radius = 12,
+    this.radius = Corner.card,
   });
 
   final String label;
@@ -562,7 +563,7 @@ class _Stat extends StatelessWidget {
   final Color valueColor;
   final double radius;
 
-  factory _Stat.plain(String label, String value, {Color valueColor = _C.navy, double radius = 12}) => _Stat(
+  factory _Stat.plain(String label, String value, {Color valueColor = _C.navy, double radius = Corner.card}) => _Stat(
         label: label,
         value: value,
         bg: Colors.white,
@@ -572,7 +573,7 @@ class _Stat extends StatelessWidget {
         radius: radius,
       );
 
-  factory _Stat.green(String label, String value, {double radius = 12}) => _Stat(
+  factory _Stat.green(String label, String value, {double radius = Corner.card}) => _Stat(
         label: label,
         value: value,
         bg: _C.emerald50,
@@ -582,7 +583,7 @@ class _Stat extends StatelessWidget {
         radius: radius,
       );
 
-  factory _Stat.red(String label, String value, {double radius = 12}) => _Stat(
+  factory _Stat.red(String label, String value, {double radius = Corner.card}) => _Stat(
         label: label,
         value: value,
         bg: _C.rose50,
@@ -592,7 +593,7 @@ class _Stat extends StatelessWidget {
         radius: radius,
       );
 
-  factory _Stat.amber(String label, String value, {double radius = 12}) => _Stat(
+  factory _Stat.amber(String label, String value, {double radius = Corner.card}) => _Stat(
         label: label,
         value: value,
         bg: _C.amber50,
@@ -636,7 +637,7 @@ class _Stat extends StatelessWidget {
 
 /// شارة حالة بإطار.
 class _Badge extends StatelessWidget {
-  const _Badge(this.text, {required this.fg, required this.bg, this.border, this.icon, this.radius = 8, this.maxLines = 1});
+  const _Badge(this.text, {required this.fg, required this.bg, this.border, this.icon, this.radius = Corner.chip, this.maxLines = 1});
 
   final String text;
   final Color fg;
@@ -720,9 +721,9 @@ class _Empty extends StatelessWidget {
 
     if (!dashed) return _Card(padding: EdgeInsets.zero, child: body);
     return CustomPaint(
-      painter: const _DashedBorder(color: _C.lineStrong, radius: 16),
+      painter: const _DashedBorder(color: _C.lineStrong, radius: Corner.card),
       child: Container(
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(Corner.card)),
         child: body,
       ),
     );
@@ -765,7 +766,7 @@ class _Success extends StatelessWidget {
       padding: const EdgeInsets.all(11),
       decoration: BoxDecoration(
         color: _C.emerald50,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(Corner.box),
         border: Border.all(color: _C.emerald200),
       ),
       child: Row(
@@ -793,7 +794,7 @@ class _TermSwitch extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(color: _C.soft, borderRadius: BorderRadius.circular(8)),
+      decoration: BoxDecoration(color: _C.soft, borderRadius: BorderRadius.circular(Corner.box)),
       child: Row(
         children: [
           for (final t in _terms)
@@ -806,7 +807,7 @@ class _TermSwitch extends StatelessWidget {
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: value == t ? Colors.white : Colors.transparent,
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(Corner.chip),
                     boxShadow: value == t
                         ? const [BoxShadow(color: Color(0x0F0F172A), blurRadius: 2, offset: Offset(0, 1))]
                         : null,
@@ -1218,7 +1219,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (_) => _NewSectionSheet(
         service: _service,
         tenantId: widget.user.tenantId,
@@ -1266,7 +1267,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (_) => _NewItemSheet(
         service: _service,
         tenantId: widget.user.tenantId,
@@ -1311,7 +1312,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (_) => _CopySectionSheet(
         service: _service,
         tenantId: widget.user.tenantId,
@@ -1703,7 +1704,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: _C.bg,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(Corner.box),
                     border: Border.all(color: _C.line),
                   ),
                   child: Row(
@@ -1733,7 +1734,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                         fg: _C.emerald700,
                         bg: _C.emerald50,
                         border: _C.emerald200,
-                        radius: 6,
+                        radius: Corner.chip,
                       ),
                       IconButton(
                         tooltip: 'حذف',
@@ -1791,7 +1792,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                 icon: Icons.add,
                 color: brand.primary,
                 height: 34,
-                radius: 8,
+                radius: Corner.field,
                 onTap: hasGroup ? _newSection : null,
               ),
             ),
@@ -1948,7 +1949,7 @@ class _AttendanceRow extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: selected ? on : off,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(Corner.field),
           border: Border.all(color: selected ? onBorder : offBorder),
           boxShadow: selected ? [BoxShadow(color: on.withValues(alpha: 0.22), blurRadius: 0, spreadRadius: 2)] : null,
         ),
@@ -1995,7 +1996,7 @@ class _TeacherSectionCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: sec.isVisible ? Colors.white : const Color(0x33FFFBEB),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(Corner.card),
         border: Border.all(color: sec.isVisible ? _C.line : _C.amber200),
       ),
       child: Column(
@@ -2023,19 +2024,19 @@ class _TeacherSectionCard extends StatelessWidget {
                         sec.title,
                         style: const TextStyle(color: _C.navy, fontSize: 12, fontWeight: FontWeight.w900),
                       ),
-                      _Badge(sec.termLabel, fg: _C.muted, bg: _C.line, radius: 4),
-                      if (!sec.isVisible) const _Badge('مخفي', fg: _C.amber700, bg: _C.amber100, radius: 4),
+                      _Badge(sec.termLabel, fg: _C.muted, bg: _C.line, radius: Corner.chip),
+                      if (!sec.isVisible) const _Badge('مخفي', fg: _C.amber700, bg: _C.amber100, radius: Corner.chip),
                     ],
                   ),
                 ),
                 const SizedBox(width: 4),
                 InkWell(
                   onTap: onAddItem,
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(Corner.field),
                   child: Container(
                     height: 28,
                     padding: const EdgeInsets.symmetric(horizontal: 8),
-                    decoration: BoxDecoration(color: const Color(0x0D0B2545), borderRadius: BorderRadius.circular(6)),
+                    decoration: BoxDecoration(color: const Color(0x0D0B2545), borderRadius: BorderRadius.circular(Corner.field)),
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -2084,7 +2085,7 @@ class _TeacherSectionCard extends StatelessWidget {
                                     icon: it.type == 'file' ? Icons.description_outlined : Icons.open_in_new,
                                     fg: _C.navy,
                                     height: 28,
-                                    radius: 6,
+                                    radius: Corner.field,
                                     onTap: () => onOpenItem(it),
                                   ),
                                 _iconAction(Icons.delete_outline, 'حذف المادة', _C.rose600, () => onDeleteItem(it)),
@@ -2126,7 +2127,7 @@ class _ItemTile extends StatelessWidget {
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: const Color(0xFFFAFAFA),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(Corner.box),
         border: Border.all(color: _C.line),
       ),
       child: Row(
@@ -2141,8 +2142,8 @@ class _ItemTile extends StatelessWidget {
                   runSpacing: 4,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    _Badge(item.typeLabel, fg: colors.fg, bg: colors.bg, radius: 4),
-                    if (showNew && item.isNew()) const _Badge('جديد', fg: _C.amber800, bg: _C.amber100, radius: 4),
+                    _Badge(item.typeLabel, fg: colors.fg, bg: colors.bg, radius: Corner.chip),
+                    if (showNew && item.isNew()) const _Badge('جديد', fg: _C.amber800, bg: _C.amber100, radius: Corner.chip),
                     Text(
                       item.title,
                       style: const TextStyle(color: _C.text, fontSize: 12, fontWeight: FontWeight.w800),
@@ -2231,11 +2232,11 @@ Widget _sheetActions(BuildContext context, {required String label, required Colo
     padding: const EdgeInsets.only(top: 14),
     child: Row(
       children: [
-        Expanded(child: _Soft(label: 'إلغاء', onTap: () => Navigator.pop(context), height: 40, radius: 8)),
+        Expanded(child: _Soft(label: 'إلغاء', onTap: () => Navigator.pop(context), height: 40, radius: Corner.field)),
         const SizedBox(width: 8),
         Expanded(
           flex: 2,
-          child: _Solid(label: busy ? 'جارٍ الحفظ...' : label, color: color, busy: busy, onTap: onSave, height: 40, radius: 8),
+          child: _Solid(label: busy ? 'جارٍ الحفظ...' : label, color: color, busy: busy, onTap: onSave, height: 40, radius: Corner.field),
         ),
       ],
     ),
@@ -2494,7 +2495,7 @@ class _NewItemSheetState extends State<_NewItemSheet> {
           const _Label('الملف المرفق (PDF أو صورة - أقصى حد 10MB):'),
           Row(
             children: [
-              _Soft(label: 'اختيار ملف', icon: Icons.attach_file, fg: _C.navy, bg: _C.soft, border: _C.soft, height: 36, radius: 6, onTap: _pick),
+              _Soft(label: 'اختيار ملف', icon: Icons.attach_file, fg: _C.navy, bg: _C.soft, border: _C.soft, height: 36, radius: Corner.field, onTap: _pick),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -2534,7 +2535,7 @@ class _NewItemSheetState extends State<_NewItemSheet> {
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: _C.rose50,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(Corner.box),
               border: Border.all(color: _C.rose200),
             ),
             child: Row(
@@ -2611,7 +2612,7 @@ class _CopySectionSheetState extends State<_CopySectionSheet> {
           constraints: const BoxConstraints(maxHeight: 220),
           decoration: BoxDecoration(
             color: _C.bg,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(Corner.box),
             border: Border.all(color: _C.line),
           ),
           child: ListView(
@@ -2673,7 +2674,11 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
   String? error;
   bool loading = true;
 
-  String tab = 'moodle';
+  /// ولي الأمر يتابع ملف ابنه: الجدول والحضور والدرجات والرسوم، بلا المودل —
+  /// المحتوى الدراسي ليس من شأنه، ولا تمنحه القاعدة إياه أصلاً.
+  bool get isParent => widget.user.isParent;
+
+  late String tab = isParent ? 'attendance' : 'moodle';
 
   // المودل
   String? moodleGroupId;
@@ -2708,7 +2713,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
           moodleGroupId = result.subjects.first.groupId;
         }
       });
-      if (tab == 'moodle') _loadMoodle();
+      if (tab == 'moodle' && !isParent) _loadMoodle();
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -2751,22 +2756,27 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       backgroundColor: _C.bg,
       body: Column(
         children: [
-          _PortalHeader(branding: branding, role: 'الطالب', userName: widget.user.name, onExit: widget.onExit),
+          _PortalHeader(
+            branding: branding,
+            role: isParent ? 'ولي الأمر' : 'الطالب',
+            userName: widget.user.name,
+            onExit: widget.onExit,
+          ),
           _ProfileBand(user: widget.user, student: data?.student, color: brand.side),
           _PortalTabs(
             compact: true,
-            tabs: const [
-              _TabSpec('moodle', 'المودل', Icons.menu_book_outlined),
-              _TabSpec('subjects', 'الجدول', Icons.schedule),
-              _TabSpec('attendance', 'الحضور', Icons.event_available_outlined),
-              _TabSpec('evaluations', 'الدرجات', Icons.workspace_premium_outlined),
-              _TabSpec('financial', 'الرسوم', Icons.credit_card_outlined),
+            tabs: [
+              if (!isParent) const _TabSpec('moodle', 'المودل', Icons.menu_book_outlined),
+              const _TabSpec('subjects', 'الجدول', Icons.schedule),
+              const _TabSpec('attendance', 'الحضور', Icons.event_available_outlined),
+              const _TabSpec('evaluations', 'الدرجات', Icons.workspace_premium_outlined),
+              const _TabSpec('financial', 'الرسوم', Icons.credit_card_outlined),
             ],
             active: tab,
             color: brand.active,
             onSelect: (id) {
               setState(() => tab = id);
-              if (id == 'moodle' && sections.isEmpty) _loadMoodle();
+              if (id == 'moodle' && !isParent && sections.isEmpty) _loadMoodle();
             },
           ),
           Expanded(
@@ -2844,7 +2854,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                             decoration: BoxDecoration(
                               color: moodleGroupId == s.groupId ? _C.navy : _C.soft,
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(Corner.chip),
                             ),
                             child: Text(
                               s.subjectName,
@@ -2901,7 +2911,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(Corner.card),
         border: Border.all(color: _C.line),
       ),
       child: Column(
@@ -2929,7 +2939,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                           sec.title,
                           style: const TextStyle(color: _C.navy, fontSize: 12, fontWeight: FontWeight.w900),
                         ),
-                        _Badge(sec.termLabel, fg: _C.muted, bg: _C.line, radius: 4),
+                        _Badge(sec.termLabel, fg: _C.muted, bg: _C.line, radius: Corner.chip),
                       ],
                     ),
                   ),
@@ -2971,7 +2981,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                                       icon: it.type == 'file' ? Icons.description_outlined : Icons.open_in_new,
                                       fg: _C.navy,
                                       height: 32,
-                                      radius: 8,
+                                      radius: Corner.field,
                                       onTap: () => _openUrl(context, it.contentUrl),
                                     ),
                             ),
@@ -3049,7 +3059,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          _Badge(daysNames(s.days), fg: _C.amber600, bg: _C.amber100, radius: 6, maxLines: 2),
+                          _Badge(daysNames(s.days), fg: _C.amber600, bg: _C.amber100, radius: Corner.chip, maxLines: 2),
                           if (s.startTime.length >= 5 && s.endTime.length >= 5) ...[
                             const SizedBox(height: 4),
                             Row(
@@ -3110,7 +3120,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(Corner.box),
                 border: Border.all(color: _C.line),
               ),
               child: Row(
@@ -3215,7 +3225,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(e.subjectName, style: TextStyle(color: brand.primary, fontSize: 12, fontWeight: FontWeight.w900)),
-                        _Badge(e.typeLabel, fg: _C.slate700, bg: _C.soft, radius: 6),
+                        _Badge(e.typeLabel, fg: _C.slate700, bg: _C.soft, radius: Corner.chip),
                       ],
                     ),
                     const SizedBox(height: 4),
@@ -3248,7 +3258,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                     style: const TextStyle(fontFamily: _mono),
                   ),
                   const SizedBox(height: 2),
-                  _Badge('$pct%', fg: tone.fg, bg: tone.bg, radius: 4),
+                  _Badge('$pct%', fg: tone.fg, bg: tone.bg, radius: Corner.chip),
                 ],
               ),
             ],
@@ -3283,7 +3293,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: _C.bg,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(Corner.box),
                 border: Border.all(color: _C.soft),
               ),
               child: Text.rich(
@@ -3313,13 +3323,13 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
         children: [
           Expanded(
             child: owes
-                ? _Stat.red('المستحق حالياً', money(f.currentDue), radius: 16)
-                : _Stat.green('حالة الحساب', 'مسدد بالكامل', radius: 16),
+                ? _Stat.red('المستحق حالياً', money(f.currentDue), radius: Corner.card)
+                : _Stat.green('حالة الحساب', 'مسدد بالكامل', radius: Corner.card),
           ),
           const SizedBox(width: 8),
-          Expanded(child: _Stat.plain('إجمالي المسدد', money(f.totalPaid), valueColor: _C.emerald600, radius: 16)),
+          Expanded(child: _Stat.plain('إجمالي المسدد', money(f.totalPaid), valueColor: _C.emerald600, radius: Corner.card)),
           const SizedBox(width: 8),
-          Expanded(child: _Stat.plain('إجمالي الرسوم', money(f.totalDue), valueColor: brand.primary, radius: 16)),
+          Expanded(child: _Stat.plain('إجمالي الرسوم', money(f.totalDue), valueColor: brand.primary, radius: Corner.card)),
         ],
       ),
       if (f.remainingBalance > f.currentDue) ...[
@@ -3328,7 +3338,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
           decoration: BoxDecoration(
             color: _C.bg,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(Corner.box),
             border: Border.all(color: _C.line),
           ),
           child: Text.rich(
@@ -3435,7 +3445,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                               'سند #${p.receiptNumber}',
                               style: TextStyle(color: brand.primary, fontSize: 12, fontWeight: FontWeight.w900, fontFamily: _mono),
                             ),
-                            _Badge(data!.branding.methodLabel(p.method), fg: _C.muted, bg: _C.soft, radius: 6),
+                            _Badge(data!.branding.methodLabel(p.method), fg: _C.muted, bg: _C.soft, radius: Corner.chip),
                           ],
                         ),
                         const SizedBox(height: 3),
@@ -3452,7 +3462,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      _Badge('+ ${money(p.amount)}', fg: _C.emerald600, bg: _C.emerald50, border: _C.emerald200, radius: 12),
+                      _Badge('+ ${money(p.amount)}', fg: _C.emerald600, bg: _C.emerald50, border: _C.emerald200, radius: Corner.chip),
                       const SizedBox(height: 6),
                       _Soft(
                         label: 'عرض الوصل',
@@ -3492,7 +3502,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
       builder: (ctx) => _PortalReceipt(payment: p, student: d.student, branding: d.branding),
     );
   }
@@ -3536,7 +3546,9 @@ class _ProfileBand extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  user.name,
+                  user.isParent
+                      ? (user.studentName.isNotEmpty ? user.studentName : (student?.fullName ?? user.name))
+                      : user.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800),
@@ -3555,7 +3567,7 @@ class _ProfileBand extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(Corner.chip),
               ),
               child: Text(
                 nationalId,
@@ -3602,7 +3614,7 @@ class _PortalReceipt extends StatelessWidget {
           children: [
             Row(
               children: [
-                InstitutionBadge(logo: branding.logo, size: 40, radius: 12, onDark: false),
+                InstitutionBadge(logo: branding.logo, size: 40, radius: Corner.card, onDark: false),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(

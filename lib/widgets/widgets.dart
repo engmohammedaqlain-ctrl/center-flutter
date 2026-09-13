@@ -584,20 +584,69 @@ class SquareIconButton extends StatelessWidget {
   }
 }
 
-class SectionTitle extends StatelessWidget {
-  const SectionTitle(this.text, {super.key, this.trailing});
-  final String text;
-  final Widget? trailing;
+/// حالة الطالب: «منسحب» أو «مؤرشف» أو «بانتظار التأكيد» بلونها.
+///
+/// «نشط» لا تُعرض: الحالة الطبيعية لا تستحق شارة، وإظهارها على كل بطاقة يُغرق
+/// القائمة بما لا يفيد — مطابق لـ `status !== 'active'` في StudentTable.tsx.
+class StudentStatusChip extends StatelessWidget {
+  const StudentStatusChip({super.key, required this.status, this.compact = false});
+
+  final String status;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    final normalized = status == 'inactive' ? 'withdrawn' : status;
+    if (normalized == 'active' || !studentStatusLabels.containsKey(normalized)) {
+      return const SizedBox.shrink();
+    }
+    final color = Color(studentStatusColors[normalized]!);
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 8, vertical: compact ? 1 : 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(Corner.chip),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        studentStatusLabel(normalized),
+        style: TextStyle(fontSize: compact ? 9.5 : 10.5, fontWeight: FontWeight.w800, color: color),
+      ),
+    );
+  }
+}
+
+class SectionTitle extends StatelessWidget {
+  const SectionTitle(this.text, {super.key, this.trailing, this.leading, this.onTap});
+  final String text;
+  final Widget? trailing;
+
+  /// أيقونة قبل العنوان — سهم الطي مثلاً.
+  final Widget? leading;
+
+  /// الضغط على العنوان نفسه، لا على ما بعده: يبقى [trailing] بزرّه المستقل.
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = Row(
+      children: [
+        if (leading != null) ...[leading!, const SizedBox(width: 4)],
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
+          ),
+        ),
+      ],
+    );
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: [
-          Expanded(
-            child: Text(text, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading)),
-          ),
+          Expanded(child: onTap == null ? label : InkWell(onTap: onTap, child: label)),
           ?trailing,
         ],
       ),

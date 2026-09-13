@@ -160,6 +160,11 @@ class PdfKit {
     );
   }
 
+  /// اسم الملف الناتج بلا فراغات — هو ما يظهر للمستخدم عند الحفظ أو المشاركة.
+  /// مطابق لما تكتبه النسخة المكتبية في `document.title` قبل الطباعة، فيخرج
+  /// «كشف_طلاب_شعبة_(1)» بدل اسم عام لا يدلّ على شيء.
+  static String fileName(String raw) => raw.trim().replaceAll(RegExp(r'\s+'), '_');
+
   /// فتح معاينة الطباعة / المشاركة على الجهاز.
   static Future<void> preview(Uint8List bytes, String name) {
     return Printing.layoutPdf(onLayout: (_) async => bytes, name: name);

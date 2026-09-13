@@ -1,6 +1,7 @@
 import 'package:center_mobile/data/demo_data.dart';
 import 'package:center_mobile/data/permissions.dart';
 import 'package:center_mobile/data/store.dart';
+import 'package:center_mobile/data/tenant_service.dart';
 import 'package:center_mobile/main.dart' show SplashScreen;
 import 'package:center_mobile/models/models.dart';
 import 'package:center_mobile/screens/device_setup_screen.dart';
@@ -21,6 +22,11 @@ Future<AppStore> loggedIn(FakeDisk disk, {bool withStudents = true}) async {
 }
 
 void main() {
+  setUpAll(() {
+    TenantService.masterUsername = 'dev-tester';
+    TenantService.masterPassword = 'dev-tester-pass';
+  });
+
   test('a device holding no local data must be set up first', () async {
     final s = await loggedIn(FakeDisk(), withStudents: false);
     expect(s.needsInitialSetup, isTrue);
@@ -107,7 +113,7 @@ void main() {
     await s.bootstrap(FakeDisk());
     injectDemoData(s);
     s.students.clear();
-    await s.login('anas', 'anas2026');
+    await s.login('dev-tester', 'dev-tester-pass');
     expect(s.isMasterAdmin, isTrue);
     expect(s.needsInitialSetup, isFalse);
   });
@@ -156,8 +162,10 @@ void main() {
     final s = await loggedIn(FakeDisk(), withStudents: false);
     expect(s.isAdminSetupPasswordValid(''), isFalse);
     expect(s.isAdminSetupPasswordValid('wrong'), isFalse);
-    expect(s.isAdminSetupPasswordValid('school2026'), isTrue, reason: 'المفتاح العام');
-    expect(s.isAdminSetupPasswordValid('anas2026'), isTrue, reason: 'كلمة مرور المطور');
+    // المفتاح العام المكتوب في الكود أُلغي: كان سرّاً واحداً يفتح تهيئة أي جهاز
+    // في أي مدرسة، ويقرأه كل من يفكّ التطبيق
+    expect(s.isAdminSetupPasswordValid('school2026'), isFalse, reason: 'لا مفتاح عام');
+    expect(s.isAdminSetupPasswordValid('dev-tester-pass'), isTrue, reason: 'كلمة مرور المطور');
     expect(s.isAdminSetupPasswordValid('amal2026'), isTrue, reason: 'كلمة مرور المنشأة');
   });
 

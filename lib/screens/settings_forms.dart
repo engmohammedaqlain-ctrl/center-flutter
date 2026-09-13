@@ -309,7 +309,7 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
             const FormSection(icon: Icons.menu_book_outlined, title: 'المواد التي يدرّسها'),
             if (store.subjects.isEmpty)
               const Text(
-                'لا توجد مواد بعد — أضفها من تبويب «المواد الدراسية».',
+                'لا توجد مواد بعد — أضفها من تبويب «المواد».',
                 style: TextStyle(color: AppColors.muted, fontSize: 12),
               )
             else

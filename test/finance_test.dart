@@ -53,6 +53,56 @@ void main() {
     });
   });
 
+  group('صرف أجور المعلمين', () {
+    test('السند يحمل اسم المعلم وقت الصرف، وفترته يوم الصرف، ويُرفع للسحابة', () {
+      final s = seeded();
+      final teacher = s.teachers.first;
+      final before = s.teacherPayouts.length;
+
+      final payout = s.addTeacherPayout(
+        teacherId: teacher.id,
+        amount: 250,
+        paymentDate: '2026-09-13',
+        method: 'bank_transfer',
+        notes: '  أجر شهر أيلول  ',
+      );
+
+      expect(s.teacherPayouts.length, before + 1);
+      expect(payout.teacherName, teacher.name, reason: 'الاسم مجمَّد فلا يتغيّر السند بتعديل المعلم لاحقاً');
+      expect(payout.periodStart, '2026-09-13');
+      expect(payout.periodEnd, '2026-09-13');
+      expect(payout.method, 'bank_transfer');
+      expect(payout.notes, 'أجر شهر أيلول');
+      expect(payout.syncStatus, 'pending');
+      expect(s.totalPayouts, greaterThanOrEqualTo(250));
+
+      // تعديل اسم المعلم بعد الصرف لا يمس السند
+      teacher.name = 'اسم آخر';
+      expect(s.teacherPayouts.first.teacherName, payout.teacherName);
+
+      expect(
+        s.pendingSyncs.any((p) => p.tableName == 'teacher_payouts' && p.recordId == payout.id),
+        isTrue,
+        reason: 'يدخل طابور المزامنة كسند الصرف',
+      );
+    });
+
+    test('بلا معلم أو بمبلغ غير موجب لا يُسجَّل شيء', () {
+      final s = seeded();
+      final before = s.teacherPayouts.length;
+
+      expect(
+        () => s.addTeacherPayout(teacherId: '  ', amount: 100, paymentDate: '2026-09-13'),
+        throwsA(isA<StoreException>()),
+      );
+      expect(
+        () => s.addTeacherPayout(teacherId: s.teachers.first.id, amount: 0, paymentDate: '2026-09-13'),
+        throwsA(isA<StoreException>()),
+      );
+      expect(s.teacherPayouts.length, before);
+    });
+  });
+
   group('installment status', () {
     test('follows the paid amount through partial payment and cancellation', () {
       final s = seeded();

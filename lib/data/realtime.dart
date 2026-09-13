@@ -91,6 +91,9 @@ class RealtimeListener {
                 {'event': '*', 'schema': 'public', 'table': table, 'filter': 'tenant_id=eq.$tenantId'},
               ],
             },
+            // سياسات RLS تحكم التغييرات اللحظية أيضاً: بلا توكن الجلسة لا يصل
+            // الجهازَ تعديلٌ واحد من الأجهزة الأخرى
+            if (SupabaseAuth.accessToken != null) 'access_token': SupabaseAuth.accessToken,
           },
           'ref': '${_ref++}',
         });
@@ -167,7 +170,12 @@ class RealtimeListener {
     _channel = null;
     _heartbeat?.cancel();
     _reconnect?.cancel();
-    _reconnect = Timer(const Duration(seconds: 8), _open);
+    // الخادم يُغلق القناة حين ينتهي توكن الجلسة: يُجدَّد قبل إعادة الانضمام،
+    // وإلا عادت القناة بالتوكن المنتهي نفسه فأُغلقت فوراً في حلقة لا تنتهي
+    _reconnect = Timer(const Duration(seconds: 8), () async {
+      await SupabaseAuth.ensureFresh();
+      _open();
+    });
   }
 
   Future<void> disconnect() async {

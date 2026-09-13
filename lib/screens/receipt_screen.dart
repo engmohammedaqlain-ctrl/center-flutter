@@ -302,7 +302,7 @@ class _ReceiptSheet extends StatelessWidget {
     );
 
     if (!context.mounted) return;
-    await PdfKit.preview(bytes, 'سند ${payment.receiptNumber}');
+    await PdfKit.preview(bytes, PdfKit.fileName('سند قبض ${payment.receiptNumber}'));
   }
 
   /// إرسال الإيصال بالواتساب لولي الأمر — مطابق لـ `handleSendWhatsAppReceipt`.

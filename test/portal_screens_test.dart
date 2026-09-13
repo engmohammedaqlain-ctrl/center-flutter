@@ -201,6 +201,19 @@ const _studentUser = PortalUser(
   section: 'شعبة (1)',
 );
 
+/// ولي الأمر يدخل برقم هوية ابنه: `id` معرّف الطالب، و`name` اسم ولي الأمر.
+const _parentUser = PortalUser(
+  id: 's1',
+  name: 'أبو علي',
+  nationalId: '401334845',
+  portalCode: '444444',
+  role: 'parent',
+  tenantId: 'tenant',
+  gradeLevel: 'ثاني عشر علمي ذكور',
+  section: 'شعبة (1)',
+  studentName: 'علي أبو حسنين',
+);
+
 Future<void> _pump(WidgetTester tester, Widget screen, {double width = 360}) async {
   tester.view.physicalSize = Size(width, 800);
   tester.view.devicePixelRatio = 1;
@@ -360,6 +373,22 @@ void main() {
       await tester.tap(find.text('الوحدة الأولى - النحو والصرف'));
       await tester.pumpAndSettle();
       expect(find.text('عرض الملف'), findsNothing);
+    });
+
+    testWidgets('ولي الأمر يتابع ملف ابنه بلا المودل — عرض ${width.toInt()}', (tester) async {
+      final fake = _FakePortal(student: _studentData(), sections: _sections());
+      await _pump(tester, StudentPortalScreen(user: _parentUser, onExit: () {}, service: fake), width: width);
+
+      expect(find.text('ولي الأمر: أبو علي'), findsOneWidget);
+      expect(find.text('علي أبو حسنين'), findsOneWidget, reason: 'شريط الهوية باسم الابن');
+      expect(find.text('المودل'), findsNothing);
+      for (final t in ['الجدول', 'الحضور', 'الدرجات', 'الرسوم']) {
+        expect(find.text(t), findsOneWidget, reason: t);
+      }
+      expect(fake.lastIncludeHidden, isNull, reason: 'لا يُطلب محتوى المودل أصلاً');
+
+      // يبدأ من الحضور
+      expect(find.text('سجل الأيام والحصص:'), findsOneWidget);
     });
   }
 }

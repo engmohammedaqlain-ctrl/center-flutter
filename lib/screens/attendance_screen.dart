@@ -180,7 +180,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 10),
                               child: _dayStats(
-                                day: day,
                                 list: list,
                                 present: present,
                                 absent: absent,
@@ -379,7 +378,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   Widget _dayStats({
-    required SchoolDay day,
     required List<Student> list,
     required int present,
     required int absent,
@@ -396,24 +394,20 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'رصد حضور: ${day.dayName} (${day.shortDate})',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading),
-                ),
-                const SizedBox(height: 6),
+                // اليوم واسمه ظاهران في شريط الأيام فوقه: تكرارهما هنا حشو
                 Wrap(
                   spacing: 9,
                   runSpacing: 3,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                      'إجمالي الصف: ${list.length} طالب',
-                      style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+                      'الطلاب: ${list.length}',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
                     ),
                     _stat('حاضر', present, AppColors.success),
                     _stat('غائب', absent, AppColors.danger),
                     _stat('مأذون', excused, const Color(0xFFD97706)),
-                    if (unmarked > 0) _stat('لم يُرصد', unmarked, AppColors.faint),
+                    if (unmarked > 0) _stat('غير مرصود', unmarked, AppColors.faint),
                   ],
                 ),
               ],

@@ -2,6 +2,7 @@ import 'package:center_mobile/data/demo_data.dart';
 import 'package:center_mobile/data/institution.dart';
 import 'package:center_mobile/data/store.dart';
 import 'package:center_mobile/main.dart';
+import 'package:center_mobile/models/models.dart';
 import 'package:center_mobile/screens/student_form_screen.dart';
 import 'package:center_mobile/theme/app_colors.dart';
 import 'package:center_mobile/widgets/widgets.dart';
@@ -26,6 +27,59 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(appBar(), const Color(0xFF1C3124), reason: 'لون القائمة الجانبية للهوية');
+  });
+
+  testWidgets('خصم الرسوم: النسبة تُحسب على رسم المرحلة ويُحفظ الصافي', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final s = AppStore.forTesting();
+    injectDemoData(s);
+    final student = s.students.firstWhere((x) => s.feeFor(x.gradeLevel) != null);
+    final gradeFee = s.feeFor(student.gradeLevel)!.monthlyFee;
+
+    await tester.pumpWidget(StoreScope(
+      store: s,
+      child: MaterialApp(
+        home: Directionality(textDirection: TextDirection.rtl, child: StudentFormScreen(student: student)),
+      ),
+    ));
+    await tester.pump();
+
+    final list = find.byType(Scrollable).first;
+    await tester.scrollUntilVisible(find.text('الرسوم والخصم'), 250, scrollable: list);
+    expect(find.text('رسم المرحلة: ${money(gradeFee)}'), findsOneWidget);
+
+    // مطفأ افتراضياً لمن لا خصم له
+    expect(find.text('نوع الخصم'), findsNothing);
+    await tester.scrollUntilVisible(find.byType(Switch), 250, scrollable: list);
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.byKey(const Key('discountRate')), 250, scrollable: list);
+    expect(find.text('نسبة الخصم (%)'), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('discountRate')), '25');
+    await tester.pumpAndSettle();
+
+    final expected = gradeFee - (gradeFee * 0.25).roundToDouble();
+    await tester.scrollUntilVisible(find.textContaining('الصافي:'), 250, scrollable: list);
+    expect(find.text('الصافي: ${money(expected)}'), findsOneWidget);
+
+    await tester.scrollUntilVisible(find.text('تفوق دراسي'), 250, scrollable: list);
+    await tester.tap(find.text('تفوق دراسي'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('حفظ التعديل'));
+    await tester.pumpAndSettle();
+
+    final saved = s.studentById(student.id)!;
+    expect(saved.academicDiscountApplied, isTrue);
+    expect(saved.academicDiscountRate, 25);
+    expect(saved.customMonthlyFee, expected);
+    expect(saved.exceptionReason, 'تفوق دراسي');
+
+    await s.flush();
   });
 
   testWidgets('نموذج الطالب: بلا بطاقات، المقدمة يسار الرقم، والحفظ ثابت أسفل الشاشة', (tester) async {

@@ -15,6 +15,7 @@ import '../widgets/widgets.dart';
 import 'developer_settings_screen.dart';
 import 'payment_methods_tab.dart';
 import 'settings_forms.dart';
+import 'student_promotion_sheet.dart';
 
 /// الإعدادات — المقابل لـ `pages/Settings.tsx`.
 ///
@@ -46,13 +47,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// التبويبات بترتيب Settings.tsx — تُخفى بحسب الصلاحية ونوع المنشأة.
   static const _allTabs = [
-    _Tab('grade_fees', Icons.payments_outlined, 'الرسوم والمراحل', capability: 'settings.fees', schoolOnly: true),
+    _Tab('grade_fees', Icons.payments_outlined, 'المراحل والرسوم', capability: 'settings.fees', schoolOnly: true),
     _Tab('payment_methods', Icons.credit_card_outlined, 'وسائل الدفع'),
-    _Tab('teachers', Icons.school_outlined, 'المدرسين'),
-    _Tab('subjects', Icons.menu_book_outlined, 'المواد الدراسية'),
+    _Tab('teachers', Icons.school_outlined, 'المعلمون'),
+    _Tab('subjects', Icons.menu_book_outlined, 'المواد'),
     _Tab('rooms', Icons.meeting_room_outlined, 'القاعات', centerOnly: true),
-    _Tab('users', Icons.manage_accounts_outlined, 'المستخدمين والصلاحيات', capability: 'settings.users'),
-    _Tab('backup', Icons.storage_outlined, 'البيانات والمطور', capability: 'settings.backup'),
+    _Tab('users', Icons.manage_accounts_outlined, 'المستخدمون', capability: 'settings.users'),
+    _Tab('backup', Icons.storage_outlined, 'البيانات والنسخ', capability: 'settings.backup'),
   ];
 
   @override
@@ -263,6 +264,7 @@ class _FeesTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final fees = store.gradeFees;
+    final missing = store.studentsMissingFee;
     return _cardList(
       header: [
         StatRow(
@@ -271,10 +273,252 @@ class _FeesTab extends StatelessWidget {
             StatCard(label: 'الشعب', value: '${store.rooms.length}', color: AppColors.heading),
           ],
         ),
+        const SizedBox(height: 10),
+        _SeatFeeCard(store: store),
+        const SizedBox(height: 8),
+        _StudyMonthsCard(store: store),
+        if (missing > 0) ...[
+          const SizedBox(height: 8),
+          // من لا رسم لمرحلته لا يُولَّد له مستحق، فيبقى بلا مطالبة بصمت
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.dangerSoft,
+              borderRadius: BorderRadius.circular(Corner.box),
+              border: Border.all(color: AppColors.dangerBorder),
+            ),
+            child: Text(
+              'طلاب نشطون بلا رسم شهري معرّف: $missing',
+              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: AppColors.danger),
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
+        GhostButton(
+          label: 'ترقية الطلاب',
+          icon: Icons.moving_outlined,
+          onPressed: () => showStudentPromotionSheet(context, store),
+        ),
       ],
       count: fees.length,
       empty: const EmptyState(message: 'لا توجد مراحل دراسية مسجلة.'),
       item: (context, i) => _GradeFeeCard(fee: fees[i]),
+    );
+  }
+}
+
+/// رسم حجز المقعد — المقابل لبطاقته في GradeFeesSettings.tsx.
+///
+/// يُدفع مرة واحدة ويُخصم من أول مستحق. صفرٌ يعني ألّا رسم حجز أصلاً.
+class _SeatFeeCard extends StatefulWidget {
+  const _SeatFeeCard({required this.store});
+
+  final AppStore store;
+
+  @override
+  State<_SeatFeeCard> createState() => _SeatFeeCardState();
+}
+
+class _SeatFeeCardState extends State<_SeatFeeCard> {
+  late final TextEditingController amount;
+  late bool enabled;
+  bool saved = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final fee = widget.store.seatReservationFee;
+    enabled = fee > 0;
+    amount = TextEditingController(text: fee > 0 ? trimNum(fee) : '');
+  }
+
+  @override
+  void dispose() {
+    amount.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final store = widget.store;
+    final value = enabled ? (double.tryParse(amount.text.trim()) ?? 0) : 0.0;
+    await store.setSeatReservationFee(value < 0 ? 0 : value);
+    if (!mounted) return;
+    setState(() {
+      saved = true;
+      amount.text = value > 0 ? trimNum(value) : '';
+    });
+    showAppSnack(context, 'تم حفظ رسم حجز المقعد');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'رسم حجز المقعد',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
+                ),
+              ),
+              if (saved)
+                const Padding(
+                  padding: EdgeInsetsDirectional.only(end: 6),
+                  child: Text('حُفظ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.success)),
+                ),
+              Switch.adaptive(
+                value: enabled,
+                activeThumbColor: AppColors.amber,
+                onChanged: (v) => setState(() {
+                  enabled = v;
+                  saved = false;
+                }),
+              ),
+            ],
+          ),
+          if (enabled) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: amount,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    style: const TextStyle(fontFamily: 'monospace'),
+                    onChanged: (_) => setState(() => saved = false),
+                    decoration: InputDecoration(hintText: '0 $currency'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                PrimaryButton(label: 'حفظ', color: AppColors.navy, onPressed: _save),
+              ],
+            ),
+          ] else
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'بلا رسم حجز',
+                      style: TextStyle(fontSize: 11.5, color: AppColors.muted, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  GhostButton(label: 'حفظ', onPressed: _save),
+                ],
+              ),
+            ),
+          const SizedBox(height: 6),
+          const Text(
+            'يُدفع مرة واحدة ويُخصم من أول مستحق',
+            style: TextStyle(fontSize: 10.5, color: AppColors.faint, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// أشهر الدراسة: الرسم الشهري يُستحق فيها وحدها.
+class _StudyMonthsCard extends StatefulWidget {
+  const _StudyMonthsCard({required this.store});
+
+  final AppStore store;
+
+  @override
+  State<_StudyMonthsCard> createState() => _StudyMonthsCardState();
+}
+
+class _StudyMonthsCardState extends State<_StudyMonthsCard> {
+  late Set<int> selected = {...?widget.store.studyMonths};
+
+  Future<void> _save() async {
+    final store = widget.store;
+    await store.saveStudyMonths(selected.toList());
+    // المستحق يُولَّد فور اعتماد الأشهر، كما تفعل النسخة المكتبية عند الحفظ
+    final result = store.generateMonthlyDues();
+    if (!mounted) return;
+    showAppSnack(
+      context,
+      result.created > 0 ? 'حُفظت الأشهر، وأُنشئ ${result.created} مستحقاً' : 'حُفظت أشهر الدراسة',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = widget.store;
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'أشهر الدراسة',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
+                ),
+              ),
+              if (store.studyMonths == null)
+                const Text(
+                  'الرسوم الشهرية متوقفة',
+                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: AppColors.danger),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (var m = 1; m <= 12; m++)
+                _MonthChip(
+                  label: gregorianMonths[m - 1],
+                  on: selected.contains(m),
+                  onTap: () => setState(() => selected.contains(m) ? selected.remove(m) : selected.add(m)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          PrimaryButton(label: 'حفظ أشهر الدراسة', color: AppColors.navy, onPressed: _save),
+        ],
+      ),
+    );
+  }
+}
+
+class _MonthChip extends StatelessWidget {
+  const _MonthChip({required this.label, required this.on, required this.onTap});
+
+  final String label;
+  final bool on;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: on ? AppColors.heading : Colors.white,
+          borderRadius: BorderRadius.circular(Corner.chip),
+          border: Border.all(color: on ? AppColors.heading : AppColors.line),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w700,
+            color: on ? Colors.white : AppColors.muted,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -947,17 +1191,19 @@ Future<void> _pinUser(BuildContext context, AppUser u) async {
     backgroundColor: Colors.white,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setSt) {
-        void submit() {
+        Future<void> submit() async {
           final entered = pass.text.trim();
           if (entered.isEmpty) {
             setSt(() => passError = 'يرجى إدخال كلمة مرور المدير');
             return;
           }
-          if (!store.isAdminSetupPasswordValid(entered)) {
-            setSt(() => passError = 'كلمة المرور غير صحيحة');
+          // القاعدة هي التي تتحقق من كلمة مرور المدير الآن
+          if (!await store.verifyAdminSetupPassword(entered)) {
+            if (ctx.mounted) setSt(() => passError = 'كلمة المرور غير صحيحة');
             return;
           }
           store.setDeviceIdentity(u, label.text);
+          if (!ctx.mounted) return;
           Navigator.pop(ctx);
           showAppSnack(context, 'تم تثبيت «${u.name}» على هذا الجهاز');
         }

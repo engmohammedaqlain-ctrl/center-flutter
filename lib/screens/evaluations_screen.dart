@@ -63,7 +63,14 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                 icon: const Icon(Icons.print_outlined),
                 onPressed: list.isEmpty
                     ? null
-                    : () => printEvaluations(context, store: store, evaluations: list),
+                    : () => printEvaluations(
+                        context,
+                        store: store,
+                        evaluations: list,
+                        groupName: groupId == 'all'
+                            ? ''
+                            : (store.groups.where((g) => g.id == groupId).firstOrNull?.name ?? ''),
+                      ),
               ),
             ],
           ),

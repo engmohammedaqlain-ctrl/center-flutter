@@ -377,7 +377,7 @@ class _SubjectTeachersSheetState extends State<_SubjectTeachersSheet> {
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16, vertical: 28),
                 child: Text(
-                  'لا توجد مواد دراسية بعد. تُضاف من «الإعدادات ← المواد الدراسية».',
+                  'لا توجد مواد دراسية بعد. تُضاف من «الإعدادات ← المواد».',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: AppColors.muted, fontSize: 12, height: 1.6),
                 ),
@@ -1079,7 +1079,9 @@ Future<void> showClassPortalCodes(
     builder: (ctx) => ListenableBuilder(
       listenable: store,
       builder: (ctx, _) {
-        final missing = students.where((s) => s.portalCode.trim().isEmpty).length;
+        final missing = students
+            .where((s) => s.portalCode.trim().isEmpty || s.parentPortalCode.trim().isEmpty)
+            .length;
         final summary = students.isEmpty
             ? 'لا يوجد طلاب مسجلون في هذا الصف'
             : missing == 0
@@ -1160,6 +1162,7 @@ Future<void> showClassPortalCodes(
                       itemBuilder: (_, i) {
                         final student = students[i];
                         final code = student.portalCode.trim();
+                        final parentCode = student.parentPortalCode.trim();
                         return Padding(
                           padding: const EdgeInsets.symmetric(vertical: 9),
                           child: Row(
@@ -1174,19 +1177,16 @@ Future<void> showClassPortalCodes(
                                   style: AppText.body,
                                 ),
                               ),
-                              if (code.isEmpty)
-                                const Text('بلا رمز', style: TextStyle(color: AppColors.faint, fontSize: 11.5))
-                              else
-                                SelectableText(
-                                  code,
-                                  style: TextStyle(
-                                    fontFamily: 'monospace',
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 13,
-                                    letterSpacing: 1.5,
-                                    color: AppColors.heading,
-                                  ),
-                                ),
+                              // كلمة الطالب ثم كلمة ولي أمره
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _codeLine('الطالب', code),
+                                  const SizedBox(height: 2),
+                                  _codeLine('ولي الأمر', parentCode),
+                                ],
+                              ),
                             ],
                           ),
                         );
@@ -1204,5 +1204,28 @@ Future<void> showClassPortalCodes(
         );
       },
     ),
+  );
+}
+
+/// سطر كلمة مرور في كشف الرموز: صاحبها ثم الكلمة، أو «بلا رمز».
+Widget _codeLine(String owner, String code) {
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text('$owner: ', style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
+      if (code.isEmpty)
+        const Text('بلا رمز', style: TextStyle(color: AppColors.faint, fontSize: 11.5))
+      else
+        SelectableText(
+          code,
+          style: TextStyle(
+            fontFamily: 'monospace',
+            fontWeight: FontWeight.w900,
+            fontSize: 12.5,
+            letterSpacing: 1.2,
+            color: AppColors.heading,
+          ),
+        ),
+    ],
   );
 }

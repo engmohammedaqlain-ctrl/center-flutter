@@ -86,24 +86,27 @@ void main() {
 
     test('touching but non-overlapping times are allowed', () {
       final s = seeded();
+      final before = s.groups.length;
       s.upsertGroup(makeGroup(s, name: 'أ', days: const [0], start: '16:00', end: '18:00'));
       s.upsertGroup(makeGroup(s, name: 'ب', days: const [0], start: '18:00', end: '20:00'));
-      expect(s.groups.length, 2);
+      expect(s.groups.length, before + 2);
     });
 
     test('different days never conflict', () {
       final s = seeded();
+      final before = s.groups.length;
       s.upsertGroup(makeGroup(s, name: 'أ', days: const [0], start: '16:00', end: '18:00'));
       s.upsertGroup(makeGroup(s, name: 'ب', days: const [3], start: '16:00', end: '18:00'));
-      expect(s.groups.length, 2);
+      expect(s.groups.length, before + 2);
     });
 
     test('an archived group does not block the slot', () {
       final s = seeded();
+      final before = s.groups.length;
       final old = makeGroup(s, name: 'قديمة', days: const [0])..status = 'archived';
       s.upsertGroup(old);
       s.upsertGroup(makeGroup(s, name: 'جديدة', days: const [0]));
-      expect(s.groups.length, 2);
+      expect(s.groups.length, before + 2);
     });
 
     test('editing a group does not conflict with itself', () {
@@ -128,7 +131,7 @@ void main() {
       // تغيير سعر المجموعة لاحقاً لا يحرّك السعر المثبَّت
       g.pricePerMonth = 400;
       s.upsertGroup(g);
-      expect(s.enrollmentsOf(stu.id).first.appliedPrice, 150);
+      expect(s.enrollmentsOf(stu.id).firstWhere((x) => x.groupId == g.id).appliedPrice, 150);
     });
 
     test('a custom price and its reason are kept', () {

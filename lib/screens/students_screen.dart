@@ -146,11 +146,22 @@ class _StudentCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  student.fullName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppText.cardTitle.copyWith(fontSize: 14),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        student.fullName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.cardTitle.copyWith(fontSize: 14),
+                      ),
+                    ),
+                    // المنسحب والمؤرشف يُعرفان من القائمة بلا فتح الملف
+                    if (!student.isActiveStudent) ...[
+                      const SizedBox(width: 6),
+                      StudentStatusChip(status: student.status, compact: true),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 3),
                 Text(

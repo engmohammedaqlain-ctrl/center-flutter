@@ -37,6 +37,7 @@ class PortalUser {
     this.section = '',
     this.subjectIds = const [],
     this.tenantName = '',
+    this.studentName = '',
   });
 
   final String id;
@@ -44,7 +45,7 @@ class PortalUser {
   final String nationalId;
   final String portalCode;
 
-  /// `student` أو `teacher`.
+  /// `student` أو `teacher` أو `parent`.
   final String role;
   final String tenantId;
   final String phone;
@@ -54,7 +55,18 @@ class PortalUser {
   final List<String> subjectIds;
   final String tenantName;
 
+  /// لولي الأمر: اسم ابنه الذي يتابعه. `id` هنا معرّف الطالب نفسه.
+  final String studentName;
+
   bool get isTeacher => role == 'teacher';
+
+  bool get isParent => role == 'parent';
+
+  String get roleLabel => switch (role) {
+        'teacher' => 'معلم',
+        'parent' => 'ولي أمر',
+        _ => 'طالب',
+      };
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -69,6 +81,7 @@ class PortalUser {
         'section': section,
         'subject_ids': subjectIds,
         'tenant_name': tenantName,
+        'student_name': studentName,
       };
 
   factory PortalUser.fromJson(Map<String, dynamic> m) => PortalUser(
@@ -84,6 +97,7 @@ class PortalUser {
         section: '${m['section'] ?? ''}',
         subjectIds: [for (final e in (m['subject_ids'] as List? ?? const [])) '$e'],
         tenantName: '${m['tenant_name'] ?? ''}',
+        studentName: '${m['student_name'] ?? ''}',
       );
 }
 
@@ -648,80 +662,74 @@ class PortalService {
     return true;
   }
 
-  /// دخول برقم الهوية ورمز البوابة.
+  /// دخول الطلاب وأولياء الأمور والمعلمين — المقابل لـ `loginWithPortalCode`.
   ///
-  /// قد يكون الرقم نفسه مسجَّلاً في أكثر من منشأة — أو طالباً ومعلماً معاً —
-  /// فتُعاد كل المطابقات ليختار المستخدم.
-  Future<PortalLoginResult> login(String nationalId, String portalCode) async {
+  /// التحقق في دالة السيرفر `portal-login` بمفتاح الخدمة، لا بقراءة الجداول: القاعدة
+  /// محمية بـ RLS، والجهاز لا يرى رموز الدخول ولا يقارنها. عند التطابق الفريد تعيد
+  /// الدالة رمزاً لمرة واحدة يُستبدل بجلسة تحمل دور الشخص ومنشأته ومعرّفه، فلا يصل
+  /// إلا إلى ما يخصّه.
+  ///
+  /// تطابقٌ في أكثر من منشأة أو دور يُعيد الخيارات، ويُعاد الاستدعاء بالخيار
+  /// المختار في [choice] — ويُتحقق من الرمز من جديد.
+  Future<PortalLoginResult> login(String nationalId, String portalCode, {PortalUser? choice}) async {
     final id = nationalId.trim();
     final code = portalCode.trim();
     if (id.isEmpty || code.isEmpty) {
       return const PortalLoginResult(error: 'يرجى إدخال رقم الهوية ورمز الدخول');
     }
 
-    final filters = {'national_id': 'eq.$id', 'portal_code': 'eq.$code'};
-    final teachers = await supabaseSelect(
-      'teachers',
-      filters: filters,
-      columns: 'id,name,phone,email,subject_ids,national_id,portal_code,tenant_id',
+    final data = await supabaseInvoke(
+      'portal-login',
+      {
+        'national_id': id,
+        'portal_code': code,
+        if (choice != null) 'tenant_id': choice.tenantId,
+        if (choice != null) 'role': choice.role,
+        if (choice != null) 'user_id': choice.id,
+      },
+      // قبل الدخول لا جلسة للطالب أو وليّ أمره؛ وتوكن إدارةٍ قديم على الجهاز
+      // كانت بوابة الدوال ترفضه فيظهر الخطأ كأنه انقطاع إنترنت
+      anonymous: true,
     );
-    final students = await supabaseSelect(
-      'students',
-      filters: filters,
-      columns:
-          'id,first_name,last_name,full_name,national_id,portal_code,phone,email,grade_level,section,tenant_id',
-    );
 
-    if (teachers == null && students == null) {
-      return const PortalLoginResult(error: 'تعذّر الاتصال بالسحابة. تحقق من الإنترنت.');
+    final error = data['error'];
+    if (error != null) return PortalLoginResult(error: '$error');
+
+    final choices = [
+      for (final c in (data['choices'] as List? ?? const []))
+        if (c is Map) userFromChoice(Map<String, dynamic>.from(c)),
+    ];
+    if (choices.length > 1) return PortalLoginResult(users: choices);
+
+    final tokenHash = '${data['token_hash'] ?? ''}';
+    final matched = data['choice'];
+    if (tokenHash.isEmpty || matched is! Map) {
+      return const PortalLoginResult(error: 'رقم الهوية أو كلمة المرور غير صحيحة');
     }
-
-    final names = await _tenantNames();
-    final users = <PortalUser>[];
-
-    for (final t in teachers ?? const <Map<String, dynamic>>[]) {
-      final tid = '${t['tenant_id'] ?? ''}';
-      users.add(PortalUser(
-        id: '${t['id']}',
-        name: '${t['name'] ?? ''}',
-        nationalId: '${t['national_id'] ?? ''}',
-        portalCode: '${t['portal_code'] ?? ''}',
-        role: 'teacher',
-        tenantId: tid,
-        phone: '${t['phone'] ?? ''}',
-        email: '${t['email'] ?? ''}',
-        subjectIds: [for (final e in (t['subject_ids'] as List? ?? const [])) '$e'],
-        tenantName: names[tid] ?? 'منشأة غير محددة',
-      ));
+    if (!await supabaseVerifyTokenHash(tokenHash)) {
+      return const PortalLoginResult(error: 'تعذّر فتح جلسة البوابة، حاول مجدداً');
     }
-
-    for (final s in students ?? const <Map<String, dynamic>>[]) {
-      final tid = '${s['tenant_id'] ?? ''}';
-      final full = '${s['full_name'] ?? ''}'.trim();
-      users.add(PortalUser(
-        id: '${s['id']}',
-        name: full.isNotEmpty ? full : '${s['first_name'] ?? ''} ${s['last_name'] ?? ''}'.trim(),
-        nationalId: '${s['national_id'] ?? ''}',
-        portalCode: '${s['portal_code'] ?? ''}',
-        role: 'student',
-        tenantId: tid,
-        phone: '${s['phone'] ?? ''}',
-        email: '${s['email'] ?? ''}',
-        gradeLevel: '${s['grade_level'] ?? ''}',
-        section: '${s['section'] ?? ''}',
-        tenantName: names[tid] ?? 'منشأة غير محددة',
-      ));
-    }
-
-    if (users.isEmpty) {
-      return const PortalLoginResult(error: 'رقم الهوية أو رمز الدخول غير صحيح');
-    }
-    return PortalLoginResult(users: users);
+    return PortalLoginResult(users: [userFromChoice(Map<String, dynamic>.from(matched))]);
   }
 
-  Future<Map<String, String>> _tenantNames() async {
-    final rows = await supabaseSelect('tenants', columns: 'id,name');
-    return {for (final r in rows ?? const <Map<String, dynamic>>[]) '${r['id']}': '${r['name'] ?? ''}'};
+  /// خيار دخول كما تعيده الدالة: `{tenant_id, tenant_name, role, user: {...}}`.
+  static PortalUser userFromChoice(Map<String, dynamic> c) {
+    final user = c['user'] is Map ? Map<String, dynamic>.from(c['user'] as Map) : const <String, dynamic>{};
+    return PortalUser(
+      id: '${user['id'] ?? ''}',
+      name: '${user['name'] ?? ''}',
+      nationalId: '${user['national_id'] ?? ''}',
+      portalCode: '${user['portal_code'] ?? ''}',
+      role: '${c['role'] ?? user['role'] ?? 'student'}',
+      tenantId: '${c['tenant_id'] ?? user['tenant_id'] ?? ''}',
+      phone: '${user['phone'] ?? ''}',
+      email: '${user['email'] ?? ''}',
+      gradeLevel: '${user['grade_level'] ?? ''}',
+      section: '${user['section'] ?? ''}',
+      subjectIds: [for (final e in (user['subject_ids'] as List? ?? const [])) '$e'],
+      tenantName: '${c['tenant_name'] ?? user['tenant_name'] ?? 'منشأة غير محددة'}',
+      studentName: '${user['student_name'] ?? ''}',
+    );
   }
 
   /// هوية المنشأة للعرض داخل البوابة — مطابق لـ `getPortalBranding`.

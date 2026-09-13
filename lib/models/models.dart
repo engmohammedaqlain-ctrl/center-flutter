@@ -138,6 +138,35 @@ const _gradeWords =
     r'\(?(12 علمي|11 علمي|11 أدبي|12 أدبي|ثاني عشر|حادي عشر|توجيهي|عاشر|تاسع|ثامن|سابع|سادس|خامس|رابع|ثالث|ثاني|أول)\)?';
 const _branchWords = r'\(?(علمي|أدبي|شرعي|صناعي|تجاري|ريادة|أعمال|بنين|بنات|ذكور|إناث)\)?';
 
+/// أسماء الأشهر الميلادية — مطابق لـ `GREGORIAN_MONTHS`.
+const gregorianMonths = [
+  'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', //
+  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+];
+
+/// حالات الطالب — مطابق لـ `STUDENT_STATUS_CONFIG` في types/student.ts.
+///
+/// «بانتظار التأكيد» يضعها الترفيع السنوي وحده فلا تُختار يدوياً، و«غير نشط»
+/// أُدمجت في «منسحب» لأنهما كانتا بمعنى واحد.
+const studentStatusLabels = {
+  'active': 'نشط',
+  'pending': 'بانتظار التأكيد',
+  'withdrawn': 'منسحب',
+  'archived': 'مؤرشف',
+};
+
+/// لون الحالة كما في النسخة المكتبية.
+const studentStatusColors = {
+  'active': 0xFFE88C15,
+  'pending': 0xFFEAB308,
+  'withdrawn': 0xFF737A68,
+  'archived': 0xFF94A3B8,
+};
+
+/// الحالة القديمة `inactive` تُقرأ «منسحب» حتى تُرحَّل سجلاتها.
+String studentStatusLabel(String status) =>
+    studentStatusLabels[status == 'inactive' ? 'withdrawn' : status] ?? status;
+
 /// تنقية اسم الشعبة ومنع تكرار اسم المرحلة داخله — مطابق لـ `sanitizeSectionName`.
 ///
 /// المرحلة محدَّدة في حقلها، فكتابتها داخل الاسم تُنتج «ثاني عشر علمي — ثاني عشر
@@ -307,6 +336,7 @@ class Student {
     this.exceptionReason = '',
     this.customMonthlyFee,
     this.portalCode = '',
+    this.parentPortalCode = '',
     this.syncStatus = 'synced',
     this.createdAt,
     this.updatedAt,
@@ -361,6 +391,10 @@ class Student {
 
   /// رمز دخول الطالب إلى بوابته — ست خانات.
   String portalCode;
+
+  /// كلمة مرور ولي الأمر لبوابة المتابعة — يدخل بها برقم هوية ابنه.
+  /// لا تساوي كلمة الطالب، وإلا أنتج الإدخال الواحد حسابين مختلفين.
+  String parentPortalCode;
   String syncStatus;
   String? createdAt;
   String? updatedAt;
@@ -370,6 +404,11 @@ class Student {
 
   DateTime get enrollmentDate => enrolledAt;
   set enrollmentDate(DateTime v) => enrolledAt = v;
+
+  /// «نشط» وحدها لا تُعرض على البطاقات: الباقي حالةٌ تستحق الانتباه.
+  bool get isActiveStudent => status == 'active';
+
+  String get statusLabel => studentStatusLabel(status);
 
   bool get hasFlexibleException => hasException;
   set hasFlexibleException(bool v) => hasException = v;
@@ -428,6 +467,7 @@ class Student {
       'exception_reason': exceptionReason,
       'custom_monthly_fee': customMonthlyFee,
       'portal_code': portalCode.isEmpty ? null : portalCode,
+      'parent_portal_code': parentPortalCode.isEmpty ? null : parentPortalCode,
       'notes': notes,
       'created_at': createdAt,
       'updated_at': updatedAt,
@@ -492,6 +532,7 @@ class Student {
       exceptionReason: '${m['exception_reason'] ?? ''}',
       customMonthlyFee: (m['custom_monthly_fee'] as num?)?.toDouble(),
       portalCode: '${m['portal_code'] ?? ''}',
+      parentPortalCode: '${m['parent_portal_code'] ?? ''}',
       syncStatus: '${m['sync_status'] ?? 'synced'}',
       createdAt: m['created_at']?.toString(),
       updatedAt: m['updated_at']?.toString(),
@@ -940,7 +981,12 @@ class Evaluation {
   String? updatedAt;
 
   /// النسبة المئوية. الدرجة القصوى صفراً تعني تقييماً بلا وزن لا قسمةً على صفر.
-  int get percent => maxScore <= 0 ? 0 : ((score / maxScore) * 100).round();
+  int get percent {
+    if (maxScore <= 0) return 0;
+    // درجة تتجاوز القصوى — خطأ إدخال أو قصوى عُدّلت بعد الرصد — كانت تُخرج
+    // نسبة كـ 112%، وتُفسد المعدل العام معها
+    return ((score / maxScore) * 100).round().clamp(0, 100);
+  }
 
   /// النجاح عند 50% فأكثر — نفس العتبة في `stats` بصفحة Evaluations.tsx
   bool get passed => percent >= 50;
@@ -1377,7 +1423,9 @@ class Tenant {
         'code': code,
         'name': name,
         'app_username': username,
-        'app_password': password,
+        // `app_password` حُذف من القاعدة: المصادقة صارت عبر Supabase Auth،
+        // وكلمات المرور تُدار بدالة السيرفر لا بكتابة عمود من التطبيق
+
         'plan_type': planType,
         'status': status,
         'expires_at': planType == 'lifetime' ? null : expiresAt.toUtc().toIso8601String(),
@@ -1720,6 +1768,7 @@ class PendingSync {
     required this.action,
     this.payload,
     required this.createdAt,
+    this.tenantId = '',
     this.retryCount = 0,
     this.lastError,
     this.lastAttemptAt,
@@ -1731,6 +1780,10 @@ class PendingSync {
   String action;
   Map<String, dynamic>? payload;
   String createdAt;
+
+  /// المنشأة التي نشأت العملية تحتها. جهاز انتقل إلى منشأة أخرى قبل أن يرفع
+  /// طابوره كان يرفع عمليات الأولى إلى سحابة الثانية.
+  String tenantId;
   int retryCount;
   String? lastError;
   String? lastAttemptAt;
@@ -1741,6 +1794,7 @@ class PendingSync {
         'action': action,
         'payload': payload,
         'created_at': createdAt,
+        'tenant_id': tenantId,
         'retry_count': retryCount,
         'last_error': lastError,
         'last_attempt_at': lastAttemptAt,
@@ -1753,6 +1807,7 @@ class PendingSync {
         action: '${m['action'] ?? ''}',
         payload: m['payload'] == null ? null : Map<String, dynamic>.from(m['payload'] as Map),
         createdAt: '${m['created_at'] ?? ''}',
+        tenantId: '${m['tenant_id'] ?? ''}',
         retryCount: int.tryParse('${m['retry_count'] ?? 0}') ?? 0,
         lastError: m['last_error']?.toString(),
         lastAttemptAt: m['last_attempt_at']?.toString(),

@@ -52,7 +52,7 @@ const tableAllowedColumns = <String, List<String>>{
     'payment_plan', 'payment_status',
     'academic_discount_applied', 'academic_discount_rate',
     'has_flexible_exception', 'exception_reason', 'custom_monthly_fee',
-    'portal_code',
+    'portal_code', 'parent_portal_code',
     'notes', 'tenant_id', 'created_at', 'updated_at',
   ],
   'student_attachments': [
@@ -212,6 +212,23 @@ const syncedTables = [
 /// كجدول `class_announcements`. يُميَّز عن بقية الأعطال لأنه لا يُصلَح بإعادة المحاولة.
 bool isMissingTableError(int status, String body) => status == 404 && body.contains('PGRST205');
 
+/// بصمة أعمدة المزامنة — تتغير متى أُضيف جدول أو عمود إلى [tableAllowedColumns].
+///
+/// السحب التزايدي لا يعيد إلا ما تغيّر بعد الختم، فالعمود المضاف حديثاً لا يصل في
+/// السجلات القديمة أبداً: جهاز سحب الطلاب قبل `parent_portal_code` يبقى بلا كلمة
+/// مرور ولي الأمر وهي في السحابة — ثم يعرض «توليد»، وأي تعديل على الطالب يرفع
+/// الحقل فارغاً فيمحوها. البصمة تُحفظ مع الختم، فيعود أول سحب بعد التحديث كاملاً.
+final String pullColumnsSignature = () {
+  // FNV-1a بـ 32 بت: ثابتة بين التشغيلات والإصدارات، بخلاف `hashCode`
+  var hash = 0x811c9dc5;
+  for (final entry in tableAllowedColumns.entries) {
+    for (final unit in '${entry.key}:${entry.value.join(',')};'.codeUnits) {
+      hash = ((hash ^ unit) * 0x01000193) & 0xffffffff;
+    }
+  }
+  return hash.toRadixString(16);
+}();
+
 /// هل يحمل الجدول عمود `updated_at`؟
 ///
 /// السحب التزايدي يرشّح بـ `updated_at=gt.<الختم>`، وسؤال جدول لا يملك العمود
@@ -306,9 +323,16 @@ void queuePendingSync(
   required String recordId,
   required String action,
   Map<String, dynamic>? payload,
+  String tenantId = '',
 }) {
   final now = DateTime.now().toUtc().toIso8601String();
-  final existingIdx = queue.indexWhere((e) => e.tableName == tableName && e.recordId == recordId);
+  // الدمج لا يتخطى حدود المنشأة: عملية منشأة أخرى على المعرّف نفسه تبقى لها
+  final existingIdx = queue.indexWhere(
+    (e) =>
+        e.tableName == tableName &&
+        e.recordId == recordId &&
+        (tenantId.isEmpty || e.tenantId.isEmpty || e.tenantId == tenantId),
+  );
 
   if (existingIdx >= 0) {
     final existing = queue[existingIdx];
@@ -339,6 +363,7 @@ void queuePendingSync(
   queue.add(
     PendingSync(
       id: _pendingSeq++,
+      tenantId: tenantId,
       tableName: tableName,
       recordId: recordId,
       action: action,
@@ -440,6 +465,9 @@ String describeSupabaseError(Object error, String tableName) {
   if (RegExp(r'violates foreign key constraint', caseSensitive: false).hasMatch(raw)) {
     return '$table: السجل مرتبط بسجل آخر غير موجود في السحابة. ارفع السجل الأصل أولاً.';
   }
+  if (RegExp(r'PGRST303|jwt expired|invalid claim', caseSensitive: false).hasMatch(raw)) {
+    return '$table: انتهت جلسة الدخول. سجّل الخروج ثم الدخول من جديد ليُعاد الرفع.';
+  }
   if (RegExp(r'PGRST204|could not find|schema cache', caseSensitive: false).hasMatch(raw)) {
     final col = RegExp(r"'([^']+)' column").firstMatch(raw)?.group(1);
     return '$table: العمود ${col ?? 'المطلوب'} غير موجود في قاعدة البيانات. نفّذ ملف الهجرة على Supabase.';
@@ -450,9 +478,36 @@ String describeSupabaseError(Object error, String tableName) {
   return '$table: $raw';
 }
 
+/// السجلات التي حُذفت من السحابة فيجب أن تُحذف من الجهاز.
+///
+/// القاعدة — مطابقة لتوفيق الحذف في `pullFromCloud` بالنسخة المكتبية:
+///  - `synced` وحدها تُحذف: ما لم يُرفع بعد شغلٌ للمستخدم لا نسخةٌ من السحابة.
+///  - ما له عملية في الطابور يُترك لها.
+///  - وبعد أول سحب: ما عُدّل بعد آخر ختم يُترك لجولة قادمة، فقد يكون سبق الحذف.
+List<String> rowsDeletedInCloud({
+  required Iterable<Map<String, dynamic>> local,
+  required Set<String> cloudIds,
+  required Set<String> pendingIds,
+  required String? lastPullAt,
+}) {
+  return [
+    for (final r in local)
+      if (r['sync_status'] == 'synced' &&
+          !cloudIds.contains('${r['id']}') &&
+          !pendingIds.contains('${r['id']}') &&
+          (lastPullAt == null ||
+              r['updated_at'] == null ||
+              toTimestamp(r['updated_at']) < toTimestamp(lastPullAt)))
+        '${r['id']}',
+  ];
+}
+
 /// مخزن محلي يوفّر لخدمة المزامنة ما يوفّره Dexie في التطبيق المكتبي.
 abstract class SyncLocalStore {
   String? get tenantId;
+
+  /// المنشأة التي تخصّها البيانات المحفوظة على هذا الجهاز، أو `null` لجهاز جديد.
+  String? get dbTenantId;
   bool get isMaster;
   List<PendingSync> get pendingSyncs;
   Map<String, dynamic>? recordOf(String table, String id);
@@ -537,16 +592,34 @@ class SyncService {
 
   String lastPullKey(String tenantId) => 'last_pull_at_$tenantId';
 
+  /// نوع الجلسة وبصمة الأعمدة اللذان سحب بهما الجهاز آخر مرة — يُحفظان بجوار الختم.
+  String lastPullAuthKey(String tenantId) => 'last_pull_auth_$tenantId';
+
+  /// علامة السحب: `session` أو `anon`، ومعها [pullColumnsSignature].
+  String pullMarkFor({required bool signedIn}) => '${signedIn ? 'session' : 'anon'}:$pullColumnsSignature';
+
+  String get _pullAuthMark => pullMarkFor(signedIn: SupabaseAuth.signedIn);
+
+  /// ختم آخر سحب ناجح، أو `null` لسحب كامل.
+  ///
+  /// الختم الذي سُجّل بجلسة غير الجلسة الحالية لا يُعتمد: سحبٌ بلا دخول يُعاد له
+  /// من القاعدة المحمية صفرُ سجل بلا خطأ، فيُسجَّل ختماً «ناجحاً» — ثم يطلب كل سحب
+  /// تزايدي بعده ما تغيّر بعد ذلك الختم وحده، فلا تصل السجلات القديمة أبداً.
+  /// أول سحب بعد الدخول يعود كاملاً فيُصلح الجهاز من تلقاء نفسه.
+  ///
+  /// ولا يُعتمد كذلك ختمٌ سُجّل بأعمدة غير الأعمدة الحالية — انظر [pullColumnsSignature].
   Future<String?> getLastPullAt() async {
     final tenantId = local.tenantId;
     if (tenantId == null) return null;
     final prefs = await SharedPreferences.getInstance();
+    if (prefs.getString(lastPullAuthKey(tenantId)) != _pullAuthMark) return null;
     return prefs.getString(lastPullKey(tenantId));
   }
 
   Future<void> _setLastPullAt(String tenantId, String iso) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(lastPullKey(tenantId), iso);
+    await prefs.setString(lastPullAuthKey(tenantId), _pullAuthMark);
   }
 
   Future<RemoteChangeSummary> checkRemoteChanges() async {
@@ -669,6 +742,11 @@ class SyncService {
     }
     final tenantId = local.tenantId;
     if (tenantId == null) return SyncResult(success: false, message: 'لا توجد منشأة محددة');
+    // القاعدة المحلية لمنشأة أخرى: لا يُرفع إليها ولا يُسحب فوقها قبل تبديلها
+    final dbTenant = local.dbTenantId;
+    if (dbTenant != null && dbTenant != tenantId) {
+      return SyncResult(success: false, message: 'البيانات المحلية تخص منشأة أخرى. أعد تسجيل الدخول.');
+    }
 
     _syncing = true;
     try {
@@ -705,6 +783,11 @@ class SyncService {
     }
     final tenantId = local.tenantId;
     if (tenantId == null) return SyncResult(success: false, message: 'لا توجد منشأة محددة');
+    // القاعدة المحلية لمنشأة أخرى: لا يُرفع إليها ولا يُسحب فوقها قبل تبديلها
+    final dbTenant = local.dbTenantId;
+    if (dbTenant != null && dbTenant != tenantId) {
+      return SyncResult(success: false, message: 'البيانات المحلية تخص منشأة أخرى. أعد تسجيل الدخول.');
+    }
 
     _syncing = true;
     try {
@@ -759,7 +842,8 @@ class SyncService {
   }
 
   Future<({int pushed, int failed})> pushPendingChanges(String tenantId) async {
-    final all = [...local.pendingSyncs];
+    // عمليات منشأة أخرى لا تُرفع إلى سحابة هذه: بقايا جهاز انتقل بين منشأتين
+    final all = [...local.pendingSyncs.where((a) => a.tenantId.isEmpty || a.tenantId == tenantId)];
     final actions = all.where((a) => a.retryCount < maxSyncRetries).toList();
     if (actions.isEmpty) return (pushed: 0, failed: all.length);
 
@@ -940,7 +1024,6 @@ class SyncService {
     var totalPulled = 0;
     var totalRemoved = 0;
     final lastPullAt = await getLastPullAt();
-    final safeToReconcileDeletes = lastPullAt != null;
     final incrementalPull = lastPullAt != null;
     // الجداول التي تعذّر جلبها. ابتلاع الخطأ بصمت كان يُظهر «تم سحب 0 سجلاً»
     // على أنه نجاح، فلا يعرف المستخدم أن جدولاً كاملاً لم يصل.
@@ -1018,7 +1101,10 @@ class SyncService {
         // ── توفيق الحذف ──────────────────────────────────────────────────
         // في السحب التزايدي `allData` لا تحوي إلا المتغيّر، فلا تصلح لكشف
         // الحذف. تُجلب المعرّفات وحدها: صفحة `select=id` أخفّ من السجل كاملاً.
-        if (safeToReconcileDeletes) {
+        //
+        // ويجري في السحب الكامل أيضاً كما في النسخة المكتبية: قصره على التزايدي
+        // كان يُبقي على الجهاز صفوفاً حُذفت من السحابة، ثم يعيد رفعها إليها.
+        {
           Set<String> cloudIds;
           if (isIncremental) {
             final allIds = <String>[];
@@ -1060,16 +1146,12 @@ class SyncService {
             cloudIds = allData.map((r) => '${r['id']}').toSet();
           }
 
-          final toRemove = localRecords
-              .where(
-                (r) =>
-                    r['sync_status'] == 'synced' &&
-                    !cloudIds.contains('${r['id']}') &&
-                    !pendingIds.contains('${r['id']}') &&
-                    (r['updated_at'] == null || toTimestamp(r['updated_at']) < toTimestamp(lastPullAt)),
-              )
-              .map((r) => '${r['id']}')
-              .toList();
+          final toRemove = rowsDeletedInCloud(
+            local: localRecords,
+            cloudIds: cloudIds,
+            pendingIds: pendingIds,
+            lastPullAt: lastPullAt,
+          );
 
           if (toRemove.isNotEmpty) {
             local.removeIds(cloud, toRemove);
@@ -1077,21 +1159,6 @@ class SyncService {
           }
         }
 
-        if (!safeToReconcileDeletes) {
-          final cloudIds = allData.map((r) => '${r['id']}').toSet();
-          final orphans = localRecords.where(
-            (r) => r['sync_status'] == 'synced' && !cloudIds.contains('${r['id']}') && !pendingIds.contains('${r['id']}'),
-          );
-          for (final orphan in orphans) {
-            queuePendingSync(
-              local.pendingSyncs,
-              tableName: cloud,
-              recordId: '${orphan['id']}',
-              action: 'INSERT',
-              payload: orphan,
-            );
-          }
-        }
       } catch (err) {
         failedTables[cloud] = describeSupabaseError(err, cloud);
       }
@@ -1111,10 +1178,10 @@ class SyncService {
     return PullOutcome(pulled: totalPulled, removed: totalRemoved, failedTables: failedTables);
   }
 
+  /// ترويسات الجلسة لا المفتاح المنشور: القاعدة محمية بـ RLS، والزائر المجهول
+  /// يُعاد له جدول فارغ بلا خطأ — فكان السحب «ينجح» بصفر سجل والرفع يُرفض.
   Map<String, String> get _headers => {
-        'apikey': supabaseKey,
-        'Authorization': 'Bearer $supabaseKey',
-        'Content-Type': 'application/json',
+        ...SupabaseConfig.headers,
         'Prefer': 'return=representation',
       };
 
@@ -1127,6 +1194,7 @@ class SyncService {
     required int to,
     required String order,
   }) async {
+    await SupabaseAuth.ensureFresh();
     final params = <String, String>{
       'select': columns,
       'tenant_id': 'eq.$tenantId',
@@ -1137,7 +1205,10 @@ class SyncService {
     }
     final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(queryParameters: params);
     try {
-      final res = await http.get(uri, headers: {..._headers, 'Range': '$from-$to'});
+      final res = await SupabaseAuth.withRetryOnExpiry(
+        () => http.get(uri, headers: {..._headers, 'Range': '$from-$to'}),
+        expired: (r) => SupabaseAuth.isExpiredResponse(r.statusCode, r.body),
+      );
       if (res.statusCode >= 400) {
         if (isMissingTableError(res.statusCode, res.body)) missingTables.add(table);
         return null;
@@ -1152,6 +1223,7 @@ class SyncService {
 
   Future<List<Map<String, dynamic>>> _selectIn(String table, String tenantId, List<String> ids) async {
     if (ids.isEmpty) return [];
+    await SupabaseAuth.ensureFresh();
     final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(
       queryParameters: {
         'select': '*',
@@ -1171,15 +1243,19 @@ class SyncService {
   }
 
   Future<void> _upsert(String table, List<Map<String, dynamic>> rows) async {
+    await SupabaseAuth.ensureFresh();
     final conflict = tableConflictTarget[table] ?? 'id';
     final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(queryParameters: {'on_conflict': conflict});
-    final res = await http.post(
-      uri,
-      headers: {
-        ..._headers,
-        'Prefer': 'resolution=merge-duplicates,return=minimal',
-      },
-      body: jsonEncode(rows),
+    final res = await SupabaseAuth.withRetryOnExpiry(
+      () => http.post(
+        uri,
+        headers: {
+          ..._headers,
+          'Prefer': 'resolution=merge-duplicates,return=minimal',
+        },
+        body: jsonEncode(rows),
+      ),
+      expired: (r) => SupabaseAuth.isExpiredResponse(r.statusCode, r.body),
     );
     if (res.statusCode >= 400) {
       throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
@@ -1187,13 +1263,17 @@ class SyncService {
   }
 
   Future<void> _deleteIds(String table, String tenantId, List<String> ids) async {
+    await SupabaseAuth.ensureFresh();
     final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(
       queryParameters: {
         'id': 'in.(${ids.join(',')})',
         'tenant_id': 'eq.$tenantId',
       },
     );
-    final res = await http.delete(uri, headers: _headers);
+    final res = await SupabaseAuth.withRetryOnExpiry(
+      () => http.delete(uri, headers: _headers),
+      expired: (r) => SupabaseAuth.isExpiredResponse(r.statusCode, r.body),
+    );
     if (res.statusCode >= 400) {
       throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
     }

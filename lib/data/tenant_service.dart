@@ -8,14 +8,34 @@ import 'supabase.dart';
 class TenantService {
   const TenantService();
 
-  static const masterUsername = 'anas';
-  static const masterPassword = 'anas2026';
+  /// حساب المطور العام. لا يُكتب في الكود: يُمرَّر عند البناء بـ
+  /// `--dart-define=DEV_USERNAME=... --dart-define=DEV_PASSWORD=...`،
+  /// فلا يقرأه من يفكّ الـ APK من مصدر المشروع ولا من تاريخه.
+  ///
+  /// نسخة بُنيت بلا تمريرهما تخرج بلا حساب مطور أصلاً — وهو الوضع الآمن
+  /// للنسخ التي توزَّع على المدارس.
+  ///
+  /// متغيّران لا ثابتان كي تضبط الاختبارات حسابها الخاص بلا أسرار حقيقية.
+  static String masterUsername = const String.fromEnvironment('DEV_USERNAME');
+  static String masterPassword = const String.fromEnvironment('DEV_PASSWORD');
+
+  /// هل تحمل هذه النسخة حساب مطور.
+  static bool get hasMasterAccount =>
+      masterUsername.trim().isNotEmpty && masterPassword.trim().isNotEmpty;
 
   /// جلب كل المنشآت من السحابة. يعيد `null` عند تعذّر الاتصال.
   Future<List<Tenant>?> fetchAll() async {
     final rows = await supabaseSelect('tenants', order: 'created_at.desc');
     if (rows == null) return null;
     return rows.map(Tenant.fromCloud).toList();
+  }
+
+  /// جلب منشأة بمعرّفها — بعد الدخول يحمل التوكن معرّف المنشأة لا اسمها.
+  Future<Tenant?> findById(String id) async {
+    if (id.trim().isEmpty) return null;
+    final rows = await supabaseSelect('tenants', filters: {'id': 'eq.${id.trim()}'}, limit: 1);
+    if (rows == null || rows.isEmpty) return null;
+    return Tenant.fromCloud(rows.first);
   }
 
   /// البحث عن منشأة بالكود (للتحقق عند تهيئة جهاز جديد).
@@ -68,6 +88,9 @@ class OfflineTenantService implements TenantService {
 
   @override
   Future<List<Tenant>?> fetchAll() async => null;
+
+  @override
+  Future<Tenant?> findById(String id) async => null;
 
   @override
   Future<Tenant?> findByCode(String code) async => null;

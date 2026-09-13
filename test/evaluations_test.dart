@@ -117,7 +117,7 @@ void main() {
       );
 
       expect(saved, 1);
-      final stored = s.evaluationsOfStudent(roster.first.id).single;
+      final stored = s.evaluationsOfGroup(group.id).single;
       expect(stored.title, 'اختبار الوحدة', reason: 'الفراغ الزائد يُقلَّم');
       expect(stored.score, 40);
       expect(stored.maxScore, 50);
@@ -145,9 +145,9 @@ void main() {
         scores: {roster.first.id: 90},
       );
       expect(saved, 1);
-      expect(s.evaluations, hasLength(1));
+      expect(s.evaluationsOfGroup(group.id), hasLength(1));
       if (roster.length > 1) {
-        expect(s.evaluationsOfStudent(roster[1].id), isEmpty);
+        expect(s.evaluationsOfGroup(group.id).where((e) => e.studentId == roster[1].id), isEmpty);
       }
     });
 
@@ -191,7 +191,7 @@ void main() {
         throwsA(isA<StoreException>()),
       );
 
-      expect(s.evaluations, isEmpty);
+      expect(s.evaluationsOfGroup(group.id), isEmpty);
       expect(s.pendingSyncs, isEmpty);
     });
 
@@ -207,7 +207,7 @@ void main() {
         evaluationDate: '2026-09-10',
         scores: {roster.first.id: 70},
       );
-      expect(s.evaluations.single.maxScore, 100);
+      expect(s.evaluationsOfGroup(group.id).single.maxScore, 100);
     });
 
     test('الحذف يُخرج التقييم ويُدرج عملية حذف', () {
@@ -222,11 +222,11 @@ void main() {
         evaluationDate: '2026-09-10',
         scores: {roster.first.id: 70},
       );
-      final id = s.evaluations.single.id;
+      final id = s.evaluationsOfGroup(group.id).single.id;
       s.pendingSyncs.clear();
 
       s.deleteEvaluation(id);
-      expect(s.evaluations, isEmpty);
+      expect(s.evaluationsOfGroup(group.id), isEmpty);
       expect(s.pendingSyncs.single.action, 'DELETE');
     });
 
@@ -250,7 +250,7 @@ void main() {
         evaluationDate: '2026-09-05',
         scores: {roster.first.id: 90},
       );
-      expect(s.evaluations.first.title, 'حديث');
+      expect(s.evaluationsOfGroup(group.id).first.title, 'حديث');
       expect(s.evaluationsOfGroup(group.id), hasLength(2));
     });
   });

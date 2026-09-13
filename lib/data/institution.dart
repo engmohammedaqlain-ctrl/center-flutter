@@ -27,6 +27,9 @@ const paymentSnapshotKey = 'payment_snapshots_frozen_v1';
 /// `sanitizeExistingGroupAndRoomNames` في db.ts
 const sectionNameMigrationKey = 'section_names_sanitized_v1';
 
+/// دمج حالة «غير نشط» في «منسحب» — مطابق لترقية v9 في db.ts
+const withdrawnStatusMigrationKey = 'student_status_withdrawn_v1';
+
 /// `school` = نظام مدرسة (صفوف وشعب ورسوم مراحل).
 /// `center` = نظام مركز تعليمي (مجموعات وقاعات وجداول).
 const institutionTypes = {

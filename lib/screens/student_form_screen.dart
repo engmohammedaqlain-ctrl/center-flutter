@@ -26,6 +26,11 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   late final portalCode = TextEditingController(
     text: widget.student?.portalCode ?? AppStore.instance.newPortalCode(),
   );
+
+  /// كلمة ولي الأمر: تُولَّد للطالب الجديد مختلفةً عن كلمته، كما في StudentForm.tsx.
+  late final parentPortalCode = TextEditingController(
+    text: widget.student?.parentPortalCode ?? AppStore.instance.newDistinctPortalCode(portalCode.text),
+  );
   late final parentName = TextEditingController(text: widget.student?.parentName ?? '');
   late final notes = TextEditingController(text: widget.student?.notes ?? '');
   late final detailedAddress = TextEditingController(text: widget.student?.detailedAddress ?? '');
@@ -45,6 +50,20 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   late final parentPhoneCtl = TextEditingController();
 
   late String grade;
+
+  /// حالة الطالب: `active | pending | withdrawn | archived`.
+  late String status;
+
+  // ── الخصم الشهري: المقابل لحالة `hasCustomDiscount` في StudentForm.tsx ──
+  late bool hasDiscount;
+
+  /// `percentage` نسبة من رسم المرحلة، `fixed` مبلغ يُحسم منه، `custom_fee` رسم
+  /// شهري محدد يحلّ محلّه.
+  late String discountType;
+  final discountRate = TextEditingController(text: '10');
+  final discountFixed = TextEditingController(text: '20');
+  final customMonthlyFee = TextEditingController();
+  final discountReason = TextEditingController();
   late String relation;
   late String neighborhood;
   late String gender;
@@ -77,6 +96,21 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     final inList = s != null && gradeLevels.contains(s.gradeLevel);
     grade = inList ? s.gradeLevel : (s == null ? 'عاشر' : 'أخرى (إدخال يدوي)');
     if (s != null && !inList && s.gradeLevel.isNotEmpty) customGrade.text = s.gradeLevel;
+
+    // `inactive` القديمة تُقرأ «منسحب» كما بعد ترقية v9
+    status = s == null ? 'active' : (s.status == 'inactive' ? 'withdrawn' : s.status);
+
+    // الخصم القائم يُقرأ كما يقرأه سطح المكتب: نسبةٌ محفوظة تعني «نسبة مئوية»،
+    // ورسمٌ شهري محفوظ بلا نسبة يعني «رسم محدد»
+    hasDiscount = s != null && (s.academicDiscountApplied || (s.customMonthlyFee ?? 0) > 0);
+    discountType = (s?.academicDiscountRate ?? 0) > 0
+        ? 'percentage'
+        : (s?.customMonthlyFee ?? 0) > 0
+            ? 'custom_fee'
+            : 'percentage';
+    if ((s?.academicDiscountRate ?? 0) > 0) discountRate.text = trimNum(s!.academicDiscountRate);
+    if ((s?.customMonthlyFee ?? 0) > 0) customMonthlyFee.text = trimNum(s!.customMonthlyFee!);
+    discountReason.text = s?.exceptionReason ?? '';
 
     relation = s?.relation ?? 'أب';
     neighborhood = (s?.neighborhood ?? '').isNotEmpty && neighborhoods.contains(s!.neighborhood) ? s.neighborhood : ((s?.neighborhood ?? '').isNotEmpty ? 'أخرى' : '');
@@ -132,6 +166,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     name.dispose();
     nationalId.dispose();
     portalCode.dispose();
+    parentPortalCode.dispose();
     parentName.dispose();
     notes.dispose();
     detailedAddress.dispose();
@@ -149,6 +184,10 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     parentSecondaryNumber.dispose();
     phoneCtl.dispose();
     parentPhoneCtl.dispose();
+    discountRate.dispose();
+    discountFixed.dispose();
+    customMonthlyFee.dispose();
+    discountReason.dispose();
     super.dispose();
   }
 
@@ -325,6 +364,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           parentPhonePrefix: parentPhonePrefix,
           nationalId: cleanNatId,
           portalCode: portalCode.text.trim(),
+          parentPortalCode: parentPortalCode.text.trim(),
           neighborhood: selectedNeighborhood,
           relation: relation,
           gender: gender,
@@ -334,7 +374,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           detailedAddress: detailedAddress.text.trim(),
           referralSource: referral,
           schoolName: previousSchool.text.trim().isNotEmpty ? previousSchool.text.trim() : (existing?.schoolName ?? ''),
-          status: existing?.status ?? 'active',
+          status: status,
           birthDate: birthDate == null ? '' : isoDate(birthDate!),
           birthPlace: birthPlace.text.trim(),
           nationality: nationality.text.trim(),
@@ -353,11 +393,11 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           seatReservationDiscounted: existing?.seatReservationDiscounted ?? false,
           paymentPlan: existing?.paymentPlan ?? 'full',
           paymentStatus: existing?.paymentStatus ?? 'unpaid',
-          academicDiscountApplied: existing?.academicDiscountApplied ?? false,
-          academicDiscountRate: existing?.academicDiscountRate ?? 0,
+          academicDiscountApplied: hasDiscount,
+          academicDiscountRate: hasDiscount && discountType == 'percentage' ? _discountRateValue : 0,
           hasException: existing?.hasException ?? false,
-          exceptionReason: existing?.exceptionReason ?? '',
-          customMonthlyFee: existing?.customMonthlyFee,
+          exceptionReason: hasDiscount ? discountReason.text.trim() : (existing?.exceptionReason ?? ''),
+          customMonthlyFee: hasDiscount ? _netMonthlyFee(_gradeFeeOf(context)) : null,
         ),
         isNew: existing == null,
         attachments: attachmentsLoaded
@@ -443,7 +483,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                 ),
               ],
               [
-                const FieldLabel('رمز البوابة'),
+                const FieldLabel('كلمة مرور الطالب'),
                 TextField(
                   controller: portalCode,
                   keyboardType: TextInputType.number,
@@ -458,11 +498,37 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                       icon: Icon(Icons.autorenew, size: 18, color: AppColors.amber),
-                      onPressed: () => setState(() => portalCode.text = AppStore.instance.newPortalCode()),
+                      onPressed: () => setState(
+                        () => portalCode.text = AppStore.instance.newDistinctPortalCode(parentPortalCode.text),
+                      ),
                     ),
                   ),
                 ),
               ],
+            ),
+            _gap,
+            const FieldLabel('كلمة مرور ولي الأمر'),
+            TextField(
+              controller: parentPortalCode,
+              keyboardType: TextInputType.number,
+              maxLength: 10,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+              decoration: InputDecoration(
+                hintText: '6 أرقام — يدخل بها ولي الأمر برقم هوية الطالب',
+                counterText: '',
+                errorText: errors['parentCode'],
+                suffixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                suffixIcon: IconButton(
+                  tooltip: 'توليد كلمة جديدة',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  icon: Icon(Icons.autorenew, size: 18, color: AppColors.amber),
+                  onPressed: () => setState(() {
+                    errors.clear('parentCode');
+                    parentPortalCode.text = AppStore.instance.newDistinctPortalCode(portalCode.text);
+                  }),
+                ),
+              ),
             ),
             _gap,
             _pair(
@@ -603,6 +669,18 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
               ],
             ),
             _gap,
+            const FieldLabel('حالة الطالب'),
+            AppDropdown<String>(
+              value: status,
+              items: [
+                // «بانتظار التأكيد» يضعها الترفيع السنوي، فلا تُعرض إلا لمن هو فيها
+                for (final e in studentStatusLabels.entries)
+                  if (e.key != 'pending' || status == 'pending')
+                    DropdownMenuItem(value: e.key, child: Text(e.value)),
+              ],
+              onChanged: (v) => setState(() => status = v ?? status),
+            ),
+            _gap,
             const FieldLabel('ملاحظات'),
             TextField(
               controller: notes,
@@ -611,13 +689,173 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
               decoration: const InputDecoration(hintText: 'أي ملاحظة أو طلبات خاصة للملف...'),
             ),
 
-            // ── ٤. بيانات إضافية (اختيارية) ──────────────────────────────────
+            // ── ٤. الرسوم والخصم ─────────────────────────────────────────────
+            ..._discountSection(context),
+
+            // ── ٥. بيانات إضافية (اختيارية) ──────────────────────────────────
             _extraHeader(),
             if (extra) ..._extraFields(),
           ],
         ),
       ),
     );
+  }
+
+  /// خصم الرسوم الشهرية — المقابل لقسم «تطبيق خصم شهري» في StudentForm.tsx.
+  ///
+  /// اقتراح لا إلزام: النظام يحسب الصافي ويعرضه، والرقم المحفوظ هو الصافي نفسه
+  /// (`custom_monthly_fee`) كي تقرأه النسخة المكتبية كما كتبته.
+  List<Widget> _discountSection(BuildContext context) {
+    final store = StoreScope.of(context);
+    final gradeFee = _gradeFeeOf(context);
+    final rules = store.discountRules;
+    final discount = _discountAmount(gradeFee);
+    final net = _netMonthlyFee(gradeFee);
+    final gpaValue = double.tryParse(gpa.text.trim()) ?? 0;
+    final suggestExcellence = rules.autoSuggestExcellence && !hasDiscount && gpaValue >= rules.excellenceMinGpa;
+
+    return [
+      _section(
+        Icons.sell_outlined,
+        'الرسوم والخصم',
+        note: gradeFee > 0 ? 'رسم المرحلة: ${money(gradeFee)}' : 'لا رسم محدد لهذه المرحلة',
+      ),
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              'تطبيق خصم شهري',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: AppColors.heading),
+            ),
+          ),
+          Switch.adaptive(
+            value: hasDiscount,
+            activeThumbColor: AppColors.amber,
+            onChanged: (v) => setState(() => hasDiscount = v),
+          ),
+        ],
+      ),
+      if (suggestExcellence)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: GhostButton(
+            label: 'اقتراح خصم التفوق (${trimNum(rules.excellenceDiscountRate)}%)',
+            icon: Icons.auto_awesome_outlined,
+            onPressed: () => setState(() {
+              hasDiscount = true;
+              discountType = 'percentage';
+              discountRate.text = trimNum(rules.excellenceDiscountRate);
+              discountReason.text = 'خصم تفوق دراسي';
+            }),
+          ),
+        ),
+      if (hasDiscount) ...[
+        _gap,
+        const FieldLabel('نوع الخصم'),
+        Row(
+          children: [
+            Expanded(
+              child: _toggle('نسبة %', discountType == 'percentage', AppColors.amber,
+                  () => setState(() => discountType = 'percentage')),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: _toggle('مبلغ مقطوع', discountType == 'fixed', AppColors.amber,
+                  () => setState(() => discountType = 'fixed')),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: _toggle('رسم محدد', discountType == 'custom_fee', AppColors.amber,
+                  () => setState(() => discountType = 'custom_fee')),
+            ),
+          ],
+        ),
+        _gap,
+        if (discountType == 'percentage') ...[
+          const FieldLabel('نسبة الخصم (%)'),
+          TextField(
+            key: const Key('discountRate'),
+            controller: discountRate,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            style: const TextStyle(fontFamily: 'monospace'),
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(hintText: '10'),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            children: [
+              for (final preset in ['10', '15', '20', '25', '50'])
+                ActionChip(
+                  label: Text('$preset%', style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
+                  onPressed: () => setState(() => discountRate.text = preset),
+                ),
+            ],
+          ),
+        ] else if (discountType == 'fixed') ...[
+          FieldLabel('مبلغ الخصم ($currency)'),
+          TextField(
+            controller: discountFixed,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            style: const TextStyle(fontFamily: 'monospace'),
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(hintText: '20'),
+          ),
+        ] else ...[
+          FieldLabel('الرسم الشهري بعد الخصم ($currency)'),
+          TextField(
+            controller: customMonthlyFee,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            style: const TextStyle(fontFamily: 'monospace'),
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(hintText: trimNum(gradeFee)),
+          ),
+        ],
+        _gap,
+        const FieldLabel('سبب الخصم'),
+        TextField(
+          controller: discountReason,
+          decoration: const InputDecoration(hintText: 'تفوق دراسي، إخوة، منحة...'),
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          children: [
+            for (final reason in ['تفوق دراسي', 'إخوة', 'أبناء كادر', 'شؤون اجتماعية', 'منحة', 'إعفاء استثنائي'])
+              ActionChip(
+                label: Text(reason, style: const TextStyle(fontSize: 11)),
+                onPressed: () => setState(() => discountReason.text = reason),
+              ),
+          ],
+        ),
+        if (gradeFee > 0) ...[
+          _gap,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+            decoration: BoxDecoration(
+              color: AppColors.amberSoft,
+              borderRadius: BorderRadius.circular(Corner.box),
+              border: Border.all(color: AppColors.amberBorder),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'الأساسي ${money(gradeFee)}  ·  الخصم -${money(discount)}',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.muted),
+                  ),
+                ),
+                Text(
+                  'الصافي: ${money(net)}',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: AppColors.success),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    ];
   }
 
   List<Widget> _extraFields() {
@@ -816,6 +1054,40 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   }
 
   Widget _section(IconData icon, String title, {String? note}) => FormSection(icon: icon, title: title, note: note);
+
+  double get _discountRateValue => double.tryParse(discountRate.text.trim()) ?? 0;
+
+  /// رسم المرحلة المختارة — أساس الخصم كما في `currentGradeFee`.
+  double _gradeFeeOf(BuildContext context) {
+    final store = StoreScope.of(context);
+    final name = grade == 'أخرى (إدخال يدوي)' ? customGrade.text.trim() : grade;
+    return store.feeFor(name)?.monthlyFee ?? 0;
+  }
+
+  /// المبلغ المخصوم من رسم المرحلة — مطابق لـ `calculatedDiscountAmount`.
+  double _discountAmount(double gradeFee) {
+    if (!hasDiscount || gradeFee <= 0) return 0;
+    switch (discountType) {
+      case 'percentage':
+        return (gradeFee * _discountRateValue / 100).roundToDouble();
+      case 'fixed':
+        return double.tryParse(discountFixed.text.trim()) ?? 0;
+      default:
+        final custom = double.tryParse(customMonthlyFee.text.trim()) ?? gradeFee;
+        final diff = gradeFee - custom;
+        return diff < 0 ? 0 : diff;
+    }
+  }
+
+  /// الرسم الشهري بعد الخصم — مطابق لـ `calculatedNetMonthlyFee`.
+  double _netMonthlyFee(double gradeFee) {
+    if (!hasDiscount || gradeFee <= 0) return gradeFee;
+    if (discountType == 'custom_fee') {
+      return double.tryParse(customMonthlyFee.text.trim()) ?? gradeFee;
+    }
+    final net = gradeFee - _discountAmount(gradeFee);
+    return net < 0 ? 0 : net;
+  }
 
   Widget _extraHeader() {
     // الهوامش خارج منطقة اللمس: أثر الضغط يغطي سطر العنوان وحده، لا الفراغ

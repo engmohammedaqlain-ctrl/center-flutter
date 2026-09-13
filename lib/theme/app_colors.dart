@@ -59,7 +59,10 @@ abstract final class AppColors {
   /// فيبقى التدرّج متناسقاً مهما اختار المدير.
   static void apply(InstitutionColors c) {
     final side = parseHexColor(c.sidebarBg) ?? const Color(0xFF0B2545);
-    final action = parseHexColor(c.actionButton) ?? const Color(0xFFE88C15);
+    final highlight = parseHexColor(c.activeItem) ?? const Color(0xFFE88C15);
+    // لون ناقص أو تالف يعود إلى أقرب لون من هوية المنشأة نفسها — لا إلى لون
+    // النظام الافتراضي، فمنشأة ضبطت لونين فقط لا تظهر بنصف هويتها
+    final action = parseHexColor(c.actionButton) ?? highlight;
     final primary = parseHexColor(c.primaryButton) ?? side;
     final surfaceBg = parseHexColor(c.appBg) ?? const Color(0xFFF8FAFC);
 

@@ -92,12 +92,16 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
 
     // كلمة مرور المدير مطلوبة لكل الأدوار — تمنع تعيين جهاز بلا تصريح.
     // مطابق لـ `handleFinishSetup` في NewDeviceSetupModal.tsx
-    if (!store.isAdminSetupPasswordValid(password.text)) {
-      setState(() => passwordError = 'كلمة مرور المدير غير صحيحة');
+    setState(() => submitting = true);
+    if (!await store.verifyAdminSetupPassword(password.text)) {
+      if (!mounted) return;
+      setState(() {
+        submitting = false;
+        passwordError = 'كلمة مرور المدير غير صحيحة';
+      });
       return;
     }
 
-    setState(() => submitting = true);
     try {
       await store.completeInitialSetup(user);
     } catch (e) {

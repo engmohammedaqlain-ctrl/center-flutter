@@ -50,10 +50,15 @@ class AuthFrame extends StatelessWidget {
               child: Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 380),
+                  // عدد الأبناء ثابت مهما فُتحت لوحة المفاتيح: حذف العنوان
+                  // الفرعي والتذييل عند فتحها كان يزيح ما بعدهما، فتُبنى الحقول
+                  // من جديد وتفقد التركيز — فتنغلق لوحة المفاتيح فور فتحها.
+                  // المفاتيح تضمن بقاء عناصر النموذج نفسها عبر كل إعادة بناء.
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       AnimatedContainer(
+                        key: const ValueKey('auth-logo'),
                         duration: const Duration(milliseconds: 200),
                         width: logoSize,
                         height: logoSize,
@@ -70,9 +75,10 @@ class AuthFrame extends StatelessWidget {
                               : Image.memory(image, fit: BoxFit.contain, gaplessPlayback: true),
                         ),
                       ),
-                      SizedBox(height: keyboard ? 10 : 16),
+                      SizedBox(key: const ValueKey('auth-gap-title'), height: keyboard ? 10 : 16),
                       Text(
                         title,
+                        key: const ValueKey('auth-title'),
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: AppColors.heading,
@@ -80,20 +86,38 @@ class AuthFrame extends StatelessWidget {
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      if (!keyboard && subtitle != null) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          subtitle!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                      AnimatedSize(
+                        key: const ValueKey('auth-subtitle'),
+                        duration: const Duration(milliseconds: 200),
+                        curve: Curves.easeOut,
+                        child: keyboard || subtitle == null
+                            ? const SizedBox(width: double.infinity)
+                            : Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  subtitle!,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                                ),
+                              ),
+                      ),
+                      SizedBox(key: const ValueKey('auth-gap-body'), height: keyboard ? 14 : 24),
+                      KeyedSubtree(
+                        key: const ValueKey('auth-body'),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          mainAxisSize: MainAxisSize.min,
+                          children: children,
                         ),
-                      ],
-                      SizedBox(height: keyboard ? 14 : 24),
-                      ...children,
-                      if (!keyboard && footer != null) ...[
-                        const SizedBox(height: 16),
-                        footer!,
-                      ],
+                      ),
+                      AnimatedSize(
+                        key: const ValueKey('auth-footer'),
+                        duration: const Duration(milliseconds: 200),
+                        curve: Curves.easeOut,
+                        child: keyboard || footer == null
+                            ? const SizedBox(width: double.infinity)
+                            : Padding(padding: const EdgeInsets.only(top: 16), child: footer!),
+                      ),
                     ],
                   ),
                 ),
@@ -134,11 +158,34 @@ Widget authLabel(String text) => Text(
 
 /// الحقل بشكل التطبيق الافتراضي (خلفية بيضاء، حدّ رفيع، تمييز عند التركيز)
 /// مع أيقونة بادئة هادئة.
-InputDecoration authFieldDecoration(String hint, IconData icon) => InputDecoration(
+InputDecoration authFieldDecoration(String hint, IconData icon, {Widget? suffix}) => InputDecoration(
       hintText: hint,
       prefixIcon: Icon(icon, size: 17, color: AppColors.faint),
+      suffixIcon: suffix,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
     );
+
+/// زر إظهار/إخفاء كلمة المرور داخل الحقل — بلا كتابة عمياء عند الخطأ.
+class AuthRevealButton extends StatelessWidget {
+  const AuthRevealButton({super.key, required this.visible, required this.onTap});
+
+  final bool visible;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onTap,
+      visualDensity: VisualDensity.compact,
+      tooltip: visible ? 'إخفاء' : 'إظهار',
+      icon: Icon(
+        visible ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+        size: 18,
+        color: AppColors.faint,
+      ),
+    );
+  }
+}
 
 /// صندوق الخطأ تحت الحقول — يظهر وينطوي بحركة قصيرة، ولا يشغل مكاناً بلا خطأ.
 class AuthErrorBox extends StatelessWidget {

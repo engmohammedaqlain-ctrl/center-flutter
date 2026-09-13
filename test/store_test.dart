@@ -1,5 +1,6 @@
 import 'package:center_mobile/data/demo_data.dart';
 import 'package:center_mobile/data/store.dart';
+import 'package:center_mobile/data/tenant_service.dart';
 import 'package:center_mobile/models/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -24,6 +25,12 @@ Student newStudent(AppStore s, {String nationalId = '123456789', String phone = 
 }
 
 void main() {
+  // حساب المطور يُمرَّر عند البناء ولا يُكتب في الكود؛ الاختبار يضبط حسابه
+  setUpAll(() {
+    TenantService.masterUsername = 'dev-tester';
+    TenantService.masterPassword = 'dev-tester-pass';
+  });
+
   test('a fresh store carries no data until demo data is injected', () {
     final s = AppStore.forTesting();
     expect(s.students, isEmpty);
@@ -44,7 +51,7 @@ void main() {
 
   test('master login opens developer mode', () async {
     final s = seeded();
-    expect(await s.login('anas', 'anas2026'), isNull);
+    expect(await s.login('dev-tester', 'dev-tester-pass'), isNull);
     expect(s.isMasterAdmin, isTrue);
     await s.logout();
   });

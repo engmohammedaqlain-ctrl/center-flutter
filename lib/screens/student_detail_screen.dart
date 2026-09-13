@@ -1,8 +1,9 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../data/balance.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -109,11 +110,21 @@ class StudentDetailScreen extends StatelessWidget {
                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  meta,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 11, fontWeight: FontWeight.w500),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        meta,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 11, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                    if (!student.isActiveStudent) ...[
+                      const SizedBox(width: 6),
+                      StudentStatusChip(status: student.status, compact: true),
+                    ],
+                  ],
                 ),
               ],
             ),
@@ -154,13 +165,36 @@ class StudentDetailScreen extends StatelessWidget {
                     ],
                   ),
                 ),
+                // من أين جاء الرصيد: المقبوض مقابل المطالبات، والمستحق اليوم
+                _BalanceBreakdown(student: student, totalPaid: totalPaid, installments: insts),
+                // خصم الرسوم إن وُجد: نسبته وسببه والصافي الشهري بعده
+                _DiscountBadge(student: student),
                 const SizedBox(height: 10),
               ],
 
-              // ── بيانات الطالب والتواصل ─────────────────────────────────────
+              // ── بيانات الدخول: كلمتا مرور البوابة ──────────────────────────
               _Card(
+                title: 'بيانات الدخول',
+                children: [
+                  // للطالب ولولي أمره، مخفيتان حتى تُطلبا
+                  _SecretCode(
+                    label: 'كلمة مرور الطالب',
+                    code: student.portalCode,
+                    onGenerate: canEdit ? () => store.ensureStudentPortalCodes([student]) : null,
+                  ),
+                  const SizedBox(height: 6),
+                  _SecretCode(
+                    label: 'كلمة مرور ولي الأمر',
+                    code: student.parentPortalCode,
+                    onGenerate: canEdit ? () => store.ensureStudentPortalCodes([student]) : null,
+                  ),
+                ],
+              ),
+
+              // ── بيانات الطالب والتواصل: القسم الوحيد المفتوح، ويُطوى إن شاء ──
+              _Card(
+                initiallyOpen: true,
                 title: 'بيانات الطالب والتواصل',
-                trailing: _PortalCodeChip(student: student, canEdit: canEdit),
                 children: [
                   // الرقمان متجاوران: عنوان صغير فوق رقم بارز، وأيقونتا الاتصال تحته
                   IntrinsicHeight(
@@ -183,6 +217,7 @@ class StudentDetailScreen extends StatelessWidget {
                   const _Rule(),
                   _FieldGrid(
                     fields: [
+                      _Field('حالة الطالب', student.statusLabel),
                       if (student.nationalId.isNotEmpty) _Field('رقم الهوية', student.nationalId, ltr: true),
                       if (student.gender.trim().isNotEmpty) _Field('الجنس', genderLabel(student.gender)),
                       if (student.relation.trim().isNotEmpty) _Field('صلة القرابة', student.relation.trim()),
@@ -294,6 +329,9 @@ class StudentDetailScreen extends StatelessWidget {
                         ],
                       ),
                     ),
+                    // آخر ما رُصد: الأيام الخمسة الأخيرة كما تعرض النسخة المكتبية
+                    // أحدث السجلات لا الجدول كاملاً
+                    ..._recentAttendance(marks),
                   ],
                 ),
 
@@ -399,15 +437,29 @@ class _ActionBar extends StatelessWidget {
 }
 
 /// بطاقة مدمجة كبطاقات Center: عنوان وخط رفيع تحته، ثم المحتوى.
-class _Card extends StatelessWidget {
-  const _Card({this.title, this.trailing, required this.children});
+/// بطاقة قسم في ملف الطالب، تُطوى بالضغط على عنوانها — المقابل لـ
+/// `CollapsibleSection` في StudentDetail.tsx.
+///
+/// الملف طويل: الوضع المالي والأقساط مفتوحان لأنهما سبب فتحه غالباً، وما عداهما
+/// مطويٌّ حتى يُطلب فلا تضيع الصفحة في التمرير. البطاقة بلا عنوان لا تُطوى.
+class _Card extends StatefulWidget {
+  const _Card({this.title, this.trailing, this.initiallyOpen = false, required this.children});
 
   final String? title;
   final Widget? trailing;
+  final bool initiallyOpen;
   final List<Widget> children;
 
   @override
+  State<_Card> createState() => _CardState();
+}
+
+class _CardState extends State<_Card> {
+  late bool open = widget.initiallyOpen;
+
+  @override
   Widget build(BuildContext context) {
+    final title = widget.title;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: AppCard(
@@ -419,17 +471,244 @@ class _Card extends StatelessWidget {
               Row(
                 children: [
                   Expanded(
-                    child: Text(title!, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading)),
+                    child: InkWell(
+                      onTap: () => setState(() => open = !open),
+                      child: Row(
+                        children: [
+                          // مطوي: سهم لأعلى — «اضغط ليرتفع المحتوى». مفتوح: لأسفل
+                          AnimatedRotation(
+                            turns: open ? 0 : 0.5,
+                            duration: const Duration(milliseconds: 150),
+                            child: const Icon(Icons.expand_more, size: 18, color: AppColors.faint),
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                  ?trailing,
+                  ?widget.trailing,
                 ],
               ),
-              const Padding(
-                padding: EdgeInsets.only(top: 8, bottom: 8),
-                child: Divider(height: 1, color: Color(0xFFF1F5F9)),
+              if (open)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8, bottom: 8),
+                  child: Divider(height: 1, color: Color(0xFFF1F5F9)),
+                ),
+            ],
+            if (title == null || open) ...widget.children,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// آخر خمسة أيام مرصودة: بلاطتان في السطر كما في شبكة الحضور بالنسخة المكتبية.
+///
+/// السطر الكامل لتاريخ وحالة يترك نصف العرض فارغاً، فتُقسم البلاطات عمودين.
+List<Widget> _recentAttendance(List<AttendanceMark> marks) {
+  final recent = [...marks]..sort((a, b) => b.date.compareTo(a.date));
+  if (recent.isEmpty) return const [];
+  final shown = recent.take(5).toList();
+  return [
+    const _Rule(),
+    for (var i = 0; i < shown.length; i += 2)
+      Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          children: [
+            Expanded(child: _AttendanceTile(mark: shown[i])),
+            const SizedBox(width: 6),
+            // الفردي الأخير يبقى بعرض بلاطة لا بعرض السطر
+            Expanded(child: i + 1 < shown.length ? _AttendanceTile(mark: shown[i + 1]) : const SizedBox.shrink()),
+          ],
+        ),
+      ),
+  ];
+}
+
+/// يوم واحد: تاريخه وحالته داخل بلاطة خفيفة.
+class _AttendanceTile extends StatelessWidget {
+  const _AttendanceTile({required this.mark});
+
+  final AttendanceMark mark;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+      decoration: _cellBox(),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              mark.date,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: AppColors.text),
+            ),
+          ),
+          const SizedBox(width: 4),
+          _AttendanceChip(status: mark.status),
+        ],
+      ),
+    );
+  }
+}
+
+/// حالة يوم واحد بلونها — مطابق لـ `ATTENDANCE_STATUS_STYLE`.
+class _AttendanceChip extends StatelessWidget {
+  const _AttendanceChip({required this.status});
+
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color, background, border) = switch (status) {
+      'absent' => ('غائب', AppColors.danger, AppColors.dangerSoft, AppColors.dangerBorder),
+      'excused' => ('مأذون', const Color(0xFFD97706), const Color(0xFFFEF3C7), const Color(0xFFFDE68A)),
+      _ => ('حاضر', AppColors.success, AppColors.successSoft, AppColors.successBorder),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(Corner.chip),
+        border: Border.all(color: border),
+      ),
+      child: Text(label, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: color)),
+    );
+  }
+}
+
+/// تفصيل الرصيد: المقبوض مقابل المطالبات، ومنها المستحق اليوم.
+///
+/// الرصيد رقمٌ واحد يجمع أشياء عدة، فيبدو مخالفاً للحدس: طالبٌ سدّد كل ما استُحق
+/// عليه يبقى «عليه» قيمة أقساطه القادمة، لأن القسط المجدول مطالبة قائمة —
+/// هكذا تحسبه النسخة المكتبية. هذا السطر يُظهر الأرقام التي بُني منها.
+class _BalanceBreakdown extends StatelessWidget {
+  const _BalanceBreakdown({required this.student, required this.totalPaid, required this.installments});
+
+  final Student student;
+  final double totalPaid;
+  final List<Installment> installments;
+
+  @override
+  Widget build(BuildContext context) {
+    final store = StoreScope.of(context);
+    final dueSoFar = installments.where(isInstallmentDue).fold<double>(0, (a, i) => a + i.amount);
+    final dues = installments.fold<double>(0, (a, i) => a + i.amount);
+    final fees = store.enrollments
+        .where((e) => e.studentId == student.id && (e.status == 'active' || e.status == 'completed'))
+        .fold<double>(0, (a, e) => a + (e.appliedPrice ?? e.customPrice ?? 0));
+    final overdue = overdueByStudent(installments)[student.id] ?? 0;
+    if (dues == 0 && fees == 0 && totalPaid == 0) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.bg,
+          borderRadius: BorderRadius.circular(Corner.box),
+          border: Border.all(color: AppColors.line),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                [
+                  'المقبوض ${money(totalPaid)}',
+                  // المطالبة اليوم هي المستحق حتى تاريخه، والباقي مجدول لم يحن
+                  if (dues > 0) 'المستحق حتى اليوم ${money(dueSoFar)} من ${money(dues)}',
+                  if (fees > 0) 'رسوم التسجيل ${money(fees)}',
+                ].join('  ·  '),
+                maxLines: 2,
+                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: AppColors.muted),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              overdue > 0 ? 'المستحق اليوم: ${money(overdue)}' : 'لا مستحق اليوم',
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w900,
+                color: overdue > 0 ? AppColors.danger : AppColors.success,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// خصم رسوم الطالب — المقابل لشارة «خصم الرسوم» في StudentDetail.tsx.
+///
+/// تظهر لمن له خصم فقط: نسبته إن كانت نسبة، وسببه، والرسم الشهري بعده.
+class _DiscountBadge extends StatelessWidget {
+  const _DiscountBadge({required this.student});
+
+  final Student student;
+
+  @override
+  Widget build(BuildContext context) {
+    final net = student.customMonthlyFee;
+    final hasDiscount = student.academicDiscountApplied || (net != null && net > 0);
+    if (!hasDiscount) return const SizedBox.shrink();
+
+    final rate = student.academicDiscountRate;
+    final reason = student.exceptionReason.trim();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.amberSoft,
+          borderRadius: BorderRadius.circular(Corner.box),
+          border: Border.all(color: AppColors.amberBorder),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.sell_outlined, size: 15, color: AppColors.amberDark),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text.rich(
+                TextSpan(
+                  text: 'خصم الرسوم',
+                  children: [
+                    if (rate > 0)
+                      TextSpan(
+                        text: '  ${trimNum(rate)}%',
+                        style: TextStyle(fontFamily: 'monospace', color: AppColors.amberDark),
+                      ),
+                    if (reason.isNotEmpty)
+                      TextSpan(
+                        text: '  ($reason)',
+                        style: const TextStyle(color: AppColors.muted, fontWeight: FontWeight.w600),
+                      ),
+                  ],
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: AppColors.heading),
+              ),
+            ),
+            if (net != null && net > 0) ...[
+              const SizedBox(width: 6),
+              Text(
+                'الصافي الشهري: ${money(net)}',
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.success),
               ),
             ],
-            ...children,
           ],
         ),
       ),
@@ -453,47 +732,99 @@ class _Rule extends StatelessWidget {
 /// صندوق خانة واحدة: خلفية رمادية خفيفة وإطار رفيع، ومحتوى في المنتصف.
 BoxDecoration _cellBox() => BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.bg, border: Border.all(color: AppColors.line));
 
-/// كود البوابة شارةً في رأس بطاقة البيانات — كشارة «كود البوابة» في رأس الملف بـ Center.
-class _PortalCodeChip extends StatelessWidget {
-  const _PortalCodeChip({required this.student, required this.canEdit});
-  final Student student;
-  final bool canEdit;
+/// كلمة مرور بوابة — مطابقة لـ `SecretCode` في StudentDetail.tsx: مخفية بنقاط،
+/// وزرّا إظهار ونسخ، وتوليد لمن لا كلمة له.
+class _SecretCode extends StatefulWidget {
+  const _SecretCode({required this.label, required this.code, this.onGenerate});
+
+  final String label;
+  final String code;
+
+  /// `null` لمن لا يملك تعديل الطلاب: لا زر توليد.
+  final VoidCallback? onGenerate;
+
+  @override
+  State<_SecretCode> createState() => _SecretCodeState();
+}
+
+class _SecretCodeState extends State<_SecretCode> {
+  bool visible = false;
 
   @override
   Widget build(BuildContext context) {
-    final store = StoreScope.of(context);
-    final code = student.portalCode.trim();
-    if (code.isEmpty) {
-      if (!canEdit) return const SizedBox.shrink();
-      return InkWell(
-        onTap: () {
-          store.ensureStudentPortalCodes([student]);
-          showAppSnack(context, 'تم توليد رمز الدخول');
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Text('توليد كود البوابة', style: TextStyle(color: AppColors.amber, fontWeight: FontWeight.w800, fontSize: 11.5)),
-        ),
-      );
-    }
+    final code = widget.code.trim();
+
+    Widget action(IconData icon, String tooltip, VoidCallback onTap) => IconButton(
+          tooltip: tooltip,
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          padding: EdgeInsets.zero,
+          icon: Icon(icon, size: 16, color: AppColors.muted),
+          onPressed: onTap,
+        );
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.amberSoft, border: Border.all(color: AppColors.amberBorder)),
+      padding: const EdgeInsetsDirectional.fromSTEB(10, 4, 4, 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(Corner.box),
+        color: AppColors.amberSoft,
+        border: Border.all(color: AppColors.amberBorder),
+      ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.vpn_key_outlined, size: 12, color: AppColors.amber),
-          const SizedBox(width: 4),
-          Text(
-            code,
-            style: TextStyle(
-              fontFamily: 'monospace',
-              fontWeight: FontWeight.w900,
-              fontSize: 12,
-              letterSpacing: 1,
-              color: AppColors.heading,
+          Icon(Icons.key_outlined, size: 15, color: AppColors.amber),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              widget.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: AppColors.heading, fontSize: 12, fontWeight: FontWeight.w800),
             ),
           ),
+          if (code.isEmpty)
+            widget.onGenerate == null
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    child: Text('غير محدد', style: TextStyle(color: AppColors.faint, fontSize: 11.5)),
+                  )
+                : TextButton.icon(
+                    onPressed: () {
+                      widget.onGenerate!();
+                      showAppSnack(context, 'تم توليد ${widget.label}');
+                    },
+                    icon: Icon(Icons.autorenew, size: 15, color: AppColors.amber),
+                    label: Text('توليد', style: TextStyle(color: AppColors.amber, fontWeight: FontWeight.w800, fontSize: 12)),
+                  )
+          else ...[
+            Container(
+              constraints: const BoxConstraints(minWidth: 76),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(Corner.box),
+                border: Border.all(color: AppColors.line),
+              ),
+              child: Text(
+                visible ? code : '••••••',
+                textDirection: TextDirection.ltr,
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12.5,
+                  letterSpacing: 1.2,
+                  color: AppColors.heading,
+                ),
+              ),
+            ),
+            action(visible ? Icons.visibility_off_outlined : Icons.visibility_outlined, visible ? 'إخفاء' : 'إظهار',
+                () => setState(() => visible = !visible)),
+            action(Icons.copy_outlined, 'نسخ', () async {
+              await Clipboard.setData(ClipboardData(text: code));
+              if (context.mounted) showAppSnack(context, 'تم نسخ ${widget.label}');
+            }),
+          ],
         ],
       ),
     );

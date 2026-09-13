@@ -254,6 +254,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   /// `true` = بوابة الطلاب والمعلمين، `false` = دخول الإدارة.
   bool portalTab = true;
+
+  /// إظهار كلمة المرور ورمز البوابة — الكتابة العمياء تُفشل المحاولة بلا سبب ظاهر.
+  bool showPass = false;
+  bool showCode = false;
   String? error;
   bool busy = false;
 
@@ -295,7 +299,8 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // حساب واحد: ندخل مباشرةً. أكثر من واحد: يختار المستخدم منشأته أو دوره.
+    // حساب واحد: فُتحت جلسته فندخل مباشرةً. أكثر من واحد: يختار المستخدم
+    // منشأته أو دوره، ثم يُعاد التحقق بالخيار لتُفتح جلسته هو
     if (result.users.length == 1) {
       setState(() => busy = false);
       _openPortal(result.users.first);
@@ -307,12 +312,36 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
+  /// اختيار حساب من عدّة: يُعاد التحقق بالخيار فتُفتح جلسته هو لا غيره.
+  Future<void> _chooseAccount(PortalUser account) async {
+    if (busy) return;
+    setState(() {
+      busy = true;
+      error = null;
+    });
+    final result = await const PortalService().login(portalId.text, portalCode.text, choice: account);
+    if (!mounted) return;
+    setState(() => busy = false);
+    if (!result.ok || result.users.length != 1) {
+      setState(() => error = result.error ?? 'تعذّر فتح جلسة البوابة، حاول مجدداً');
+      return;
+    }
+    setState(() => choices = const []);
+    _openPortal(result.users.first);
+  }
+
   void _openPortal(PortalUser account) {
+    // الخروج يُنهي جلسة البوابة: لا تبقى صلاحيات طالب أو ولي أمر على الجهاز
+    Future<void> exit() async {
+      await supabaseSignOut();
+      if (mounted) Navigator.of(context).pop();
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => account.isTeacher
-            ? TeacherPortalScreen(user: account, onExit: () => Navigator.of(context).pop())
-            : StudentPortalScreen(user: account, onExit: () => Navigator.of(context).pop()),
+            ? TeacherPortalScreen(user: account, onExit: exit)
+            : StudentPortalScreen(user: account, onExit: exit),
       ),
     );
   }
@@ -433,6 +462,16 @@ class _LoginScreenState extends State<LoginScreen> {
           controller: user,
           autofocus: true,
           textInputAction: TextInputAction.next,
+          autocorrect: false,
+          enableSuggestions: false,
+          // السحابة تعرف الحساب بأحرف إنجليزية صغيرة: حرف كبير أو مسافة من
+          // التصحيح التلقائي كان يردّ «اسم المستخدم أو كلمة المرور غير صحيحة»
+          inputFormatters: [
+            FilteringTextInputFormatter.deny(RegExp(r'\s')),
+            TextInputFormatter.withFunction(
+              (previous, next) => next.copyWith(text: next.text.toLowerCase()),
+            ),
+          ],
           style: _fieldText,
           decoration: authFieldDecoration('أدخل اسم المستخدم...', Icons.person_outline),
         ),
@@ -441,12 +480,19 @@ class _LoginScreenState extends State<LoginScreen> {
         const SizedBox(height: 6),
         TextField(
           controller: pass,
-          obscureText: true,
+          obscureText: !showPass,
+          autocorrect: false,
+          enableSuggestions: false,
           onSubmitted: (_) => _submit(),
           style: _fieldText.copyWith(fontFamily: 'monospace'),
-          decoration: authFieldDecoration('أدخل كلمة المرور...', Icons.lock_outline),
+          decoration: authFieldDecoration(
+            'أدخل كلمة المرور...',
+            Icons.lock_outline,
+            suffix: AuthRevealButton(visible: showPass, onTap: () => setState(() => showPass = !showPass)),
+          ),
         ),
-        AuthErrorBox(message: error),
+        // جلسة انتهت أثناء العمل: يُقال للمستخدم لماذا عاد إلى هنا
+        AuthErrorBox(message: error ?? StoreScope.of(context).sessionExpiredNotice),
         const SizedBox(height: 16),
         AuthSubmitButton(
           busy: busy,
@@ -479,10 +525,14 @@ class _LoginScreenState extends State<LoginScreen> {
         TextField(
           controller: portalCode,
           keyboardType: TextInputType.number,
-          obscureText: true,
+          obscureText: !showCode,
           onSubmitted: (_) => _portalSubmit(),
           style: _fieldText.copyWith(fontFamily: 'monospace'),
-          decoration: authFieldDecoration('أدخل رمز الدخول...', Icons.vpn_key_outlined),
+          decoration: authFieldDecoration(
+            'أدخل رمز الدخول...',
+            Icons.vpn_key_outlined,
+            suffix: AuthRevealButton(visible: showCode, onTap: () => setState(() => showCode = !showCode)),
+          ),
         ),
         AuthErrorBox(message: error),
         // أكثر من حساب لنفس الرقم: يختار المستخدم منشأته أو دوره
@@ -494,7 +544,7 @@ class _LoginScreenState extends State<LoginScreen> {
             Padding(
               padding: const EdgeInsets.only(bottom: 7),
               child: PressableScale(
-                onTap: () => _openPortal(account),
+                onTap: () => _chooseAccount(account),
                 child: Container(
                   padding: const EdgeInsets.all(11),
                   decoration: BoxDecoration(
@@ -504,7 +554,15 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   child: Row(
                     children: [
-                      Icon(account.isTeacher ? Icons.school : Icons.person, size: 16, color: AppColors.amber),
+                      Icon(
+                        account.isTeacher
+                            ? Icons.school
+                            : account.isParent
+                                ? Icons.family_restroom
+                                : Icons.person,
+                        size: 16,
+                        color: AppColors.amber,
+                      ),
                       const SizedBox(width: 9),
                       Expanded(
                         child: Column(
@@ -518,7 +576,11 @@ class _LoginScreenState extends State<LoginScreen> {
                               style: TextStyle(color: AppColors.heading, fontSize: 12.5, fontWeight: FontWeight.w800),
                             ),
                             Text(
-                              '${account.isTeacher ? 'معلم' : 'طالب'} · ${account.tenantName}',
+                              [
+                                account.roleLabel,
+                                if (account.isParent && account.studentName.isNotEmpty) 'لـ ${account.studentName}',
+                                account.tenantName,
+                              ].join(' · '),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(color: AppColors.muted, fontSize: 10.5),

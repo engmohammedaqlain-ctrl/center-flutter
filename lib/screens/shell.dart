@@ -41,14 +41,14 @@ class _AppShellState extends State<AppShell> {
   List<Section> _sections(AppStore store) {
     final school = store.isSchool;
     final all = [
-      const Section('students', 'الطلاب والتسجيل', 'الطلاب', Icons.groups_outlined, Icons.groups, StudentsScreen()),
-      const Section('attendance', 'الحضور والغياب', 'الحضور', Icons.fact_check_outlined, Icons.fact_check, AttendanceScreen()),
-      const Section('finance', 'المالية والصندوق', 'المالية', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet, FinanceScreen()),
+      const Section('students', 'الطلاب', 'الطلاب', Icons.groups_outlined, Icons.groups, StudentsScreen()),
+      const Section('attendance', 'الحضور', 'الحضور', Icons.fact_check_outlined, Icons.fact_check, AttendanceScreen()),
+      const Section('finance', 'المالية', 'المالية', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet, FinanceScreen()),
       if (school)
-        const Section('classes', 'الصفوف والشعب', 'الصفوف', Icons.apartment_outlined, Icons.apartment, ClassesScreen())
+        const Section('classes', 'الصفوف', 'الصفوف', Icons.apartment_outlined, Icons.apartment, ClassesScreen())
       else
-        const Section('schedule', 'الجداول والحصص', 'الجدول', Icons.calendar_month_outlined, Icons.calendar_month, ScheduleScreen()),
-      const Section('settings', 'الإعدادات العامة', 'الإعدادات', Icons.settings_outlined, Icons.settings, SettingsScreen()),
+        const Section('schedule', 'الجداول', 'الجدول', Icons.calendar_month_outlined, Icons.calendar_month, ScheduleScreen()),
+      const Section('settings', 'الإعدادات', 'الإعدادات', Icons.settings_outlined, Icons.settings, SettingsScreen()),
     ];
     final allowed = all.where((s) => store.canOpenSection(s.id)).toList();
     return allowed.isEmpty ? [all.first] : allowed;

@@ -62,7 +62,7 @@ Future<void> printWeeklyAttendance(
   );
 
   if (!context.mounted) return;
-  await PdfKit.preview(bytes, 'كشف الحضور - $title');
+  await PdfKit.preview(bytes, PdfKit.fileName('كشف تفقد وحضور الطلاب $title'));
 }
 
 /// طباعة كشف طلاب الصف — المقابل لـ `ClassPrintRoster.tsx`.
@@ -117,5 +117,5 @@ Future<void> printClassRoster(
   );
 
   if (!context.mounted) return;
-  await PdfKit.preview(bytes, 'كشف الصف - ${room.name}');
+  await PdfKit.preview(bytes, PdfKit.fileName('كشف طلاب ${room.name}'));
 }

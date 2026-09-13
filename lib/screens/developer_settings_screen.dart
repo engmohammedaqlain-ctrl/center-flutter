@@ -8,6 +8,7 @@ import '../data/demo_data.dart';
 import '../data/institution.dart';
 import '../data/store.dart';
 import '../data/supabase.dart';
+import '../data/tenant_service.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
@@ -28,7 +29,6 @@ class DeveloperSettingsScreen extends StatefulWidget {
 }
 
 class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
-  static const _devPassword = 'anas2026';
 
   bool unlocked = false;
   final gate = TextEditingController();
@@ -148,9 +148,12 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
 
   void _unlock() {
     final entered = gate.text.trim();
-    if (entered.isEmpty) {
+    if (!TenantService.hasMasterAccount) {
+      // نسخة وُزّعت بلا حساب مطور: لا باب خلفياً يُفتح بكلمة محفوظة في الكود
+      setState(() => gateError = 'هذه النسخة بُنيت بلا حساب مطور');
+    } else if (entered.isEmpty) {
       setState(() => gateError = 'يرجى إدخال كلمة مرور المطور');
-    } else if (entered != _devPassword) {
+    } else if (entered != TenantService.masterPassword.trim()) {
       setState(() => gateError = 'كلمة المرور غير صحيحة');
     } else {
       setState(() {
@@ -510,9 +513,9 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
               confirmLabel: 'حقن',
             );
             if (!ok || !context.mounted) return;
-            injectDemoData(store);
+            final stats = injectDemoData(store);
             await store.flush();
-            if (context.mounted) showAppSnack(context, 'تم حقن البيانات التجريبية');
+            if (context.mounted) showDemoDataResult(context, stats);
           },
         ),
         const SizedBox(height: 8),
@@ -692,4 +695,100 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
     setState(() => busy = false);
     showAppSnack(context, 'تم حفظ إعدادات المنشأة وتطبيقها');
   }
+}
+
+/// حصيلة التوليد وحسابا الدخول التجريبيان — المقابل لرسالة النجاح في
+/// `DeveloperSettings.tsx`. تُعرض ورقةً لا إشعاراً عابراً لأن رمز الدخول
+/// يُنسخ ويُجرَّب، فلا يصحّ أن يختفي بعد ثانيتين.
+Future<void> showDemoDataResult(BuildContext context, DemoDataStats stats) {
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.white,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
+    builder: (ctx) => SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.science_outlined, size: 18, color: AppColors.success),
+                const SizedBox(width: 8),
+                Expanded(child: Text('تم توليد البيانات التجريبية', style: AppText.cardTitle)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            InfoStrip(
+              child: Text(
+                '${stats.students} طالباً  ·  ${stats.groups} شعبة/مادة  ·  ${stats.evaluations} تقييماً',
+                style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _demoAccount('حساب معلم للتجربة', stats.teacher),
+            const SizedBox(height: 8),
+            _demoAccount('حساب طالب للتجربة', stats.student),
+            const SizedBox(height: 8),
+            _demoAccount('حساب ولي أمر للتجربة', stats.parent),
+            const SizedBox(height: 14),
+            GhostButton(label: 'إغلاق', onPressed: () => Navigator.pop(ctx)),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// بطاقة حساب: الاسم، ثم رقم الهوية ورمز الدخول قابلَين للنسخ.
+Widget _demoAccount(String title, DemoAccount account) {
+  return Container(
+    padding: const EdgeInsets.all(11),
+    decoration: tileDecoration(),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(color: AppColors.muted, fontSize: 10.5, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 3),
+        Text(
+          account.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: AppColors.heading, fontSize: 12.5, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            const Text('الهوية:', style: TextStyle(color: AppColors.muted, fontSize: 11)),
+            const SizedBox(width: 4),
+            SelectableText(
+              account.nationalId,
+              style: TextStyle(
+                color: AppColors.heading,
+                fontSize: 12,
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Text('الرمز:', style: TextStyle(color: AppColors.muted, fontSize: 11)),
+            const SizedBox(width: 4),
+            SelectableText(
+              account.portalCode,
+              style: TextStyle(
+                color: AppColors.heading,
+                fontSize: 12,
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.2,
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
 }

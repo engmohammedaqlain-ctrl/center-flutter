@@ -460,9 +460,14 @@ class _FinanceScreenState extends State<FinanceScreen> {
           date: p.paymentDate,
           isPayout: true,
           category: 'أجور تدريس',
-          description: store.teacherById(p.teacherId) != null
-              ? 'صرف مستحقات المعلم: ${store.teacherById(p.teacherId)!.name}'
-              : 'صرف مستحقات معلم',
+          // الاسم المجمَّد وقت الصرف أولاً: سند سابق لا يتغيّر نصّه إذا عُدّل اسم
+          // المعلم أو حُذف بعد صرفه — مطابق لـ `p.teacher_name || t?.name`
+          description: switch (p.teacherName.trim().isNotEmpty
+              ? p.teacherName.trim()
+              : (store.teacherById(p.teacherId)?.name ?? '')) {
+            '' => 'صرف مستحقات معلم',
+            final name => 'صرف مستحقات المعلم: $name',
+          },
           amount: p.amount,
           method: p.method,
         ),
@@ -473,19 +478,19 @@ class _FinanceScreenState extends State<FinanceScreen> {
         StatRow(
           children: [
             StatCard(
-              label: 'الإجمالي',
+              label: 'المصروفات',
               value: money(store.totalExpenses + store.totalPayouts),
               color: AppColors.danger,
               caption: '${rows.length} سند',
             ),
             StatCard(
-              label: 'مصروفات تشغيلية',
+              label: 'تشغيلية',
               value: money(store.totalExpenses),
               color: AppColors.heading,
               caption: '${expenses.length} سند',
             ),
             StatCard(
-              label: 'أجور المعلمين',
+              label: 'أجور معلمين',
               value: money(store.totalPayouts),
               color: AppColors.amber,
               caption: '${payouts.length} دفعة',

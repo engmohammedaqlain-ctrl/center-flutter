@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/payment_methods.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -9,6 +10,7 @@ import '../widgets/widgets.dart';
 
 /// نافذة «تسجيل سند صرف جديد» — المقابل لـ `isExpenseModalOpen` في Finance.tsx.
 ///
+/// سندٌ عام أو صرف أجر معلم، بنفس النموذج كما في النسخة المكتبية.
 /// تُعيد `true` إن حُفظ السند.
 Future<bool> showExpenseSheet(BuildContext context, AppStore store) async {
   final result = await showModalBottomSheet<bool>(
@@ -29,20 +31,36 @@ class _ExpenseSheet extends StatefulWidget {
 }
 
 class _ExpenseSheetState extends State<_ExpenseSheet> {
+  /// `expense` سند مصروف عام، و`payout` صرف أجر معلم.
+  String entryType = 'expense';
   String category = expenseCategories.first;
-  String method = 'cash';
+  String teacherId = '';
+  late String method = _defaultMethod();
   final description = TextEditingController();
   final amount = TextEditingController();
+  final notes = TextEditingController();
   late String date = isoDate(DateTime.now());
 
   bool submitting = false;
   String? error;
   final errors = FieldErrors();
 
+  bool get isPayout => entryType == 'payout';
+
+  /// وسائل الدفع المعرّفة في المنشأة — الصرف يتبعها كالقبض، لا قائمة ثابتة.
+  List<PaymentMethodItem> get methods => widget.store.activePaymentMethods;
+
+  String _defaultMethod() {
+    final active = widget.store.activePaymentMethods;
+    if (active.isEmpty) return 'cash';
+    return active.firstWhere((m) => m.isDefault, orElse: () => active.first).id;
+  }
+
   @override
   void dispose() {
     description.dispose();
     amount.dispose();
+    notes.dispose();
     super.dispose();
   }
 
@@ -57,26 +75,47 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
     if (picked != null) setState(() => date = isoDate(picked));
   }
 
+  void _switchType(String type) {
+    if (entryType == type) return;
+    setState(() {
+      entryType = type;
+      error = null;
+      errors.reset();
+    });
+  }
+
   void _save() {
     final value = double.tryParse(amount.text.trim()) ?? 0;
     setState(() {
       error = null;
       errors
         ..reset()
-        ..check('description', description.text.trim().isEmpty, 'البيان / المستفيد مطلوب')
+        ..check('teacher', isPayout && teacherId.isEmpty, 'اختر المعلم المستفيد')
+        ..check('description', !isPayout && description.text.trim().isEmpty, 'البيان / المستفيد مطلوب')
         ..check('amount', value <= 0, 'المبلغ يجب أن يكون أكبر من صفر');
     });
     if (errors.report(context)) return;
 
     setState(() => submitting = true);
     try {
-      widget.store.addExpense(
-        category: category,
-        description: description.text,
-        amount: value,
-        expenseDate: date,
-        method: method,
-      );
+      if (isPayout) {
+        widget.store.addTeacherPayout(
+          teacherId: teacherId,
+          amount: value,
+          paymentDate: date,
+          method: method,
+          notes: notes.text,
+        );
+      } else {
+        widget.store.addExpense(
+          category: category,
+          description: description.text,
+          amount: value,
+          expenseDate: date,
+          method: method,
+          notes: notes.text,
+        );
+      }
       if (mounted) Navigator.pop(context, true);
     } on StoreException catch (e) {
       if (mounted) setState(() => error = e.message);
@@ -87,6 +126,7 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final teachers = widget.store.teachers;
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: SingleChildScrollView(
@@ -99,7 +139,7 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
               children: [
                 Expanded(
                   child: Text(
-                    'تسجيل سند صرف جديد',
+                    isPayout ? 'تسجيل صرف أجر معلم' : 'تسجيل سند صرف جديد',
                     style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
                   ),
                 ),
@@ -111,29 +151,48 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
             ),
             const SizedBox(height: 12),
 
-            const FieldLabel('بند المصروف / التصنيف:'),
-            AppDropdown<String>(
-              value: category,
-              items: [
-                for (final c in expenseCategories)
-                  DropdownMenuItem(value: c, child: Text(expenseCategoryLabel(c))),
-              ],
-              onChanged: (v) => setState(() => category = v ?? category),
-            ),
-            const SizedBox(height: 10),
+            _TypeTabs(active: entryType, onSelect: _switchType),
+            const SizedBox(height: 12),
 
-            FieldLabel('البيان / المستفيد:', key: errors.key('description'), requiredField: true),
-            TextField(
-              controller: description,
-              textInputAction: TextInputAction.next,
-              onChanged: (_) {
-                if (errors.clear('description')) setState(() {});
-              },
-              decoration: InputDecoration(
-                hintText: 'مثال: شراء أوراق وطباعة كشوفات...',
-                errorText: errors['description'],
+            if (isPayout) ...[
+              FieldLabel('المعلم المستفيد:', key: errors.key('teacher'), requiredField: true),
+              AppDropdown<String>(
+                value: teacherId.isEmpty ? null : teacherId,
+                hint: '-- اختر المعلم --',
+                errorText: errors['teacher'],
+                items: [
+                  for (final t in teachers) DropdownMenuItem(value: t.id, child: Text(t.name)),
+                ],
+                onChanged: (v) => setState(() {
+                  teacherId = v ?? '';
+                  errors.clear('teacher');
+                }),
               ),
-            ),
+            ] else ...[
+              const FieldLabel('بند المصروف / التصنيف:'),
+              AppDropdown<String>(
+                value: category,
+                items: [
+                  for (final c in expenseCategories)
+                    DropdownMenuItem(value: c, child: Text(expenseCategoryLabel(c))),
+                ],
+                onChanged: (v) => setState(() => category = v ?? category),
+              ),
+              const SizedBox(height: 10),
+
+              FieldLabel('البيان / المستفيد:', key: errors.key('description'), requiredField: true),
+              TextField(
+                controller: description,
+                textInputAction: TextInputAction.next,
+                onChanged: (_) {
+                  if (errors.clear('description')) setState(() {});
+                },
+                decoration: InputDecoration(
+                  hintText: 'مثال: شراء أوراق وطباعة كشوفات...',
+                  errorText: errors['description'],
+                ),
+              ),
+            ],
             const SizedBox(height: 10),
 
             Row(
@@ -198,14 +257,19 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
 
             const FieldLabel('طريقة الدفع:'),
             AppDropdown<String>(
-              value: method,
+              value: methods.any((m) => m.id == method) ? method : null,
               items: [
-                for (final e in expenseMethodNames.entries)
-                  DropdownMenuItem(value: e.key, child: Text(e.value)),
+                for (final m in methods) DropdownMenuItem(value: m.id, child: Text(m.name)),
               ],
               onChanged: (v) => setState(() => method = v ?? method),
             ),
+            const SizedBox(height: 10),
 
+            const FieldLabel('ملاحظات (اختياري):'),
+            TextField(
+              controller: notes,
+              decoration: const InputDecoration(hintText: 'أي تفاصيل أو ملاحظات إضافية...'),
+            ),
 
             if (error != null)
               Padding(
@@ -223,7 +287,11 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: PrimaryButton(
-                    label: submitting ? 'جاري الحفظ...' : 'حفظ سند الصرف',
+                    label: submitting
+                        ? 'جاري الحفظ...'
+                        : isPayout
+                            ? 'تسجيل صرف الأجر'
+                            : 'حفظ سند الصرف',
                     color: AppColors.navy,
                     busy: submitting,
                     onPressed: submitting ? null : _save,
@@ -232,6 +300,58 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// تبويبا نوع السند: مصروف عام أو أجر معلم.
+class _TypeTabs extends StatelessWidget {
+  const _TypeTabs({required this.active, required this.onSelect});
+
+  final String active;
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: AppColors.bg,
+        borderRadius: BorderRadius.circular(Corner.box),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Row(
+        children: [
+          _tab('expense', 'مصروف عام', AppColors.heading),
+          _tab('payout', 'صرف أجر معلم', AppColors.amberDark),
+        ],
+      ),
+    );
+  }
+
+  Widget _tab(String id, String label, Color activeColor) {
+    final selected = active == id;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => onSelect(id),
+        child: Container(
+          height: 32,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(Corner.input),
+            border: selected ? Border.all(color: AppColors.line) : null,
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: selected ? activeColor : AppColors.muted,
+            ),
+          ),
         ),
       ),
     );

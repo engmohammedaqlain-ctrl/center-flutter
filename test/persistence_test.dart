@@ -115,6 +115,49 @@ void main() {
     expect(second.payments.any((p) => p.receiptNumber == payment.receiptNumber), isTrue);
   });
 
+  test('الإقلاع يصحّح رصيداً كتبه إصدار أقدم بقاعدة حساب أخرى', () async {
+    final disk = FakeDisk();
+    final first = AppStore.forTesting();
+    await first.bootstrap(disk);
+    injectDemoData(first);
+    final student = first.students.first;
+
+    // طالبٌ سدّد القسطين المستحقين عليه، والثالث لم يحن موعده: رصيده صفر
+    first.installments.removeWhere((i) => i.studentId == student.id);
+    first.payments.removeWhere((p) => p.studentId == student.id);
+    final today = DateTime.now();
+    for (var i = 0; i < 3; i++) {
+      first.installments.add(Installment(
+        id: 'inst-$i',
+        studentId: student.id,
+        title: 'القسط المدرسي (${i + 1})',
+        amount: 162,
+        dueDate: today.add(Duration(days: 30 * (i - 1))),
+      ));
+    }
+    for (var i = 0; i < 2; i++) {
+      first.payments.add(Payment(
+        id: 'pay-$i',
+        receiptNumber: '2026/200$i',
+        studentId: student.id,
+        amount: 162,
+        method: 'cash',
+        date: today,
+        createdAt: today.toIso8601String(),
+      ));
+    }
+    // رقم من القاعدة القديمة: الأقساط المستحقة وحدها ورسم الحجز يعود للرصيد
+    student.balance = 198;
+    first.markAllDirty();
+    await first.flush();
+
+    final second = AppStore.forTesting();
+    await second.bootstrap(disk);
+    final reloaded = second.studentById(student.id)!;
+    expect(reloaded.balance, closeTo(0, 0.01), reason: 'سدّد ما استُحق عليه، والثالث لم يحن');
+    expect(reloaded.balance, closeTo(second.computeStudentBalance(student.id), 0.01));
+  });
+
   test('the pending sync queue survives a restart', () async {
     final disk = FakeDisk();
     final first = AppStore.forTesting();

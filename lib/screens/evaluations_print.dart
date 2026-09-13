@@ -11,6 +11,9 @@ Future<void> printEvaluations(
   BuildContext context, {
   required AppStore store,
   required List<Evaluation> evaluations,
+
+  /// الشعبة المصفّى عليها — تدخل اسم الملف كما في `groupSuffix` بالنسخة المكتبية.
+  String groupName = '',
 }) async {
   final rows = [
     for (final e in evaluations)
@@ -44,5 +47,6 @@ Future<void> printEvaluations(
   );
 
   if (!context.mounted) return;
-  await PdfKit.preview(bytes, 'كشف الدرجات');
+  final suffix = groupName.trim().isEmpty ? '' : ' ${groupName.trim()}';
+  await PdfKit.preview(bytes, PdfKit.fileName('كشف الدرجات والتقييمات$suffix'));
 }

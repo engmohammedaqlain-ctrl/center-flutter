@@ -47,18 +47,18 @@ void main() {
       await _pump(tester, s, const Scaffold(body: SettingsScreen()), width: width);
 
       const expected = {
-        'الرسوم والمراحل': 'مرحلة جديدة',
+        'المراحل والرسوم': 'مرحلة جديدة',
         'وسائل الدفع': 'وسيلة دفع',
-        'المدرسين': 'إضافة مدرس',
-        'المواد الدراسية': 'إضافة مادة',
-        'المستخدمين والصلاحيات': 'مستخدم جديد',
+        'المعلمون': 'إضافة مدرس',
+        'المواد': 'إضافة مادة',
+        'المستخدمون': 'مستخدم جديد',
       };
       for (final e in expected.entries) {
         await _openTab(tester, e.key);
         expect(find.text(e.value), findsOneWidget, reason: e.key);
       }
 
-      await _openTab(tester, 'البيانات والمطور');
+      await _openTab(tester, 'البيانات والنسخ');
       for (final label in expected.values) {
         expect(find.text(label), findsNothing, reason: 'تبويب البيانات بلا زر إضافة');
       }
@@ -74,7 +74,7 @@ void main() {
     await s.flush();
   });
 
-  testWidgets('المركز يرى القاعات لا الرسوم والمراحل', (tester) async {
+  testWidgets('المركز يرى القاعات لا المراحل والرسوم', (tester) async {
     final s = await _store();
     await s.saveInstitution(type: 'center');
     expect(s.isSchool, isFalse);
@@ -83,7 +83,7 @@ void main() {
     // شريط التبويبات يتمرّر أفقياً، فما خرج منه لا يُبنى حتى يُمرَّر إليه
     await tester.scrollUntilVisible(find.text('القاعات'), 120, scrollable: find.byType(Scrollable).first);
     expect(find.text('القاعات'), findsOneWidget);
-    expect(find.text('الرسوم والمراحل'), findsNothing);
+    expect(find.text('المراحل والرسوم'), findsNothing);
     await s.flush();
   });
 
