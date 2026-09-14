@@ -467,7 +467,13 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     final studentComplete = isPhoneComplete(phoneNumber, phonePrefix);
     final fullStudentPhone = combinePhoneAndPrefix(phoneNumber, phonePrefix);
     final grades = _gradeOptions(store);
+    // شعب المرحلة المختارة وحدها، ومعها شعبة الطالب القائمة إن لم تعد موجودة
     final matchingSections = store.rooms.where((r) => isSameGrade(r.gradeLevel, grade)).toList();
+    final sectionNames = <String>[
+      for (final r in matchingSections)
+        if (r.name.trim().isNotEmpty) r.name,
+      if (sectionCtl.text.trim().isNotEmpty && !matchingSections.any((r) => r.name == sectionCtl.text)) sectionCtl.text,
+    ];
     final idLen = nationalId.text.length;
 
     return PopScope(
@@ -531,6 +537,9 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                   onChanged: (v) => setState(() {
                     grade = v ?? grade;
                     errors.clear('grade');
+                    // شعبة المرحلة السابقة لا تبقى تحت مرحلة لا تملكها
+                    final kept = store.rooms.any((r) => isSameGrade(r.gradeLevel, grade) && r.name == sectionCtl.text);
+                    if (!kept) sectionCtl.text = '';
                   }),
                 ),
               ],
@@ -539,12 +548,16 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
             _pair(
               [
                 const FieldLabel('الشعبة'),
-                TextField(
-                  controller: sectionCtl,
-                  onChanged: (_) => setState(() {}),
-                  decoration: InputDecoration(
-                    hintText: matchingSections.isEmpty ? 'مثال: أ' : matchingSections.first.name,
-                  ),
+                AppDropdown<String>(
+                  value: sectionNames.contains(sectionCtl.text) ? sectionCtl.text : null,
+                  // الكتابة اليدوية كانت تُنشئ شعباً لا وجود لها في المنشأة
+                  hint: grade.trim().isEmpty
+                      ? 'اختر المرحلة أولاً'
+                      : (sectionNames.isEmpty ? 'لا شعب لهذه المرحلة' : 'اختر الشعبة'),
+                  items: sectionNames
+                      .map((n) => DropdownMenuItem(value: n, child: Text(n, overflow: TextOverflow.ellipsis)))
+                      .toList(),
+                  onChanged: sectionNames.isEmpty ? (_) {} : (v) => setState(() => sectionCtl.text = v ?? sectionCtl.text),
                 ),
               ],
               [
@@ -556,16 +569,6 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                 ),
               ],
             ),
-            if (matchingSections.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final r in matchingSections) _sectionChip(r.name),
-                ],
-              ),
-            ],
             _gap,
             FieldLabel('جوال وواتساب الطالب', key: errors.key('phone'), requiredField: true),
             _phoneRow(
@@ -1209,25 +1212,6 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     return Padding(
       padding: const EdgeInsets.only(top: 5),
       child: Text(text, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700)),
-    );
-  }
-
-  Widget _sectionChip(String label) {
-    final on = sectionCtl.text == label;
-    return InkWell(
-      onTap: () => setState(() => sectionCtl.text = label),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(Corner.box),
-          color: on ? AppColors.amberSoft : Colors.white,
-          border: Border.all(color: on ? AppColors.amber : AppColors.line),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: on ? AppColors.amber : AppColors.muted),
-        ),
-      ),
     );
   }
 

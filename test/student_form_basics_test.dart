@@ -14,13 +14,14 @@ Finder _label(String text) => find.byWidgetPredicate((w) {
     }, description: 'عنوان الحقل «$text»');
 
 /// النموذج المبسّط: الأساسي وحده ظاهر، والباقي تحت «بيانات إضافية».
-Future<AppStore> _pumpForm(WidgetTester tester, {double width = 360}) async {
+Future<AppStore> _pumpForm(WidgetTester tester, {double width = 360, void Function(AppStore store)? setup}) async {
   tester.view.physicalSize = Size(width, 800);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
 
   final s = AppStore.forTesting();
   injectDemoData(s);
+  setup?.call(s);
   // إدخال بيانات العرض يجدول كتابةً على القرص: تُنجز قبل الاختبار كي لا يبقى مؤقت
   await s.flush();
   await tester.pumpWidget(StoreScope(
@@ -132,5 +133,43 @@ void main() {
     await tester.tap(find.text('إلغاء'));
     await tester.pumpAndSettle();
     expect(find.text('تجاهل ما أُدخل؟'), findsNothing);
+  });
+  group('الشعبة تُختار من شعب المرحلة', () {
+    testWidgets('بلا مرحلة: القائمة تطلب المرحلة أولاً', (tester) async {
+      await _pumpForm(tester);
+      expect(find.text('اختر المرحلة أولاً'), findsOneWidget);
+    });
+
+    testWidgets('اختيار المرحلة يعرض شعبها وحدها', (tester) async {
+      final s = await _pumpForm(tester);
+      final room = s.rooms.first;
+      final other = s.rooms.firstWhere((r) => r.gradeLevel != room.gradeLevel);
+
+      await tester.tap(find.text('اختر المرحلة'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(room.gradeLevel).last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('اختر الشعبة'));
+      await tester.pumpAndSettle();
+      expect(find.text(room.name), findsWidgets);
+      expect(find.text(other.name), findsNothing, reason: 'شعبة مرحلة أخرى');
+
+      await tester.tap(find.text(room.name).last);
+      await tester.pumpAndSettle();
+      expect(find.text(room.name), findsOneWidget);
+    });
+
+    testWidgets('مرحلة بلا شعب تقول ذلك', (tester) async {
+      final s = await _pumpForm(tester, setup: (store) => store.rooms.clear());
+      final grade = s.gradeOptions.first;
+
+      await tester.tap(find.text('اختر المرحلة'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(grade).last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('لا شعب لهذه المرحلة'), findsOneWidget);
+    });
   });
 }
