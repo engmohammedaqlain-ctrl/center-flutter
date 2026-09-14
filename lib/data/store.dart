@@ -193,6 +193,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (_loading) return;
     _dirty.add(table);
     _scheduleFlush();
+    // كل عملية تدخل طابور الرفع تُرفع تلقائياً، من أي مسار جاءت. مسارات كثيرة
+    // (الدفعة، رصد الكل حاضراً، رموز البوابة، الترحيلات) تكتب في الطابور مباشرةً
+    // فكانت تنتظر تعديلاً لاحقاً يمرّ على `_queue` كي تُرفع
+    if (table == _pendingTable) _onQueueChanged();
   }
 
   /// تعليم سجل واحد للكتابة بدل الجدول كله.
@@ -1455,6 +1459,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// بعد أن تستقر ردود الاشتراك لكل الجداول.
   void _onRealtimeJoined() {
     if (autoSync) {
+      // الاشتراك يعني أن الاتصال عاد: ما تعثّر رفعه لا ينتظر بقية مهلته
+      _pushFailures = 0;
+      if (pendingSyncs.any((a) => a.retryCount < maxSyncRetries)) scheduleAutoPush(Duration.zero);
       scheduleAutoPull();
       return;
     }
@@ -1478,6 +1485,46 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   Timer? _autoPullTimer;
   DateTime? _lastResumePull;
 
+  /// محاولات الرفع المتتالية التي تعثّرت بانقطاع — تحدد مهلة المحاولة التالية.
+  int _pushFailures = 0;
+
+  /// مهل إعادة الرفع بعد انقطاع: تتباعد ولا تتجاوز الدقيقة، وعودة الاتصال تختصرها.
+  static const pushRetryDelays = [
+    Duration(seconds: 5),
+    Duration(seconds: 15),
+    Duration(seconds: 30),
+    Duration(seconds: 60),
+  ];
+
+  static Duration pushRetryDelay(int failures) =>
+      pushRetryDelays[(failures - 1).clamp(0, pushRetryDelays.length - 1)];
+
+  @visibleForTesting
+  bool get autoPushScheduled => _autoPushTimer?.isActive ?? false;
+
+  @visibleForTesting
+  Duration? lastAutoPushDelay;
+
+  /// ما بعد رفع تلقائي — دالة صرفة قابلة للاختبار.
+  ///
+  /// [attempted] معرّفات ما كان قابلاً للرفع قبل الرفع مع رصيد محاولاته. عملية
+  /// بقيت برصيدها وعليها خطأ تعثّرت بانقطاع لا بعيب فيها، فتُعاد بمهلة متباعدة.
+  /// وعملية أُضيفت أثناء الرفع لم تُحاوَل بعد، فتُرفع بالمهلة المعتادة. الفشل
+  /// الدائم لا يُعاد وحده، كما في النسخة المكتبية: ينتظر تعديلاً تالياً أو زرّ
+  /// إعادة المحاولة.
+  static ({Duration? delay, bool stalled}) autoPushFollowUp(
+    Map<int, int> attempted,
+    Iterable<PendingSync> queue,
+    int failures,
+  ) {
+    final remaining = queue.where((a) => a.retryCount < maxSyncRetries).toList();
+    if (remaining.isEmpty) return (delay: null, stalled: false);
+    final stalled = remaining.any((a) => attempted[a.id] == a.retryCount && a.lastError != null);
+    if (stalled) return (delay: pushRetryDelay(failures + 1), stalled: true);
+    if (remaining.any((a) => !attempted.containsKey(a.id))) return (delay: autoPushDelay, stalled: false);
+    return (delay: null, stalled: false);
+  }
+
   void startAutoSync() {
     if (autoSync || !networkEnabled || !loggedIn || isMasterAdmin) return;
     autoSync = true;
@@ -1487,6 +1534,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   void stopAutoSync() {
     autoSync = false;
+    _pushFailures = 0;
     _autoPushTimer?.cancel();
     _autoPullTimer?.cancel();
     _autoPushTimer = null;
@@ -1496,8 +1544,16 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// التعديلات المتتالية تُجمع في رفعٍ واحد بعد أن يهدأ المستخدم.
   void scheduleAutoPush([Duration delay = autoPushDelay]) {
     if (!autoSync) return;
+    lastAutoPushDelay = delay;
     _autoPushTimer?.cancel();
     _autoPushTimer = Timer(delay, () => _runAuto(push: true));
+  }
+
+  void _onQueueChanged() {
+    // الرفع نفسه يعدّل الطابور: الجدولة منه تُدخل المحاولة الفاشلة في حلقة.
+    // ما يُضاف أثناءه يُلتقط بعد انتهائه في `autoPushFollowUp`
+    if (!autoSync || sync.isSyncing) return;
+    scheduleAutoPush();
   }
 
   /// إشارات متتالية من أجهزة أخرى تُجمع في سحبٍ واحد.
@@ -1530,15 +1586,26 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
     try {
       if (push) {
-        if (pendingSyncs.isEmpty) return;
+        final attempted = {
+          for (final a in pendingSyncs)
+            if (a.retryCount < maxSyncRetries) a.id: a.retryCount,
+        };
+        if (attempted.isEmpty) return;
         final result = await sync.push(refreshRemote: false);
         // الأجهزة الأخرى تسحب فور الإشارة بدل أن تنتظر عودة مستخدمها
         if (result.pushed > 0) _realtime?.broadcastChanged();
+        final next = autoPushFollowUp(attempted, pendingSyncs, _pushFailures);
+        _pushFailures = next.stalled ? _pushFailures + 1 : 0;
+        if (next.delay != null) scheduleAutoPush(next.delay!);
       } else {
         await sync.pull();
       }
     } catch (_) {
-      // الانقطاع لا يُظهر خطأ: المحاولة التالية عند تعديلٍ أو إشارة أو عودة
+      // الانقطاع لا يُظهر خطأ: الرفع يُعاد بمهلة متباعدة، والسحب عند إشارة أو عودة
+      if (push) {
+        _pushFailures++;
+        scheduleAutoPush(pushRetryDelay(_pushFailures));
+      }
     }
   }
 
@@ -1856,7 +1923,6 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     markRecord(table, recordId, deleted: action == 'DELETE');
     markDirty(_pendingTable);
     notifyListeners();
-    scheduleAutoPush();
   }
 
   /// رصد حالة محددة لطالب في يوم. `null` يمسح الرصد.
