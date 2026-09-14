@@ -69,7 +69,16 @@ void main() {
       expect(joins.map((m) => m['topic']), [
         'realtime:public:students:tenant_id=eq.t1',
         'realtime:public:attendance:tenant_id=eq.t1',
+        // قناة الإشارة التي يرسل فيها الويب «تغيّرت البيانات» بعد كل رفع
+        'realtime:tenant-t1',
       ]);
+
+      // بعد الرفع يُعلَن للأجهزة الأخرى في القناة نفسها التي يستمع لها الويب
+      listener.broadcastChanged();
+      final signal = channels.single.fakeSink.sent.last;
+      expect(signal['event'], 'broadcast');
+      expect(signal['topic'], 'realtime:tenant-t1');
+      expect((signal['payload'] as Map)['event'], 'changed');
 
       await listener.disconnect();
     });
