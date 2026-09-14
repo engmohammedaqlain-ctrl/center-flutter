@@ -530,7 +530,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
       ('قاعدة البيانات المحلية', 'SQLite'),
       ('وضع التخزين', 'محلي / مستقل (Offline Ready)'),
       ('المنشأة الحالية', tenant?.name ?? '—'),
-      ('رمز المنشأة', tenant?.code ?? '—'),
+      ('المعرّف', tenant?.code ?? '—'),
       ('نوع الاشتراك', tenant == null ? '—' : (tenant.isLifetime ? 'دائم' : 'محدد المدة')),
       ('تعديلات معلّقة', '${store.pendingPush}'),
     ];

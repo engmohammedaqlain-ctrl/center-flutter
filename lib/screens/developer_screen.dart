@@ -14,6 +14,13 @@ import '../widgets/widgets.dart';
 /// مطابق لـ USERNAME_RULE في دالة السيرفر `admin-tenants`.
 const _usernameRule = 'اسم المستخدم: 3 إلى 32 من الأحرف الإنجليزية الصغيرة والأرقام و . _ -';
 
+/// تأكيد حذف منشأة: معرّفها أو كلمة «حذف» — مطابق لنافذة الحذف في
+/// DeveloperDashboardPage.
+bool tenantDeleteConfirmed(String typed, Tenant t) {
+  final value = typed.trim();
+  return value.isNotEmpty && (value == t.code.trim() || value == 'حذف');
+}
+
 /// بوابة المطور والاشتراكات — المقابل لـ `pages/DeveloperDashboardPage.tsx`.
 ///
 /// المنشآت تُقرأ وتُكتب في Supabase؛ القائمة المحلية احتياط عند انقطاع الاتصال.
@@ -377,16 +384,16 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
               const Text('حذف منشأة نهائياً',
                   style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.danger)),
               const SizedBox(height: 6),
+              // التأكيد بالمعرّف أو بكلمة «حذف» — كما في DeveloperDashboardPage
               Text(
-                'سيُحذف اشتراك «${t.name}» من المنصة ولن يستطيع موظفوها الدخول. '
-                'اكتب اسم المنشأة حرفياً للتأكيد.',
+                '«${t.name}» · المعرّف: ${t.code}\nللتأكيد اكتب المعرّف أو «حذف».',
                 style: const TextStyle(color: AppColors.muted, fontSize: 11.5, height: 1.5),
               ),
               const SizedBox(height: 10),
               TextField(
                 controller: typed,
                 onChanged: (_) => setSt(() {}),
-                decoration: InputDecoration(hintText: t.name),
+                decoration: InputDecoration(hintText: t.code),
               ),
               const SizedBox(height: 12),
               Row(
@@ -397,7 +404,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                     child: PrimaryButton(
                       label: 'حذف نهائياً',
                       color: AppColors.danger,
-                      onPressed: typed.text.trim() == t.name.trim() ? () => Navigator.pop(ctx, true) : null,
+                      onPressed: tenantDeleteConfirmed(typed.text, t) ? () => Navigator.pop(ctx, true) : null,
                     ),
                   ),
                 ],
@@ -493,7 +500,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                   decoration: InputDecoration(errorText: errors['name']),
                 ),
                 const SizedBox(height: 8),
-                FieldLabel('رمز المنشأة', key: errors.key('code'), requiredField: true),
+                FieldLabel('المعرّف', key: errors.key('code'), requiredField: true),
                 TextField(
                   controller: code,
                   onChanged: (_) {
@@ -659,7 +666,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                                   errors
                                     ..reset()
                                     ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المنشأة')
-                                    ..check('code', code.text.trim().isEmpty, 'يرجى إدخال رمز المنشأة')
+                                    ..check('code', code.text.trim().isEmpty, 'يرجى إدخال المعرّف')
                                     ..check(
                                       'username',
                                       (userChanged || pass.isNotEmpty) && !SupabaseAuth.isValidUsername(user),
@@ -814,7 +821,7 @@ class _TenantCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 4),
-          _line('الرمز', tenant.code),
+          _line('المعرّف', tenant.code),
           // كلمة المرور محفوظة مشفّرة في Supabase Auth ولا تصل الجهاز
           _line('الدخول', tenant.username),
           if (tenant.isLifetime)

@@ -1294,7 +1294,7 @@ class _DataTab extends StatelessWidget {
           child: Column(
             children: [
               _infoRow('المنشأة', tenant?.name ?? (store.institutionName.isEmpty ? '—' : store.institutionName)),
-              _infoRow('رمز المنشأة', tenant?.code.isNotEmpty == true ? tenant!.code : '—'),
+              _infoRow('المعرّف', tenant?.code.isNotEmpty == true ? tenant!.code : '—'),
               _infoRow('المستخدم على الجهاز', store.deviceUser?.name ?? '—'),
             ],
           ),
