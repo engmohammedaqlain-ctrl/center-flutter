@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../data/store.dart';
@@ -32,6 +34,9 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
   /// أُكملت التهيئة ببيانات محلية لأن السحابة تعذّرت.
   bool offline = false;
 
+  /// بيانات المدرسة نفسها كانت على الجهاز، فلم يُنتظر تنزيل جديد.
+  bool reusedLocal = false;
+
   String? selectedUserId;
   final password = TextEditingController();
 
@@ -49,12 +54,26 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
 
   Future<void> _performInitialSync() async {
     if (!mounted) return;
+    final store = StoreScope.of(context);
+
+    // تبديل المستخدم داخل المدرسة نفسها: البيانات على الجهاز، فتُفتح قائمة
+    // المستخدمين فوراً ويُحدَّث ما تغيّر في الخلفية بلا شاشة انتظار
+    if (store.hasLocalTenantData) {
+      setState(() {
+        reusedLocal = true;
+        loading = false;
+        syncError = null;
+        selectedUserId = store.setupCandidates.first.id;
+      });
+      unawaited(_refreshInBackground(store));
+      return;
+    }
+
     setState(() {
       loading = true;
       syncError = null;
     });
 
-    final store = StoreScope.of(context);
     try {
       final pulled = await store.initialPull();
       if (!mounted) return;
@@ -84,6 +103,16 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
         loading = false;
         syncError = message;
       });
+    }
+  }
+
+  /// تحديثٌ صامت لما تغيّر: فشله لا يمنع المستخدم من المتابعة ببياناته.
+  Future<void> _refreshInBackground(AppStore store) async {
+    try {
+      final pulled = await store.initialPull();
+      if (mounted && pulled > 0) setState(() => pulledCount = pulled);
+    } catch (_) {
+      // دون اتصال: البيانات المحفوظة تكفي لاختيار الهوية
     }
   }
 

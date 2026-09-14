@@ -3154,6 +3154,12 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   /// السحب الأولي الكامل عند تهيئة جهاز جديد. يعيد عدد السجلات المنزَّلة.
+  /// بيانات هذه المنشأة محفوظة على الجهاز من جلسة سابقة.
+  ///
+  /// تبديل المستخدم داخل المدرسة نفسها لا يستدعي تنزيلاً جديداً: القاعدة المحلية
+  /// هي هي، ويكفي تحديثُ ما تغيّر في الخلفية.
+  bool get hasLocalTenantData => dbTenantId == tenantId && (students.isNotEmpty || users.isNotEmpty);
+
   Future<int> initialPull() async {
     final tid = tenantId;
     if (tid == null) throw StoreException('لا توجد منشأة نشطة على هذا الجهاز.');

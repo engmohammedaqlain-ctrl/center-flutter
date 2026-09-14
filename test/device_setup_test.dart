@@ -315,6 +315,37 @@ void main() {
     await s.flush();
   });
 
+  testWidgets('تبديل المستخدم في المدرسة نفسها لا يُعيد تنزيل البيانات', (tester) async {
+    tester.view.physicalSize = const Size(390, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    // جهاز دخل هذه المنشأة من قبل: بياناتها محفوظة عليه
+    final s = await loggedIn(FakeDisk());
+    expect(s.hasLocalTenantData, isTrue);
+
+    await tester.pumpWidget(StoreScope(
+      store: s,
+      child: const MaterialApp(
+        home: Directionality(textDirection: TextDirection.rtl, child: DeviceSetupScreen()),
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // قائمة المستخدمين فوراً: بلا شاشة تنزيل ولا خطأ «تحتاج اتصالاً»
+    expect(find.text('المستخدم على هذا الجهاز:'), findsOneWidget);
+    expect(find.textContaining('لا يمكن تهيئة الجهاز'), findsNothing);
+
+    await s.flush();
+  });
+
+  test('جهازٌ لمنشأة أخرى، أو بلا بيانات، يبدأ بتنزيل كامل', () async {
+    final s = await loggedIn(FakeDisk(), withStudents: false);
+    s.users.clear();
+    expect(s.hasLocalTenantData, isFalse, reason: 'لا بيانات محفوظة لهذه المنشأة');
+    await s.flush();
+  });
+
   testWidgets('the splash box sits exactly where the native splash draws it', (tester) async {
     await tester.pumpWidget(const MaterialApp(home: SplashScreen()));
     final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
