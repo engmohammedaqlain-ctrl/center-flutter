@@ -1125,6 +1125,19 @@ class PortalService {
     return rest.isEmpty ? null : Uri.decodeComponent(rest);
   }
 
+  /// رابط فتح مادة — مطابق لـ `MoodleService.openMaterial`.
+  ///
+  /// حاوية المواد صارت خاصة: الرابط المحفوظ في `content_url` لا يُفتح مباشرةً،
+  /// بل يُوقَّع لساعة عند كل فتح، وكان أي ملف دراسي يفتحه من يملك رابطه بلا
+  /// تسجيل دخول. الروابط الخارجية (يوتيوب وغيره) تعود كما هي.
+  Future<String?> materialOpenUrl(String contentUrl) async {
+    final url = contentUrl.trim();
+    if (url.isEmpty) return null;
+    final path = materialPath(url);
+    if (path == null) return url;
+    return storageSignedUrl(materialsBucket, path);
+  }
+
   /// نوع الملف المسموح من امتداده، أو `null` لغير المدعوم (PDF والصور وحدها).
   static String? materialMime(String fileName) {
     final ext = fileName.split('.').last.toLowerCase();

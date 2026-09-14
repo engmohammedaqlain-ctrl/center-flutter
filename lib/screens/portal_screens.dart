@@ -837,6 +837,17 @@ class _TermSwitch extends StatelessWidget {
       _ => (fg: _C.slate700, bg: _C.soft),
     };
 
+/// فتح ملف مادة: يُوقَّع رابطه لساعة قبل فتحه، فالحاوية خاصة.
+Future<void> _openMaterial(BuildContext context, String url, {PortalService service = const PortalService()}) async {
+  final target = await service.materialOpenUrl(url);
+  if (!context.mounted) return;
+  if (target == null || target.isEmpty) {
+    showAppSnack(context, 'تعذّر فتح الملف', error: true);
+    return;
+  }
+  await _openUrl(context, target);
+}
+
 Future<void> _openUrl(BuildContext context, String url) async {
   var ok = false;
   final uri = Uri.tryParse(url.trim());
@@ -1839,7 +1850,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
               onCopy: () => _copySection(sec),
               onToggle: () => _toggleVisibility(sec),
               onDelete: () => _deleteSection(sec),
-              onOpenItem: (it) => _openUrl(context, it.contentUrl),
+              onOpenItem: (it) => _openMaterial(context, it.contentUrl, service: _service),
               onDeleteItem: (it) => _deleteItem(sec, it),
             ),
           ),
@@ -2983,7 +2994,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                                       fg: _C.navy,
                                       height: 32,
                                       radius: Corner.field,
-                                      onTap: () => _openUrl(context, it.contentUrl),
+                                      onTap: () => _openMaterial(context, it.contentUrl),
                                     ),
                             ),
                           ),

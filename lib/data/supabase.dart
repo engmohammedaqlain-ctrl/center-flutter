@@ -417,14 +417,37 @@ Future<void> supabaseUpdate(String table, Map<String, String> filters, Map<Strin
 String storagePublicUrl(String bucket, String path) =>
     '${SupabaseConfig.url}/storage/v1/object/public/$bucket/$path';
 
+/// رابط موقّت لملف في حاوية خاصة — `createSignedUrl`.
+///
+/// يُعيد `null` عند تعذّر التوقيع: رابط غير موقّع لن يفتح على أي حال، وحاوية
+/// المواد الدراسية صارت خاصة فلا يقرأها إلا منتسبو المنشأة بجلساتهم.
+Future<String?> storageSignedUrl(String bucket, String path, {int expiresIn = 3600}) async {
+  await SupabaseAuth.ensureFresh();
+  try {
+    final uri = Uri.parse('${SupabaseConfig.url}/storage/v1/object/sign/$bucket/$path');
+    final res = await http.post(uri, headers: SupabaseConfig.headers, body: jsonEncode({'expiresIn': expiresIn}));
+    if (res.statusCode >= 400) return null;
+    final data = _tryJson(res.body);
+    final signed = data is Map ? '${data['signedURL'] ?? data['signedUrl'] ?? ''}' : '';
+    if (signed.isEmpty) return null;
+    // الردّ مسار نسبي يبدأ بـ `/object/sign/...`
+    return '${SupabaseConfig.url}/storage/v1${signed.startsWith('/') ? signed : '/$signed'}';
+  } catch (_) {
+    return null;
+  }
+}
+
 /// رفع ملف إلى حاوية. يُعيد الرابط العام، ويرمي عند الرفض.
 Future<String> storageUpload(String bucket, String path, List<int> bytes, String contentType) async {
+  // الحاويات صارت خاصة وسياسات الكتابة فيها `TO authenticated`: المفتاح المنشور
+  // وحده يُرفض، فيمرّ الرفع بتوكن صاحب الجلسة
+  await SupabaseAuth.ensureFresh();
   final uri = Uri.parse('${SupabaseConfig.url}/storage/v1/object/$bucket/$path');
   final res = await http.post(
     uri,
     headers: {
       'apikey': SupabaseConfig.key,
-      'Authorization': 'Bearer ${SupabaseConfig.key}',
+      'Authorization': 'Bearer ${SupabaseAuth.accessToken ?? SupabaseConfig.key}',
       'Content-Type': contentType,
       // سنة كاملة: الملف لا يتغيّر بعد رفعه، اسمه فريد بالوقت
       'cache-control': 'max-age=31536000',

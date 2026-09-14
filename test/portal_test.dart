@@ -1,8 +1,12 @@
+import 'dart:convert';
+
 import 'package:center_mobile/data/institution.dart';
 import 'package:center_mobile/data/payment_methods.dart';
 import 'package:center_mobile/data/portal.dart';
 import 'package:center_mobile/models/models.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 Installment _inst(String id, double amount, DateTime due, {double paid = 0, String status = 'unpaid'}) => Installment(
       id: id,
@@ -268,6 +272,42 @@ void main() {
         't1/170_ab.pdf',
       );
       expect(PortalService.materialPath('https://youtube.com/watch?v=1'), isNull);
+    });
+
+    test('ملف الحاوية يُفتح برابط موقّت، والرابط الخارجي كما هو', () async {
+      const service = PortalService();
+      expect(await service.materialOpenUrl('https://youtube.com/watch?v=1'), 'https://youtube.com/watch?v=1');
+      expect(await service.materialOpenUrl('  '), isNull);
+
+      Uri? asked;
+      Object? body;
+      final signed = await http.runWithClient(
+        () => service.materialOpenUrl(
+            'https://x.supabase.co/storage/v1/object/public/course_materials/t1/170_ab.pdf'),
+        () => MockClient((request) async {
+          asked = request.url;
+          body = jsonDecode(request.body);
+          return http.Response(
+            jsonEncode({'signedURL': '/object/sign/course_materials/t1/170_ab.pdf?token=abc'}),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+      );
+
+      expect(asked?.path, endsWith('/storage/v1/object/sign/course_materials/t1/170_ab.pdf'));
+      expect((body as Map)['expiresIn'], 3600, reason: 'ساعة واحدة كما في MoodleService');
+      expect(signed, endsWith('/storage/v1/object/sign/course_materials/t1/170_ab.pdf?token=abc'));
+    });
+
+    test('تعذّر التوقيع لا يُعيد رابطاً غير موقّع', () async {
+      const service = PortalService();
+      final result = await http.runWithClient(
+        () => service.materialOpenUrl(
+            'https://x.supabase.co/storage/v1/object/public/course_materials/t1/170_ab.pdf'),
+        () => MockClient((request) async => http.Response('{"error":"denied"}', 403)),
+      );
+      expect(result, isNull, reason: 'الحاوية خاصة: الرابط العام لا يفتح');
     });
 
     test('الأنواع المسموحة PDF والصور وحدها', () {
