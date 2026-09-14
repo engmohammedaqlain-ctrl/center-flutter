@@ -238,11 +238,12 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
     final ok = await confirmSheet(
       context,
       title: 'دخول للمنشأة',
-      message: 'سيتم فتح واجهة «${t.name}» بصلاحية مدير النظام. تُسحب بياناتها من السحابة.',
+      message: 'فتح «${t.name}» بصلاحية المدير.',
       confirmLabel: 'دخول',
     );
     if (!ok || !context.mounted) return;
-    await store.login(t.username, t.password);
+    final error = await store.enterTenantAsDeveloper(t);
+    if (error != null && context.mounted) showAppSnack(context, error, error: true);
   }
 
   Future<void> _toggleStatus(BuildContext context, Tenant t) async {

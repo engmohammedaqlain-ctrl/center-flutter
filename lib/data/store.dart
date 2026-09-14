@@ -1751,6 +1751,19 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     notifyListeners();
   }
 
+  /// دخول المطور إلى منشأة — مطابق لـ `handleEnterTenant` ثم `startTenantSession`.
+  ///
+  /// كان يمرّ على `login` بكلمة مرور المنشأة، وكلمات المرور صارت في Supabase Auth
+  /// ولا تصل الجهاز، فيفشل الدخول. توكن المطور نفسه يبقى: سياسات RLS تفتح له
+  /// جداول كل منشأة (`is_developer()`)، والمنشأة النشطة تُحفظ فتُستعاد عند الإقلاع.
+  Future<String?> enterTenantAsDeveloper(Tenant tenant) async {
+    if (!isMasterAdmin) return 'الدخول للمنشآت من بوابة المطور';
+    final problem = subscriptionProblem(tenant);
+    if (problem != null) return problem;
+    await _enterTenant(tenant);
+    return null;
+  }
+
   /// جلب المنشآت من السحابة مع الإبقاء على المحلية عند انقطاع الاتصال.
   Future<bool> refreshTenantsFromCloud() async {
     if (!networkEnabled) return false;
