@@ -62,7 +62,10 @@ class StudentDetailScreen extends StatelessWidget {
         final insts = store.installments.where((i) => i.studentId == student.id).toList()
           ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
         final marks = store.attendance.where((a) => a.studentId == student.id).toList();
-        final totalPaid = pays.where((p) => !p.cancelled).fold<double>(0, (a, p) => a + p.amount);
+        // السند الملغى لا يُحتسب، والخصم يفسّر لماذا يزيد المسدَّد على المقبوض نقداً
+        final activePays = pays.where((p) => !p.cancelled);
+        final totalPaid = activePays.fold<double>(0, (a, p) => a + p.amount);
+        final totalDiscount = activePays.fold<double>(0, (a, p) => a + p.discountAmount);
         final present = marks.where((m) => m.status == 'present').length;
         final absent = marks.where((m) => m.status == 'absent').length;
         final excused = marks.where((m) => m.status == 'excused').length;
@@ -275,6 +278,11 @@ class StudentDetailScreen extends StatelessWidget {
                       text: 'المقبوض: ',
                       children: [
                         TextSpan(text: money(totalPaid), style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
+                        if (totalDiscount > 0)
+                          TextSpan(
+                            text: '  + خصم ${money(totalDiscount)}',
+                            style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.success),
+                          ),
                       ],
                     ),
                     style: const TextStyle(color: AppColors.muted, fontSize: 11),

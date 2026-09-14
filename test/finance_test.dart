@@ -202,15 +202,12 @@ void main() {
       expect(item.stageLabel, 'متأخر عن السداد');
     });
 
-    test('a flexible exception outranks the late label and sorts last', () {
+    test('المستحقات تُرتَّب بموعدها: الأقدم أولاً', () {
       final s = seeded();
-      final inst = s.installments.firstWhere((i) => i.paidAmount == 0);
-      inst.dueDate = DateTime.now().subtract(const Duration(days: 5));
-      inst.exception = true;
       final items = s.dueItems();
-      final item = items.firstWhere((d) => d.installmentId == inst.id);
-      expect(item.stageLabel, 'استثناء');
-      expect(items.last.exception, isTrue);
+      for (var i = 1; i < items.length; i++) {
+        expect(items[i].dueDate.isBefore(items[i - 1].dueDate), isFalse);
+      }
     });
 
     test('a debtor without installments still appears once', () {

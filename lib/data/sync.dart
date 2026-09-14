@@ -51,7 +51,7 @@ const tableAllowedColumns = <String, List<String>>{
     'seat_reservation_paid', 'seat_reservation_discounted',
     'payment_plan', 'payment_status',
     'academic_discount_applied', 'academic_discount_rate',
-    'has_flexible_exception', 'exception_reason', 'custom_monthly_fee',
+    'exception_reason', 'custom_monthly_fee',
     'portal_code', 'parent_portal_code',
     'notes', 'tenant_id', 'created_at', 'updated_at',
   ],
@@ -70,7 +70,7 @@ const tableAllowedColumns = <String, List<String>>{
   ],
   'installments': [
     'id', 'student_id', 'title', 'amount', 'due_date', 'paid_amount',
-    'status', 'has_flexible_exception', 'exception_notes', 'tenant_id',
+    'status', 'tenant_id',
     'created_at', 'updated_at',
   ],
   'payments': [
@@ -126,7 +126,7 @@ const nonTextColumns = <String, List<String>>{
     'tenant_id', 'updated_at',
   ],
   'installments': [
-    'amount', 'created_at', 'due_date', 'has_flexible_exception', 'paid_amount',
+    'amount', 'created_at', 'due_date', 'paid_amount',
     'tenant_id', 'updated_at',
   ],
   'institution_settings': ['colors', 'created_at', 'tenant_id', 'updated_at'],
@@ -140,7 +140,7 @@ const nonTextColumns = <String, List<String>>{
   'students': [
     'academic_discount_applied', 'academic_discount_rate', 'balance', 'birth_date',
     'created_at', 'custom_monthly_fee', 'enrollment_date', 'guardian_declaration',
-    'has_flexible_exception', 'initial_rating', 'seat_reservation_discounted',
+    'initial_rating', 'seat_reservation_discounted',
     'seat_reservation_paid', 'tenant_id', 'updated_at',
   ],
   'subjects': ['created_at', 'tenant_id', 'updated_at'],

@@ -463,7 +463,6 @@ class Student {
       'payment_status': paymentStatus,
       'academic_discount_applied': academicDiscountApplied,
       'academic_discount_rate': academicDiscountRate,
-      'has_flexible_exception': hasException,
       'exception_reason': exceptionReason,
       'custom_monthly_fee': customMonthlyFee,
       'portal_code': portalCode.isEmpty ? null : portalCode,
@@ -504,7 +503,6 @@ class Student {
       notes: '${m['notes'] ?? ''}',
       status: '${m['status'] ?? 'active'}',
       balance: (m['balance'] as num?)?.toDouble() ?? 0,
-      hasException: m['has_flexible_exception'] == true,
       enrolledAt: parseIsoDate('${m['enrollment_date'] ?? ''}') ?? DateTime.now(),
       detailedAddress: '${m['detailed_address'] ?? ''}',
       referralSource: '${m['referral_source'] ?? ''}',
@@ -1246,8 +1244,6 @@ class Installment {
         'due_date': isoDate(dueDate),
         'paid_amount': paidAmount,
         'status': _effectiveStatus,
-        'has_flexible_exception': exception,
-        'exception_notes': exceptionNotes,
         'created_at': createdAt,
         'updated_at': updatedAt,
       };
@@ -1259,8 +1255,6 @@ class Installment {
         amount: (m['amount'] as num?)?.toDouble() ?? 0,
         dueDate: parseIsoDate('${m['due_date'] ?? ''}') ?? DateTime.now(),
         paidAmount: (m['paid_amount'] as num?)?.toDouble() ?? 0,
-        exception: m['has_flexible_exception'] == true,
-        exceptionNotes: '${m['exception_notes'] ?? ''}',
         status: '${m['status'] ?? 'pending'}',
         syncStatus: '${m['sync_status'] ?? 'synced'}',
         createdAt: m['created_at']?.toString(),
@@ -1728,7 +1722,6 @@ class DueItem {
     required this.amount,
     required this.dueDate,
     required this.late,
-    required this.exception,
     this.scheduled = false,
     this.installmentId,
   });
@@ -1739,14 +1732,12 @@ class DueItem {
   final double amount;
   final DateTime dueDate;
   final bool late;
-  final bool exception;
 
   /// قسط لم يحن موعده بعد: مسجَّل ومعروف، لكنه ليس مطلوباً اليوم.
   final bool scheduled;
   final String? installmentId;
 
   String get stageLabel {
-    if (exception) return 'استثناء';
     if (late) return 'متأخر عن السداد';
     if (scheduled) return 'مجدول';
     return 'مستحق';

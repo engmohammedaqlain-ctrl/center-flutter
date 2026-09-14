@@ -2445,7 +2445,6 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
           dueDate: inst.dueDate,
           late: due.isBefore(today),
           scheduled: due.isAfter(today),
-          exception: inst.exception || student.hasException,
           installmentId: inst.id,
         ),
       );
@@ -2461,16 +2460,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
           amount: s.balance.abs(),
           dueDate: today,
           late: DateTime.now().day > 10,
-          exception: s.hasException,
         ),
       );
     }
 
-    list.sort((a, b) {
-      if (a.exception && !b.exception) return 1;
-      if (!a.exception && b.exception) return -1;
-      return a.dueDate.compareTo(b.dueDate);
-    });
+    list.sort((a, b) => a.dueDate.compareTo(b.dueDate));
     return list;
   }
 
