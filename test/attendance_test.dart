@@ -333,6 +333,8 @@ void main() {
     final room = s.rooms.first;
     final student = s.studentsOf(room).first;
     final week = AppStore.schoolWeek(0);
+    // الديمو يرصد أياماً قريبة، ومنها اليوم نفسه: تُمحى كي يُختبر الرصد وحده
+    s.attendance.removeWhere((a) => a.studentId == student.id);
 
     s.setAttendance(student.id, week[0].dateStr, 'present', ownerId: room.id);
     s.setAttendance(student.id, week[1].dateStr, 'absent', ownerId: room.id);

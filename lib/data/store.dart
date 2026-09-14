@@ -222,6 +222,39 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   static const _pendingTable = '__pending_syncs';
 
+  /// جدول أختام السيرفر على القرص — `جدول|معرّف` ← ختم.
+  static const _stampsTable = '__server_stamps';
+
+  /// ختم السيرفر لكل سجل: `جدول` ← (`معرّف` ← ختم).
+  ///
+  /// النماذج لا تحمل العمود، وحفظه هنا يجنّب تعديلها كلها. به يعرف السحب أي
+  /// سجل تغيّر في السحابة فعلاً بدل جلب الجداول كاملةً في كل مرة.
+  final serverStamps = <String, Map<String, String>>{};
+
+  @override
+  String? serverStamp(String table, String id) => serverStamps[table]?[id];
+
+  @override
+  Map<String, String> serverStampsOf(String table) => serverStamps[table] ?? const {};
+
+  @override
+  void rememberServerStamps(String table, Map<String, String> stamps) {
+    if (stamps.isEmpty) return;
+    serverStamps.putIfAbsent(table, () => {}).addAll(stamps);
+    markDirty(_stampsTable);
+  }
+
+  @override
+  void forgetServerStamps(String table, Iterable<String> ids) {
+    final bucket = serverStamps[table];
+    if (bucket == null) return;
+    var changed = false;
+    for (final id in ids) {
+      if (bucket.remove(id) != null) changed = true;
+    }
+    if (changed) markDirty(_stampsTable);
+  }
+
   /// بصمة آخر حالة عُرف أنها مطابقة للسحابة: 'جدول|معرّف' ← بصمة.
   ///
   /// بها نعرف أن تعديلاً عاد إلى ما في السحابة، فنُسقط عمليته من الطابور بدل
@@ -289,6 +322,12 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// صفوف جدول للكتابة على القرص. [only] يقصرها على معرّفات بعينها، فلا
   /// يُسلسَل الجدول كله — ثمانية آلاف سجل حضور — لأجل رصدٍ واحد.
   List<Map<String, dynamic>> _rowsForPersist(String table, {Set<String>? only}) {
+    if (table == _stampsTable) {
+      return [
+        for (final entry in serverStamps.entries)
+          for (final e in entry.value.entries) {'id': '${entry.key}|${e.key}', 'stamp': e.value},
+      ];
+    }
     if (table == _pendingTable) {
       final tid = tenantId ?? '';
       return [
@@ -331,6 +370,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     sessions.clear();
     attachmentsByStudent.clear();
     pendingSyncs.clear();
+    serverStamps.clear();
     for (final k in extraCloud.keys) {
       extraCloud[k]!.clear();
     }
@@ -365,7 +405,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     try {
       final data = await db.loadAll();
       for (final entry in data.entries) {
-        if (entry.key == _pendingTable) {
+        if (entry.key == _stampsTable) {
+          for (final row in entry.value) {
+            final parts = '${row['id'] ?? ''}'.split('|');
+            if (parts.length != 2) continue;
+            serverStamps.putIfAbsent(parts[0], () => {})[parts[1]] = '${row['stamp'] ?? ''}';
+          }
+        } else if (entry.key == _pendingTable) {
           pendingSyncs
             ..clear()
             ..addAll(entry.value.map(PendingSync.fromJson));
@@ -3472,6 +3518,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   @override
   void removeIds(String table, List<String> ids) {
     markDirty(table);
+    forgetServerStamps(table, ids);
     final set = ids.toSet();
     switch (table) {
       case 'students':

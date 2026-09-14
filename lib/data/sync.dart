@@ -478,6 +478,44 @@ String describeSupabaseError(Object error, String tableName) {
   return '$table: $raw';
 }
 
+/// تراجعٌ عن المؤشر قبل الجلب: ساعة السيرفر قد تسبق كتابة صفٍّ بلحظة، فسجل
+/// كُتب أثناء السحب السابق كان يُفوَّت إلى الأبد.
+const cursorOverlapMs = 60 * 1000;
+
+/// معرّفات الطلب الواحد عند الجلب بالمعرّفات، وما زاد عن الحد يُجلب صفحاتٍ.
+const idFetchChunk = 100;
+const maxIdFetch = 1000;
+
+/// مؤشر سجل المحذوفات — يُحفظ كما تُحفظ مؤشرات الجداول.
+const deletesCursor = '__deleted_records';
+
+/// ما يستحق الجلب: السجل الذي يختلف ختم السيرفر عليه عمّا عندنا.
+///
+/// يُقارن ختم السيرفر لا `updated_at`: الأخير يكتبه الجهاز بساعته لحظة التعديل،
+/// فتعديلٌ رُفع متأخراً يحمل وقتاً أقدم من آخر سحب للأجهزة الأخرى فلا تراه أبداً.
+List<String> pickChangedIds(List<Map<String, dynamic>> remote, Map<String, String> localStamps) => [
+      for (final r in remote)
+        if (toTimestamp(localStamps['${r['id']}']) != toTimestamp(r['server_updated_at'])) '${r['id']}',
+    ];
+
+/// حذف قادم من السحابة يُطبَّق ما لم يكن للسجل تعديل معلّق، أو نسخة أُنشئت بعده.
+bool shouldApplyRemoteDelete({
+  required bool existsLocally,
+  required String? localStamp,
+  required String deletedAt,
+  required bool isPending,
+}) {
+  if (!existsLocally || isPending) return false;
+  return toTimestamp(localStamp) <= toTimestamp(deletedAt);
+}
+
+/// الأحدث بين ختمين.
+String? laterStamp(String? current, String? candidate) {
+  if (candidate == null || candidate.isEmpty) return current;
+  if (current == null || current.isEmpty) return candidate;
+  return toTimestamp(candidate) > toTimestamp(current) ? candidate : current;
+}
+
 /// السجلات التي حُذفت من السحابة فيجب أن تُحذف من الجهاز.
 ///
 /// القاعدة — مطابقة لتوفيق الحذف في `pullFromCloud` بالنسخة المكتبية:
@@ -513,6 +551,16 @@ abstract class SyncLocalStore {
   Map<String, dynamic>? recordOf(String table, String id);
   List<Map<String, dynamic>> allOf(String table);
   void putRows(String table, List<Map<String, dynamic>> rows);
+
+  /// ختم السيرفر المحفوظ لسجل، أو `null` إن لم يصل من السحابة بعد.
+  String? serverStamp(String table, String id);
+
+  /// أختام جدول كامل — لمقارنة ما تغيّر في السحابة بما عندنا.
+  Map<String, String> serverStampsOf(String table);
+
+  void rememberServerStamps(String table, Map<String, String> stamps);
+
+  void forgetServerStamps(String table, Iterable<String> ids);
   void removeIds(String table, List<String> ids);
   void markSynced(String table, String id);
   void notifySync();
@@ -628,45 +676,42 @@ class SyncService {
       return RemoteChangeSummary(total: 0, rows: [], items: [], since: null);
     }
 
-    final since = await getLastPullAt();
     final rows = <SyncRow>[];
     final items = <PendingSummaryItem>[];
     final allNewKeys = <String>[];
     var total = 0;
     var failed = false;
 
+    // أقدم مؤشر جدول: يُعرض للمستخدم «منذ متى» لم يصله شيء
+    String? since;
+
     for (final cloud in syncedTables) {
       try {
-        final localStamps = <String, int>{};
-        for (final rec in local.allOf(cloud)) {
-          localStamps['${rec['id']}'] = toTimestamp(rec['updated_at']);
-        }
+        final cursor = await _cursor(tenantId, cloud);
+        since = since == null ? cursor : (toTimestamp(cursor) < toTimestamp(since) ? cursor : since);
+        final localStamps = local.serverStampsOf(cloud);
 
         final newIds = <String>[];
         var from = 0;
         var keepFetching = true;
 
         while (keepFetching) {
+          // ختم السيرفر هو الفيصل: `updated_at` يكتبه الجهاز بساعته، فتعديلٌ
+          // رُفع متأخراً كان يبدو «قديماً» فلا يُحسب تغييراً قادماً
           final page = await _select(
             cloud,
             tenantId,
-            columns: 'id,updated_at',
-            since: since,
+            columns: 'id,server_updated_at',
+            since: cursor,
             from: from,
             to: from + pullPageSize - 1,
-            order: 'updated_at.desc',
+            order: 'server_updated_at.desc',
           );
           if (page == null) {
             if (!missingTables.contains(cloud)) failed = true;
             break;
           }
-          for (final row in page) {
-            final localAt = localStamps[row['id']?.toString()];
-            final remoteAt = toTimestamp(row['updated_at']);
-            if (localAt == null || remoteAt > localAt + stampToleranceMs) {
-              newIds.add('${row['id']}');
-            }
-          }
+          newIds.addAll(pickChangedIds(page, localStamps));
           if (page.length < pullPageSize) {
             keepFetching = false;
           } else {
@@ -688,7 +733,7 @@ class SyncService {
             items.add(
               PendingSummaryItem(
                 table: cloud,
-                action: localStamps.containsKey('${row['id']}') ? 'UPDATE' : 'INSERT',
+                action: local.recordOf(cloud, '${row['id']}') != null ? 'UPDATE' : 'INSERT',
                 label: describeRecord(cloud, row, null),
                 at: '${row['updated_at'] ?? ''}',
               ),
@@ -698,6 +743,18 @@ class SyncService {
       } catch (_) {
         failed = true;
       }
+    }
+
+    // الحذف القادم تغييرٌ كبقيته: عدّه يمنع «متزامن» وفي السحابة حذفٌ لم يصل
+    try {
+      final deletes = await _pendingRemoteDeletes(tenantId);
+      if (deletes.isNotEmpty) {
+        rows.add(SyncRow('deleted_records', deletes.length));
+        total += deletes.length;
+        allNewKeys.addAll(deletes);
+      }
+    } catch (_) {
+      failed = true;
     }
 
     items.sort((a, b) => b.at.compareTo(a.at));
@@ -713,6 +770,42 @@ class SyncService {
     }
 
     return RemoteChangeSummary(total: total, rows: rows..sort((a, b) => b.count.compareTo(a.count)), items: items, since: since);
+  }
+
+  /// مفاتيح ما حُذف في السحابة ولم يُطبَّق على الجهاز بعد.
+  Future<List<String>> _pendingRemoteDeletes(String tenantId) async {
+    final since = await _cursor(tenantId, deletesCursor);
+    final keys = <String>[];
+
+    for (var from = 0;; from += pullPageSize) {
+      final page = await _select(
+        'deleted_records',
+        tenantId,
+        columns: 'table_name,record_id,deleted_at',
+        since: since,
+        sinceColumn: 'deleted_at',
+        from: from,
+        to: from + pullPageSize - 1,
+        order: 'deleted_at.asc',
+      );
+      if (page == null) return keys;
+
+      for (final row in page) {
+        final table = '${row['table_name'] ?? ''}';
+        final id = '${row['record_id'] ?? ''}';
+        if (table.isEmpty || id.isEmpty) continue;
+        final pending = local.pendingSyncs.any((p) => p.tableName == table && p.recordId == id);
+        final applies = shouldApplyRemoteDelete(
+          existsLocally: local.recordOf(table, id) != null,
+          localStamp: local.serverStamp(table, id),
+          deletedAt: '${row['deleted_at'] ?? ''}',
+          isPending: pending,
+        );
+        if (applies) keys.add('$table:$id');
+      }
+
+      if (page.length < pullPageSize) return keys;
+    }
   }
 
   List<PendingSync> getFailedActions() {
@@ -1013,79 +1106,80 @@ class SyncService {
     local.pendingSyncs.removeWhere((a) => a.id == action.id);
     local.notifySync();
   }
-
-  /// جلب البيانات من السحابة ودمجها محلياً.
+  /// جلب ما تغيّر في السحابة ودمجه محلياً — مطابق لـ `pullFromCloud`.
   ///
-  /// وضعان — مطابق لـ `pullFromCloud` في lib/sync.ts:
-  ///  - **أول سحب** (`lastPullAt = null`): سحب كامل لكل الجداول لتأسيس النسخة.
-  ///  - **السحبات اللاحقة**: تزايدي — فقط ما تغيّر (`updated_at > lastPullAt`).
-  ///    ولكشف الحذف تُجلب المعرّفات وحدها (`select=id`) بدل السجلات الكاملة.
+  /// لكل جدول مؤشر بختم السيرفر: أول سحب يجلب الجدول كاملاً، وما بعده يجلب
+  /// المعرّفات والأختام منذ المؤشر ثم السجلات المختلفة عمّا عندنا وحدها. والحذف
+  /// يصل من سجل المحذوفات الذي تملؤه القاعدة، فلا تُجلب معرّفات الجداول كلها.
+  ///
+  /// ختم السيرفر هو الفيصل لا `updated_at`: الأخير يكتبه الجهاز بساعته، فتعديلٌ
+  /// رُفع متأخراً كان يحمل وقتاً أقدم من آخر سحب لجهاز آخر فلا يصله أبداً.
+  ///
+  /// ولا يُكتب فوق سجل له تعديل معلّق محلياً، ولا فوق نسخة معلّقة أحدث.
   Future<PullOutcome> pullFromCloud(String tenantId) async {
     var totalPulled = 0;
     var totalRemoved = 0;
-    final lastPullAt = await getLastPullAt();
-    final incrementalPull = lastPullAt != null;
-    // الجداول التي تعذّر جلبها. ابتلاع الخطأ بصمت كان يُظهر «تم سحب 0 سجلاً»
-    // على أنه نجاح، فلا يعرف المستخدم أن جدولاً كاملاً لم يصل.
     final failedTables = <String, String>{};
+
+    // عمودٌ جديد في التطبيق لا يغيّر ختم السيرفر لسجل قديم، فلا يصل أبداً:
+    // تغيّر بصمة الأعمدة يُصفّر المؤشرات فيعود السحب التالي كاملاً مرة واحدة
+    await _resetCursorsIfColumnsChanged(tenantId);
 
     for (final cloud in syncedTables) {
       // مرفقات الطلاب لا تُسحب دورياً: صور Base64 تُجلب عند فتح ملف الطالب وحده
       if (cloud == 'student_attachments') continue;
-      // الجدول بلا `updated_at` لا يقبل الترشيح التزايدي فيُسحب كاملاً
-      final isIncremental = incrementalPull && tableHasUpdatedAt(cloud);
-      try {
-        final allData = <Map<String, dynamic>>[];
-        var from = 0;
-        var keepFetching = true;
-        var fetchComplete = true;
 
-        while (keepFetching) {
-          final page = await _select(
-            cloud,
-            tenantId,
-            since: isIncremental ? lastPullAt : null,
-            from: from,
-            to: from + pullPageSize - 1,
-            order: 'id.asc',
-          );
-          if (page == null) {
-            fetchComplete = false;
-            break;
+      try {
+        final since = await _cursor(tenantId, cloud);
+        final startedAt = DateTime.now().millisecondsSinceEpoch;
+        var maxStamp = since;
+        List<Map<String, dynamic>>? rows;
+
+        if (since == null) {
+          rows = await _fetchPages(cloud, tenantId, null);
+          for (final r in rows ?? const <Map<String, dynamic>>[]) {
+            maxStamp = laterStamp(maxStamp, '${r['server_updated_at'] ?? ''}');
           }
-          if (page.isNotEmpty) {
-            allData.addAll(page);
-            from += page.length;
-            if (page.length < pullPageSize) keepFetching = false;
-          } else {
-            keepFetching = false;
+        } else {
+          final changed = await _findChanged(cloud, tenantId, since);
+          if (changed == null) {
+            if (!missingTables.contains(cloud)) {
+              failedTables[cloud] = 'تعذّر جلب بيانات ${tableLabelsAr[cloud] ?? cloud} من السحابة.';
+            }
+            continue;
           }
+          maxStamp = changed.maxStamp;
+          rows = changed.ids.isEmpty
+              ? <Map<String, dynamic>>[]
+              : changed.ids.length > maxIdFetch
+                  ? await _fetchPages(cloud, tenantId, since)
+                  : await _fetchByIds(cloud, tenantId, changed.ids);
         }
 
-        if (!fetchComplete) {
-          // جدول لم تُنشر هجرته: لا بيانات فيه ولا يُحسب عطلاً
+        if (rows == null) {
           if (missingTables.contains(cloud)) continue;
           failedTables[cloud] = 'تعذّر جلب بيانات ${tableLabelsAr[cloud] ?? cloud} من السحابة.';
           continue;
         }
 
         final pendingIds = local.pendingSyncs.where((p) => p.tableName == cloud).map((p) => p.recordId).toSet();
-        final localRecords = local.allOf(cloud);
-        final localById = <String, Map<String, dynamic>>{
-          for (final r in localRecords) '${r['id']}': r,
-        };
-
         final toWrite = <Map<String, dynamic>>[];
-        for (final record in allData) {
+        final stamps = <String, String>{};
+
+        for (final record in rows) {
           final id = '${record['id']}';
           if (pendingIds.contains(id)) continue;
-          final loc = localById[id];
-          if (loc != null && loc['sync_status'] == 'pending') {
-            if (toTimestamp(loc['updated_at']) > toTimestamp(record['updated_at']) + stampToleranceMs) {
-              continue;
-            }
+
+          final loc = local.recordOf(cloud, id);
+          if (loc != null &&
+              loc['sync_status'] == 'pending' &&
+              toTimestamp(loc['updated_at']) > toTimestamp(record['updated_at']) + stampToleranceMs) {
+            continue;
           }
+
           final rest = Map<String, dynamic>.from(record)..remove('tenant_id');
+          final stamp = '${rest.remove('server_updated_at') ?? ''}';
+          if (stamp.isNotEmpty) stamps[id] = stamp;
           if (cloud == 'enrollments' && (rest['enrolled_at'] == null || '${rest['enrolled_at']}'.isEmpty) && rest['enrollment_date'] != null) {
             rest['enrolled_at'] = rest['enrollment_date'];
           }
@@ -1095,88 +1189,188 @@ class SyncService {
 
         if (toWrite.isNotEmpty) {
           local.putRows(cloud, toWrite);
+          local.rememberServerStamps(cloud, stamps);
           totalPulled += toWrite.length;
         }
 
-        // ── توفيق الحذف ──────────────────────────────────────────────────
-        // في السحب التزايدي `allData` لا تحوي إلا المتغيّر، فلا تصلح لكشف
-        // الحذف. تُجلب المعرّفات وحدها: صفحة `select=id` أخفّ من السجل كاملاً.
-        //
-        // ويجري في السحب الكامل أيضاً كما في النسخة المكتبية: قصره على التزايدي
-        // كان يُبقي على الجهاز صفوفاً حُذفت من السحابة، ثم يعيد رفعها إليها.
-        {
-          Set<String> cloudIds;
-          if (isIncremental) {
-            final allIds = <String>[];
-            var idFrom = 0;
-            var idKeep = true;
-            var idComplete = true;
-
-            while (idKeep) {
-              final page = await _select(
-                cloud,
-                tenantId,
-                columns: 'id',
-                from: idFrom,
-                to: idFrom + pullPageSize - 1,
-                order: 'id.asc',
-              );
-              if (page == null) {
-                idComplete = false;
-                break;
-              }
-              if (page.isNotEmpty) {
-                for (final row in page) {
-                  allIds.add('${row['id']}');
-                }
-                idFrom += page.length;
-                if (page.length < pullPageSize) idKeep = false;
-              } else {
-                idKeep = false;
-              }
-            }
-
-            if (!idComplete) {
-              failedTables[cloud] = 'تعذّر التحقق من المحذوف في ${tableLabelsAr[cloud] ?? cloud}.';
-              continue;
-            }
-            cloudIds = allIds.toSet();
-          } else {
-            // أول سحب: المعرّفات متاحة من البيانات المجلوبة أصلاً
-            cloudIds = allData.map((r) => '${r['id']}').toSet();
-          }
-
-          final toRemove = rowsDeletedInCloud(
-            local: localRecords,
-            cloudIds: cloudIds,
-            pendingIds: pendingIds,
-            lastPullAt: lastPullAt,
-          );
-
+        // الجلب الكامل يعرف السحابة كلها: سجلٌ مُزامَن غائب عنها حُذف هناك. وما
+        // كُتب محلياً قُبيل بدء الجلب قد يكون رُفع للتوّ فلا يُحكم عليه.
+        if (since == null) {
+          final cloudIds = rows.map((r) => '${r['id']}').toSet();
+          final toRemove = [
+            for (final r in local.allOf(cloud))
+              if (r['sync_status'] == 'synced' &&
+                  !cloudIds.contains('${r['id']}') &&
+                  !pendingIds.contains('${r['id']}') &&
+                  toTimestamp(r['updated_at']) < startedAt - cursorOverlapMs)
+                '${r['id']}',
+          ];
           if (toRemove.isNotEmpty) {
             local.removeIds(cloud, toRemove);
             totalRemoved += toRemove.length;
           }
         }
 
+        await _setCursor(tenantId, cloud, maxStamp);
       } catch (err) {
         failedTables[cloud] = describeSupabaseError(err, cloud);
       }
     }
 
+    totalRemoved += await _applyRemoteDeletes(tenantId);
+
     // أرصدة الطلاب تُعاد من السجلات بعد كل سحب: أجهزة مختلفة قد تكون كتبت
     // أرقاماً مختلفة للرصيد نفسه، والحساب من السجلات يوحّدها بلا كتابة جديدة.
-    if (totalPulled > 0) local.recalculateAllBalances();
+    if (totalPulled > 0 || totalRemoved > 0) local.recalculateAllBalances();
 
     remotePendingIds.clear();
     lastRemoteCheck = DateTime.now();
-    // ختم آخر سحب لا يتقدّم إلا بعد سحب كامل ناجح: تقديمه بعد سحب ناقص كان
-    // يجعل تغييرات الجدول الفاشل تقع قبل الختم فلا تُحسب في «السحب» أبداً.
     if (failedTables.isEmpty) {
       await _setLastPullAt(tenantId, DateTime.now().toUtc().toIso8601String());
     }
     return PullOutcome(pulled: totalPulled, removed: totalRemoved, failedTables: failedTables);
   }
+
+  /// ما حُذف في السحابة منذ آخر سحب، من سجل المحذوفات الذي تملؤه القاعدة.
+  ///
+  /// إعادة تطبيق حذف قديم لا تضرّ: سجلٌ أُعيد إنشاؤه بعده يحمل ختماً أحدث فيبقى.
+  Future<int> _applyRemoteDeletes(String tenantId) async {
+    var since = await _cursor(tenantId, deletesCursor);
+    var maxStamp = since;
+    var removed = 0;
+
+    for (var from = 0;; from += pullPageSize) {
+      final page = await _select(
+        'deleted_records',
+        tenantId,
+        columns: 'table_name,record_id,deleted_at',
+        since: since,
+        sinceColumn: 'deleted_at',
+        from: from,
+        to: from + pullPageSize - 1,
+        order: 'deleted_at.asc',
+      );
+      // الجدول غير منشور بعد (هجرة لم تُنفَّذ): الحذف يُكتشف بالسحب الكامل
+      if (page == null) return removed;
+
+      for (final row in page) {
+        final table = '${row['table_name'] ?? ''}';
+        final id = '${row['record_id'] ?? ''}';
+        final deletedAt = '${row['deleted_at'] ?? ''}';
+        maxStamp = laterStamp(maxStamp, deletedAt);
+        if (table.isEmpty || id.isEmpty || !syncedTables.contains(table)) continue;
+
+        final pending = local.pendingSyncs.any((p) => p.tableName == table && p.recordId == id);
+        final applies = shouldApplyRemoteDelete(
+          existsLocally: local.recordOf(table, id) != null,
+          localStamp: local.serverStamp(table, id),
+          deletedAt: deletedAt,
+          isPending: pending,
+        );
+        if (!applies) continue;
+        local.removeIds(table, [id]);
+        removed++;
+      }
+
+      if (page.length < pullPageSize) break;
+    }
+
+    await _setCursor(tenantId, deletesCursor, maxStamp);
+    return removed;
+  }
+
+  /// ما تغيّر في جدول منذ المؤشر ولا نملك نسخته، بجلب المعرّفات والأختام وحدها.
+  /// ما رفعناه نحن يعود بالختم المحفوظ عندنا نفسه فلا يُجلب ثانيةً.
+  Future<({List<String> ids, String? maxStamp})?> _findChanged(
+    String cloud,
+    String tenantId,
+    String since,
+  ) async {
+    final localStamps = local.serverStampsOf(cloud);
+    final ids = <String>[];
+    String? maxStamp = since;
+
+    for (var from = 0;; from += pullPageSize) {
+      final page = await _select(
+        cloud,
+        tenantId,
+        columns: 'id,server_updated_at',
+        since: since,
+        sinceColumn: 'server_updated_at',
+        from: from,
+        to: from + pullPageSize - 1,
+        order: 'server_updated_at.asc',
+      );
+      if (page == null) return null;
+
+      ids.addAll(pickChangedIds(page, localStamps));
+      for (final row in page) {
+        maxStamp = laterStamp(maxStamp, '${row['server_updated_at'] ?? ''}');
+      }
+      if (page.length < pullPageSize) return (ids: ids, maxStamp: maxStamp);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>?> _fetchPages(String cloud, String tenantId, String? since) async {
+    final all = <Map<String, dynamic>>[];
+    for (var from = 0;; from += pullPageSize) {
+      final page = await _select(
+        cloud,
+        tenantId,
+        since: since,
+        sinceColumn: 'server_updated_at',
+        from: from,
+        to: from + pullPageSize - 1,
+        order: 'id.asc',
+      );
+      if (page == null) return null;
+      all.addAll(page);
+      if (page.length < pullPageSize) return all;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>?> _fetchByIds(String cloud, String tenantId, List<String> ids) async {
+    final all = <Map<String, dynamic>>[];
+    for (var i = 0; i < ids.length; i += idFetchChunk) {
+      final chunk = ids.sublist(i, i + idFetchChunk > ids.length ? ids.length : i + idFetchChunk);
+      final page = await _selectIn(cloud, tenantId, chunk);
+      all.addAll(page);
+    }
+    return all;
+  }
+
+  /// مؤشر الجدول: ختم السيرفر لآخر ما وصلنا منه.
+  String cursorKey(String tenantId, String table) => 'sync_cursor_${tenantId}_$table';
+
+  String columnsSignatureKey(String tenantId) => 'sync_columns_$tenantId';
+
+  /// تصفير المؤشرات حين تتغيّر أعمدة التطبيق — انظر [pullColumnsSignature].
+  Future<void> _resetCursorsIfColumnsChanged(String tenantId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = columnsSignatureKey(tenantId);
+    if (prefs.getString(key) == pullColumnsSignature) return;
+
+    for (final table in [...syncedTables, deletesCursor]) {
+      await prefs.remove(cursorKey(tenantId, table));
+    }
+    await prefs.setString(key, pullColumnsSignature);
+  }
+
+  Future<String?> _cursor(String tenantId, String table) async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString(cursorKey(tenantId, table));
+    return value == null || value.isEmpty ? null : value;
+  }
+
+  Future<void> _setCursor(String tenantId, String table, String? stamp) async {
+    if (stamp == null || stamp.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(cursorKey(tenantId, table), stamp);
+  }
+
+  /// تراجعٌ عن المؤشر قبل الجلب — انظر [cursorOverlapMs].
+  static String overlapped(String since) =>
+      DateTime.fromMillisecondsSinceEpoch(toTimestamp(since) - cursorOverlapMs, isUtc: true).toIso8601String();
 
   /// ترويسات الجلسة لا المفتاح المنشور: القاعدة محمية بـ RLS، والزائر المجهول
   /// يُعاد له جدول فارغ بلا خطأ — فكان السحب «ينجح» بصفر سجل والرفع يُرفض.
@@ -1190,6 +1384,9 @@ class SyncService {
     String tenantId, {
     String columns = '*',
     String? since,
+
+    /// العمود الذي يُرشَّح به [since] — ختم السيرفر، أو وقت الحذف في سجل المحذوفات.
+    String sinceColumn = 'server_updated_at',
     required int from,
     required int to,
     required String order,
@@ -1201,7 +1398,8 @@ class SyncService {
       'order': order,
     };
     if (since != null && since.isNotEmpty) {
-      params['updated_at'] = 'gt.$since';
+      // تراجعٌ عن المؤشر بلحظة: صفٌّ كُتب أثناء السحب السابق كان يُفوَّت للأبد
+      params[sinceColumn] = 'gt.${overlapped(since)}';
     }
     final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(queryParameters: params);
     try {
