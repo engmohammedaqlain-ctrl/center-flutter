@@ -1,0 +1,6 @@
+# انسخ هذا الملف إلى android/key.properties واملأه ببيانات مفتاحك.
+# لا يُرفع إلى المستودع: ضياع المفتاح أو تسريبه يعني فقدان القدرة على التحديث.
+storeFile=../center-release.jks
+storePassword=
+keyAlias=center
+keyPassword=
