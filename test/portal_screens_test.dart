@@ -323,7 +323,7 @@ void main() {
       // الشعبة المحفوظة بكلمة «شعبة» لا تتكرر
       expect(find.text('ثاني عشر علمي ذكور - شعبة (1)'), findsOneWidget);
       expect(find.text('401334845'), findsOneWidget);
-      for (final t in ['المودل', 'الجدول', 'الحضور', 'الدرجات', 'الرسوم']) {
+      for (final t in ['المودل', 'المواد والمعلمون', 'الحضور', 'الدرجات', 'الرسوم']) {
         expect(find.text(t), findsOneWidget, reason: t);
       }
 
@@ -332,14 +332,14 @@ void main() {
       expect(find.text('الكيمياء'), findsOneWidget);
       expect(find.text('لا توجد وحدات أو دروس منشورة لهذه المادة في هذا الفصل'), findsOneWidget);
 
-      await tester.tap(find.text('الجدول'));
+      await tester.tap(find.text('المواد والمعلمون'));
       await tester.pumpAndSettle();
-      expect(find.text('المواد المسجلة في جدولك (1):'), findsOneWidget);
+      expect(find.text('المواد والمعلمون (1):'), findsOneWidget);
       expect(find.text('القاعة: شعبة (1)'), findsOneWidget);
 
       await tester.tap(find.text('الحضور'));
       await tester.pumpAndSettle();
-      expect(find.text('سجل الأيام والحصص:'), findsOneWidget);
+      expect(find.text('سجل الحضور:'), findsOneWidget);
       expect(find.text('حاضر'), findsOneWidget);
       expect(find.text('غائب'), findsOneWidget);
 
@@ -382,13 +382,13 @@ void main() {
       expect(find.text('ولي الأمر: أبو علي'), findsOneWidget);
       expect(find.text('علي أبو حسنين'), findsOneWidget, reason: 'شريط الهوية باسم الابن');
       expect(find.text('المودل'), findsNothing);
-      for (final t in ['الجدول', 'الحضور', 'الدرجات', 'الرسوم']) {
+      for (final t in ['المواد والمعلمون', 'الحضور', 'الدرجات', 'الرسوم']) {
         expect(find.text(t), findsOneWidget, reason: t);
       }
       expect(fake.lastIncludeHidden, isNull, reason: 'لا يُطلب محتوى المودل أصلاً');
 
       // يبدأ من الحضور
-      expect(find.text('سجل الأيام والحصص:'), findsOneWidget);
+      expect(find.text('سجل الحضور:'), findsOneWidget);
     });
   }
 }

@@ -104,14 +104,9 @@ class MoneyChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (balance == 0) return StatusChip.success('خالص 0 $currency');
     if (balance < 0) return StatusChip.danger('عليه ${money(balance)}');
-    return StatusChip(
-      label: 'له ${money(balance)}',
-      fg: const Color(0xFF1E40AF),
-      bg: AppColors.infoSoft,
-      border: const Color(0xFFBFDBFE),
-    );
+    // الصفر وما فوقه: لا مطالبة عليه
+    return StatusChip.success('مسدد');
   }
 }
 

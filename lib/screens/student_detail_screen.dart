@@ -150,11 +150,8 @@ class StudentDetailScreen extends StatelessWidget {
                       Expanded(
                         child: StatCard(
                           label: 'الرصيد المالي الحالي',
-                          value: student.isDebtor
-                              ? 'عليه ${money(student.balance)}'
-                              : student.balance > 0
-                                  ? 'له ${money(student.balance)}'
-                                  : 'مسدد بالكامل',
+                          // الفائض يظهر في سطر التفصيل تحتها، والبطاقة تقول الخلاصة
+                          value: student.isDebtor ? 'عليه ${money(student.balance)}' : 'مسدد',
                           color: student.isDebtor ? AppColors.danger : AppColors.success,
                         ),
                       ),
@@ -626,6 +623,7 @@ class _BalanceBreakdown extends StatelessWidget {
             Expanded(
               child: Text(
                 [
+                  if (student.balance > 0) 'له رصيد ${money(student.balance)}',
                   'المقبوض ${money(totalPaid)}',
                   // المطالبة اليوم هي المستحق حتى تاريخه، والباقي مجدول لم يحن
                   if (dues > 0) 'المستحق حتى اليوم ${money(dueSoFar)} من ${money(dues)}',

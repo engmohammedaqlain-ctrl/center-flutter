@@ -2767,7 +2767,8 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
             compact: true,
             tabs: [
               if (!isParent) const _TabSpec('moodle', 'المودل', Icons.menu_book_outlined),
-              const _TabSpec('subjects', 'الجدول', Icons.schedule),
+              // المدرسة لا جداول أوقات فيها: المادة ومعلمها هما المحتوى
+              const _TabSpec('subjects', 'المواد والمعلمون', Icons.menu_book_outlined),
               const _TabSpec('attendance', 'الحضور', Icons.event_available_outlined),
               const _TabSpec('evaluations', 'الدرجات', Icons.workspace_premium_outlined),
               const _TabSpec('financial', 'الرسوم', Icons.credit_card_outlined),
@@ -3002,7 +3003,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Text(
-          'المواد المسجلة في جدولك (${subjects.length}):',
+          'المواد والمعلمون (${subjects.length}):',
           style: const TextStyle(color: _C.muted, fontSize: 12, fontWeight: FontWeight.w800),
         ),
       ),
@@ -3107,7 +3108,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       const SizedBox(height: 16),
       const Padding(
         padding: EdgeInsets.symmetric(horizontal: 4),
-        child: Text('سجل الأيام والحصص:', style: TextStyle(color: _C.muted, fontSize: 12, fontWeight: FontWeight.w800)),
+        child: Text('سجل الحضور:', style: TextStyle(color: _C.muted, fontSize: 12, fontWeight: FontWeight.w800)),
       ),
       const SizedBox(height: 8),
       if (a.records.isEmpty)
@@ -3123,25 +3124,34 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                 borderRadius: BorderRadius.circular(Corner.box),
                 border: Border.all(color: _C.line),
               ),
+              // التاريخ وسببه في عمود، والحالة في الطرف: الملاحظة الطويلة كانت
+              // تزاحم التاريخ في سطر واحد فيُقصّ أحدهما
               child: Row(
                 children: [
-                  Text(
-                    r.date,
-                    textDirection: TextDirection.ltr,
-                    style: const TextStyle(color: _C.slate700, fontSize: 12, fontWeight: FontWeight.w800, fontFamily: _mono),
-                  ),
-                  if (r.notes.trim().isNotEmpty) ...[
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        '(${r.notes.trim()})',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: _C.faint, fontSize: 10.5),
-                      ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          r.date,
+                          textDirection: TextDirection.ltr,
+                          style: const TextStyle(color: _C.slate700, fontSize: 12, fontWeight: FontWeight.w800, fontFamily: _mono),
+                        ),
+                        if (r.notes.trim().isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              r.notes.trim(),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: _C.faint, fontSize: 10.5, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                      ],
                     ),
-                  ],
-                  const Spacer(),
+                  ),
+                  const SizedBox(width: 8),
                   switch (r.status) {
                     'present' => const _Badge('حاضر', fg: _C.emerald700, bg: _C.emerald50, border: _C.emerald200, icon: Icons.check_circle_outline),
                     'excused' => const _Badge('مأذون', fg: _C.amber700, bg: _C.amber50, border: _C.amber200),

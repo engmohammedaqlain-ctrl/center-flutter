@@ -226,11 +226,10 @@ class _BalanceText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (text, color) = balance == 0
-        ? ('خالص', AppColors.success)
-        : balance < 0
-            ? ('عليه ${money(balance)}', AppColors.danger)
-            : ('له ${money(balance)}', AppColors.info);
+    // من لا دين عليه «مسدد»: رصيدٌ لصالحه تفصيلٌ يخصّ ملفه لا قائمة الطلاب
+    final (text, color) = balance < 0
+        ? ('عليه ${money(balance)}', AppColors.danger)
+        : ('مسدد', AppColors.success);
     return Padding(
       padding: const EdgeInsetsDirectional.only(end: 6),
       child: Text(text, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700)),
