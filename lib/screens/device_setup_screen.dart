@@ -145,13 +145,11 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    // اسم المنشأة من حسابها هو المعروف هنا: هوية المدرسة (وفيها اسمها المعتمد)
-    // لم تصل بعد، وقراءة الاسم المحفوظ كانت تعرض اسم مدرسة أخرى عملت على الجهاز
-    final tenantName = store.currentTenant?.name.trim() ?? '';
-    final name = tenantName.isNotEmpty ? tenantName : store.institutionName.trim();
 
     return AuthFrame(
-      title: name,
+      // بلا اسم مدرسة: هويتها لم تصل بعد — هي ما يُنزَّل الآن — وعرض اسمٍ محفوظ
+      // على الجهاز كان يُظهر اسم مدرسة أخرى عملت عليه من قبل
+      title: 'تهيئة الجهاز',
       subtitle: 'تهيئة النظام لأول مرة على هذا الجهاز',
       logo: store.institutionLogo,
       children: [
