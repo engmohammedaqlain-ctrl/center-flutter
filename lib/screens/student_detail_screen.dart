@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../data/balance.dart';
+import '../data/grading.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -509,6 +510,54 @@ class _CardState extends State<_Card> {
                 ),
             ],
             if (title == null || open) ...widget.children,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// معدل فصل بأوزان المخطط: المتجدّد بارز، ومجموع ما رُصد بجانبه.
+class _TermGradeRow extends StatelessWidget {
+  const _TermGradeRow({required this.label, required this.grade});
+
+  final String label;
+  final TermGrade grade;
+
+  @override
+  Widget build(BuildContext context) {
+    final average = grade.currentAverage;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: _cellBox(),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.text),
+              ),
+            ),
+            if (average == null)
+              const Text('لم يُرصد بعد', style: TextStyle(fontSize: 11, color: AppColors.muted, fontWeight: FontWeight.w600))
+            else ...[
+              Text(
+                '${average.round()}%',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.w900,
+                  color: average >= 50 ? AppColors.success : AppColors.danger,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                grade.isComplete ? 'مكتمل' : 'من ${trimNum(grade.gradedWeight)}% مرصودة',
+                style: const TextStyle(fontSize: 10, color: AppColors.muted, fontWeight: FontWeight.w600),
+              ),
+            ],
           ],
         ),
       ),
@@ -1188,9 +1237,16 @@ class _EvaluationsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
+    final scheme = store.gradingScheme;
     return _Card(
       title: 'الدرجات والتقييمات (${evaluations.length})',
       children: [
+        // معدل كل فصل بأوزان مخطط المدرسة، والمتجدّد منه لما رُصد حتى الآن
+        if (!scheme.isEmpty) ...[
+          for (final term in gradingTermLabels.entries)
+            if (scheme.isConfigured(term.key)) _TermGradeRow(label: term.value, grade: computeTermGrade(evaluations, scheme, term.key)),
+          const _Rule(),
+        ],
         if (evaluations.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 14),

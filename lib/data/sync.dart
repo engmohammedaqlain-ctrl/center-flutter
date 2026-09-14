@@ -109,6 +109,7 @@ const tableAllowedColumns = <String, List<String>>{
   'student_evaluations': [
     'id', 'tenant_id', 'student_id', 'group_id', 'teacher_id', 'subject_id',
     'title', 'score', 'max_score', 'evaluation_date', 'type', 'notes',
+    'term', 'component_id',
     'created_at', 'updated_at',
   ],
 };

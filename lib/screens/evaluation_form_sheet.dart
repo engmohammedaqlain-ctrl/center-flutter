@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/grading.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -31,6 +32,10 @@ class _EvaluationSheet extends StatefulWidget {
 class _EvaluationSheetState extends State<_EvaluationSheet> {
   String groupId = '';
   String type = 'quiz';
+
+  /// الفصل والمكوّن من مخطط المدرسة — فارغان لمن لا مخطط له.
+  String term = 'term_1';
+  String componentId = '';
   final title = TextEditingController();
   final maxScore = TextEditingController(text: '100');
   late String date = isoDate(DateTime.now());
@@ -126,6 +131,8 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
         evaluationDate: date,
         scores: entered,
         notes: {for (final e in notes.entries) e.key: e.value.text},
+        term: componentId.isEmpty ? '' : term,
+        componentId: componentId,
       );
       if (mounted) Navigator.pop(context, saved);
     } on StoreException catch (e) {
@@ -211,6 +218,54 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                     onChanged: (v) => setState(() => type = v ?? type),
                   ),
                   const SizedBox(height: 10),
+
+                  // مخطط العلامات إن عُرّف: الفصل ومكوّنه يجعلان للتقييم وزناً
+                  // في المعدل بدل متوسط بسيط يساوي بين النهائي والواجب
+                  if (!store.gradingScheme.isEmpty) ...[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const FieldLabel('الفصل الدراسي'),
+                              AppDropdown<String>(
+                                value: term,
+                                items: [
+                                  for (final e in gradingTermLabels.entries)
+                                    DropdownMenuItem(value: e.key, child: Text(e.value)),
+                                ],
+                                onChanged: (v) => setState(() {
+                                  term = v ?? term;
+                                  componentId = '';
+                                }),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const FieldLabel('مكوّن العلامة'),
+                              AppDropdown<String>(
+                                value: componentId.isEmpty ? null : componentId,
+                                hint: 'بلا وزن',
+                                items: [
+                                  for (final c in store.gradingScheme.of(term))
+                                    DropdownMenuItem(value: c.id, child: Text('${c.name} (${trimNum(c.weight)}%)')),
+                                ],
+                                onChanged: (v) => setState(() => componentId = v ?? ''),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                  ],
 
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,

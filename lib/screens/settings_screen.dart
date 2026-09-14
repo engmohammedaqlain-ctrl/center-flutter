@@ -15,6 +15,7 @@ import '../widgets/widgets.dart';
 import 'developer_settings_screen.dart';
 import 'payment_methods_tab.dart';
 import 'settings_forms.dart';
+import 'grading_scheme_tab.dart';
 import 'student_promotion_sheet.dart';
 
 /// الإعدادات — المقابل لـ `pages/Settings.tsx`.
@@ -51,6 +52,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _Tab('payment_methods', Icons.credit_card_outlined, 'وسائل الدفع'),
     _Tab('teachers', Icons.school_outlined, 'المعلمون'),
     _Tab('subjects', Icons.menu_book_outlined, 'المواد'),
+    _Tab('grading', Icons.workspace_premium_outlined, 'مخطط العلامات', schoolOnly: true),
     _Tab('rooms', Icons.meeting_room_outlined, 'القاعات', centerOnly: true),
     _Tab('users', Icons.manage_accounts_outlined, 'المستخدمون', capability: 'settings.users'),
     _Tab('backup', Icons.storage_outlined, 'البيانات والنسخ', capability: 'settings.backup'),
@@ -85,6 +87,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   'grade_fees' => const _FeesTab(),
                   'payment_methods' => const PaymentMethodsTab(),
                   'subjects' => const _SubjectsTab(),
+                  'grading' => const GradingSchemeTab(),
                   'rooms' => const _HallsTab(),
                   'users' => const _UsersTab(),
                   'backup' => const _DataTab(),

@@ -958,6 +958,8 @@ class Evaluation {
     this.evaluationDate = '',
     this.type = 'quiz',
     this.notes = '',
+    this.term = '',
+    this.componentId = '',
     this.syncStatus = 'synced',
     this.createdAt,
     this.updatedAt,
@@ -974,6 +976,11 @@ class Evaluation {
   String evaluationDate;
   String type;
   String notes;
+
+  /// ربطٌ اختياري بمخطط علامات المدرسة: `term_1` أو `term_2`، ومعرّف المكوّن.
+  /// يبقى فارغاً لمن لم يعرّف مخططاً — لا هجرة قسرية للتقييمات القديمة.
+  String term;
+  String componentId;
   String syncStatus;
   String? createdAt;
   String? updatedAt;
@@ -1003,6 +1010,8 @@ class Evaluation {
         'evaluation_date': evaluationDate,
         'type': type,
         'notes': notes.isEmpty ? null : notes,
+        'term': term.isEmpty ? null : term,
+        'component_id': componentId.isEmpty ? null : componentId,
         'created_at': createdAt,
         'updated_at': updatedAt,
         'sync_status': syncStatus,
@@ -1021,6 +1030,8 @@ class Evaluation {
         evaluationDate: '${m['evaluation_date'] ?? ''}'.split('T').first,
         type: '${m['type'] ?? 'quiz'}',
         notes: '${m['notes'] ?? ''}',
+        term: '${m['term'] ?? ''}',
+        componentId: '${m['component_id'] ?? ''}',
         syncStatus: '${m['sync_status'] ?? 'synced'}',
         createdAt: m['created_at']?.toString(),
         updatedAt: m['updated_at']?.toString(),

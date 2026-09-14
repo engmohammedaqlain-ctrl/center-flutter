@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import 'balance.dart';
+import 'grading.dart';
 import 'institution.dart';
 import 'local_db.dart';
 import 'payment_methods.dart';
@@ -582,6 +583,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     required String evaluationDate,
     required Map<String, double> scores,
     Map<String, String> notes = const {},
+    String term = '',
+    String componentId = '',
   }) {
     requireCapability('attendance.edit');
     final cleanTitle = title.trim();
@@ -607,6 +610,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         evaluationDate: evaluationDate,
         type: type,
         notes: (notes[entry.key] ?? '').trim(),
+        // ربطٌ بمخطط العلامات إن عرّفته المدرسة: به يُحسب معدل الفصل بالأوزان
+        term: term,
+        componentId: componentId,
         syncStatus: 'pending',
         createdAt: now,
         updatedAt: now,
@@ -1023,6 +1029,31 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     notifyListeners();
   }
 
+  /// مخطط علامات المدرسة — مكوّنات كل فصل وأوزانها.
+  ///
+  /// يُقرأ من إعداد الجهاز، فإن لم يوجد فمن كائن المنشأة المتزامن: هو طريق وصول
+  /// ما ضبطه سطح المكتب إلى الجوال وإلى بوابتي الطالب وولي الأمر.
+  static const gradingSchemeKey = 'grading_scheme';
+  static const gradingSchemeColorKey = '__grading_scheme';
+
+  GradingScheme get gradingScheme {
+    final local = db.settings[gradingSchemeKey];
+    if (local != null && local.trim().isNotEmpty) return GradingScheme.decode(local);
+    final synced = _storedColorsMap[gradingSchemeColorKey];
+    return synced is Map ? GradingScheme.fromMap(Map<String, dynamic>.from(synced)) : GradingScheme.empty;
+  }
+
+  Future<void> saveGradingScheme(GradingScheme scheme) async {
+    requireCapability('settings.view');
+    await db.setSetting(gradingSchemeKey, scheme.isEmpty ? null : scheme.encode());
+    await _syncInstitutionSetting(gradingSchemeColorKey, scheme.toMap());
+    notifyListeners();
+  }
+
+  /// معدل الطالب في فصل وفق المخطط — يشمل تقييماته كلها في كل المواد.
+  TermGrade termGradeOf(String studentId, String term) =>
+      computeTermGrade(evaluationsOfStudent(studentId), gradingScheme, term);
+
   SchoolDiscountRules get discountRules => SchoolDiscountRules.decode(db.settings[discountRulesKey]);
 
   Future<void> saveDiscountRules(SchoolDiscountRules rules) async {
@@ -1120,6 +1151,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
               ..sort())
             : const <int>[];
         await db.setSetting(_kStudyMonths, clean.isEmpty ? null : jsonEncode(clean));
+      }
+
+      final scheme = synced[gradingSchemeColorKey];
+      if (scheme is Map) {
+        await db.setSetting(gradingSchemeKey, jsonEncode(Map<String, dynamic>.from(scheme)));
       }
 
       final methods = synced[customPaymentMethodsColorKey];
@@ -1412,6 +1448,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     systemFeaturesKey,
     customPaymentMethodsKey,
     discountRulesKey,
+    gradingSchemeKey,
     receiptMigrationKey,
     attendanceIdMigrationKey,
     capabilityMigrationKey,
