@@ -75,6 +75,7 @@ flutter:
   # شعار النظام نفسه الذي يحمله تطبيق سطح المكتب
   assets:
     - assets/logo.png
+    - shorebird.yaml
 
   # To add assets to your application, add an assets section, like this:
   # assets:
