@@ -427,7 +427,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final editing = widget.student != null;
-    if (!store.can('students.edit')) {
+    if (!store.can('students')) {
       return Scaffold(
         appBar: AppBar(title: Text(editing ? 'تعديل بيانات الطالب' : 'تسجيل طالب جديد')),
         body: NoAccess(section: 'students', roleName: store.roleName),

@@ -140,7 +140,7 @@ void main() {
     expect(s.deviceUserId, secretary.id);
     expect(s.receiptReceiver, secretary.name);
     expect(s.roleName, 'سكرتير');
-    expect(s.myCapabilities, equals(receptionistCapabilities));
+    expect(s.mySections, equals(roles['receptionist']!.sections));
     expect(s.can('settings.users'), isFalse);
   });
 

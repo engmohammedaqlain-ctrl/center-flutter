@@ -119,12 +119,4 @@ void main() {
     expect(find.text('معتمد'), findsNothing);
     await s.flush();
   });
-
-  testWidgets('زر إلغاء السند لمن يملك صلاحيته فقط', (tester) async {
-    final clerk = await _store(caps: ['finance.view', 'finance.collect']);
-    await _pump(tester, clerk);
-    expect(find.text('الوصل'), findsWidgets);
-    expect(find.text('إلغاء'), findsNothing);
-    await clerk.flush();
-  });
 }

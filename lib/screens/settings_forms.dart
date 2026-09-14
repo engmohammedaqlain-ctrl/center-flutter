@@ -7,7 +7,6 @@ import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/form_layout.dart';
-import '../widgets/panels.dart';
 import '../widgets/widgets.dart';
 
 // نماذج الإعدادات — صفحات كاملة بتخطيط نموذج تسجيل الطالب: أقسام بعنوان وخط،
@@ -204,7 +203,7 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
     final store = StoreScope.of(context);
     final editing = widget.teacher != null;
     final title = editing ? 'تعديل بيانات: ${widget.teacher!.name}' : 'إضافة مدرس جديد';
-    if (!store.can('settings.view')) return _denied(store, title);
+    if (!store.can('settings')) return _denied(store, title);
     final target = phoneTargetLength(prefix);
 
     return Scaffold(
@@ -464,7 +463,7 @@ class _SubjectFormScreenState extends State<SubjectFormScreen> {
     final store = StoreScope.of(context);
     final editing = widget.subject != null;
     final title = editing ? 'تعديل مادة: ${widget.subject!.name}' : 'إضافة مادة دراسية';
-    if (!store.can('settings.view')) return _denied(store, title);
+    if (!store.can('settings')) return _denied(store, title);
 
     final grades = <String>{
       _general,
@@ -624,7 +623,7 @@ class _GradeFeeFormScreenState extends State<GradeFeeFormScreen> {
     final store = StoreScope.of(context);
     final editing = widget.fee != null;
     final title = editing ? 'تعديل مرحلة: ${widget.fee!.gradeName}' : 'مرحلة دراسية جديدة';
-    if (!store.can('settings.fees')) return _denied(store, title);
+    if (!store.can('settings')) return _denied(store, title);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -684,11 +683,10 @@ class _GradeFeeFormScreenState extends State<GradeFeeFormScreen> {
   }
 }
 
-/// محرر الصلاحيات — المقابل لـ `CapabilityEditor.tsx`: مجموعة بعنوانها وزر
-/// «تحديد القسم»، وسطر لكل صلاحية. التبديل يحترم الاعتماديات (صلاحية تعديل تجلب
-/// صلاحية العرض، وسحب العرض يسحب ما يقوم عليه).
-class CapabilityEditor extends StatelessWidget {
-  const CapabilityEditor({super.key, required this.value, required this.onChanged, this.enabled = true});
+/// اختيار التبويبات التي يراها الحساب — المقابل لـ `AccessEditor.tsx`: سطر لكل
+/// تبويب، والفرعي تحت أصله. إتاحة الفرع تتيح أصله، وإخفاء الأصل يخفي فروعه.
+class AccessEditor extends StatelessWidget {
+  const AccessEditor({super.key, required this.value, required this.onChanged, this.enabled = true});
 
   final List<String> value;
   final ValueChanged<List<String>> onChanged;
@@ -699,78 +697,53 @@ class CapabilityEditor extends StatelessWidget {
     final selected = value.toSet();
     return Opacity(
       opacity: enabled ? 1 : 0.6,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (final group in capabilityGroups) ...[
-            Padding(
-              padding: const EdgeInsets.only(top: 12, bottom: 6),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      group.label,
-                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
-                    ),
-                  ),
-                  if (enabled)
-                    Builder(builder: (context) {
-                      final ids = group.items.map((i) => i.id).toList();
-                      final allOn = ids.every(selected.contains);
-                      return InkWell(
-                        onTap: () => onChanged(toggleCapabilityGroup(value, ids, allOn)),
-                        borderRadius: BorderRadius.circular(Corner.chip),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                          child: Text(
-                            allOn ? 'إلغاء القسم' : 'تحديد القسم',
-                            style: TextStyle(color: AppColors.amber, fontSize: 11.5, fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                      );
-                    }),
-                ],
+      child: Container(
+        margin: const EdgeInsets.only(top: 10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(Corner.card),
+          border: Border.all(color: AppColors.line),
+        ),
+        child: Column(
+          children: [
+            for (var i = 0; i < accessSections.length; i++)
+              _AccessRow(
+                section: accessSections[i],
+                on: selected.contains(accessSections[i].id),
+                blocked: accessSections[i].parent != null && !selected.contains(accessSections[i].parent),
+                last: i == accessSections.length - 1,
+                onTap: enabled ? () => onChanged(toggleSection(value, accessSections[i].id)) : null,
               ),
-            ),
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(Corner.card),
-                border: Border.all(color: AppColors.line),
-              ),
-              child: Column(
-                children: [
-                  for (var i = 0; i < group.items.length; i++)
-                    _CapabilityRow(
-                      item: group.items[i],
-                      on: selected.contains(group.items[i].id),
-                      last: i == group.items.length - 1,
-                      onTap: enabled ? () => onChanged(toggleCapability(value, group.items[i].id)) : null,
-                    ),
-                ],
-              ),
-            ),
           ],
-        ],
+        ),
       ),
     );
   }
 }
 
-class _CapabilityRow extends StatelessWidget {
-  const _CapabilityRow({required this.item, required this.on, required this.last, required this.onTap});
+class _AccessRow extends StatelessWidget {
+  const _AccessRow({
+    required this.section,
+    required this.on,
+    required this.blocked,
+    required this.last,
+    required this.onTap,
+  });
 
-  final CapabilityItem item;
+  final SectionDef section;
   final bool on;
+  final bool blocked;
   final bool last;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final child = section.parent != null;
     return InkWell(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: EdgeInsetsDirectional.fromSTEB(child ? 28 : 12, 10, 12, 10),
         decoration: BoxDecoration(
+          color: on ? AppColors.successSoft : Colors.white,
           border: last ? null : const Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
         ),
         child: Row(
@@ -781,11 +754,16 @@ class _CapabilityRow extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    item.label,
+                    section.label,
                     style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.text),
                   ),
-                  if (item.hint != null)
-                    Text(item.hint!, style: const TextStyle(fontSize: 10.5, color: Color(0xFFB45309))),
+                  if (section.hint != null)
+                    Text(section.hint!, style: const TextStyle(fontSize: 10.5, color: Color(0xFFB45309))),
+                  if (blocked)
+                    Text(
+                      'يحتاج إتاحة «${sectionLabel(section.parent!)}»',
+                      style: const TextStyle(fontSize: 10.5, color: AppColors.muted),
+                    ),
                 ],
               ),
             ),
@@ -809,38 +787,6 @@ class _CapabilityRow extends StatelessWidget {
   }
 }
 
-/// أزرار قالب البداية: تملأ الصلاحيات بقالب الدور، ثم تُعدَّل واحدة واحدة.
-Widget _templates({required bool enabled, required ValueChanged<String> onPick}) {
-  return Wrap(
-    spacing: 6,
-    runSpacing: 6,
-    crossAxisAlignment: WrapCrossAlignment.center,
-    children: [
-      const Text('بدء من قالب:', style: TextStyle(color: AppColors.muted, fontSize: 11.5)),
-      TileButton(
-        label: 'المدير',
-        icon: const Icon(Icons.admin_panel_settings_outlined, size: 13),
-        color: AppColors.heading,
-        background: Colors.white,
-        border: AppColors.lineStrong,
-        onTap: () {
-          if (enabled) onPick('admin');
-        },
-      ),
-      TileButton(
-        label: 'السكرتير',
-        icon: const Icon(Icons.support_agent_outlined, size: 13),
-        color: AppColors.heading,
-        background: Colors.white,
-        border: AppColors.lineStrong,
-        onTap: () {
-          if (enabled) onPick('receptionist');
-        },
-      ),
-    ],
-  );
-}
-
 class UserFormScreen extends StatefulWidget {
   const UserFormScreen({super.key});
 
@@ -851,7 +797,7 @@ class UserFormScreen extends StatefulWidget {
 class _UserFormScreenState extends State<UserFormScreen> {
   final name = TextEditingController();
   String role = 'receptionist';
-  List<String> caps = [...receptionistCapabilities];
+  List<String> sections = [...roles['receptionist']!.sections];
   final errors = FieldErrors();
 
   @override
@@ -869,7 +815,7 @@ class _UserFormScreenState extends State<UserFormScreen> {
     });
     if (errors.report(context)) return;
     try {
-      store.addUser(AppUser(id: store.newId(), name: name.text.trim(), role: role, capabilities: [...caps]));
+      store.addUser(AppUser(id: store.newId(), name: name.text.trim(), role: role, capabilities: [...sections]));
       showAppSnack(context, 'تمت إضافة المستخدم');
       Navigator.pop(context);
     } on StoreException catch (e) {
@@ -903,31 +849,30 @@ class _UserFormScreenState extends State<UserFormScreen> {
                   onChanged: (_) {
                     if (errors.clear('name')) setState(() {});
                   },
-                  decoration: InputDecoration(hintText: 'اسم السكرتير الجديد...', errorText: errors['name']),
+                  decoration: InputDecoration(hintText: 'اسم المستخدم', errorText: errors['name']),
                 ),
               ],
               end: [
                 const FieldLabel('الدور'),
                 AppDropdown<String>(
                   value: role,
-                  items: const [
-                    DropdownMenuItem(value: 'receptionist', child: Text('سكرتير')),
-                    DropdownMenuItem(value: 'admin', child: Text('مدير النظام')),
+                  items: [
+                    for (final r in roleList) DropdownMenuItem(value: r.id, child: Text(r.label)),
                   ],
+                  // الدور قالب بداية: اختياره يملأ التبويبات، ثم تُعدَّل واحداً واحداً
                   onChanged: (v) => setState(() {
                     role = v ?? role;
-                    caps = defaultCapsFor(role);
+                    sections = [...roleDefinition(role).sections];
                   }),
                 ),
               ],
             ),
             FormSection(
-              icon: Icons.shield_outlined,
-              title: 'الصلاحيات',
-              note: '${caps.length} من ${allCapabilities.length}',
+              icon: Icons.tab_outlined,
+              title: 'التبويبات الظاهرة له',
+              note: '${sections.length} من ${allSections.length}',
             ),
-            _templates(enabled: true, onPick: (r) => setState(() => caps = defaultCapsFor(r))),
-            CapabilityEditor(value: caps, onChanged: (v) => setState(() => caps = v)),
+            AccessEditor(value: sections, onChanged: (v) => setState(() => sections = v)),
           ],
         ),
       ),
@@ -935,26 +880,26 @@ class _UserFormScreenState extends State<UserFormScreen> {
   }
 }
 
-class CapabilitiesScreen extends StatefulWidget {
-  const CapabilitiesScreen({super.key, required this.user});
+class UserAccessScreen extends StatefulWidget {
+  const UserAccessScreen({super.key, required this.user});
 
   final AppUser user;
 
   @override
-  State<CapabilitiesScreen> createState() => _CapabilitiesScreenState();
+  State<UserAccessScreen> createState() => _UserAccessScreenState();
 }
 
-class _CapabilitiesScreenState extends State<CapabilitiesScreen> {
-  late List<String> caps = effectiveCapabilities(widget.user.capabilities, widget.user.role);
+class _UserAccessScreenState extends State<UserAccessScreen> {
+  late List<String> sections = effectiveSections(widget.user.capabilities, widget.user.role);
 
   void _save() {
     final store = StoreScope.of(context);
     final u = widget.user;
     try {
       store.updateUser(
-        AppUser(id: u.id, name: u.name, role: u.role, email: u.email, isActive: u.isActive, capabilities: [...caps]),
+        AppUser(id: u.id, name: u.name, role: u.role, email: u.email, isActive: u.isActive, capabilities: [...sections]),
       );
-      showAppSnack(context, 'تم حفظ صلاحيات ${u.name}');
+      showAppSnack(context, 'تم الحفظ');
       Navigator.pop(context);
     } on StoreException catch (e) {
       showAppSnack(context, e.message, error: true);
@@ -965,9 +910,9 @@ class _CapabilitiesScreenState extends State<CapabilitiesScreen> {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final u = widget.user;
-    if (!store.can('settings.users')) return _denied(store, 'صلاحيات ${u.name}');
-    // الحساب المستخدم على هذا الجهاز الآن لا تُعدَّل صلاحياته منه — كما في
-    // CapabilityEditor.tsx — كي لا يُغلق المدير الباب على نفسه
+    if (!store.can('settings.users')) return _denied(store, 'تبويبات ${u.name}');
+    // الحساب المستخدم على هذا الجهاز الآن لا تُعدَّل تبويباته منه — كما في
+    // AccessEditor.tsx — كي لا يُغلق المدير الباب على نفسه
     final locked = u.id == store.deviceUserId;
 
     return Scaffold(
@@ -979,7 +924,7 @@ class _CapabilitiesScreenState extends State<CapabilitiesScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'صلاحيات ${u.name}',
+              'تبويبات ${u.name}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
@@ -992,7 +937,7 @@ class _CapabilitiesScreenState extends State<CapabilitiesScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: FormActionBar(label: 'حفظ الصلاحيات', onSave: locked ? null : _save),
+      bottomNavigationBar: FormActionBar(label: 'حفظ التبويبات', onSave: locked ? null : _save),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
         children: [
@@ -1006,26 +951,24 @@ class _CapabilitiesScreenState extends State<CapabilitiesScreen> {
                 border: Border.all(color: AppColors.amberBorder),
               ),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(Icons.info_outline, size: 16, color: AppColors.amber),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'هذا هو الحساب المستخدم على هذا الجهاز الآن، فلا تُعدَّل صلاحياته منه كي لا يُفقد الوصول.',
-                      style: TextStyle(color: AppColors.heading, fontSize: 11.5, height: 1.5),
+                      'تبويبات حسابك تُعدَّل من جهاز آخر',
+                      style: TextStyle(color: AppColors.heading, fontSize: 11.5),
                     ),
                   ),
                 ],
               ),
             ),
           FormSection(
-            icon: Icons.shield_outlined,
-            title: 'الصلاحيات المعتمدة',
-            note: '${caps.length} من ${allCapabilities.length}',
+            icon: Icons.tab_outlined,
+            title: 'التبويبات الظاهرة له',
+            note: '${sections.length} من ${allSections.length}',
           ),
-          _templates(enabled: !locked, onPick: (r) => setState(() => caps = defaultCapsFor(r))),
-          CapabilityEditor(value: caps, enabled: !locked, onChanged: (v) => setState(() => caps = v)),
+          AccessEditor(value: sections, enabled: !locked, onChanged: (v) => setState(() => sections = v)),
         ],
       ),
     );

@@ -159,7 +159,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
     return ListenableBuilder(
       listenable: store,
       builder: (context, _) {
-        if (!store.can('finance.collect')) {
+        if (!store.can('finance')) {
           return Scaffold(
             backgroundColor: Colors.white,
             appBar: AppBar(title: const Text('تسديد دفعة')),

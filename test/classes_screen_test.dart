@@ -47,8 +47,8 @@ void main() {
     });
   }
 
-  testWidgets('من لا يملك تعديل الجداول لا يرى «صف جديد»', (tester) async {
-    final s = await _store(caps: ['schedule.view']);
+  testWidgets('من لا يرى تبويب الصفوف لا يرى «صف جديد»', (tester) async {
+    final s = await _store(caps: ['students']);
     await _pump(tester, s, const Scaffold(body: ClassesScreen()));
     expect(find.text('صف جديد'), findsNothing);
     await s.flush();

@@ -67,8 +67,9 @@ Future<void> showActionSheet(BuildContext context, AppStore store) {
       listenable: Listenable.merge([store, updates]),
       builder: (ctx, _) {
         final me = store.deviceUser;
-        final isAdmin = normalizeRole(me?.role) == 'admin';
-        final name = me?.name ?? (isAdmin ? 'جهاز الإدارة' : 'جهاز السكرتير');
+        // الجهاز بلا هوية مثبَّتة يعمل بصلاحية المدير
+        final isAdmin = me == null || normalizeRole(me.role) == 'admin';
+        final name = me?.name ?? 'جهاز الإدارة';
         final updateReady = updates.action != UpdateAction.none && updates.release != null;
 
         return Padding(
@@ -123,7 +124,7 @@ Future<void> showActionSheet(BuildContext context, AppStore store) {
 
               // الدرجات والتقييمات: قسم قائم بذاته في سطح المكتب، وشريط الهاتف
               // السفلي خمسة أقسام ثابتة كما في MobileBottomNav، فمدخله هنا.
-              if (store.features.enableEvaluations && store.can('attendance.view')) ...[
+              if (store.features.enableEvaluations && store.can('evaluations')) ...[
                 _menuTile(
                   icon: Icons.workspace_premium_outlined,
                   iconColor: AppColors.accent,
@@ -290,11 +291,10 @@ Widget _syncButton(
   required IconData icon,
   required String label,
 }) {
-  final allowed = store.can(push ? 'sync.push' : 'sync.pull');
-  final on = count > 0 && allowed;
-  final idle = allowed ? AppColors.muted : AppColors.faint;
+  final on = count > 0;
+  const idle = AppColors.muted;
   return PressableScale(
-    onTap: store.sync.isSyncing || !allowed
+    onTap: store.sync.isSyncing
         ? null
         : () {
             Navigator.pop(ctx);
@@ -400,11 +400,6 @@ Widget _menuTile({
 /// تُفتح فوراً وتفحص بداخلها. كان الفحص يسبق الفتح — وهو جولة كاملة على كل
 /// الجداول — فتبقى الشاشة بلا استجابة حتى ينتهي، ويبدو الزر معطّلاً.
 Future<void> openSyncSheet(BuildContext context, AppStore store, {required bool push}) {
-  // كل مسارات فتح المزامنة تمرّ من هنا، فتُحرس هنا لا عند كل زر وحده
-  if (!store.can(push ? 'sync.push' : 'sync.pull')) {
-    showAppSnack(context, push ? 'لا تملك صلاحية رفع التعديلات على هذا الجهاز' : 'لا تملك صلاحية سحب البيانات على هذا الجهاز', error: true);
-    return Future.value();
-  }
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,

@@ -49,7 +49,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
           ..sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
 
         return ThumbActionLayer(
-          action: store.can('students.edit')
+          action: store.can('students')
               ? ThumbAction(
                   label: 'طالب جديد',
                   icon: Icons.person_add_alt_1,
@@ -188,7 +188,7 @@ class _StudentCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (StoreScope.of(context).can('finance.view')) _BalanceText(balance: student.balance),
+              if (StoreScope.of(context).can('finance')) _BalanceText(balance: student.balance),
               if (phone.isNotEmpty) ...[
                 const SizedBox(height: 2),
                 Row(

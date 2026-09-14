@@ -63,8 +63,8 @@ DemoDataStats injectDemoData(AppStore store) {
     ]);
 
     store.users.addAll([
-      AppUser(id: 'u1', name: 'أحمد عبد الله', role: 'admin', capabilities: [...allCapabilities]),
-      AppUser(id: 'u2', name: 'سارة خالد', role: 'receptionist', capabilities: [...receptionistCapabilities]),
+      AppUser(id: 'u1', name: 'أحمد عبد الله', role: 'admin', capabilities: [...allSections]),
+      AppUser(id: 'u2', name: 'سارة خالد', role: 'receptionist', capabilities: [...roles['receptionist']!.sections]),
     ]);
 
     store.teachers.addAll([

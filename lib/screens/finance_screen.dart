@@ -80,7 +80,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 )
               : null;
         } else {
-          action = store.can('finance.collect')
+          action = store.can('finance')
               ? ThumbAction(
                   label: 'دفعة جديدة',
                   icon: Icons.add_card,
@@ -257,7 +257,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
     final active = pays.where((p) => !p.cancelled).toList();
     final collected = active.fold<double>(0, (a, p) => a + p.amount);
     final cancelled = pays.length - active.length;
-    final canCancel = store.can('finance.cancel');
+    final canCancel = store.can('finance');
 
     return Column(
       children: [
@@ -353,8 +353,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
     final lateCount = all.where((d) => d.late).length;
     final dueCount = all.where((d) => !d.late && !d.scheduled).length;
     final scheduledCount = all.where((d) => d.scheduled).length;
-    final canCollect = store.can('finance.collect');
-    final canOpenStudent = store.can('students.view');
+    final canCollect = store.can('finance');
+    final canOpenStudent = store.can('students');
 
     return Column(
       children: [

@@ -32,14 +32,14 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-/// تبويب في الإعدادات مع صلاحيته.
+/// تبويب في الإعدادات مع التبويب الفرعي الذي يحرسه.
 class _Tab {
-  const _Tab(this.id, this.icon, this.label, {this.capability});
+  const _Tab(this.id, this.icon, this.label, {this.section});
 
   final String id;
   final IconData icon;
   final String label;
-  final String? capability;
+  final String? section;
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
@@ -47,13 +47,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// التبويبات بترتيب Settings.tsx — تُخفى بحسب الصلاحية.
   static const _allTabs = [
-    _Tab('grade_fees', Icons.payments_outlined, 'المراحل والرسوم', capability: 'settings.fees'),
+    _Tab('grade_fees', Icons.payments_outlined, 'المراحل والرسوم'),
     _Tab('payment_methods', Icons.credit_card_outlined, 'وسائل الدفع'),
     _Tab('teachers', Icons.school_outlined, 'المعلمون'),
     _Tab('subjects', Icons.menu_book_outlined, 'المواد'),
     _Tab('grading', Icons.workspace_premium_outlined, 'مخطط العلامات'),
-    _Tab('users', Icons.manage_accounts_outlined, 'المستخدمون', capability: 'settings.users'),
-    _Tab('backup', Icons.storage_outlined, 'البيانات والنسخ', capability: 'settings.backup'),
+    _Tab('users', Icons.manage_accounts_outlined, 'المستخدمون', section: 'settings.users'),
+    _Tab('backup', Icons.storage_outlined, 'البيانات والنسخ', section: 'settings.backup'),
   ];
 
   @override
@@ -66,7 +66,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return NoAccess(section: 'settings', roleName: store.roleName);
         }
         final tabs = _allTabs.where((t) {
-          if (t.capability != null && !store.can(t.capability!)) return false;
+          if (t.section != null && !store.can(t.section!)) return false;
           return true;
         }).toList();
         if (tabs.isEmpty) return NoAccess(section: 'settings', roleName: store.roleName);
@@ -1039,7 +1039,7 @@ class _UserCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final u = user;
-    final caps = effectiveCapabilities(u.capabilities, u.role).length;
+    final tabs = effectiveSections(u.capabilities, u.role).length;
 
     return AppCard(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
@@ -1064,7 +1064,7 @@ class _UserCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${roleLabel(u.role)}  ·  $caps من ${allCapabilities.length} صلاحية',
+                      '${roleLabel(u.role)}  ·  $tabs تبويب',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: _metaStyle,
@@ -1098,7 +1098,7 @@ class _UserCard extends StatelessWidget {
                   color: AppColors.heading,
                   background: Colors.white,
                   border: AppColors.lineStrong,
-                  onTap: () => _open(context, CapabilitiesScreen(user: u)),
+                  onTap: () => _open(context, UserAccessScreen(user: u)),
                 ),
                 if (canDelete && !isThisDevice)
                   TileButton(
@@ -1299,7 +1299,7 @@ class _DataTab extends StatelessWidget {
             ],
           ),
         ),
-        if (store.can('settings.branding')) ...[
+        if (store.can('settings')) ...[
           const SizedBox(height: 8),
           _NavTile(
             icon: Icons.tune,

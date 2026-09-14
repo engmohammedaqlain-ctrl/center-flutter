@@ -82,7 +82,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         }
 
         final week = AppStore.schoolWeek(weekOffset);
-        final canEdit = store.can('attendance.edit');
+        final canEdit = store.can('attendance');
 
         // المرحلة ثم الشعبة
         final grades = store.rooms.map((r) => r.gradeLevel).where((g) => g.trim().isNotEmpty).toSet().toList();

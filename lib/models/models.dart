@@ -1315,7 +1315,7 @@ class AppUser {
     required this.role,
     this.email = '',
     this.isActive = true,
-    this.capabilities = const [],
+    this.capabilities,
     this.syncStatus = 'synced',
     this.createdAt,
     this.updatedAt,
@@ -1326,7 +1326,9 @@ class AppUser {
   String role;
   String email;
   bool isActive;
-  List<String> capabilities;
+
+  /// التبويبات الظاهرة للحساب. `null` تعني قالب دوره، والقائمة الفارغة لا شيء.
+  List<String>? capabilities;
   String syncStatus;
   String? createdAt;
   String? updatedAt;
@@ -1343,13 +1345,8 @@ class AppUser {
       };
 
   factory AppUser.fromCloud(Map<String, dynamic> m) {
-    final caps = <String>[];
     final raw = m['capabilities'];
-    if (raw is List) {
-      for (final e in raw) {
-        caps.add('$e');
-      }
-    }
+    final caps = raw is List ? [for (final e in raw) '$e'] : null;
     return AppUser(
       id: '${m['id']}',
       name: '${m['name'] ?? ''}',

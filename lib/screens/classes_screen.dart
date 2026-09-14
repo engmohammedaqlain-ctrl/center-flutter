@@ -47,7 +47,7 @@ class _ClassesScreenState extends State<ClassesScreen> {
           return NoAccess(section: 'classes', roleName: store.roleName);
         }
 
-        final canEdit = store.can('schedule.edit');
+        final canEdit = store.can('classes');
         final tiers = {for (final r in store.rooms) r.id: classTier(store, r)};
         int countOf(String id) => id == 'all' ? store.rooms.length : tiers.values.where((t) => t == id).length;
         // رياض الأطفال تظهر حين يوجد لها صف فقط، كما في Center
@@ -611,7 +611,7 @@ class _RoomCard extends StatelessWidget {
                   if (v == 'delete') _confirmDeleteRoom(context, room);
                 },
                 itemBuilder: (_) => [
-                  if (store.can('attendance.view'))
+                  if (store.can('attendance'))
                     _menuItem('attendance', Icons.fact_check_outlined, 'رصد الحضور'),
                   _menuItem('print', Icons.download_outlined, 'تنزيل كشف الصف (PDF)'),
                   _menuItem('codes', Icons.vpn_key_outlined, 'رموز دخول الطلاب'),
@@ -766,7 +766,7 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
         }
 
         final teacher = store.teacherById(room.teacherId);
-        final canEdit = store.can('schedule.edit');
+        final canEdit = store.can('classes');
         final roster = store.studentsOf(room);
         final q = search.text.trim();
         final list = q.isEmpty ? roster : roster.where((s) => s.fullName.contains(q) || s.phone.contains(q)).toList();
@@ -875,7 +875,7 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
                             // الرصد أول ما يُطلب من صفحة الصف، فيكون أول زر فيها
                             Row(
                               children: [
-                                if (store.can('attendance.view'))
+                                if (store.can('attendance'))
                                   Expanded(
                                     child: PrimaryButton(
                                       label: 'رصد الحضور',
@@ -885,7 +885,7 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
                                       onPressed: () => openClassAttendance(context, room: room),
                                     ),
                                   ),
-                                if (store.can('attendance.view') && canEdit) const SizedBox(width: 8),
+                                if (store.can('attendance') && canEdit) const SizedBox(width: 8),
                                 if (canEdit)
                                   Expanded(
                                     child: GhostButton(
@@ -933,7 +933,7 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
                             itemBuilder: (context, i) => _RosterRow(
                               seat: roster.indexOf(list[i]) + 1,
                               student: list[i],
-                              showBalance: store.can('finance.view'),
+                              showBalance: store.can('finance'),
                               last: i == list.length - 1,
                             ),
                           ),
@@ -1020,7 +1020,7 @@ class _RosterRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    final canOpen = store.can('students.view');
+    final canOpen = store.can('students');
     final debt = student.isDebtor;
     final phone = student.phone.trim();
 
@@ -1141,7 +1141,7 @@ Future<void> showClassPortalCodes(
                           ],
                         ),
                       ),
-                      if (missing > 0 && store.can('students.edit'))
+                      if (missing > 0 && store.can('students'))
                         PrimaryButton(
                           label: 'توليد الناقص',
                           icon: Icons.autorenew,

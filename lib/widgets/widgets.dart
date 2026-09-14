@@ -424,7 +424,7 @@ class NoAccess extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = sectionLabels[section] ?? section;
+    final label = sectionLabel(section);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -444,20 +444,17 @@ class NoAccess extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'قسم $label غير متاح لصلاحيتك',
+              '«$label» غير متاح لحسابك',
               textAlign: TextAlign.center,
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
             ),
             const SizedBox(height: 8),
             Text.rich(
               TextSpan(
-                text: 'حسابك على هذا الجهاز مسجَّل بصلاحية ',
+                text: 'دورك: ',
                 children: [
                   TextSpan(text: roleName, style: const TextStyle(fontWeight: FontWeight.w800)),
-                  const TextSpan(
-                    text: '. للوصول إلى هذا القسم، اطلب من مدير النظام تعديل صلاحيتك من '
-                        '«الإعدادات ← المستخدمين والصلاحيات».',
-                  ),
+                  const TextSpan(text: '. اطلب إتاحته من المدير.'),
                 ],
               ),
               textAlign: TextAlign.center,

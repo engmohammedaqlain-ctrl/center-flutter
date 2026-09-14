@@ -33,7 +33,7 @@ class StudentDetailScreen extends StatelessWidget {
       listenable: store,
       builder: (context, _) {
         // الملف يُفتح من المالية والصفوف أيضاً، فتُحرس الشاشة نفسها لا زرّ الوصول وحده
-        if (!store.can('students.view')) {
+        if (!store.can('students')) {
           return Scaffold(
             backgroundColor: Colors.white,
             appBar: AppBar(title: const Text('ملف الطالب')),
@@ -74,9 +74,9 @@ class StudentDetailScreen extends StatelessWidget {
         final rate = marks.isEmpty ? 100 : ((present / marks.length) * 100).round();
         final settled = !student.isDebtor && insts.every((i) => i.isPaid);
         // الأرصدة والدفعات تخصّ من يملك عرض المالية، والقبض من يملك القبض
-        final canFinance = store.can('finance.view');
-        final canCollect = store.can('finance.collect');
-        final canEdit = store.can('students.edit');
+        final canFinance = store.can('finance');
+        final canCollect = store.can('finance');
+        final canEdit = store.can('students');
 
         final grade = student.gradeLevel.trim().isEmpty ? 'مرحلة غير محددة' : student.gradeLevel.trim();
         final meta = student.section.trim().isEmpty ? grade : '$grade  ·  شعبة ${student.section.trim()}';
@@ -301,7 +301,7 @@ class StudentDetailScreen extends StatelessWidget {
                 ),
 
               // ── الحضور والالتزام: ملخص بسطر واحد كما في Center ──────────────
-              if (marks.isNotEmpty && store.can('attendance.view'))
+              if (marks.isNotEmpty && store.can('attendance'))
                 _Card(
                   title: 'سجل الحضور والالتزام',
                   trailing: Text('الالتزام: $rate%',
@@ -342,20 +342,20 @@ class StudentDetailScreen extends StatelessWidget {
                 ),
 
               // ── الصفوف والمجموعات: مواد الشعبة ومعلموها في المدرسة، ومجموعات المركز ──
-              if (store.can('schedule.view')) ...[
+              if (store.can('classes')) ...[
                 StudentSubjectsCard(student: student),
                 const SizedBox(height: 10),
               ],
 
               // ── الدرجات والتقييمات ─────────────────────────────────────────
-              if (store.features.enableEvaluations && store.can('attendance.view'))
+              if (store.features.enableEvaluations && store.can('evaluations'))
                 _EvaluationsCard(evaluations: store.evaluationsOfStudent(student.id)),
 
               _AttachmentsCard(studentId: student.id),
 
               // الحذف زر كامل العرض بلون التحذير في آخر الصفحة، بعيداً عن الإبهام:
               // فعل لا رجعة فيه يُرى بوضوح ولا يُضغط سهواً
-              if (store.can('students.delete'))
+              if (store.can('students'))
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: SizedBox(

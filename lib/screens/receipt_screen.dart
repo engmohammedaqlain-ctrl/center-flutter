@@ -176,7 +176,7 @@ class _ReceiptSheet extends StatelessWidget {
             Row(
               children: [
                 Expanded(child: GhostButton(label: 'إغلاق', onPressed: () => Navigator.pop(context))),
-                if (!payment.cancelled && store.can('finance.cancel')) ...[
+                if (!payment.cancelled && store.can('finance')) ...[
                   const SizedBox(width: 8),
                   Expanded(
                     child: PrimaryButton(

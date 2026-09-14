@@ -79,7 +79,7 @@ class _AppShellState extends State<AppShell> {
             sections: sections,
             index: index,
             onSelect: (i) => setState(() => current = sections[i].id),
-            dueCount: store.can('finance.view') ? store.dueItems().length : 0,
+            dueCount: store.can('finance') ? store.dueItems().length : 0,
           ),
         );
       },
@@ -174,11 +174,8 @@ class _SyncPill extends StatelessWidget {
     final push = store.pendingPush;
     final pull = store.pendingPull;
     final busy = store.sync.isSyncing;
-    // من لا يملك الرفع أو السحب لا يُعرض عليه زرّه
-    final canPush = store.can('sync.push');
-    final canPull = store.can('sync.pull');
 
-    if (push > 0 && canPush) {
+    if (push > 0) {
       return _pill(
         context,
         color: AppColors.amber,
@@ -189,7 +186,7 @@ class _SyncPill extends StatelessWidget {
         onTap: () => openSyncSheet(context, store, push: true),
       );
     }
-    if (pull > 0 && canPull) {
+    if (pull > 0) {
       return _pill(
         context,
         color: AppColors.accent,
@@ -204,7 +201,7 @@ class _SyncPill extends StatelessWidget {
     // كانت تطمئن المستخدم بينما في السحابة تعديلات لم يعلم بها.
     final known = store.sync.remoteStateKnown;
     return PressableScale(
-      onTap: canPull ? () => openSyncSheet(context, store, push: false) : null,
+      onTap: () => openSyncSheet(context, store, push: false),
       child: Container(
         height: 28,
         padding: const EdgeInsets.symmetric(horizontal: 9),

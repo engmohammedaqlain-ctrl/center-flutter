@@ -90,7 +90,7 @@ class _RoomFormScreenState extends State<RoomFormScreen> {
     final editing = widget.room != null;
     final title = editing ? 'تعديل: ${widget.room!.name}' : 'إضافة صف / شعبة جديدة';
 
-    if (!store.can('schedule.edit')) {
+    if (!store.can('classes')) {
       return Scaffold(
         backgroundColor: Colors.white,
         appBar: AppBar(title: Text(title)),

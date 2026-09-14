@@ -88,37 +88,40 @@ void main() {
     await s.flush();
   });
 
-  testWidgets('صلاحيات الحساب المستخدم على الجهاز لا تُعدَّل منه', (tester) async {
+  testWidgets('تبويبات الحساب المستخدم على الجهاز لا تُعدَّل منه', (tester) async {
     final s = await _store();
     final admin = s.users.firstWhere((u) => u.role == 'admin');
     await s.setDeviceIdentity(admin, '');
-    await _pump(tester, s, CapabilitiesScreen(user: admin));
+    await _pump(tester, s, UserAccessScreen(user: admin));
 
-    expect(find.textContaining('فلا تُعدَّل صلاحياته منه'), findsOneWidget);
-    expect(find.text('تحديد القسم'), findsNothing);
-    expect(find.text('إلغاء القسم'), findsNothing);
+    expect(find.text('تبويبات حسابك تُعدَّل من جهاز آخر'), findsOneWidget);
+    final before = [...?admin.capabilities];
+    await tester.tap(find.text('الطلاب'));
+    await tester.pump();
+    expect(find.text('10 من 10'), findsOneWidget, reason: 'التبديل معطّل');
+    expect(admin.capabilities, before);
     await s.flush();
   });
 
-  testWidgets('تحديد القسم يمنح صلاحياته مع صلاحية العرض التي تعتمد عليها', (tester) async {
+  testWidgets('إتاحة تبويب فرعي تتيح أصله، والدور يملأ القالب', (tester) async {
     final s = await _store();
     await _pump(tester, s, const UserFormScreen());
 
-    // قالب السكرتير تسع صلاحيات، وليس منها المصروفات
+    // قالب السكرتير أربعة تبويبات، وليس منها المصروفات
     final list = find.byType(Scrollable).first;
-    expect(find.text('9 من 18'), findsOneWidget);
+    expect(find.text('4 من 10'), findsOneWidget);
 
-    await tester.scrollUntilVisible(find.text('إدارة المصروفات وصرف الأجور'), 200, scrollable: list);
+    await tester.scrollUntilVisible(find.text('المستخدمون والصلاحيات'), 200, scrollable: list);
     // إبعاد السطر عن شريط الحفظ الثابت أسفل الشاشة كي تصل اللمسة إليه
     await tester.drag(list, const Offset(0, -120));
     await tester.pump();
-    await tester.tap(find.text('إدارة المصروفات وصرف الأجور'));
+    await tester.tap(find.text('المستخدمون والصلاحيات'));
     await tester.pump();
 
     // العدّاد أعلى الصفحة: يُعاد التمرير إليه بعد أن خرج من الشاشة
     await tester.drag(list, const Offset(0, 900));
     await tester.pump();
-    expect(find.text('10 من 18'), findsOneWidget);
+    expect(find.text('6 من 10'), findsOneWidget, reason: 'المستخدمون ومعه أصله الإعدادات');
     await s.flush();
   });
 }

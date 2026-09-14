@@ -37,7 +37,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
     return ListenableBuilder(
       listenable: store,
       builder: (context, _) {
-        if (!store.features.enableEvaluations || !store.can('attendance.view')) {
+        if (!store.features.enableEvaluations || !store.can('evaluations')) {
           return Scaffold(
             appBar: AppBar(title: const Text('الدرجات والتقييمات')),
             body: NoAccess(section: 'attendance', roleName: store.roleName),
@@ -75,7 +75,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
             ],
           ),
           body: ThumbActionLayer(
-            action: store.can('attendance.edit')
+            action: store.can('evaluations')
                 ? ThumbAction(
                     label: 'رصد درجات جديدة',
                     icon: Icons.edit_note,
@@ -142,7 +142,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                               evaluation: list[i],
                               studentName: store.studentById(list[i].studentId)?.fullName ?? 'طالب محذوف',
                               groupName: store.groups.where((g) => g.id == list[i].groupId).firstOrNull?.name ?? '',
-                              onDelete: store.can('attendance.edit')
+                              onDelete: store.can('evaluations')
                                   ? () => _delete(context, store, list[i])
                                   : null,
                             ),
