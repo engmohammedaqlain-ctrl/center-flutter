@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../data/app_update.dart';
 import '../data/permissions.dart';
 import '../data/store.dart';
 import '../data/sync.dart';
@@ -11,6 +12,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/widgets.dart';
+import 'app_update_sheet.dart';
 import 'evaluations_screen.dart';
 
 const _sheetBg = Colors.white;
@@ -60,12 +62,14 @@ Future<T?> _lightSheet<T>(BuildContext context, WidgetBuilder builder) {
 /// هوية الجهاز، ثم المزامنة السحابية، ثم تسجيل الخروج.
 Future<void> showActionSheet(BuildContext context, AppStore store) {
   return _lightSheet(context, (ctx) {
+    final updates = AppUpdater.instance;
     return ListenableBuilder(
-      listenable: store,
+      listenable: Listenable.merge([store, updates]),
       builder: (ctx, _) {
         final me = store.deviceUser;
         final isAdmin = normalizeRole(me?.role) == 'admin';
         final name = me?.name ?? (isAdmin ? 'جهاز الإدارة' : 'جهاز السكرتير');
+        final updateReady = updates.action != UpdateAction.none && updates.release != null;
 
         return Padding(
           padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
@@ -130,6 +134,25 @@ Future<void> showActionSheet(BuildContext context, AppStore store) {
                     Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const EvaluationsScreen()),
                     );
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+              // لكل الأدوار: التحديث يخص الجهاز لا صلاحية المستخدم
+              if (updates.supported) ...[
+                _menuTile(
+                  icon: Icons.system_update_outlined,
+                  iconColor: updateReady ? AppColors.success : AppColors.info,
+                  label: 'تحديثات التطبيق',
+                  trailing: updateReady
+                      ? 'متاح ${updates.release!.versionName}'
+                      : updates.installedName.isEmpty
+                          ? null
+                          : 'الإصدار ${updates.installedName}',
+                  trailingColor: updateReady ? AppColors.success : null,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    unawaited(showUpdateSheet(context));
                   },
                 ),
                 const SizedBox(height: 8),
@@ -316,6 +339,7 @@ Widget _menuTile({
   required Color iconColor,
   required String label,
   String? trailing,
+  Color? trailingColor,
   bool danger = false,
   VoidCallback? onTap,
 }) {
@@ -357,7 +381,11 @@ Widget _menuTile({
           if (trailing != null)
             Text(
               trailing,
-              style: const TextStyle(color: AppColors.faint, fontSize: 11),
+              style: TextStyle(
+                color: trailingColor ?? AppColors.faint,
+                fontSize: 11,
+                fontWeight: trailingColor == null ? FontWeight.normal : FontWeight.w800,
+              ),
             ),
         ],
       ),

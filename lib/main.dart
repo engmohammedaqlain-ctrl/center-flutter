@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'data/app_update.dart';
 import 'data/db_platform.dart';
 import 'data/local_db.dart';
 import 'data/portal.dart';
 import 'data/store.dart';
 import 'data/supabase.dart';
 import 'models/models.dart';
+import 'screens/app_update_sheet.dart';
 import 'screens/developer_screen.dart';
 import 'screens/device_setup_screen.dart';
 import 'screens/portal_screens.dart';
@@ -132,21 +134,42 @@ class _Root extends StatefulWidget {
 /// بلا ذلك يبقى عدّاد السحب على آخر قيمة عُرفت قبل ساعات، فيظهر «متزامن»
 /// بينما جهاز آخر أضاف تعديلات في الأثناء.
 class _RootState extends State<_Root> with WidgetsBindingObserver {
+  final updater = AppUpdater.instance;
+  bool _prompting = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    updater.addListener(_maybePrompt);
+    AppStore.instance.addListener(_maybePrompt);
+    unawaited(updater.start());
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    updater.removeListener(_maybePrompt);
+    AppStore.instance.removeListener(_maybePrompt);
     super.dispose();
+  }
+
+  /// إصدار اختياري جديد يُعرض وحده مرة واحدة، بعد أن يُقلع المخزن فلا يغطي
+  /// شاشة الإقلاع. من أجّله يجده في القائمة السريعة.
+  void _maybePrompt() {
+    if (_prompting || !mounted || !AppStore.instance.ready || !updater.shouldPrompt) return;
+    _prompting = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (mounted && updater.shouldPrompt) await showUpdateSheet(context, checkNow: false);
+      _prompting = false;
+    });
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
+    // جهازٌ يبقى التطبيق مفتوحاً عليه أياماً لا يُعاد إقلاعه ليفحص
+    unawaited(updater.check());
     final store = AppStore.instance;
     if (!store.loggedIn || store.isMasterAdmin || !store.networkEnabled) return;
     unawaited(store.sync.checkRemoteChanges().then((_) => store.notifySync()));
@@ -156,11 +179,14 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     return ListenableBuilder(
-      listenable: store,
+      listenable: Listenable.merge([store, updater]),
       builder: (context, _) {
         final Widget screen;
         if (!store.ready) {
           screen = const SplashScreen();
+        } else if (updater.action == UpdateAction.mandatory) {
+          // قبل الدخول وبعده: إصدارٌ لم يعد مقبولاً لا يرفع ولا يسحب
+          screen = const MandatoryUpdateScreen();
         } else if (!store.loggedIn) {
           screen = const LoginScreen();
         } else if (store.isMasterAdmin) {
