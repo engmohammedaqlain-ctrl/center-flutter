@@ -405,8 +405,9 @@ class InstitutionBadge extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(radius > 2 ? radius - 2 : 0),
+        // المنشأة بلا شعار تُعرض بشعار النظام كما في تطبيق سطح المكتب
         child: bytes == null
-            ? Icon(Icons.school, color: AppColors.amber, size: size * 0.58)
+            ? Image.asset('assets/logo.png', fit: BoxFit.contain)
             : Image.memory(bytes, fit: BoxFit.contain, gaplessPlayback: true),
       ),
     );
@@ -715,37 +716,62 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    final shape = BorderRadius.circular(Corner.box);
+    final shape = BorderRadius.circular(Corner.card);
+    final accent = widget.error ? AppColors.danger : AppColors.success;
+    // أسفل الشاشة قرب الإبهام: الأعلى بعيدٌ عن موضع العمل ويزاحم شريط العنوان.
+    // يرتفع فوق لوحة المفاتيح إن كانت مفتوحة فلا يختفي خلفها.
+    final bottom = MediaQuery.viewInsetsOf(context).bottom + MediaQuery.paddingOf(context).bottom + 16;
     return Positioned(
-      top: MediaQuery.paddingOf(context).top + 10,
-      left: 12,
-      right: 12,
+      bottom: bottom,
+      left: 14,
+      right: 14,
       child: FadeTransition(
         opacity: _opacity,
-        child: Material(
-          color: widget.error ? AppColors.danger : AppColors.navy,
-          borderRadius: shape,
-          elevation: 3,
-          child: InkWell(
-            onTap: widget.onDone,
+        child: SlideTransition(
+          position: Tween(begin: const Offset(0, 0.25), end: Offset.zero).animate(
+            CurvedAnimation(parent: _controller, curve: const Interval(0, 0.08, curve: Curves.easeOutCubic)),
+          ),
+          child: Material(
+            color: const Color(0xFF0F172A),
             borderRadius: shape,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              child: Row(
-                children: [
-                  Icon(
-                    widget.error ? Icons.error_outline : Icons.check_circle_outline,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      widget.message,
-                      style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w600, height: 1.4),
+            elevation: 6,
+            shadowColor: Colors.black.withValues(alpha: 0.35),
+            child: InkWell(
+              onTap: widget.onDone,
+              borderRadius: shape,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+                child: Row(
+                  children: [
+                    // قرصٌ ملوّن يحمل الأيقونة: النجاح والخطأ يُميَّزان بلمحة
+                    Container(
+                      width: 26,
+                      height: 26,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.18),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        widget.error ? Icons.error_outline : Icons.check_rounded,
+                        color: accent,
+                        size: 16,
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        widget.message,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          height: 1.45,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

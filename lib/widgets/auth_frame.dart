@@ -70,8 +70,10 @@ class AuthFrame extends StatelessWidget {
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(Corner.box),
+                          // شعار المنشأة إن وصل، وإلا شعار النظام نفسه الذي
+                          // يحمله تطبيق سطح المكتب
                           child: image == null
-                              ? Icon(Icons.school_outlined, color: AppColors.navy, size: logoSize * 0.5)
+                              ? Image.asset('assets/logo.png', fit: BoxFit.contain)
                               : Image.memory(image, fit: BoxFit.contain, gaplessPlayback: true),
                         ),
                       ),
