@@ -6,6 +6,9 @@
 /// ثم يرفعها مع `mobile-latest.json` — الملف الذي تقرؤه الأجهزة لتعرف أن
 /// تحديثاً صدر. رقم الإصدار في `pubspec.yaml` لا يُكتب إلا بعد نجاح الرفع، فنشرٌ
 /// فشل في منتصفه لا يترك رقماً محجوزاً بلا حزمة.
+///
+/// مع `shorebird.yaml` يُبنى الإصدار بـ `shorebird release`، فتستقبل أجهزته بعد
+/// ذلك تصليحات كود Dart بصمت: `shorebird patch android --release-version=<الإصدار>`.
 library;
 
 import 'dart:convert';
@@ -122,6 +125,30 @@ Map<String, dynamic> buildManifest({
       'publishedAt': publishedAt.toUtc().toIso8601String(),
     };
 
+/// أمر بناء الحزمة.
+///
+/// مع Shorebird يُبنى بـ `shorebird release` لا `flutter build`: حزمةٌ بنتها
+/// Flutter وحدها لا تقبل أي patch، فتبقى أجهزتها خارج التحديث الصامت. وإصدار
+/// Flutter يُثبَّت على إصدار المشروع — Shorebird يبني بأحدث إصدار ما لم يُحدَّد،
+/// فتخرج الحزمة بمحرّكٍ لم تُختبر عليه.
+({String exe, List<String> args}) buildCommand(PubVersion v, {required bool shorebird, String? flutterVersion}) {
+  final version = ['--build-name', v.name, '--build-number', '${v.build}'];
+  if (!shorebird) {
+    return (exe: 'flutter', args: ['build', 'apk', '--release', '--target-platform', 'android-arm64', ...version]);
+  }
+  return (
+    exe: 'shorebird',
+    args: [
+      'release', 'android', '--artifact', 'apk', '--target-platform', 'android-arm64', //
+      if (flutterVersion != null && flutterVersion.isNotEmpty) ...['--flutter-version', flutterVersion],
+      ...version,
+    ],
+  );
+}
+
+/// إصدار Flutter من مخرجات `flutter --version`.
+String? flutterVersionOf(String output) => RegExp(r'Flutter (\d+\.\d+\.\d+)').firstMatch(output)?.group(1);
+
 /// بصمة شهادة الموقِّع الأول من مخرجات `apksigner verify --print-certs`.
 String? signerDigest(String apksignerOutput) => RegExp(r'Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F]+)')
     .firstMatch(apksignerOutput)
@@ -162,15 +189,15 @@ Future<void> main(List<String> arguments) async {
   );
   _info('الجديد: $next · أقدم بناء مدعوم: $minSupported${args.mandatory ? ' · إلزامي' : ''}');
 
-  _step('بناء الحزمة');
-  await _run(
-    'flutter',
-    [
-      'build', 'apk', '--release', '--target-platform', 'android-arm64', //
-      '--build-name', next.name, '--build-number', '${next.build}',
-    ],
-    shell: true,
-  );
+  // Shorebird مُهيّأ: الإصدار يُبنى به كي تستقبل أجهزته الـ patches. التجربة بلا رفع
+  // تبني بـ Flutter وحدها، فلا يُسجَّل عند Shorebird إصدارٌ لم يُنشر
+  final useShorebird = File('shorebird.yaml').existsSync() && !args.dryRun;
+  final flutterVersion =
+      useShorebird ? flutterVersionOf(await _capture('flutter', ['--version'], shell: true)) : null;
+  if (useShorebird && flutterVersion == null) _fail('تعذّرت قراءة إصدار Flutter للمشروع');
+  final build = buildCommand(next, shorebird: useShorebird, flutterVersion: flutterVersion);
+  _step(useShorebird ? 'بناء الحزمة وتسجيل الإصدار في Shorebird (Flutter $flutterVersion)' : 'بناء الحزمة');
+  await _run(build.exe, build.args, shell: true);
   final built = File('build/app/outputs/flutter-apk/app-release.apk');
   if (!built.existsSync()) _fail('لم أجد الحزمة المبنية في ${built.path}');
 
@@ -229,6 +256,9 @@ Future<void> main(List<String> arguments) async {
 
   _step('تم نشر ${next.name}');
   _info('رابط التنزيل المباشر للتثبيت الأول:\n    ${apkUrlFor(next)}');
+  if (useShorebird) {
+    _info('تصليحات كود Dart لهذا الإصدار تصل الأجهزة بصمت:\n    shorebird patch android --release-version=$next');
+  }
 }
 
 class _Args {

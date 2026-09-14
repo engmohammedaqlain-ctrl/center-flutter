@@ -86,6 +86,32 @@ void main() {
     });
   });
 
+  group('أمر البناء', () {
+    test('مع Shorebird يُبنى بإصدار Flutter المشروع كي تقبل الأجهزة الـ patches', () {
+      final cmd = publish.buildCommand(const publish.PubVersion(1, 2, 7, 2), shorebird: true, flutterVersion: '3.41.6');
+
+      expect(cmd.exe, 'shorebird');
+      expect(cmd.args.take(2), ['release', 'android']);
+      expect(cmd.args.join(' '), contains('--artifact apk'));
+      expect(cmd.args.join(' '), contains('--flutter-version 3.41.6'), reason: 'لا يُبنى بأحدث Flutter لم يُختبر عليه');
+      expect(cmd.args.join(' '), contains('--build-name 1.2.7 --build-number 2'));
+      expect(cmd.args.join(' '), contains('--target-platform android-arm64'));
+    });
+
+    test('بلا Shorebird بناء Flutter العادي', () {
+      final cmd = publish.buildCommand(const publish.PubVersion(1, 2, 7, 2), shorebird: false);
+
+      expect(cmd.exe, 'flutter');
+      expect(cmd.args.take(3), ['build', 'apk', '--release']);
+      expect(cmd.args.join(' '), contains('--build-name 1.2.7 --build-number 2'));
+    });
+
+    test('إصدار Flutter يُقرأ من مخرجات flutter --version', () {
+      expect(publish.flutterVersionOf('Flutter 3.41.6 • channel stable • https://github.com/flutter/flutter.git'), '3.41.6');
+      expect(publish.flutterVersionOf('command not found'), isNull);
+    });
+  });
+
   test('بصمة الموقّع تُقرأ من مخرجات apksigner', () {
     const output = 'Verifies\n'
         'Verified using v2 scheme (APK Signature Scheme v2): true\n'
