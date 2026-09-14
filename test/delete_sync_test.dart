@@ -111,7 +111,13 @@ void main() {
 
     test('حذف الطالب يحذف معه أقساطه وحضوره وتسجيلاته', () {
       final s = _seeded();
-      final student = s.students.firstWhere((x) => s.paymentsOf(x.id).every((p) => p.cancelled));
+      final student = s.students.first;
+      // مسدَّدٌ حتى اليوم: ما استُحق عليه حُصِّل، والقادم لم يحن بعد
+      for (final inst in s.installments.where((i) => i.studentId == student.id)) {
+        inst.dueDate = DateTime.now().add(const Duration(days: 30));
+      }
+      s.recalculateAllBalances();
+      expect(s.isSettledToDate(student.id), isTrue);
       final instIds = s.installments.where((i) => i.studentId == student.id).map((i) => i.id).toList();
 
       s.deleteStudent(student.id);
@@ -126,12 +132,33 @@ void main() {
       expect(_queued(s, 'students', student.id, 'DELETE'), isTrue);
     });
 
-    test('الطالب صاحب سند قبض قائم لا يُحذف', () {
+    test('الطالب الذي عليه مستحقات حتى اليوم لا يُحذف', () {
       final s = _seeded();
-      final payment = s.payments.firstWhere((p) => !p.cancelled);
+      final student = s.students.first;
+      s.installments.add(Installment(
+        id: s.newId(),
+        studentId: student.id,
+        title: 'قسط متأخر',
+        amount: 200,
+        dueDate: DateTime.now().subtract(const Duration(days: 10)),
+      ));
+      s.recalculateAllBalances();
 
-      expect(() => s.deleteStudent(payment.studentId), throwsA(isA<StoreException>()));
-      expect(s.students.any((x) => x.id == payment.studentId), isTrue);
+      expect(() => s.deleteStudent(student.id), throwsA(isA<StoreException>()));
+      expect(s.students.any((x) => x.id == student.id), isTrue);
+
+      // القسط القادم وحده لا يمنع: لم يُستحق بعد
+      s.installments.removeWhere((i) => i.studentId == student.id);
+      s.installments.add(Installment(
+        id: s.newId(),
+        studentId: student.id,
+        title: 'قسط قادم',
+        amount: 200,
+        dueDate: DateTime.now().add(const Duration(days: 20)),
+      ));
+      s.recalculateAllBalances();
+      s.deleteStudent(student.id);
+      expect(s.students.any((x) => x.id == student.id), isFalse);
     });
 
     test('المجموعة ذات السجلات تُؤرشف ولا تُحذف', () {

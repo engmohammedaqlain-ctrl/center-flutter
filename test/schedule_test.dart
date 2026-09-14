@@ -248,6 +248,10 @@ void main() {
       s.upsertGroup(g);
       final stu = s.students.firstWhere((x) => s.paymentsOf(x.id).isEmpty);
       s.enrollStudent(studentId: stu.id, groupId: g.id);
+      // الحذف للمسدَّد حتى اليوم: تُزال مستحقاته المتأخرة أولاً
+      s.installments.removeWhere((i) => i.studentId == stu.id);
+      s.enrollments.removeWhere((e) => e.studentId == stu.id && e.groupId != g.id);
+      s.recalculateAllBalances();
       s.deleteStudent(stu.id);
       expect(s.enrollmentsOf(stu.id), isEmpty);
       expect(s.enrollmentCount(g.id), 0);

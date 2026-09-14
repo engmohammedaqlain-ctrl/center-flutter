@@ -154,12 +154,12 @@ void main() {
     expect(s.studentById(student.id), isNotNull);
   });
 
-  test('deleting a student is allowed once receipts are cancelled', () {
+  test('deleting a student is allowed once nothing is due', () {
     final s = seeded();
     final student = s.students.firstWhere((e) => e.balance < 0);
-    for (final p in s.paymentsOf(student.id)) {
-      s.cancelPayment(p);
-    }
+    // ما استُحق عليه حتى اليوم حُصِّل: يبقى القادم وحده فلا يمنع الحذف
+    s.installments.removeWhere((i) => i.studentId == student.id);
+    s.recalculateAllBalances();
     s.deleteStudent(student.id);
     expect(s.studentById(student.id), isNull);
     expect(s.installmentsOf(student.id), isEmpty);

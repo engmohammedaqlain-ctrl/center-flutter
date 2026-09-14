@@ -1978,17 +1978,26 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     markDirty('students');
   }
 
+  /// ما استُحق على الطالب ولم يُسدَّد حتى اليوم.
+  ///
+  /// القسط الذي لم يحن موعده ليس ديناً عليه: يصير مطلوباً يوم استحقاقه.
+  double outstandingDue(String studentId) =>
+      overdueByStudent(installments.where((i) => i.studentId == studentId))[studentId] ?? 0;
+
+  /// هل سدّد الطالب كل ما استُحق عليه حتى اليوم؟
+  bool isSettledToDate(String studentId) => outstandingDue(studentId) <= cent && !(studentById(studentId)?.isDebtor ?? false);
+
   /// حذف طالب مع كل ما يتبعه.
   ///
-  /// السندات المالية لا تُحذف ولا تُترك يتيمة: وجود سند قبض غير ملغى يمنع الحذف،
-  /// لأن سجل القبض المالي لا يُمحى بحذف صاحبه. مطابق لـ `StudentsService.delete`.
+  /// يُحذف من سدّد ما استُحق عليه حتى اليوم؛ أما من عليه متأخرات فلا، كي لا
+  /// يختفي الدَّين بحذف صاحبه. الأقساط القادمة لا تمنع: لم تُستحق بعد.
   void deleteStudent(String id) {
     requireCapability('students.delete');
-    final active = payments.where((p) => p.studentId == id && !p.cancelled).length;
-    if (active > 0) {
+    final due = outstandingDue(id);
+    if (due > cent) {
       throw StoreException(
-        'لا يمكن حذف هذا الطالب لأن عليه $active سند قبض مسجَّل. '
-        'يمكنك تغيير حالته إلى "منسحب" للاحتفاظ بالسجل المالي، أو إلغاء السندات أولاً.',
+        'لا يمكن حذف هذا الطالب لأن عليه ${money(due)} مستحقة حتى اليوم. '
+        'حصّلها أو غيّر حالته إلى «منسحب» للاحتفاظ بسجله.',
       );
     }
 

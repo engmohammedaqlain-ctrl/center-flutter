@@ -4,6 +4,7 @@ import 'package:center_mobile/data/demo_data.dart';
 import 'package:center_mobile/data/store.dart';
 import 'package:center_mobile/data/supabase.dart';
 import 'package:center_mobile/data/sync.dart';
+import 'package:center_mobile/models/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -108,6 +109,45 @@ void main() {
         shouldApplyRemoteDelete(existsLocally: true, localStamp: '2026-09-13T11:00:00Z', deletedAt: deletedAt, isPending: false),
         isFalse,
         reason: 'نسخةٌ أُنشئت بعد الحذف',
+      );
+    });
+  });
+
+  group('ما رفعتُه لا يعود إليّ سحباً', () {
+    test('ختم السيرفر يعود مع الرفع فيُحفظ، فلا يُعدّ الصف تغييراً قادماً', () async {
+      final store = _store();
+      final tenantId = store.currentTenant!.id;
+      store.upsertRoom(Classroom(id: 'room-new', name: 'شعبة جديدة', gradeLevel: 'عاشر', teacherId: ''));
+
+      final requests = <Uri>[];
+      await http.runWithClient(
+        () => store.sync.pushPendingChanges(tenantId),
+        () => MockClient((request) async {
+          requests.add(request.url);
+          // القاعدة تردّ الصف بختمه كما يفعل `return=representation`
+          return http.Response(
+            jsonEncode([
+              {'id': 'room-new', 'server_updated_at': '2026-09-14T10:00:00Z'},
+            ]),
+            201,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+      );
+
+      expect(requests.single.queryParameters['select'], 'id,server_updated_at');
+      expect(store.serverStamp('rooms', 'room-new'), '2026-09-14T10:00:00Z');
+
+      // الجولة التالية: الختم عندنا يطابق ختم السحابة فلا شيء يُجلب
+      expect(
+        pickChangedIds(
+          [
+            {'id': 'room-new', 'server_updated_at': '2026-09-14T10:00:00Z'},
+          ],
+          store.serverStampsOf('rooms'),
+        ),
+        isEmpty,
+        reason: 'كان يقول «سحب 1» لتعديل هو صاحبه',
       );
     });
   });

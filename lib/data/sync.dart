@@ -1441,16 +1441,22 @@ class SyncService {
     }
   }
 
+  /// رفع دفعة، وحفظ ختم السيرفر الذي تعيده القاعدة لكل صف.
+  ///
+  /// بلا حفظه يظن الجهاز أن ما رفعه للتوّ تغييرٌ قادم من السحابة: ختم الصف تغيّر
+  /// هناك وما عنده ختمٌ يطابقه — فيقول «سحب 1» لتعديل هو صاحبه.
   Future<void> _upsert(String table, List<Map<String, dynamic>> rows) async {
     await SupabaseAuth.ensureFresh();
     final conflict = tableConflictTarget[table] ?? 'id';
-    final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(queryParameters: {'on_conflict': conflict});
+    final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(
+      queryParameters: {'on_conflict': conflict, 'select': 'id,server_updated_at'},
+    );
     final res = await SupabaseAuth.withRetryOnExpiry(
       () => http.post(
         uri,
         headers: {
           ..._headers,
-          'Prefer': 'resolution=merge-duplicates,return=minimal',
+          'Prefer': 'resolution=merge-duplicates,return=representation',
         },
         body: jsonEncode(rows),
       ),
@@ -1458,6 +1464,26 @@ class SyncService {
     );
     if (res.statusCode >= 400) {
       throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
+    }
+    _rememberStampsFrom(table, res.body);
+  }
+
+  /// أختام السيرفر من ردّ الرفع — تُتجاهَل بصمت إن لم يعدها الردّ.
+  void _rememberStampsFrom(String table, String body) {
+    if (body.isEmpty) return;
+    try {
+      final data = jsonDecode(body);
+      if (data is! List) return;
+      final stamps = <String, String>{};
+      for (final row in data) {
+        if (row is! Map) continue;
+        final id = '${row['id'] ?? ''}';
+        final stamp = '${row['server_updated_at'] ?? ''}';
+        if (id.isNotEmpty && stamp.isNotEmpty) stamps[id] = stamp;
+      }
+      local.rememberServerStamps(table, stamps);
+    } catch (_) {
+      // ردٌّ بلا تمثيل: السحب التالي سيجلب الختم
     }
   }
 
