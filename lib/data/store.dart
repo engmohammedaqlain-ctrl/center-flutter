@@ -1529,6 +1529,16 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
     await db.setSetting(_kDbTenant, tenant.id);
 
+    // المنشأة تُحفظ على القرص: الجلسة تُستعاد منها عند الإقلاع التالي، فلا يُطالَب
+    // المستخدم بتسجيل دخول جديد كلما أغلق التطبيق — والتطبيق يعمل بلا إنترنت
+    final at = tenants.indexWhere((t) => t.id == tenant.id);
+    if (at >= 0) {
+      tenants[at] = tenant;
+    } else {
+      tenants.add(tenant);
+    }
+    markDirty('tenants');
+
     // الحالة كاملةً قبل أي إخطار: تحديد الدخول ثم فتح بوابة التهيئة في نفس
     // اللحظة. ترك حسم البوابة إلى ما بعد `hydrateInstitution` — وهي تُخطر
     // الشاشات — كان يعرض شاشة العمل فارغة للحظة ثم يقفز إلى شاشة التهيئة.

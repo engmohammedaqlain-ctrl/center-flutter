@@ -194,6 +194,24 @@ void main() {
     expect(second.lastUsername, 'amal');
   });
 
+  test('الجلسة تُستعاد بلا إنترنت: المنشأة محفوظة على الجهاز', () async {
+    final disk = FakeDisk();
+    final first = AppStore.forTesting();
+    await first.bootstrap(disk);
+    injectDemoData(first);
+    await first.login('amal', 'amal2026');
+    final tenantId = first.currentTenant!.id;
+    await first.flush();
+
+    // إقلاع جديد بلا أي اتصال: لا جلب للمنشآت من السحابة
+    final second = AppStore.forTesting();
+    await second.bootstrap(disk);
+
+    expect(second.tenants.any((t) => t.id == tenantId), isTrue, reason: 'المنشأة على القرص');
+    expect(second.loggedIn, isTrue, reason: 'لا يُطالَب بتسجيل دخول جديد بعد كل إغلاق');
+    expect(second.currentTenant?.id, tenantId);
+  });
+
   test('logging out clears the stored session but keeps the data', () async {
     final disk = FakeDisk();
     final first = AppStore.forTesting();
