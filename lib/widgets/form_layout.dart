@@ -102,12 +102,22 @@ class SelectField extends StatelessWidget {
 
 /// شريط الحفظ الثابت أسفل النموذج: إلغاء، ثم زر الحفظ أعرض منه.
 class FormActionBar extends StatelessWidget {
-  const FormActionBar({super.key, required this.label, required this.onSave, this.icon = Icons.check, this.busy = false});
+  const FormActionBar({
+    super.key,
+    required this.label,
+    required this.onSave,
+    this.icon = Icons.check,
+    this.busy = false,
+    this.onCancel,
+  });
 
   final String label;
   final VoidCallback? onSave;
   final IconData icon;
   final bool busy;
+
+  /// ما يجري عند «إلغاء» — لنموذج يسأل قبل أن يُهمل ما كُتب فيه.
+  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -121,7 +131,7 @@ class FormActionBar extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(context))),
+            Expanded(child: GhostButton(label: 'إلغاء', onPressed: onCancel ?? () => Navigator.pop(context))),
             const SizedBox(width: 10),
             Expanded(
               flex: 2,

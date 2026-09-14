@@ -36,8 +36,8 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   late final notes = TextEditingController(text: widget.student?.notes ?? '');
   late final detailedAddress = TextEditingController(text: widget.student?.detailedAddress ?? '');
   late final customNeighborhood = TextEditingController();
-  late final birthPlace = TextEditingController(text: widget.student?.birthPlace.isNotEmpty == true ? widget.student!.birthPlace : 'غزة');
-  late final nationality = TextEditingController(text: widget.student?.nationality.isNotEmpty == true ? widget.student!.nationality : 'فلسطينية');
+  late final birthPlace = TextEditingController(text: widget.student?.birthPlace ?? '');
+  late final nationality = TextEditingController(text: widget.student?.nationality ?? '');
   late final previousSchool = TextEditingController(text: (widget.student?.previousSchool.isNotEmpty == true ? widget.student!.previousSchool : widget.student?.schoolName) ?? '');
   late final gpa = TextEditingController(text: widget.student?.gpa ?? '');
   late final originalArea = TextEditingController(text: widget.student?.originalArea ?? '');
@@ -111,14 +111,15 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     if ((s?.customMonthlyFee ?? 0) > 0) customMonthlyFee.text = trimNum(s!.customMonthlyFee!);
     discountReason.text = s?.exceptionReason ?? '';
 
-    relation = s?.relation ?? 'أب';
+    relation = s?.relation ?? '';
     neighborhood = (s?.neighborhood ?? '').isNotEmpty && neighborhoods.contains(s!.neighborhood) ? s.neighborhood : ((s?.neighborhood ?? '').isNotEmpty ? 'أخرى' : '');
     if (neighborhood == 'أخرى' && s != null) customNeighborhood.text = s.neighborhood;
-    // «male»/«female» تصل أحياناً من السحابة؛ تُعرض مختارة وتُحفظ بالعربية كما في Center
-    gender = genderLabel(s?.gender);
-    referral = (s?.referralSource ?? '').isNotEmpty ? s!.referralSource : referralSources.first;
-    housing = (s?.housingStatus ?? '').isNotEmpty ? s!.housingStatus : 'ملك';
-    health = s?.healthStatus ?? 'سليم';
+    // «male»/«female» تصل أحياناً من السحابة؛ تُعرض مختارة وتُحفظ بالعربية كما في Center.
+    // طالبٌ جديد بلا اختيار: القيم المفترضة كانت تُحفظ عمّن لم يُسأل عنه أصلاً
+    gender = s == null ? '' : genderLabel(s.gender);
+    referral = s?.referralSource ?? '';
+    housing = s?.housingStatus ?? '';
+    health = s?.healthStatus ?? '';
     enrollmentDate = s?.enrolledAt ?? DateTime.now();
     birthDate = parseIsoDate(s?.birthDate);
     initialRating = s?.initialRating ?? 0;
@@ -138,6 +139,35 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
 
     nationalId.addListener(_onNationalIdChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadAttachments());
+    _initial = _snapshot();
+  }
+
+  /// صورة القيم كما فُتح بها النموذج — للمقارنة قبل الخروج.
+  late String _initial;
+
+  String _snapshot() => [
+        name.text, nationalId.text, portalCode.text, parentPortalCode.text, parentName.text,
+        notes.text, detailedAddress.text, customNeighborhood.text, birthPlace.text, nationality.text,
+        previousSchool.text, gpa.text, originalArea.text, medicalCondition.text, parentJob.text,
+        email.text, sectionCtl.text, parentSecondaryNumber.text, phoneCtl.text, parentPhoneCtl.text,
+        discountRate.text, discountFixed.text, customMonthlyFee.text, discountReason.text,
+        grade, status, relation, neighborhood, gender, referral, housing, health,
+        '$hasDiscount', discountType, '$initialRating', '$guardianDeclaration',
+        isoDate(enrollmentDate), birthDate == null ? '' : isoDate(birthDate!),
+        phonePrefix, parentPhonePrefix, secondaryPrefix, studentIdPhoto, birthCertificate,
+      ].join('|');
+
+  bool get _hasChanges => _snapshot() != _initial;
+
+  /// الخروج ببيانات لم تُحفظ يسأل أولاً — نموذج طويل يضيع بلمسة رجوع واحدة.
+  Future<bool> _confirmExit() async {
+    if (!_hasChanges) return true;
+    return confirmSheet(
+      context,
+      title: 'تجاهل ما أُدخل؟',
+      message: 'البيانات التي كتبتها لن تُحفظ.',
+      confirmLabel: 'تجاهل',
+    );
   }
 
   Future<void> _loadAttachments() async {
@@ -434,15 +464,20 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
       );
     }
     final studentLen = phoneTargetLength(phonePrefix);
-    final parentLen = phoneTargetLength(parentPhonePrefix);
     final studentComplete = isPhoneComplete(phoneNumber, phonePrefix);
-    final parentComplete = isPhoneComplete(parentPhoneNumber, parentPhonePrefix);
     final fullStudentPhone = combinePhoneAndPrefix(phoneNumber, phonePrefix);
     final grades = _gradeOptions(store);
     final matchingSections = store.rooms.where((r) => isSameGrade(r.gradeLevel, grade)).toList();
     final idLen = nationalId.text.length;
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final leave = await _confirmExit();
+        if (leave && context.mounted) Navigator.pop(context);
+      },
+      child: Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(editing ? 'تعديل بيانات الطالب' : 'تسجيل طالب جديد'),
@@ -454,9 +489,9 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
           children: [
-            // ── ١. البيانات الأساسية ──────────────────────────────────────────
+            // ── ١. الأساسي: ما يُسأل عنه عند التسجيل وحده، بصفوف بعمودين ──────
             _section(Icons.badge_outlined, 'البيانات الأساسية', note: 'الحقول ذات * مطلوبة'),
-            FieldLabel('الاسم الرباعي للطالب', key: errors.key('name'), requiredField: true),
+            FieldLabel('اسم الطالب الرباعي', key: errors.key('name'), requiredField: true),
             TextField(
               controller: name,
               textInputAction: TextInputAction.next,
@@ -487,64 +522,21 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                 ),
               ],
               [
-                const FieldLabel('كلمة مرور الطالب'),
-                TextField(
-                  controller: portalCode,
-                  keyboardType: TextInputType.number,
-                  maxLength: 10,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: '6 أرقام',
-                    counterText: '',
-                    suffixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                    suffixIcon: IconButton(
-                      tooltip: 'توليد رمز جديد',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                      icon: Icon(Icons.autorenew, size: 18, color: AppColors.amber),
-                      onPressed: () => setState(
-                        () => portalCode.text = AppStore.instance.newDistinctPortalCode(parentPortalCode.text),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            _gap,
-            const FieldLabel('كلمة مرور ولي الأمر'),
-            TextField(
-              controller: parentPortalCode,
-              keyboardType: TextInputType.number,
-              maxLength: 10,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-              decoration: InputDecoration(
-                hintText: '6 أرقام — يدخل بها ولي الأمر برقم هوية الطالب',
-                counterText: '',
-                errorText: errors['parentCode'],
-                suffixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                suffixIcon: IconButton(
-                  tooltip: 'توليد كلمة جديدة',
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                  icon: Icon(Icons.autorenew, size: 18, color: AppColors.amber),
-                  onPressed: () => setState(() {
-                    errors.clear('parentCode');
-                    parentPortalCode.text = AppStore.instance.newDistinctPortalCode(portalCode.text);
-                  }),
-                ),
-              ),
-            ),
-            _gap,
-            _pair(
-              [
                 FieldLabel('المرحلة', key: errors.key('grade'), requiredField: true),
                 AppDropdown<String>(
                   value: grades.contains(grade) ? grade : null,
                   hint: grades.isEmpty ? 'لا مراحل معرّفة' : 'اختر المرحلة',
+                  errorText: errors['grade'],
                   items: grades.map((g) => DropdownMenuItem(value: g, child: Text(g, overflow: TextOverflow.ellipsis))).toList(),
-                  onChanged: (v) => setState(() => grade = v ?? grade),
+                  onChanged: (v) => setState(() {
+                    grade = v ?? grade;
+                    errors.clear('grade');
+                  }),
                 ),
               ],
+            ),
+            _gap,
+            _pair(
               [
                 const FieldLabel('الشعبة'),
                 TextField(
@@ -553,6 +545,14 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                   decoration: InputDecoration(
                     hintText: matchingSections.isEmpty ? 'مثال: أ' : matchingSections.first.name,
                   ),
+                ),
+              ],
+              [
+                const FieldLabel('تاريخ التسجيل', requiredField: true),
+                _selectField(
+                  text: isoDate(enrollmentDate),
+                  icon: Icons.calendar_today_outlined,
+                  onTap: () => _pickDate(birth: false),
                 ),
               ],
             ),
@@ -589,97 +589,32 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
               target: studentLen,
               okText: 'رقم صالح: $fullStudentPhone',
             ),
-
-            // ── ٢. ولي الأمر والسكن ──────────────────────────────────────────
-            _section(Icons.family_restroom_outlined, 'ولي الأمر والسكن'),
+            _gap,
             _pair(
-              [
-                const FieldLabel('اسم ولي الأمر'),
-                TextField(controller: parentName, decoration: const InputDecoration(hintText: 'الاسم الثلاثي')),
-              ],
-              [
-                const FieldLabel('صلة القرابة'),
-                AppDropdown<String>(
-                  value: relation,
-                  items: guardianRelations.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
-                  onChanged: (v) => setState(() => relation = v ?? relation),
-                ),
-              ],
-              startFlex: 3,
-              endFlex: 2,
-            ),
-            _gap,
-            FieldLabel('جوال ولي الأمر', key: errors.key('parentPhone')),
-            _phoneRow(
-              prefix: parentPhonePrefix,
-              controller: parentPhoneCtl,
-              target: parentLen,
-              complete: parentComplete,
-              error: errors['parentPhone'] != null,
-              onPrefix: (v) => setState(() {
-                parentPhonePrefix = v;
-                parentPhoneNumber = '';
-                parentPhoneCtl.clear();
-              }),
-              onNumber: _applyParentPhone,
-            ),
-            _phoneHint(
-              complete: parentComplete && parentPhoneNumber.isNotEmpty,
-              error: errors['parentPhone'],
-              length: parentPhoneNumber.length,
-              target: parentLen,
-              okText: 'رقم صالح: ${combinePhoneAndPrefix(parentPhoneNumber, parentPhonePrefix)}',
-            ),
-            _gap,
-            const FieldLabel('الحي الأساسي'),
-            _selectField(
-              text: neighborhood.isEmpty ? 'اختر الحي أو ابحث عنه...' : neighborhood,
-              placeholder: neighborhood.isEmpty,
-              icon: Icons.search,
-              onTap: _pickNeighborhood,
-            ),
-            if (neighborhood == 'أخرى') ...[
-              const SizedBox(height: 8),
-              TextField(controller: customNeighborhood, decoration: const InputDecoration(hintText: 'اكتب اسم الحي...')),
-            ],
-            _gap,
-            const FieldLabel('العنوان المفصل'),
-            TextField(
-              controller: detailedAddress,
-              decoration: const InputDecoration(hintText: 'الشارع وأقرب معلم — مثال: بجوار مسجد الهدى'),
-            ),
-
-            // ── ٣. التسجيل ────────────────────────────────────────────────────
-            _section(Icons.event_note_outlined, 'التسجيل'),
-            _pair(
-              [
-                const FieldLabel('تاريخ التسجيل', requiredField: true),
-                _selectField(
-                  text: isoDate(enrollmentDate),
-                  icon: Icons.calendar_today_outlined,
-                  onTap: () => _pickDate(birth: false),
-                ),
-              ],
               [
                 const FieldLabel('من أين عرفتنا؟'),
                 AppDropdown<String>(
-                  value: referralSources.contains(referral) ? referral : referralSources.last,
-                  items: referralSources.map((r) => DropdownMenuItem(value: r, child: Text(r, overflow: TextOverflow.ellipsis))).toList(),
+                  value: referralSources.contains(referral) ? referral : null,
+                  hint: 'اختر',
+                  items: referralSources
+                      .map((r) => DropdownMenuItem(value: r, child: Text(r, overflow: TextOverflow.ellipsis)))
+                      .toList(),
                   onChanged: (v) => setState(() => referral = v ?? referral),
                 ),
               ],
-            ),
-            _gap,
-            const FieldLabel('حالة الطالب'),
-            AppDropdown<String>(
-              value: status,
-              items: [
-                // «بانتظار التأكيد» يضعها الترفيع السنوي، فلا تُعرض إلا لمن هو فيها
-                for (final e in studentStatusLabels.entries)
-                  if (e.key != 'pending' || status == 'pending')
-                    DropdownMenuItem(value: e.key, child: Text(e.value)),
+              [
+                const FieldLabel('حالة الطالب'),
+                AppDropdown<String>(
+                  value: status,
+                  items: [
+                    // «بانتظار التأكيد» يضعها الترفيع السنوي، فلا تُعرض إلا لمن هو فيها
+                    for (final e in studentStatusLabels.entries)
+                      if (e.key != 'pending' || status == 'pending')
+                        DropdownMenuItem(value: e.key, child: Text(e.value, overflow: TextOverflow.ellipsis)),
+                  ],
+                  onChanged: (v) => setState(() => status = v ?? status),
+                ),
               ],
-              onChanged: (v) => setState(() => status = v ?? status),
             ),
             _gap,
             const FieldLabel('ملاحظات'),
@@ -699,6 +634,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           ],
         ),
       ),
+    ),
     );
   }
 
@@ -863,6 +799,115 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     return [
       _pair(
         [
+          const FieldLabel('كلمة مرور الطالب'),
+          TextField(
+            controller: portalCode,
+            keyboardType: TextInputType.number,
+            maxLength: 10,
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+            decoration: InputDecoration(
+              hintText: '6 أرقام',
+              counterText: '',
+              suffixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              suffixIcon: IconButton(
+                tooltip: 'توليد رمز جديد',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                icon: Icon(Icons.autorenew, size: 18, color: AppColors.amber),
+                onPressed: () => setState(
+                  () => portalCode.text = AppStore.instance.newDistinctPortalCode(parentPortalCode.text),
+                ),
+              ),
+            ),
+          ),
+        ],
+        [
+          const FieldLabel('كلمة مرور ولي الأمر'),
+          TextField(
+            controller: parentPortalCode,
+            keyboardType: TextInputType.number,
+            maxLength: 10,
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+            decoration: InputDecoration(
+              hintText: '6 أرقام',
+              counterText: '',
+              errorText: errors['parentCode'],
+              suffixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              suffixIcon: IconButton(
+                tooltip: 'توليد كلمة جديدة',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                icon: Icon(Icons.autorenew, size: 18, color: AppColors.amber),
+                onPressed: () => setState(() {
+                  errors.clear('parentCode');
+                  parentPortalCode.text = AppStore.instance.newDistinctPortalCode(portalCode.text);
+                }),
+              ),
+            ),
+          ),
+        ],
+      ),
+      _gap,
+      _pair(
+        [
+          const FieldLabel('اسم ولي الأمر'),
+          TextField(controller: parentName, decoration: const InputDecoration(hintText: 'الاسم الثلاثي')),
+        ],
+        [
+          const FieldLabel('صلة القرابة'),
+          AppDropdown<String>(
+            value: guardianRelations.contains(relation) ? relation : null,
+            hint: 'اختر',
+            items: guardianRelations
+                .map((r) => DropdownMenuItem(value: r, child: Text(r, overflow: TextOverflow.ellipsis)))
+                .toList(),
+            onChanged: (v) => setState(() => relation = v ?? relation),
+          ),
+        ],
+      ),
+      _gap,
+      FieldLabel('جوال ولي الأمر', key: errors.key('parentPhone')),
+      _phoneRow(
+        prefix: parentPhonePrefix,
+        controller: parentPhoneCtl,
+        target: phoneTargetLength(parentPhonePrefix),
+        complete: isPhoneComplete(parentPhoneNumber, parentPhonePrefix),
+        error: errors['parentPhone'] != null,
+        onPrefix: (v) => setState(() {
+          parentPhonePrefix = v;
+          parentPhoneNumber = '';
+          parentPhoneCtl.clear();
+        }),
+        onNumber: _applyParentPhone,
+      ),
+      _phoneHint(
+        complete: isPhoneComplete(parentPhoneNumber, parentPhonePrefix) && parentPhoneNumber.isNotEmpty,
+        error: errors['parentPhone'],
+        length: parentPhoneNumber.length,
+        target: phoneTargetLength(parentPhonePrefix),
+        okText: 'رقم صالح: ${combinePhoneAndPrefix(parentPhoneNumber, parentPhonePrefix)}',
+      ),
+      _gap,
+      const FieldLabel('الحي الأساسي'),
+      _selectField(
+        text: neighborhood.isEmpty ? 'اختر الحي أو ابحث عنه...' : neighborhood,
+        placeholder: neighborhood.isEmpty,
+        icon: Icons.search,
+        onTap: _pickNeighborhood,
+      ),
+      if (neighborhood == 'أخرى') ...[
+        const SizedBox(height: 8),
+        TextField(controller: customNeighborhood, decoration: const InputDecoration(hintText: 'اكتب اسم الحي...')),
+      ],
+      _gap,
+      const FieldLabel('العنوان المفصل'),
+      TextField(
+        controller: detailedAddress,
+        decoration: const InputDecoration(hintText: 'الشارع وأقرب معلم — مثال: بجوار مسجد الهدى'),
+      ),
+      _gap,
+      _pair(
+        [
           const FieldLabel('تاريخ الميلاد'),
           _selectField(
             text: birthDate == null ? 'اختر التاريخ' : isoDate(birthDate!),
@@ -911,7 +956,8 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
         [
           const FieldLabel('طبيعة السكن'),
           AppDropdown<String>(
-            value: housingTypes.contains(housing) ? housing : housingTypes.last,
+            value: housingTypes.contains(housing) ? housing : null,
+            hint: 'اختر',
             items: housingTypes.map((h) => DropdownMenuItem(value: h, child: Text(h, overflow: TextOverflow.ellipsis))).toList(),
             onChanged: (v) => setState(() => housing = v ?? housing),
           ),
@@ -1121,7 +1167,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('بيانات إضافية', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: AppColors.heading)),
-                        const Text('الميلاد والسكن والصحة والمرفقات — اختيارية', style: TextStyle(color: AppColors.faint, fontSize: 10.5)),
+                        const Text('كلمات المرور وولي الأمر والسكن والمرفقات', style: TextStyle(color: AppColors.faint, fontSize: 10.5)),
                       ],
                     ),
                   ),
@@ -1185,8 +1231,14 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     );
   }
 
-  Widget _actionBar({required bool editing, required bool canSave}) =>
-      FormActionBar(label: editing ? 'حفظ التعديل' : 'تسجيل الطالب', onSave: canSave ? _save : null);
+  Widget _actionBar({required bool editing, required bool canSave}) => FormActionBar(
+        label: editing ? 'حفظ التعديل' : 'تسجيل الطالب',
+        onSave: canSave ? _save : null,
+        onCancel: () async {
+          final leave = await _confirmExit();
+          if (leave && mounted) Navigator.pop(context);
+        },
+      );
 
   Widget _toggle(String label, bool on, Color color, VoidCallback tap) {
     return InkWell(
