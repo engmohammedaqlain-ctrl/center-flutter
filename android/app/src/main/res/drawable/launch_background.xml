@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- شاشة البداية الأصلية حتى Android 11: خلفية بيضاء وصندوق الشعار في المنتصف -->
+<!-- شاشة البداية الأصلية حتى Android 11: خلفية بيضاء والشعار الأصلي 120dp في
+     المنتصف — الشعار نفسه ومقاسه في SplashScreen بـ lib/main.dart، فلا قفزة -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@android:color/white" />
     <item
-        android:width="84dp"
-        android:height="84dp"
+        android:width="120dp"
+        android:height="120dp"
         android:gravity="center"
-        android:drawable="@drawable/splash_logo" />
+        android:drawable="@drawable/splash_logo_png" />
 </layer-list>

@@ -215,14 +215,14 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
 
 /// شاشة الإقلاع — تظهر فوراً بينما تُفتح قاعدة البيانات المحلية وتُقرأ الجلسة.
 ///
-/// امتداد لشاشة البداية الأصلية (`launch_background` و`splash_icon`): الصندوق
-/// نفسه بمقاسه ولونه في منتصف الشاشة تماماً، فلا قفزة لحظة تسليم النظام لـ Flutter.
+/// امتداد لشاشة البداية الأصلية (`launch_background` و`splash_icon`): الشعار
+/// الأصلي نفسه بمقاسه في منتصف الشاشة تماماً، فلا قفزة لحظة تسليم النظام لـ Flutter.
 /// الاسم والمؤشر تحته لا يزحزحانه.
 class SplashScreen extends StatelessWidget {
   const SplashScreen({super.key});
 
-  /// مقاس الصندوق في الموارد الأصلية (84dp) — يُغيَّران معاً.
-  static const logoBox = 84.0;
+  /// مقاس الشعار في الموارد الأصلية (120dp) — يُغيَّران معاً.
+  static const logoSize = 120.0;
 
   @override
   Widget build(BuildContext context) {
@@ -234,23 +234,20 @@ class SplashScreen extends StatelessWidget {
         builder: (context, box) => Stack(
           children: [
             Center(
-              child: Container(
-                width: logoBox,
-                height: logoBox,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(Corner.card),
-                  border: Border.all(color: AppColors.line),
-                ),
-                padding: const EdgeInsets.all(10),
-                child: Image.asset('assets/logo.png', fit: BoxFit.contain),
+              child: Image.asset(
+                'assets/logo.png',
+                width: logoSize,
+                height: logoSize,
+                fit: BoxFit.contain,
+                // الأصل 1254px: فكّه بمقاس العرض يُظهره من أول إطار بدل انتظار
+                // فكّ صورة بحجم أكبر بعشر مرات
+                cacheWidth: (logoSize * MediaQuery.devicePixelRatioOf(context)).round(),
               ),
             ),
             Positioned(
               left: 0,
               right: 0,
-              top: box.maxHeight / 2 + logoBox / 2 + 18,
+              top: box.maxHeight / 2 + logoSize / 2 + 18,
               child: const Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [

@@ -346,13 +346,15 @@ void main() {
     await s.flush();
   });
 
-  testWidgets('the splash box sits exactly where the native splash draws it', (tester) async {
+  testWidgets('the splash logo sits exactly where the native splash draws it', (tester) async {
     await tester.pumpWidget(const MaterialApp(home: SplashScreen()));
     final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
-    // الشعار نفسه الذي يحمله تطبيق سطح المكتب، في صندوق شاشة البداية الأصلية
+    // الشعار الأصلي نفسه الذي يحمله تطبيق سطح المكتب وشاشة البداية الأصلية
     final logo = find.byType(Image);
     expect(tester.getCenter(logo), screen.center(Offset.zero));
-    // الحشوة حول الشعار داخل الصندوق نفسه (84dp) — يبقى المركز واحداً
-    expect(tester.getSize(logo).width, lessThan(SplashScreen.logoBox));
+    // بمقاس الشعار في launch_background و splash_icon (120dp)
+    expect(tester.getSize(logo), const Size.square(SplashScreen.logoSize));
+    final image = tester.widget<Image>(logo).image;
+    expect(image, isA<ResizeImage>(), reason: 'يُفكّ بمقاس العرض لا بمقاس الأصل');
   });
 }
