@@ -12,6 +12,7 @@ import 'attendance_print.dart';
 import 'attendance_screen.dart';
 import 'room_form_screen.dart';
 import 'student_detail_screen.dart';
+import 'section_students_sheet.dart';
 
 /// الصفوف والشعب — المقابل لـ `pages/SchoolClasses.tsx`.
 ///
@@ -485,6 +486,14 @@ class _SubjectTeachersSheetState extends State<_SubjectTeachersSheet> {
   }
 }
 
+/// إضافة طلاب إلى الشعبة، وإخبار المستخدم بعدد من انتقل إليها.
+Future<void> _addStudents(BuildContext context, Classroom room) async {
+  final added = await showSectionStudentsSheet(context, room);
+  if (added > 0 && context.mounted) {
+    showAppSnack(context, 'أُضيف $added ${added == 1 ? 'طالب' : 'طلاب'} إلى ${room.name}');
+  }
+}
+
 Future<void> _confirmDeleteRoom(BuildContext context, Classroom room, {VoidCallback? onDeleted}) async {
   final store = StoreScope.of(context);
   final ok = await confirmSheet(
@@ -595,6 +604,7 @@ class _RoomCard extends StatelessWidget {
                   if (v == 'attendance') openClassAttendance(context, room: room);
                   if (v == 'print') printClassRoster(context, store: store, room: room, students: students);
                   if (v == 'codes') showClassPortalCodes(context, room: room, students: students);
+                  if (v == 'add_students') _addStudents(context, room);
                   if (v == 'edit') _openRoomForm(context, room);
                   if (v == 'assign') _assignTeacher(context, room);
                   if (v == 'subjects') _assignSubjectTeachers(context, room);
@@ -605,6 +615,7 @@ class _RoomCard extends StatelessWidget {
                     _menuItem('attendance', Icons.fact_check_outlined, 'رصد الحضور'),
                   _menuItem('print', Icons.download_outlined, 'تنزيل كشف الصف (PDF)'),
                   _menuItem('codes', Icons.vpn_key_outlined, 'رموز دخول الطلاب'),
+                  if (canEdit) _menuItem('add_students', Icons.group_add_outlined, 'إضافة طلاب للشعبة'),
                   if (canEdit) ...[const PopupMenuDivider(height: 8), ..._manageItems(teacher)],
                 ],
               ),
@@ -646,6 +657,18 @@ class _RoomCard extends StatelessWidget {
                               : const Text('بدون مربي', style: TextStyle(color: AppColors.faint, fontSize: 12)),
                     ),
                     const SizedBox(width: 8),
+                    if (students.isEmpty && canEdit) ...[
+                      // الشعبة تبدأ فارغة: الإضافة هي الإجراء المنطقي الوحيد هنا
+                      TileButton(
+                        label: 'إضافة طلاب',
+                        icon: const Icon(Icons.group_add_outlined, size: 13),
+                        color: AppColors.navy,
+                        background: Colors.white,
+                        border: AppColors.lineStrong,
+                        onTap: () => _addStudents(context, room),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     Text.rich(
                       TextSpan(
                         children: [

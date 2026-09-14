@@ -940,6 +940,53 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return (created: created, missingFee: missingFee);
   }
 
+  /// نقل طلاب إلى شعبة — المقابل لـ `StudentsService.assignSection`.
+  ///
+  /// الطالب في شعبة واحدة، فمن كان في غيرها يُنقل منها. يعيد عدد من نُقل.
+  int assignSection(Iterable<String> studentIds, String section) {
+    requireCapability('students.edit');
+    final target = section.trim();
+    final now = _nowIso();
+    var moved = 0;
+
+    for (final id in studentIds) {
+      final student = studentById(id);
+      if (student == null || student.section.trim() == target) continue;
+      student.section = target;
+      student.updatedAt = now;
+      student.syncStatus = 'pending';
+      _queue('students', student.id, 'UPDATE', student.toCloud());
+      moved++;
+    }
+
+    if (moved > 0) {
+      markDirty('students');
+      notifyListeners();
+    }
+    return moved;
+  }
+
+  /// طلاب المرحلة خارج هذه الشعبة — مرشّحو الإضافة إليها.
+  ///
+  /// المعلّق بعد الترقية يحتاج شعبة، ومن في شعبة أخرى يُنقل منها؛ ومن بلا شعبة
+  /// يتصدّر لأنه بلا مكان أصلاً.
+  List<Student> sectionCandidates(Classroom room) {
+    final grade = room.gradeLevel.trim().toLowerCase();
+    final name = room.name.trim().toLowerCase();
+    final list = students.where((s) {
+      if (s.status != 'active' && s.status != 'pending') return false;
+      if (s.section.trim().toLowerCase() == name) return false;
+      if (grade.isEmpty) return true;
+      return s.gradeLevel.trim().toLowerCase() == grade;
+    }).toList();
+
+    list.sort((a, b) {
+      final byPlace = (a.section.trim().isEmpty ? 0 : 1).compareTo(b.section.trim().isEmpty ? 0 : 1);
+      return byPlace != 0 ? byPlace : a.fullName.compareTo(b.fullName);
+    });
+    return list;
+  }
+
   /// ترقية طلاب المدرسة النشطين — المقابل لـ `promoteStudents`.
   ///
   /// كل صف يُنقل إلى الصف المحدد له، ومن لا صف بعده يُؤرشف طلابه. تُمسح الشعبة
@@ -1641,17 +1688,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         if (!sameGrade) return false;
       }
 
+      // الإسناد صريح: الطالب في الشعبة التي كُتبت في ملفه وحدها. شعبةٌ جديدة
+      // تبدأ فارغة، وتُملأ بزر «إضافة طلاب» لا بابتلاع كل من في مرحلتها.
       final section = s.section.trim().toLowerCase();
-      if (section.isNotEmpty && roomName.isNotEmpty) {
-        return section == roomName || section.contains(roomName) || roomName.contains(section);
-      }
-
-      // بلا شعبة: يُحسب على الصف فقط إن كان الصف الوحيد لمرحلته
-      if (section.isEmpty && roomGrade.isNotEmpty && grade.isNotEmpty) {
-        final ofGrade = rooms.where((r) => r.gradeLevel.trim().toLowerCase() == grade).toList();
-        return ofGrade.length == 1 && ofGrade.first.id == room.id;
-      }
-      return false;
+      if (section.isEmpty || roomName.isEmpty) return false;
+      return section == roomName || section.contains(roomName) || roomName.contains(section);
     }).toList();
   }
 

@@ -46,16 +46,35 @@ void main() {
       expect(s.studentsOf(b), isEmpty);
     });
 
-    test('الطالب بلا شعبة يُحسب حين تكون لمرحلته شعبة واحدة', () {
+    test('الشعبة الجديدة تبدأ فارغة، وتُملأ بالإسناد الصريح', () {
       final s = _store();
-      final only = _room(s, 'شعبة (أ)');
+      final room = _room(s, 'شعبة (أ)');
       final student = _student(s, section: '');
 
-      expect(s.studentsOf(only).map((e) => e.id), [student.id]);
+      expect(s.studentsOf(room), isEmpty, reason: 'لا تبتلع طلاب مرحلتها');
+      expect(s.sectionCandidates(room).map((e) => e.id), contains(student.id));
 
-      // فتح شعبة ثانية يُسقط النسبة المفترضة
-      _room(s, 'شعبة (ب)');
-      expect(s.studentsOf(only), isEmpty);
+      expect(s.assignSection([student.id], room.name), 1);
+      expect(s.studentsOf(room).map((e) => e.id), [student.id]);
+      expect(s.assignSection([student.id], room.name), 0, reason: 'موجود فيها أصلاً');
+    });
+
+    test('الإسناد ينقل الطالب من شعبته السابقة', () {
+      final s = _store();
+      final a = _room(s, 'شعبة (أ)');
+      final b = _room(s, 'شعبة (ب)');
+      final student = _student(s, section: 'شعبة (أ)');
+      expect(s.studentsOf(a), hasLength(1));
+
+      s.assignSection([student.id], b.name);
+
+      expect(s.studentsOf(a), isEmpty, reason: 'الطالب في شعبة واحدة');
+      expect(s.studentsOf(b).map((e) => e.id), [student.id]);
+      expect(
+        s.pendingSyncs.any((p) => p.tableName == 'students' && p.recordId == student.id),
+        isTrue,
+        reason: 'النقل يصل بقية الأجهزة',
+      );
     });
 
     test('الطالب لا يظهر إلا في شعبته', () {
