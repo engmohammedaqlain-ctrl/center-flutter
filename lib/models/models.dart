@@ -4,24 +4,6 @@ const currency = '₪';
 const appName = 'نظام الإدارة المدرسي';
 const appVersion = '1.2.7';
 
-/// مطابق لـ GRADE_LEVELS في types/student.ts
-const gradeLevels = [
-  'ثاني عشر علمي',
-  'ثاني عشر أدبي',
-  'حادي عشر علمي',
-  'حادي عشر أدبي',
-  'عاشر',
-  'أخرى (إدخال يدوي)',
-];
-
-const gradeLevelsFilter = [
-  'ثاني عشر علمي',
-  'ثاني عشر أدبي',
-  'حادي عشر علمي',
-  'حادي عشر أدبي',
-  'عاشر',
-];
-
 /// مطابق لقائمة الأحياء في StudentForm.tsx
 const neighborhoods = [
   'الرمال',

@@ -34,7 +34,6 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   late final parentName = TextEditingController(text: widget.student?.parentName ?? '');
   late final notes = TextEditingController(text: widget.student?.notes ?? '');
   late final detailedAddress = TextEditingController(text: widget.student?.detailedAddress ?? '');
-  late final customGrade = TextEditingController();
   late final customNeighborhood = TextEditingController();
   late final birthPlace = TextEditingController(text: widget.student?.birthPlace.isNotEmpty == true ? widget.student!.birthPlace : 'غزة');
   late final nationality = TextEditingController(text: widget.student?.nationality.isNotEmpty == true ? widget.student!.nationality : 'فلسطينية');
@@ -93,9 +92,8 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   void initState() {
     super.initState();
     final s = widget.student;
-    final inList = s != null && gradeLevels.contains(s.gradeLevel);
-    grade = inList ? s.gradeLevel : (s == null ? 'عاشر' : 'أخرى (إدخال يدوي)');
-    if (s != null && !inList && s.gradeLevel.isNotEmpty) customGrade.text = s.gradeLevel;
+    // لا مرحلة افتراضية: المرحلة اختيار صريح من مراحل المنشأة
+    grade = s?.gradeLevel.trim() ?? '';
 
     // `inactive` القديمة تُقرأ «منسحب» كما بعد ترقية v9
     status = s == null ? 'active' : (s.status == 'inactive' ? 'withdrawn' : s.status);
@@ -170,7 +168,6 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     parentName.dispose();
     notes.dispose();
     detailedAddress.dispose();
-    customGrade.dispose();
     customNeighborhood.dispose();
     birthPlace.dispose();
     nationality.dispose();
@@ -316,7 +313,11 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
       errors
         ..reset()
         ..check('name', trimmedFullName.isEmpty, 'يرجى إدخال اسم الطالب الرباعي')
-        ..check('grade', grade.trim().isEmpty, 'اختر المرحلة — تُضاف من «الإعدادات ← المراحل والرسوم»')
+        ..check(
+          'grade',
+          grade.trim().isEmpty,
+          _gradeOptions(StoreScope.of(context)).isEmpty ? 'أضف المراحل أولاً من الإعدادات' : 'اختر المرحلة',
+        )
         ..check('nationalId', cleanNatId.isEmpty, 'يرجى إدخال رقم هوية الطالب (9 أرقام)')
         ..check(
           'nationalId',
@@ -345,7 +346,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     final selectedNeighborhood = neighborhood == 'أخرى' && customNeighborhood.text.trim().isNotEmpty
         ? customNeighborhood.text.trim()
         : neighborhood;
-    final finalGrade = grade == 'أخرى (إدخال يدوي)' && customGrade.text.trim().isNotEmpty ? customGrade.text.trim() : grade;
+    final finalGrade = grade.trim();
     final existing = widget.student;
     final id = existing?.id ?? store.newId();
 
@@ -437,12 +438,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     final parentComplete = isPhoneComplete(parentPhoneNumber, parentPhonePrefix);
     final fullStudentPhone = combinePhoneAndPrefix(phoneNumber, phonePrefix);
     final grades = _gradeOptions(store);
-    // المدرسة تختار من مراحلها وحدها: لا «عاشر» افتراضياً لم تضفه
-    if (!grades.contains(grade)) {
-      final current = widget.student?.gradeLevel.trim() ?? '';
-      grade = grades.contains(current) ? current : (grades.isEmpty ? '' : grades.first);
-    }
-    final matchingSections = store.rooms.where((r) => r.gradeLevel.trim().isEmpty || r.gradeLevel.trim() == (grade == 'أخرى (إدخال يدوي)' ? customGrade.text.trim() : grade).trim()).toList();
+    final matchingSections = store.rooms.where((r) => r.gradeLevel.trim().isEmpty || r.gradeLevel.trim() == grade.trim()).toList();
     final idLen = nationalId.text.length;
 
     return Scaffold(
@@ -543,7 +539,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                 FieldLabel('المرحلة', key: errors.key('grade'), requiredField: true),
                 AppDropdown<String>(
                   value: grades.contains(grade) ? grade : null,
-                  hint: grades.isEmpty ? 'أضف المراحل من الإعدادات' : null,
+                  hint: grades.isEmpty ? 'لا مراحل معرّفة' : 'اختر المرحلة',
                   items: grades.map((g) => DropdownMenuItem(value: g, child: Text(g, overflow: TextOverflow.ellipsis))).toList(),
                   onChanged: (v) => setState(() => grade = v ?? grade),
                 ),
@@ -559,10 +555,6 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                 ),
               ],
             ),
-            if (grade == 'أخرى (إدخال يدوي)') ...[
-              const SizedBox(height: 8),
-              TextField(controller: customGrade, decoration: const InputDecoration(hintText: 'اكتب اسم الصف الدراسي يدوياً...')),
-            ],
             if (matchingSections.isNotEmpty) ...[
               const SizedBox(height: 8),
               Wrap(
@@ -1077,8 +1069,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   /// رسم المرحلة المختارة — أساس الخصم كما في `currentGradeFee`.
   double _gradeFeeOf(BuildContext context) {
     final store = StoreScope.of(context);
-    final name = grade == 'أخرى (إدخال يدوي)' ? customGrade.text.trim() : grade;
-    return store.feeFor(name)?.monthlyFee ?? 0;
+    return store.feeFor(grade)?.monthlyFee ?? 0;
   }
 
   /// المبلغ المخصوم من رسم المرحلة — مطابق لـ `calculatedDiscountAmount`.
