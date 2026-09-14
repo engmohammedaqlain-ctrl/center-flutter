@@ -919,15 +919,19 @@ class PortalService {
             byId['${e['student_id']}']!,
       ];
 
-      // بلا تسجيلات يدوية ومعلّقة على قاعة/شعبة: طلاب الشعبة أنفسهم
-      final room = rooms[group.roomId];
-      if (list.isEmpty && room != null) {
+      // بلا تسجيلات: طلاب شعبها أنفسهم. الموديل الواحد يشترك فيه أكثر من شعبة،
+      // فتُؤخذ كلها لا الأساسية وحدها
+      final groupRooms = [
+        for (final id in group.allRoomIds)
+          if (rooms[id] != null) rooms[id]!,
+      ];
+      if (list.isEmpty && groupRooms.isNotEmpty) {
         list = students
-            .where((s) => studentInRoom(
+            .where((s) => groupRooms.any((room) => studentInRoom(
                   s,
                   roomName: '${room['name'] ?? ''}',
                   roomGrade: '${room['grade_level'] ?? ''}',
-                ))
+                )))
             .toList();
       }
 
@@ -935,7 +939,7 @@ class PortalService {
         group: group,
         students: list,
         subjectName: subjectName[group.subjectId] ?? '',
-        roomName: room == null ? '' : '${room['name'] ?? ''}',
+        roomName: groupRooms.map((room) => '${room['name'] ?? ''}').join('، '),
       ));
     }
 

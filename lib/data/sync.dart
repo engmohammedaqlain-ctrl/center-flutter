@@ -31,7 +31,7 @@ const tableAllowedColumns = <String, List<String>>{
     'notes', 'tenant_id', 'created_at', 'updated_at',
   ],
   'groups': [
-    'id', 'name', 'subject_id', 'teacher_id', 'room_id', 'grade_level',
+    'id', 'name', 'subject_id', 'teacher_id', 'room_id', 'room_ids', 'grade_level',
     'price_per_month', 'max_students', 'days', 'start_time', 'end_time',
     'status', 'tenant_id', 'created_at', 'updated_at',
   ],
@@ -64,7 +64,7 @@ const tableAllowedColumns = <String, List<String>>{
     'tenant_id', 'created_at', 'updated_at',
   ],
   'enrollments': [
-    'id', 'student_id', 'group_id', 'enrollment_date', 'enrolled_at',
+    'id', 'student_id', 'group_id', 'room_id', 'enrollment_date', 'enrolled_at',
     'custom_price', 'applied_price', 'discount_reason',
     'status', 'tenant_id', 'created_at', 'updated_at',
   ],
@@ -123,7 +123,7 @@ const nonTextColumns = <String, List<String>>{
   'expenses': ['amount', 'created_at', 'expense_date', 'tenant_id', 'updated_at'],
   'grade_fees': ['created_at', 'is_custom', 'monthly_fee', 'order_index', 'tenant_id', 'updated_at'],
   'groups': [
-    'created_at', 'days', 'end_time', 'max_students', 'price_per_month', 'start_time',
+    'created_at', 'days', 'end_time', 'max_students', 'price_per_month', 'room_ids', 'start_time',
     'tenant_id', 'updated_at',
   ],
   'installments': [

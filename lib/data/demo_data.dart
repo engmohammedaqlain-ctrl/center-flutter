@@ -222,10 +222,11 @@ DemoDataStats injectDemoData(AppStore store) {
       final subjectId = teacher.subjectIds.isNotEmpty ? teacher.subjectIds.first : store.subjects.first.id;
       final group = Group(
         id: 'grp-${room.id}',
-        name: '${store.subjectName(subjectId)} - ${room.name}',
+        name: '${store.subjectName(subjectId)} - ${teacher.name}',
         subjectId: subjectId,
         teacherId: teacher.id,
         roomId: room.id,
+        roomIds: [room.id],
         gradeLevel: room.gradeLevel,
         startTime: '',
         endTime: '',
@@ -237,6 +238,7 @@ DemoDataStats injectDemoData(AppStore store) {
           id: 'enr-${group.id}-${st.id}',
           studentId: st.id,
           groupId: group.id,
+          roomId: room.id,
           customPrice: 0,
           appliedPrice: 0,
         ));

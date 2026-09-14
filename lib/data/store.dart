@@ -972,6 +972,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
 
     if (moved > 0) {
+      // النقل يسجّله في مواد شعبته الجديدة وينهي تسجيله في مواد سابقتها
+      syncStudentRoomEnrollments(studentIds);
       markDirty('students');
       notifyListeners();
     }
@@ -1411,6 +1413,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     await migrateCapabilities();
     await migratePaymentSnapshots();
     await migrateSectionNames();
+    await migrateEnrollmentRooms();
     await migrateWithdrawnStatus();
     dedupeAttendance();
     if (!networkEnabled) return;
@@ -1591,6 +1594,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     capabilityMigrationKey,
     paymentSnapshotKey,
     sectionNameMigrationKey,
+    enrollmentRoomMigrationKey,
     withdrawnStatusMigrationKey,
     _kDeviceUser,
     _kReceiptLabel,
@@ -2083,10 +2087,16 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
     final i = students.indexWhere((e) => e.id == incoming.id);
     if (i >= 0) {
-      incoming.balance = students[i].balance;
-      incoming.createdAt = students[i].createdAt ?? incoming.createdAt;
+      final before = students[i];
+      final placementChanged = before.section != incoming.section ||
+          before.gradeLevel != incoming.gradeLevel ||
+          before.status != incoming.status;
+      incoming.balance = before.balance;
+      incoming.createdAt = before.createdAt ?? incoming.createdAt;
       students[i] = incoming;
       _queue('students', incoming.id, 'UPDATE', incoming.toCloud());
+      // تغيّر الشعبة أو المرحلة أو الحالة يعيد تشكيل عضويته في مواد شعبته
+      if (placementChanged) syncStudentRoomEnrollments([incoming.id]);
     } else {
       incoming.createdAt ??= _nowIso();
       // رسم حجز المقعد يُقرأ من الإعدادات ولا يُقيَّد إن لم تعتمد الإدارة قيمة له.
@@ -2763,7 +2773,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   /// مجموعات مواد الشعبة النشطة — مطابق لـ `SettingsService.getSectionSubjectGroups`.
   List<Group> sectionSubjectGroups(String roomId) =>
-      groups.where((g) => g.roomId == roomId && g.isActive).toList();
+      groups.where((g) => g.isActive && g.includesRoom(roomId)).toList();
 
   /// المواد التي تنطبق على مرحلة — مطابق لـ `getGradeApplicableSubjects`.
   /// المادة العامة تنطبق على الجميع، والمرحلة تُطابَق تماماً: كان «حادي عشر»
@@ -2783,11 +2793,12 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return ids;
   }
 
-  /// حفظ إسناد معلمي مواد الشعبة — مطابق لـ `saveSectionSubjectAssignments`.
+  /// حفظ مواد الشعبة ومعلميها — مطابق لـ `saveSectionSubjectAssignments`.
   ///
-  /// [assignments] معرّف المادة ← معرّف المعلم؛ المادة بلا معلم تعني رفع
-  /// الإسناد. مجموعة المادة المرفوعة تُؤرشف ولا تُحذف: لها حضور وتقييمات.
-  /// تُعيد عدد المواد المسندة.
+  /// [assignments] معرّف المادة ← معرّف معلمها، والفارغ مادة تنتظر معلماً وتبقى
+  /// محفوظة. الموديل مشترك: مادة ومعلم ومرحلة بسجل واحد تنضم إليه الشعب، ففصل
+  /// شعبة ينهي تسجيلات طلابها وحدهم ويؤرشف الموديل حين لا تبقى له شعبة.
+  /// التسجيل يُنهى ولا يُحذف: الدرجات المرصودة معلّقة به. تُعيد عدد المواد.
   int saveSectionSubjectAssignments({
     required String roomId,
     required String gradeLevel,
@@ -2799,60 +2810,37 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (room == null) throw StoreException('لم يتم العثور على الصف');
 
     final now = _nowIso();
-    final existing = sectionSubjectGroups(roomId);
-    final active = <String, String>{
+    final grade = gradeLevel.trim().isNotEmpty ? gradeLevel.trim() : room.gradeLevel;
+    final sectionName = roomName.trim().isNotEmpty ? roomName.trim() : room.name;
+
+    // مادة واحدة لكل إسناد، والمادة المحذوفة لا تُحفظ
+    final desired = <String, String>{
       for (final e in assignments.entries)
-        if (e.value.trim().isNotEmpty) e.key: e.value.trim(),
+        if (subjects.any((s) => s.id == e.key)) e.key: e.value.trim(),
     };
+    final archived = <String>{};
+    final thisRoom = groups.where((g) => g.isActive && g.includesRoom(roomId)).toList();
 
-    for (final g in existing) {
-      if (active.containsKey(g.subjectId)) continue;
-      g.status = 'archived';
-      g.updatedAt = now;
-      g.syncStatus = 'pending';
-      _queue('groups', g.id, 'UPDATE', g.toCloud());
-    }
+    // طلاب الشعبة بمطابقة تامة للاسم والمرحلة: الطالب بلا مرحلة كان يُسجَّل في كل
+    // شعبة يُحفظ توزيعها، لأن غياب القيمة كان يُعدّ مطابقة
+    final sectionStudents = sectionName.isEmpty
+        ? const <Student>[]
+        : students
+            .where((s) =>
+                s.status == 'active' &&
+                belongsToSection(section: s.section, grade: s.gradeLevel, roomName: sectionName, roomGrade: grade))
+            .toList();
+    final sectionIds = {for (final s in sectionStudents) s.id};
 
-    final roster = studentsOf(room);
-
-    for (final entry in active.entries) {
-      final name = '${subjectName(entry.key)} - ${roomName.trim()}';
-      var group = existing.where((g) => g.subjectId == entry.key).firstOrNull;
-
-      if (group != null) {
-        group.name = name;
-        group.teacherId = entry.value;
-        group.gradeLevel = gradeLevel;
-        group.status = 'active';
-        group.updatedAt = now;
-        group.syncStatus = 'pending';
-        _queue('groups', group.id, 'UPDATE', group.toCloud());
-      } else {
-        // لا تمرّ على `upsertGroup`: تلك تشترط أياماً ومواعيد لا وجود لها هنا
-        group = Group(
-          id: newId(),
-          name: name,
-          subjectId: entry.key,
-          teacherId: entry.value,
-          roomId: roomId,
-          gradeLevel: gradeLevel,
-          startTime: '',
-          endTime: '',
-          syncStatus: 'pending',
-          createdAt: now,
-          updatedAt: now,
-        );
-        groups.add(group);
-        _queue('groups', group.id, 'INSERT', group.toCloud());
-      }
-
-      for (final st in roster) {
-        final e = enrollments.where((x) => x.groupId == group!.id && x.studentId == st.id).firstOrNull;
-        if (e == null) {
+    void enrollSectionStudents(Group group) {
+      for (final st in sectionStudents) {
+        final current = enrollments.where((e) => e.groupId == group.id && e.studentId == st.id).firstOrNull;
+        if (current == null) {
           final enrollment = StudentEnrollment(
             id: newId(),
             studentId: st.id,
             groupId: group.id,
+            roomId: roomId,
             customPrice: 0,
             appliedPrice: 0,
             syncStatus: 'pending',
@@ -2861,18 +2849,181 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
           );
           enrollments.add(enrollment);
           _queue('enrollments', enrollment.id, 'INSERT', enrollment.toCloud());
-        } else if (!e.isActive) {
-          e.status = 'active';
-          e.updatedAt = now;
-          e.syncStatus = 'pending';
-          _queue('enrollments', e.id, 'UPDATE', e.toCloud());
+          continue;
         }
+        // تسجيل مختوم بشعبة أخرى تشارك الموديل: ليس من شأن هذه الشعبة
+        if (current.roomId.isNotEmpty && current.roomId != roomId) continue;
+        if (current.isActive && current.roomId == roomId) continue;
+        current.status = 'active';
+        current.roomId = roomId;
+        current.updatedAt = now;
+        current.syncStatus = 'pending';
+        _queue('enrollments', current.id, 'UPDATE', current.toCloud());
       }
+    }
+
+    void detach(Group group) {
+      final remaining = group.allRoomIds.where((id) => id != roomId).toList();
+      final otherRooms = remaining.map(roomById).whereType<Classroom>().toList();
+      for (final e in enrollments.where((e) => e.groupId == group.id && e.isActive)) {
+        final student = studentById(e.studentId);
+        // تسجيل قديم بلا ربط: لا يُمسّ إلا إن كان صاحبه من هذه الشعبة وحدها
+        final mine = e.roomId.isNotEmpty
+            ? e.roomId == roomId
+            : student != null &&
+                sectionIds.contains(e.studentId) &&
+                !otherRooms.any((r) => studentBelongsToRoom(student, r));
+        if (!mine) continue;
+        e.status = 'withdrawn';
+        e.updatedAt = now;
+        e.syncStatus = 'pending';
+        _queue('enrollments', e.id, 'UPDATE', e.toCloud());
+      }
+      if (remaining.isEmpty) {
+        group.status = 'archived';
+        group.roomIds = [];
+        archived.add(group.id);
+      } else {
+        group.roomId = remaining.first;
+        group.roomIds = remaining;
+      }
+      group.updatedAt = now;
+      group.syncStatus = 'pending';
+      _queue('groups', group.id, 'UPDATE', group.toCloud());
+    }
+
+    // ١. فصل الشعبة عن مواد أُزيلت من قائمتها
+    for (final g in thisRoom) {
+      if (!desired.containsKey(g.subjectId)) detach(g);
+    }
+
+    // ٢. لكل مادة: الموديل المشترك (مادة + معلم + مرحلة) أو إنشاؤه
+    for (final entry in desired.entries) {
+      final subjectId = entry.key;
+      final teacherId = entry.value;
+      final subject = subjectName(subjectId);
+      final teacher = teacherId.isEmpty ? 'غير مسند' : (teacherById(teacherId)?.name ?? 'معلم');
+      final name = '${subject.isEmpty ? 'مادة' : subject} - $teacher';
+
+      final current = thisRoom.where((g) => g.subjectId == subjectId && !archived.contains(g.id)).firstOrNull;
+      if (current != null && current.teacherId == teacherId) {
+        // لم يتغيّر المعلم: يبقى تسجيل من انضم إلى الشعبة بعد آخر حفظ
+        enrollSectionStudents(current);
+        continue;
+      }
+      // الشعبة كانت على معلم آخر للمادة: تُفصل عن موديله أولاً
+      if (current != null) detach(current);
+
+      var target = groups
+          .where((g) =>
+              g.isActive &&
+              g.id != current?.id &&
+              g.subjectId == subjectId &&
+              g.teacherId == teacherId &&
+              isSameGrade(g.gradeLevel, grade) &&
+              !g.includesRoom(roomId))
+          .firstOrNull;
+
+      if (target != null) {
+        target.roomIds = [...target.allRoomIds, roomId];
+        if (target.roomId.isEmpty) target.roomId = roomId;
+        target.name = name;
+        target.updatedAt = now;
+        target.syncStatus = 'pending';
+        _queue('groups', target.id, 'UPDATE', target.toCloud());
+      } else {
+        // لا تمرّ على `upsertGroup`: تلك تشترط أياماً ومواعيد لا وجود لها هنا
+        target = Group(
+          id: newId(),
+          name: name,
+          subjectId: subjectId,
+          teacherId: teacherId,
+          roomId: roomId,
+          roomIds: [roomId],
+          gradeLevel: grade,
+          startTime: '',
+          endTime: '',
+          syncStatus: 'pending',
+          createdAt: now,
+          updatedAt: now,
+        );
+        groups.add(target);
+        thisRoom.add(target);
+        _queue('groups', target.id, 'INSERT', target.toCloud());
+      }
+      enrollSectionStudents(target);
     }
 
     markDirty('groups');
     markDirty('enrollments');
-    return active.length;
+    return desired.length;
+  }
+
+  /// مواءمة تسجيلات الطلاب مع شعبهم الحالية — `syncStudentRoomEnrollments`.
+  ///
+  /// تغيير شعبة الطالب كان يعدّل `section` وحده، فيبقى مسجّلاً في مواد شعبته
+  /// القديمة ولا يظهر في الجديدة حتى يُعاد حفظ توزيعها. تقتصر على مجموعات المواد
+  /// المدرسية؛ التسجيل المجدول المدفوع لا يُمسّ.
+  void syncStudentRoomEnrollments(Iterable<String> studentIds) {
+    final now = _nowIso();
+    final activeGroups = groups.where((g) => g.isActive).toList();
+    var changed = false;
+
+    for (final id in studentIds.toSet()) {
+      final student = studentById(id);
+      if (student == null) continue;
+
+      final room = student.status == 'active' ? rooms.where((r) => studentBelongsToRoom(student, r)).firstOrNull : null;
+      final target = room == null
+          ? const <Group>[]
+          : activeGroups.where((g) => g.isSchoolGroup && g.includesRoom(room.id)).toList();
+      final targetIds = {for (final g in target) g.id};
+      final current = enrollments.where((e) => e.studentId == id).toList();
+
+      // إنهاء تسجيلات شعبة سابقة — المختومة بشعبة وحدها
+      for (final e in current) {
+        if (!e.isActive || targetIds.contains(e.groupId)) continue;
+        if (e.roomId.isEmpty || (room != null && e.roomId == room.id)) continue;
+        final group = activeGroups.where((g) => g.id == e.groupId).firstOrNull;
+        if (group != null && !group.isSchoolGroup) continue;
+        e.status = 'withdrawn';
+        e.updatedAt = now;
+        e.syncStatus = 'pending';
+        _queue('enrollments', e.id, 'UPDATE', e.toCloud());
+        changed = true;
+      }
+
+      if (room == null) continue;
+      // تسجيله في مواد شعبته الحالية
+      for (final group in target) {
+        final existing = current.where((e) => e.groupId == group.id).firstOrNull;
+        if (existing == null) {
+          final enrollment = StudentEnrollment(
+            id: newId(),
+            studentId: id,
+            groupId: group.id,
+            roomId: room.id,
+            customPrice: 0,
+            appliedPrice: 0,
+            syncStatus: 'pending',
+            createdAt: now,
+            updatedAt: now,
+          );
+          enrollments.add(enrollment);
+          _queue('enrollments', enrollment.id, 'INSERT', enrollment.toCloud());
+          changed = true;
+        } else if (!existing.isActive || existing.roomId != room.id) {
+          existing.status = 'active';
+          existing.roomId = room.id;
+          existing.updatedAt = now;
+          existing.syncStatus = 'pending';
+          _queue('enrollments', existing.id, 'UPDATE', existing.toCloud());
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) markDirty('enrollments');
   }
 
   /// تسجيل طالب في مجموعة.
@@ -3046,8 +3197,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     requireCapability('settings.view');
     final now = _nowIso();
 
+    // مجموعة المادة المحذوفة تُؤرشف، فلا تبقى صفاً بلا عنوان في مواد الشعبة
     for (final g in groups.where((g) => g.subjectId == id)) {
       g.subjectId = '';
+      g.status = 'archived';
       g.updatedAt = now;
       g.syncStatus = 'pending';
       _queue('groups', g.id, 'UPDATE', g.toCloud());
@@ -3093,6 +3246,48 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
     markDirty('students');
     markDirty(_pendingTable);
+  }
+
+  /// ربط التسجيلات القائمة بشعبها — مرة واحدة، مطابق لترقية v10 في db.ts.
+  ///
+  /// يُستنتج من البيانات ويُرفع حتى لا يمحوه أول سحب على جهاز آخر: مجموعة بشعبة
+  /// واحدة شعبتها معروفة، ومجموعة بشعب عدة تُحسم بشعبة الطالب إن طابقت واحدة
+  /// منها. ما يتعذّر حسمه يقيناً يُترك فارغاً.
+  Future<int> migrateEnrollmentRooms() async {
+    if (db.settings[enrollmentRoomMigrationKey] == 'true') return 0;
+
+    var changed = 0;
+    for (final e in enrollments) {
+      if (e.roomId.isNotEmpty) continue;
+      final group = groupById(e.groupId);
+      if (group == null) continue;
+      final groupRooms = group.allRoomIds.map(roomById).whereType<Classroom>().toList();
+      if (groupRooms.isEmpty) continue;
+
+      Classroom? resolved;
+      if (groupRooms.length == 1) {
+        resolved = groupRooms.first;
+      } else {
+        final student = studentById(e.studentId);
+        final candidates =
+            student == null ? const <Classroom>[] : groupRooms.where((r) => studentBelongsToRoom(student, r)).toList();
+        if (candidates.length == 1) resolved = candidates.first;
+      }
+      if (resolved == null) continue;
+
+      e.roomId = resolved.id;
+      e.updatedAt = _nowIso();
+      e.syncStatus = 'pending';
+      queuePendingSync(pendingSyncs, tableName: 'enrollments', recordId: e.id, action: 'UPDATE', payload: e.toCloud());
+      changed++;
+    }
+
+    if (changed > 0) {
+      markDirty('enrollments');
+      markDirty(_pendingTable);
+    }
+    await db.setSetting(enrollmentRoomMigrationKey, 'true');
+    return changed;
   }
 
   /// تنقية أسماء الشعب والمجموعات المحفوظة سابقاً — مرة واحدة لكل جهاز.
@@ -3149,8 +3344,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         _queue('students', s.id, 'UPDATE', s.toCloud());
       }
     }
-    for (final g in groups.where((g) => g.roomId == id)) {
-      g.roomId = '';
+    // فك ارتباط المجموعات بالشعبة في room_id وroom_ids معاً
+    for (final g in groups.where((g) => g.includesRoom(id))) {
+      final remaining = g.allRoomIds.where((r) => r != id).toList();
+      g.roomId = remaining.isEmpty ? '' : remaining.first;
+      g.roomIds = remaining;
       g.updatedAt = now;
       g.syncStatus = 'pending';
       _queue('groups', g.id, 'UPDATE', g.toCloud());

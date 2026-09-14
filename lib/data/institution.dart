@@ -26,6 +26,9 @@ const paymentSnapshotKey = 'payment_snapshots_frozen_v1';
 /// `sanitizeExistingGroupAndRoomNames` في db.ts
 const sectionNameMigrationKey = 'section_names_sanitized_v1';
 
+/// ربط التسجيلات القائمة بشعبها — مطابق لترقية v10 في db.ts
+const enrollmentRoomMigrationKey = 'enrollment_room_link_v1';
+
 /// دمج حالة «غير نشط» في «منسحب» — مطابق لترقية v9 في db.ts
 const withdrawnStatusMigrationKey = 'student_status_withdrawn_v1';
 

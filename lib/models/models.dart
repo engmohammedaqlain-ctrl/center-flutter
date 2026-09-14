@@ -1490,6 +1490,7 @@ class Group {
     required this.subjectId,
     required this.teacherId,
     this.roomId = '',
+    List<String>? roomIds,
     this.gradeLevel = '',
     this.pricePerMonth = 0,
     this.maxStudents,
@@ -1500,13 +1501,18 @@ class Group {
     this.syncStatus = 'synced',
     this.createdAt,
     this.updatedAt,
-  }) : days = days ?? <int>[];
+  })  : days = days ?? <int>[],
+        roomIds = roomIds ?? <String>[];
 
   final String id;
   String name;
   String subjectId;
   String teacherId;
   String roomId;
+
+  /// كل الشعب المشتركة في هذا الموديل: المعلم نفسه يدرّس المادة نفسها لأكثر من
+  /// شعبة في المرحلة نفسها بسجل مجموعة واحد. [roomId] الشعبة الأساسية للعرض.
+  List<String> roomIds;
   String gradeLevel;
   double pricePerMonth;
   int? maxStudents;
@@ -1528,7 +1534,16 @@ class Group {
 
   /// مجموعة مادة شعبة: وعاء يربط معلم المادة بطلاب الشعبة، بلا أيام ولا رسوم.
   /// تُميَّز عن مجموعة المركز بأنها معلّقة على صف ولا موعد لها.
-  bool get isSectionSubject => roomId.isNotEmpty && days.isEmpty;
+  bool get isSectionSubject => allRoomIds.isNotEmpty && days.isEmpty;
+
+  /// شعب المجموعة — `getGroupRoomIds`: السجلات القديمة تحمل [roomId] وحده.
+  List<String> get allRoomIds => roomIds.isNotEmpty ? roomIds : (roomId.isEmpty ? const <String>[] : [roomId]);
+
+  bool includesRoom(String id) => allRoomIds.contains(id);
+
+  /// مجموعة مادة مدرسية — `isSchoolGroup`: بلا جدول أسبوعي ولا رسوم شهرية.
+  bool get isSchoolGroup =>
+      days.isEmpty && startTime.trim().isEmpty && endTime.trim().isEmpty && pricePerMonth == 0;
 
   Map<String, dynamic> toCloud() => {
         'id': id,
@@ -1536,6 +1551,7 @@ class Group {
         'subject_id': subjectId.isEmpty ? null : subjectId,
         'teacher_id': teacherId.isEmpty ? null : teacherId,
         'room_id': roomId.isEmpty ? null : roomId,
+        'room_ids': roomIds,
         'grade_level': gradeLevel,
         'price_per_month': pricePerMonth,
         'max_students': maxStudents,
@@ -1562,6 +1578,11 @@ class Group {
       subjectId: '${m['subject_id'] ?? ''}',
       teacherId: '${m['teacher_id'] ?? ''}',
       roomId: '${m['room_id'] ?? ''}',
+      roomIds: [
+        if (m['room_ids'] is List)
+          for (final id in m['room_ids'] as List)
+            if (id != null && '$id'.isNotEmpty) '$id',
+      ],
       gradeLevel: '${m['grade_level'] ?? ''}',
       pricePerMonth: (m['price_per_month'] as num?)?.toDouble() ?? 0,
       maxStudents: (m['max_students'] as num?)?.toInt(),
@@ -1582,6 +1603,7 @@ class StudentEnrollment {
     required this.id,
     required this.studentId,
     required this.groupId,
+    this.roomId = '',
     DateTime? enrolledAt,
     this.status = 'active',
     this.customPrice,
@@ -1595,6 +1617,10 @@ class StudentEnrollment {
   final String id;
   final String studentId;
   final String groupId;
+
+  /// الشعبة التي جاء منها التسجيل. المجموعة الواحدة تشترك فيها شعب عدة، وفصل
+  /// شعبة عنها كان يمسّ طلاب شعبة أخرى اسمها قريب؛ الربط الصريح يحصره في طلابها.
+  String roomId;
   DateTime enrolledAt;
 
   /// `active | withdrawn | completed | paused`
@@ -1615,6 +1641,7 @@ class StudentEnrollment {
         'id': id,
         'student_id': studentId,
         'group_id': groupId,
+        'room_id': roomId.isEmpty ? null : roomId,
         'enrolled_at': enrolledAt.toUtc().toIso8601String(),
         'status': status,
         'custom_price': customPrice,
@@ -1628,6 +1655,7 @@ class StudentEnrollment {
         id: '${m['id']}',
         studentId: '${m['student_id'] ?? ''}',
         groupId: '${m['group_id'] ?? ''}',
+        roomId: '${m['room_id'] ?? ''}',
         enrolledAt: parseIsoDate('${m['enrolled_at'] ?? m['enrollment_date'] ?? ''}') ?? DateTime.now(),
         status: '${m['status'] ?? 'active'}',
         customPrice: (m['custom_price'] as num?)?.toDouble(),

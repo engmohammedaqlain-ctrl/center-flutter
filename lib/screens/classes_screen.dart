@@ -316,14 +316,14 @@ class _SubjectTeachersSheetState extends State<_SubjectTeachersSheet> {
 
   void _save() {
     try {
-      final count = widget.store.saveSectionSubjectAssignments(
+      widget.store.saveSectionSubjectAssignments(
         roomId: widget.room.id,
         gradeLevel: widget.room.gradeLevel,
         roomName: widget.room.name,
         assignments: rows,
       );
       Navigator.pop(context);
-      showAppSnack(context, count == 0 ? 'تم رفع إسناد جميع المواد' : 'تم إسناد $count مادة لمعلميها');
+      showAppSnack(context, 'تم الحفظ');
     } on StoreException catch (e) {
       showAppSnack(context, e.message, error: true);
     }
@@ -950,7 +950,7 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
   }
 }
 
-/// مواد الصف ومعلموها — سطر لكل مادة. لا تظهر قبل أن يُسند شيء.
+/// مواد الصف ومعلموها — سطر لكل مادة، والمادة بلا معلم تظهر «غير مسند».
 class _SubjectTeachersCard extends StatelessWidget {
   const _SubjectTeachersCard({required this.room});
 
@@ -959,7 +959,7 @@ class _SubjectTeachersCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    final assigned = store.sectionSubjectGroups(room.id).where((g) => g.teacherId.trim().isNotEmpty).toList()
+    final assigned = store.sectionSubjectGroups(room.id).where((g) => g.subjectId.isNotEmpty).toList()
       ..sort((a, b) => store.subjectName(a.subjectId).compareTo(store.subjectName(b.subjectId)));
     if (assigned.isEmpty) return const SizedBox.shrink();
 
@@ -989,7 +989,7 @@ class _SubjectTeachersCard extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        store.teacherName(g.teacherId),
+                        g.teacherId.trim().isEmpty ? 'غير مسند' : store.teacherName(g.teacherId),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.end,
