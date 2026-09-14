@@ -1688,11 +1688,18 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         if (!sameGrade) return false;
       }
 
-      // الإسناد صريح: الطالب في الشعبة التي كُتبت في ملفه وحدها. شعبةٌ جديدة
-      // تبدأ فارغة، وتُملأ بزر «إضافة طلاب» لا بابتلاع كل من في مرحلتها.
       final section = s.section.trim().toLowerCase();
-      if (section.isEmpty || roomName.isEmpty) return false;
-      return section == roomName || section.contains(roomName) || roomName.contains(section);
+      if (section.isNotEmpty && roomName.isNotEmpty) {
+        return section == roomName || section.contains(roomName) || roomName.contains(section);
+      }
+
+      // بلا شعبة: يُحسب على الصف فقط إن كان الصف الوحيد لمرحلته — كما في
+      // `SchoolClasses.tsx`. مكانه معروف حينها ولا لبس فيه.
+      if (section.isEmpty && roomGrade.isNotEmpty && grade.isNotEmpty) {
+        final ofGrade = rooms.where((r) => r.gradeLevel.trim().toLowerCase() == grade).toList();
+        return ofGrade.length == 1 && ofGrade.first.id == room.id;
+      }
+      return false;
     }).toList();
   }
 

@@ -46,17 +46,28 @@ void main() {
       expect(s.studentsOf(b), isEmpty);
     });
 
-    test('الشعبة الجديدة تبدأ فارغة، وتُملأ بالإسناد الصريح', () {
+    test('الطالب بلا شعبة يُحسب حين تكون لمرحلته شعبة واحدة', () {
       final s = _store();
-      final room = _room(s, 'شعبة (أ)');
+      final only = _room(s, 'شعبة (أ)');
       final student = _student(s, section: '');
 
-      expect(s.studentsOf(room), isEmpty, reason: 'لا تبتلع طلاب مرحلتها');
-      expect(s.sectionCandidates(room).map((e) => e.id), contains(student.id));
+      expect(s.studentsOf(only).map((e) => e.id), [student.id], reason: 'مكانه معروف: لا شعبة غيرها');
 
-      expect(s.assignSection([student.id], room.name), 1);
-      expect(s.studentsOf(room).map((e) => e.id), [student.id]);
-      expect(s.assignSection([student.id], room.name), 0, reason: 'موجود فيها أصلاً');
+      // فتح شعبة ثانية يُسقط النسبة المفترضة
+      _room(s, 'شعبة (ب)');
+      expect(s.studentsOf(only), isEmpty);
+    });
+
+    test('الإسناد الصريح يثبّت الشعبة في ملف الطالب', () {
+      final s = _store();
+      final a = _room(s, 'شعبة (أ)');
+      _room(s, 'شعبة (ب)');
+      final student = _student(s, section: '');
+
+      expect(s.sectionCandidates(a).map((e) => e.id), contains(student.id));
+      expect(s.assignSection([student.id], a.name), 1);
+      expect(s.studentsOf(a).map((e) => e.id), [student.id]);
+      expect(s.assignSection([student.id], a.name), 0, reason: 'موجود فيها أصلاً');
     });
 
     test('الإسناد ينقل الطالب من شعبته السابقة', () {
