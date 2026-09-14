@@ -1,10 +1,15 @@
 import '../models/models.dart';
 import 'supabase.dart';
 
+/// نتيجة إضافة منشأة: المنشأة كما حفظتها السحابة، أو رسالة جاهزة للعرض.
+typedef TenantCreation = ({Tenant? tenant, String? error});
+
 /// إدارة المنشآت والاشتراكات — المقابل لـ `lib/tenantService.ts`.
 ///
-/// المصدر الأول هو السحابة؛ القائمة المحلية احتياط عند انقطاع الاتصال، حتى
-/// يبقى الدخول ممكناً على جهاز عمل بلا إنترنت.
+/// القراءة من السحابة، والقائمة المحلية احتياط عند انقطاع الاتصال حتى يبقى
+/// الدخول ممكناً على جهاز عمل بلا إنترنت. الكتابة لا تكون إلا في السحابة:
+/// سياسات القاعدة لا تسمح بإدراج صف في `tenants` ولا بحذفه من التطبيق، فتمرّ
+/// الإضافة والحذف بدالة السيرفر `admin-tenants`، والتعديل بـ PATCH بصلاحية المطور.
 class TenantService {
   const TenantService();
 
@@ -47,9 +52,95 @@ class TenantService {
     return Tenant.fromCloud(rows.first);
   }
 
-  Future<void> save(Tenant t) => supabaseUpsert('tenants', [t.toCloud()]);
+  /// إضافة منشأة مع حساب دخولها — `createTenant`.
+  ///
+  /// إنشاء حساب في Supabase Auth يحتاج مفتاح الخدمة، فتنفّذه دالة السيرفر.
+  /// [adminPassword] لتعيين أدوار الأجهزة، منفصلة عن كلمة الدخول.
+  Future<TenantCreation> create(Tenant t, {required String password, required String adminPassword}) async {
+    final data = await supabaseInvoke('admin-tenants', {
+      'action': 'create_tenant',
+      'tenant': {
+        'name': t.name,
+        'code': t.code,
+        'plan_type': t.planType,
+        'expires_at': t.isLifetime ? null : t.expiresAt.toUtc().toIso8601String(),
+        'owner_name': t.ownerName,
+        'owner_phone': t.ownerPhone,
+        'notes': t.notes,
+      },
+      'username': t.username,
+      'password': password,
+      'admin_password': adminPassword,
+    });
+    final error = data['error'];
+    if (error != null) return (tenant: null, error: '$error');
+    final row = data['tenant'];
+    if (row is! Map) return (tenant: null, error: 'فشلت إضافة الاشتراك');
+    return (tenant: Tenant.fromCloud(Map<String, dynamic>.from(row)), error: null);
+  }
 
-  Future<void> remove(String id) => supabaseDelete('tenants', {'id': 'eq.$id'});
+  /// تعديل منشأة — `updateTenant`. يعيد رسالة الخطأ، أو `null` عند النجاح.
+  ///
+  /// [fields] أعمدة `tenants` كما في السحابة. بيانات الدخول لا تُرسل إلا عند
+  /// تغييرها: [username] اسم جديد، و[newPassword] و[newAdminPassword] فارغتان
+  /// لإبقاء الحاليتين.
+  Future<String?> update(
+    String id,
+    Map<String, dynamic> fields, {
+    String? username,
+    String? newPassword,
+    String? newAdminPassword,
+  }) async {
+    if (fields.isNotEmpty) {
+      try {
+        await supabaseUpdate(
+          'tenants',
+          {'id': 'eq.$id'},
+          {...fields, 'updated_at': DateTime.now().toUtc().toIso8601String()},
+        );
+      } catch (e) {
+        return describeCloudError(e);
+      }
+
+      // اسم الاشتراك وحده لا يغيّر ما يظهر في المدرسة: ذاك يُقرأ من
+      // institution_settings، فيُحدَّث معه ليصل الاسم فعلاً لأجهزتها
+      final name = fields['name'];
+      if (name is String && name.trim().isNotEmpty) {
+        try {
+          await supabaseUpsert('institution_settings', [
+            {'id': id, 'tenant_id': id, 'institution_name': name.trim()},
+          ]);
+        } catch (_) {}
+      }
+    }
+
+    final password = newPassword?.trim() ?? '';
+    if (username != null || password.isNotEmpty) {
+      final data = await supabaseInvoke('admin-tenants', {
+        'action': 'set_credentials',
+        'tenant_id': id,
+        'username': ?username,
+        if (password.isNotEmpty) 'password': password,
+      });
+      if (data['error'] != null) return '${data['error']}';
+    }
+
+    final adminPassword = newAdminPassword?.trim() ?? '';
+    if (adminPassword.isNotEmpty) {
+      final error = await supabaseRpcError('set_admin_password', {
+        'p_tenant_id': id,
+        'p_password': adminPassword,
+      });
+      if (error != null) return error;
+    }
+    return null;
+  }
+
+  /// حذف منشأة مع حساب دخولها — `deleteTenant`. يعيد رسالة الخطأ أو `null`.
+  Future<String?> remove(String id) async {
+    final data = await supabaseInvoke('admin-tenants', {'action': 'delete_tenant', 'tenant_id': id});
+    return data['error'] == null ? null : '${data['error']}';
+  }
 
   /// توليد كود منشأة من اسمها — مطابق لسلوك `handleNameChange`.
   static String codeFromName(String name, int existingCount) {
@@ -82,6 +173,8 @@ const _arabicToLatin = {
   'ه': 'H', 'و': 'W', 'ي': 'Y', 'ى': 'Y', 'ة': 'H',
 };
 
+const _offlineManagement = 'إدارة المنشآت تحتاج اتصالاً بالسحابة';
+
 /// خدمة بلا شبكة — للاختبارات ولوضع العمل دون اتصال.
 class OfflineTenantService implements TenantService {
   const OfflineTenantService();
@@ -96,8 +189,19 @@ class OfflineTenantService implements TenantService {
   Future<Tenant?> findByCode(String code) async => null;
 
   @override
-  Future<void> save(Tenant t) async {}
+  Future<TenantCreation> create(Tenant t, {required String password, required String adminPassword}) async =>
+      (tenant: null, error: _offlineManagement);
 
   @override
-  Future<void> remove(String id) async {}
+  Future<String?> update(
+    String id,
+    Map<String, dynamic> fields, {
+    String? username,
+    String? newPassword,
+    String? newAdminPassword,
+  }) async =>
+      _offlineManagement;
+
+  @override
+  Future<String?> remove(String id) async => _offlineManagement;
 }

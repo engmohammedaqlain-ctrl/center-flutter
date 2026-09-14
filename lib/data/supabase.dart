@@ -309,6 +309,41 @@ Future<dynamic> supabaseRpc(String function, Map<String, dynamic> args) async {
   }
 }
 
+/// كـ [supabaseRpc] لكن يعيد سبب الفشل، أو `null` عند النجاح.
+///
+/// دالةٌ لا تُرجع شيئاً (`VOID`) يلتبس نجاحها بفشلها حين يكون `null` جواب
+/// الحالتين — `set_admin_password` مثلاً.
+Future<String?> supabaseRpcError(String function, Map<String, dynamic> args) async {
+  await SupabaseAuth.ensureFresh();
+  try {
+    final res = await http.post(
+      Uri.parse('${SupabaseConfig.url}/rest/v1/rpc/$function'),
+      headers: SupabaseConfig.headers,
+      body: jsonEncode(args),
+    );
+    if (res.statusCode < 400) return null;
+    return describeCloudError(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
+  } on http.ClientException catch (e) {
+    return '$_offlineMessage (${e.message})';
+  }
+}
+
+/// سبب رفض السحابة بكلام يُقرأ، من جسم رد PostgREST أو من استثناء يحمله.
+///
+/// كان يُعرض JSON خاماً: `{"code":"42501","details":null,...}`.
+String describeCloudError(Object error) {
+  var text = '$error'.trim();
+  if (text.startsWith('Exception: ')) text = text.substring('Exception: '.length);
+  final decoded = _tryJson(text);
+  if (decoded is Map) {
+    // 42501: سياسات RLS منعت العملية لهذا الحساب
+    if ('${decoded['code']}' == '42501') return 'السحابة رفضت العملية: لا صلاحية لهذا الحساب عليها';
+    final message = decoded['error'] ?? decoded['message'] ?? decoded['msg'];
+    if (message != null) return 'تعذّر الحفظ في السحابة: $message';
+  }
+  return text.isEmpty ? 'تعذّر الحفظ في السحابة' : text;
+}
+
 /// استعلام `select` عام على أي جدول.
 Future<List<Map<String, dynamic>>?> supabaseSelect(
   String table, {
@@ -368,6 +403,7 @@ Future<void> supabaseDelete(String table, Map<String, String> filters) async {
 
 /// تعديل حقول بعينها في الصفوف المطابقة — `update().eq()` في النسخة المكتبية.
 Future<void> supabaseUpdate(String table, Map<String, String> filters, Map<String, dynamic> patch) async {
+  await SupabaseAuth.ensureFresh();
   final uri = Uri.parse('${SupabaseConfig.url}/rest/v1/$table').replace(queryParameters: filters);
   final res = await http.patch(uri, headers: SupabaseConfig.headers, body: jsonEncode(patch));
   if (res.statusCode >= 400) {

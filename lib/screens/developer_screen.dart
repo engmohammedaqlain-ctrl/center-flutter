@@ -1,12 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../data/store.dart';
+import '../data/supabase.dart';
 import '../data/tenant_service.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
+
+/// مطابق لـ USERNAME_RULE في دالة السيرفر `admin-tenants`.
+const _usernameRule = 'اسم المستخدم: 3 إلى 32 من الأحرف الإنجليزية الصغيرة والأرقام و . _ -';
 
 /// بوابة المطور والاشتراكات — المقابل لـ `pages/DeveloperDashboardPage.tsx`.
 ///
@@ -244,9 +250,15 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
       confirmLabel: suspending ? 'إيقاف' : 'تفعيل',
     );
     if (!ok || !context.mounted) return;
-    t.active = !t.active;
-    t.updatedAt = DateTime.now().toUtc().toIso8601String();
-    await _persist(context, store, t, suspending ? 'تم إيقاف الاشتراك' : 'تم تفعيل الاشتراك');
+    final next = !t.active;
+    await _update(
+      context,
+      store,
+      t,
+      {'status': next ? 'active' : 'suspended'},
+      suspending ? 'تم إيقاف الاشتراك' : 'تم تفعيل الاشتراك',
+      () => t.active = next,
+    );
   }
 
   Future<void> _extend(BuildContext context, Tenant t) async {
@@ -313,13 +325,25 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                         onPressed: n <= 0
                             ? null
                             : () async {
-                                t.expiresAt = preview;
-                                t.planType = 'rental';
-                                t.updatedAt = DateTime.now().toUtc().toIso8601String();
                                 Navigator.pop(ctx);
-                                if (context.mounted) {
-                                  await _persist(context, store, t, 'تم تمديد الاشتراك حتى ${formatDate(preview)}');
-                                }
+                                if (!context.mounted) return;
+                                // التمديد يعيد تفعيل الاشتراك، كما في `handleConfirmExtend`
+                                await _update(
+                                  context,
+                                  store,
+                                  t,
+                                  {
+                                    'expires_at': preview.toUtc().toIso8601String(),
+                                    'plan_type': 'rental',
+                                    'status': 'active',
+                                  },
+                                  'تم تمديد الاشتراك حتى ${formatDate(preview)}',
+                                  () {
+                                    t.expiresAt = preview;
+                                    t.planType = 'rental';
+                                    t.active = true;
+                                  },
+                                );
                               },
                       ),
                     ),
@@ -386,27 +410,39 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
     typed.dispose();
     if (confirmed != true || !context.mounted) return;
 
-    try {
-      await store.tenantApi.remove(t.id);
-    } catch (_) {
-      // الحذف المحلي يتم على أي حال؛ التحديث التالي يعيد المزامنة
+    // الحذف مع حساب الدخول عبر دالة السيرفر. كان يُحذف محلياً مهما حدث،
+    // والقاعدة لا تسمح بالحذف المباشر، فتعود المنشأة عند أول تحديث
+    final error = await store.tenantApi.remove(t.id);
+    if (!context.mounted) return;
+    if (error != null) {
+      showAppSnack(context, error, error: true);
+      return;
     }
     store.deleteTenant(t.id);
-    store.markDirty('tenants');
-    if (context.mounted) showAppSnack(context, 'تم حذف المنشأة');
+    showAppSnack(context, 'تم حذف المنشأة');
   }
 
-  Future<void> _persist(BuildContext context, AppStore store, Tenant t, String okMessage) async {
-    store.upsertTenant(t);
-    store.markDirty('tenants');
-    try {
-      await store.tenantApi.save(t);
-      if (context.mounted) showAppSnack(context, okMessage);
-    } catch (e) {
-      if (context.mounted) {
-        showAppSnack(context, 'حُفظ محلياً، وتعذّر الرفع للسحابة: $e', error: true);
-      }
+  /// تعديل حقول منشأة في السحابة، ثم على الجهاز بعد قبولها — `updateTenant`.
+  ///
+  /// كان يُحفظ محلياً أولاً، فيبقى تعديلٌ رفضته السحابة ظاهراً كأنه نُفّذ.
+  Future<void> _update(
+    BuildContext context,
+    AppStore store,
+    Tenant t,
+    Map<String, dynamic> fields,
+    String okMessage,
+    void Function() apply,
+  ) async {
+    final error = await store.tenantApi.update(t.id, fields);
+    if (!context.mounted) return;
+    if (error != null) {
+      showAppSnack(context, error, error: true);
+      return;
     }
+    apply();
+    t.updatedAt = DateTime.now().toUtc().toIso8601String();
+    store.upsertTenant(t);
+    showAppSnack(context, okMessage);
   }
 
   Future<void> _edit(BuildContext context, Tenant? existing) async {
@@ -414,13 +450,17 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
     final name = TextEditingController(text: existing?.name ?? '');
     final code = TextEditingController(text: existing?.code ?? '');
     final username = TextEditingController(text: existing?.username ?? '');
-    final password = TextEditingController(text: existing?.password ?? '');
+    // كلمات المرور لا تُقرأ من السحابة ولا تُعرض: فارغة عند التعديل تعني «بلا تغيير»
+    final password = TextEditingController();
+    final adminPassword = TextEditingController();
     final ownerName = TextEditingController(text: existing?.ownerName ?? '');
     final ownerPhone = TextEditingController(text: existing?.ownerPhone ?? '');
     final notes = TextEditingController(text: existing?.notes ?? '');
     final months = TextEditingController(text: '12');
     var planType = existing?.planType ?? 'rental';
     var codeTouched = existing != null;
+    var saving = false;
+    String? failure;
     final errors = FieldErrors();
 
     await showModalBottomSheet<void>(
@@ -485,18 +525,41 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          FieldLabel('كلمة المرور', key: errors.key('password'), requiredField: true),
+                          FieldLabel(
+                            existing == null ? 'كلمة المرور' : 'كلمة مرور جديدة',
+                            key: errors.key('password'),
+                            requiredField: existing == null,
+                          ),
                           TextField(
                             controller: password,
                             onChanged: (_) {
                               if (errors.clear('password')) setSt(() {});
                             },
-                            decoration: InputDecoration(errorText: errors['password']),
+                            decoration: InputDecoration(
+                              errorText: errors['password'],
+                              hintText: existing == null ? null : 'فارغة = بلا تغيير',
+                            ),
                           ),
                         ],
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 8),
+                FieldLabel(
+                  existing == null ? 'كلمة مرور المدير' : 'كلمة مرور مدير جديدة',
+                  key: errors.key('admin'),
+                  requiredField: existing == null,
+                ),
+                TextField(
+                  controller: adminPassword,
+                  onChanged: (_) {
+                    if (errors.clear('admin')) setSt(() {});
+                  },
+                  decoration: InputDecoration(
+                    errorText: errors['admin'],
+                    hintText: existing == null ? 'لتعيين أدوار الأجهزة — تختلف عن كلمة الدخول' : 'فارغة = بلا تغيير',
+                  ),
                 ),
                 const SizedBox(height: 8),
                 const FieldLabel('نوع التعاقد'),
@@ -508,7 +571,8 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                   ],
                   onChanged: (v) => setSt(() => planType = v ?? 'rental'),
                 ),
-                if (planType == 'rental') ...[
+                // المدة تُسأل عند الإضافة أو التحويل من دائم؛ تاريخ الاشتراك القائم يُمدَّد من «تمديد»
+                if (planType == 'rental' && (existing == null || existing.isLifetime)) ...[
                   const SizedBox(height: 8),
                   FieldLabel('مدة الاشتراك (أشهر)', key: errors.key('months'), requiredField: true),
                   TextField(
@@ -547,6 +611,22 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                 const SizedBox(height: 8),
                 const FieldLabel('ملاحظات'),
                 TextField(controller: notes, maxLines: 2),
+                // رفض السحابة يبقى داخل النموذج مع ما كُتب، فيُصحَّح ويُعاد بلا إعادة كتابة
+                if (failure != null) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: AppColors.dangerSoft,
+                      borderRadius: BorderRadius.circular(Corner.box),
+                      border: Border.all(color: AppColors.dangerBorder),
+                    ),
+                    child: Text(
+                      failure!,
+                      style: const TextStyle(color: AppColors.danger, fontSize: 11.5, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 Row(
                   children: [
@@ -554,47 +634,107 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: PrimaryButton(
-                        label: existing == null ? 'إضافة' : 'حفظ',
-                        onPressed: () async {
-                          final monthCount = int.tryParse(months.text.trim());
-                          setSt(() {
-                            errors
-                              ..reset()
-                              ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المنشأة')
-                              ..check('code', code.text.trim().isEmpty, 'يرجى إدخال رمز المنشأة')
-                              ..check('username', username.text.trim().isEmpty, 'يرجى إدخال اسم المستخدم')
-                              ..check('password', password.text.trim().isEmpty, 'يرجى إدخال كلمة المرور')
-                              ..check(
-                                'months',
-                                planType == 'rental' && (monthCount == null || monthCount <= 0),
-                                'يرجى إدخال عدد أشهر صحيح',
-                              );
-                          });
-                          if (errors.report(ctx)) return;
-                          final n = int.tryParse(months.text.trim()) ?? 12;
-                          final tenant = Tenant(
-                            id: existing?.id ?? store.newId(),
-                            name: name.text.trim(),
-                            code: code.text.trim(),
-                            username: username.text.trim(),
-                            password: password.text.trim(),
-                            expiresAt: existing != null && planType == 'rental'
-                                ? existing.expiresAt
-                                : DateTime(DateTime.now().year, DateTime.now().month + n, DateTime.now().day),
-                            ownerName: ownerName.text.trim(),
-                            ownerPhone: ownerPhone.text.trim(),
-                            notes: notes.text.trim(),
-                            planType: planType,
-                            active: existing?.active ?? true,
-                            createdAt: existing?.createdAt ?? DateTime.now().toUtc().toIso8601String(),
-                            updatedAt: DateTime.now().toUtc().toIso8601String(),
-                          );
-                          Navigator.pop(ctx);
-                          if (context.mounted) {
-                            await _persist(context, store, tenant,
-                                existing == null ? 'تمت إضافة المنشأة' : 'تم حفظ التعديلات');
-                          }
-                        },
+                        label: saving ? 'جارِ الحفظ...' : (existing == null ? 'إضافة' : 'حفظ'),
+                        busy: saving,
+                        onPressed: saving
+                            ? null
+                            : () async {
+                                final monthCount = int.tryParse(months.text.trim());
+                                final user = username.text.trim().toLowerCase();
+                                final pass = password.text.trim();
+                                final adminPass = adminPassword.text.trim();
+                                final userChanged = existing == null || user != existing.username.trim().toLowerCase();
+                                // قواعد `handleCreate` و`handleSaveEdit`: عند التعديل تُفحص الكلمة إن كُتبت فقط
+                                final passwordProblem = (existing == null || pass.isNotEmpty) && pass.length < 6
+                                    ? 'كلمة المرور 6 أحرف على الأقل'
+                                    : null;
+                                final adminProblem = (existing == null || adminPass.isNotEmpty) && adminPass.length < 6
+                                    ? 'كلمة مرور المدير 6 أحرف على الأقل'
+                                    : adminPass.isNotEmpty && adminPass == pass
+                                        ? 'كلمة مرور المدير يجب أن تختلف عن كلمة الدخول'
+                                        : null;
+                                final asksMonths = planType == 'rental' && (existing == null || existing.isLifetime);
+                                setSt(() {
+                                  failure = null;
+                                  errors
+                                    ..reset()
+                                    ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المنشأة')
+                                    ..check('code', code.text.trim().isEmpty, 'يرجى إدخال رمز المنشأة')
+                                    ..check(
+                                      'username',
+                                      (userChanged || pass.isNotEmpty) && !SupabaseAuth.isValidUsername(user),
+                                      _usernameRule,
+                                    )
+                                    ..check('password', passwordProblem != null, passwordProblem ?? '')
+                                    ..check('admin', adminProblem != null, adminProblem ?? '')
+                                    ..check(
+                                      'months',
+                                      asksMonths && (monthCount == null || monthCount <= 0),
+                                      'يرجى إدخال عدد أشهر صحيح',
+                                    );
+                                });
+                                if (errors.report(ctx)) return;
+                                setSt(() => saving = true);
+
+                                final now = DateTime.now();
+                                final draft = Tenant(
+                                  id: existing?.id ?? '',
+                                  name: name.text.trim(),
+                                  code: code.text.trim(),
+                                  username: user,
+                                  password: '',
+                                  expiresAt: asksMonths
+                                      ? DateTime(now.year, now.month + (monthCount ?? 12), now.day)
+                                      : existing?.expiresAt ?? now,
+                                  ownerName: ownerName.text.trim(),
+                                  ownerPhone: ownerPhone.text.trim(),
+                                  notes: notes.text.trim(),
+                                  planType: planType,
+                                  active: existing?.active ?? true,
+                                  createdAt: existing?.createdAt,
+                                  updatedAt: now.toUtc().toIso8601String(),
+                                );
+
+                                String? error;
+                                Tenant? saved;
+                                if (existing == null) {
+                                  final result = await store.tenantApi.create(draft, password: pass, adminPassword: adminPass);
+                                  error = result.error;
+                                  saved = result.tenant;
+                                } else {
+                                  error = await store.tenantApi.update(
+                                    existing.id,
+                                    {
+                                      'name': draft.name,
+                                      'code': draft.code,
+                                      'plan_type': draft.planType,
+                                      'expires_at': draft.isLifetime ? null : draft.expiresAt.toUtc().toIso8601String(),
+                                      'owner_name': draft.ownerName,
+                                      'owner_phone': draft.ownerPhone,
+                                      'notes': draft.notes,
+                                    },
+                                    username: userChanged ? user : null,
+                                    newPassword: pass.isEmpty ? null : pass,
+                                    newAdminPassword: adminPass.isEmpty ? null : adminPass,
+                                  );
+                                  saved = draft;
+                                }
+                                if (!ctx.mounted) return;
+                                if (error != null) {
+                                  setSt(() {
+                                    saving = false;
+                                    failure = error;
+                                  });
+                                  return;
+                                }
+                                Navigator.pop(ctx);
+                                if (saved != null) store.upsertTenant(saved);
+                                if (context.mounted) {
+                                  showAppSnack(context, existing == null ? 'تمت إضافة المنشأة' : 'تم حفظ التعديلات');
+                                }
+                                // القائمة كما حفظتها السحابة: المعرّف يُولَّد هناك والرمز بحروف صغيرة
+                                unawaited(store.refreshTenantsFromCloud());
+                              },
                       ),
                     ),
                   ],
@@ -606,7 +746,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
       ),
     );
 
-    for (final c in [name, code, username, password, ownerName, ownerPhone, notes, months]) {
+    for (final c in [name, code, username, password, adminPassword, ownerName, ownerPhone, notes, months]) {
       c.dispose();
     }
   }
@@ -675,7 +815,8 @@ class _TenantCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           _line('الرمز', tenant.code),
-          _line('الدخول', '${tenant.username}  /  ${tenant.password}'),
+          // كلمة المرور محفوظة مشفّرة في Supabase Auth ولا تصل الجهاز
+          _line('الدخول', tenant.username),
           if (tenant.isLifetime)
             _line('الاشتراك', 'دائم (غير محدد بتاريخ انتهاء)')
           else
