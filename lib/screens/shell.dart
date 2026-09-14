@@ -5,6 +5,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/widgets.dart';
+import 'app_update_sheet.dart';
 import 'attendance_screen.dart';
 import 'classes_screen.dart';
 import 'finance_screen.dart';
@@ -69,6 +70,8 @@ class _AppShellState extends State<AppShell> {
           body: Column(
             children: [
               _Header(title: sections[index].title),
+              // تنزيل التحديث وتحديثه الصامت يُتابَعان من أي قسم دون فتح القائمة
+              const UpdateStatusStrip(),
               Expanded(
                 child: IndexedStack(
                   index: index,

@@ -146,10 +146,12 @@ Future<void> showActionSheet(BuildContext context, AppStore store) {
                   label: 'تحديثات التطبيق',
                   trailing: updateReady
                       ? 'متاح ${updates.release!.versionName}'
-                      : updates.installedName.isEmpty
-                          ? null
-                          : 'الإصدار ${updates.installedName}',
-                  trailingColor: updateReady ? AppColors.success : null,
+                      : switch (updates.patchPhase) {
+                          PatchPhase.downloading => 'جارِ تحميل تحديث',
+                          PatchPhase.ready => 'تحديث جاهز',
+                          PatchPhase.none => updates.installedName.isEmpty ? null : 'الإصدار ${updates.installedName}',
+                        },
+                  trailingColor: updateReady || updates.patchPhase != PatchPhase.none ? AppColors.success : null,
                   onTap: () {
                     Navigator.pop(ctx);
                     unawaited(showUpdateSheet(context));

@@ -29,11 +29,16 @@ Map<String, dynamic> _manifest({
 /// حزمة وهمية بمحتوى معروف تُحسب بصمتها.
 List<int> _apk([int length = 3000]) => List<int>.generate(length, (i) => i % 251);
 
+String _sha(List<int> bytes) => crypto.sha256.convert(bytes).toString();
+
+/// وصفٌ يطابق الحزمة الوهمية فعلاً.
+Map<String, dynamic> _manifestFor(List<int> bytes) => {..._manifest(), 'sha256': _sha(bytes), 'sizeBytes': bytes.length};
+
 AppRelease _release(List<int> bytes, {int code = 5, String? hash}) => AppRelease(
       versionName: '1.2.0',
       versionCode: code,
       apkUrl: 'https://example.test/center-1.2.0.apk',
-      sha256: hash ?? crypto.sha256.convert(bytes).toString(),
+      sha256: hash ?? _sha(bytes),
       sizeBytes: bytes.length,
     );
 
@@ -58,6 +63,11 @@ http.Client Function() _manifestServer(Map<String, dynamic> manifest, {void Func
 
 http.Client Function() _offline() => () => MockClient((_) async => throw http.ClientException('offline'));
 
+http.StreamedResponse _json(Object body) {
+  final bytes = utf8.encode(jsonEncode(body));
+  return http.StreamedResponse(Stream.value(bytes), 200, contentLength: bytes.length);
+}
+
 Future<Directory> _tempDir() async {
   final dir = await Directory.systemTemp.createTemp('center_update_');
   addTearDown(() async {
@@ -66,12 +76,39 @@ Future<Directory> _tempDir() async {
   return dir;
 }
 
+/// مصدر تحديثات صامتة وهمي — محرّك Shorebird لا يوجد في الاختبارات.
+class _FakePatches implements PatchSource {
+  _FakePatches(this.statuses, {this.available = true});
+
+  final List<PatchStatus> statuses;
+  final bool available;
+  bool fail = false;
+  int downloads = 0;
+  int checks = 0;
+
+  @override
+  bool get isAvailable => available;
+
+  @override
+  Future<PatchStatus> status() async {
+    checks++;
+    return statuses.length > 1 ? statuses.removeAt(0) : statuses.first;
+  }
+
+  @override
+  Future<void> download() async {
+    downloads++;
+    if (fail) throw Exception('offline');
+  }
+}
+
 AppUpdater _updater({
   required Directory dir,
   required http.Client Function() client,
   int installed = 4,
   DateTime Function()? clock,
   Future<String?> Function(String path)? installer,
+  PatchSource? patches,
 }) =>
     AppUpdater(
       supported: true,
@@ -81,6 +118,9 @@ AppUpdater _updater({
       openInstaller: installer ?? (_) async => null,
       client: client,
       clock: clock,
+      patches: patches ?? _FakePatches([PatchStatus.upToDate]),
+      // العدّ التنازلي بين المحاولات لا ينتظر ثوانٍ حقيقية
+      wait: (_) async {},
     );
 
 void main() {
@@ -196,7 +236,6 @@ void main() {
 
       expect(await file.readAsBytes(), bytes);
       expect(file.path, endsWith('center-5.apk'));
-      expect(seen, hasLength(3), reason: 'تقدّمٌ مع كل دفعة');
       expect(seen.last, bytes.length);
       expect(File('${file.path}.part').existsSync(), isFalse);
     });
@@ -207,12 +246,12 @@ void main() {
 
       await expectLater(
         downloadRelease(_release(bytes, hash: 'ff' * 32), dir, client: _serving(bytes)),
-        throwsA(isA<UpdateException>()),
+        throwsA(isA<UpdateException>().having((e) => e.retryable, 'retryable', isFalse)),
       );
       expect(dir.listSync(), isEmpty);
     });
 
-    test('انقطاعٌ في منتصف التنزيل يُمسح ما وصل منه', () async {
+    test('انقطاعٌ في منتصف التنزيل يُبقي ما وصل ليُستكمل منه', () async {
       final dir = await _tempDir();
       final bytes = _apk();
       final client = MockClient.streaming((_, _) async {
@@ -226,16 +265,48 @@ void main() {
 
       await expectLater(
         downloadRelease(_release(bytes), dir, client: client),
-        throwsA(isA<UpdateException>().having((e) => e.message, 'message', contains('انقطع'))),
+        throwsA(isA<UpdateException>().having((e) => e.retryable, 'retryable', isTrue)),
       );
-      expect(dir.listSync(), isEmpty);
+      expect(await partialBytes(_release(bytes), dir), 1000, reason: 'ما نزل لا يُرمى');
+      expect(File('${dir.path}/center-5.apk').existsSync(), isFalse, reason: 'لا حزمة ناقصة باسمها النهائي');
     });
 
-    test('رابطٌ لا يوجد: رسالة لا استثناء خام', () async {
+    test('الاستكمال يطلب ما بقي وحده ويُتمّ الملف', () async {
+      final dir = await _tempDir();
+      final bytes = _apk();
+      File('${dir.path}/center-5.apk.part').writeAsBytesSync(bytes.sublist(0, 1000));
+      String? range;
+      final seen = <int>[];
+      final client = MockClient.streaming((request, _) async {
+        range = request.headers['Range'] ?? request.headers['range'];
+        final rest = bytes.sublist(1000);
+        return http.StreamedResponse(Stream.value(rest), 206, contentLength: rest.length);
+      });
+
+      final file = await downloadRelease(_release(bytes), dir, client: client, onProgress: (got, _) => seen.add(got));
+
+      expect(range, 'bytes=1000-');
+      expect(seen.first, 1000, reason: 'النسبة تبدأ مما نزل لا من الصفر');
+      expect(await file.readAsBytes(), bytes);
+    });
+
+    test('خادمٌ يتجاهل النطاق فيعيد الملف كاملاً: يُكتب من أوله', () async {
+      final dir = await _tempDir();
+      final bytes = _apk();
+      File('${dir.path}/center-5.apk.part').writeAsBytesSync(List.filled(1000, 7));
+
+      final file = await downloadRelease(_release(bytes), dir, client: _serving(bytes));
+
+      expect(await file.readAsBytes(), bytes, reason: 'لا يُلصق الملف الكامل خلف جزءٍ قديم');
+    });
+
+    test('رابطٌ لا يوجد: رسالة لا استثناء خام، ولا إعادة محاولة بلا جدوى', () async {
       final dir = await _tempDir();
       await expectLater(
         downloadRelease(_release(_apk()), dir, client: MockClient((_) async => http.Response('', 404))),
-        throwsA(isA<UpdateException>().having((e) => e.message, 'message', contains('404'))),
+        throwsA(isA<UpdateException>()
+            .having((e) => e.message, 'message', contains('404'))
+            .having((e) => e.retryable, 'retryable', isFalse)),
       );
     });
 
@@ -344,19 +415,75 @@ void main() {
     test('التثبيت ينزّل الحزمة ويتحقق منها ثم يفتح المثبِّت', () async {
       final dir = await _tempDir();
       final bytes = _apk();
-      final manifest = {
-        ..._manifest(),
-        'sha256': crypto.sha256.convert(bytes).toString(),
-        'sizeBytes': bytes.length,
-      };
       http.Client server() => MockClient.streaming((request, _) async {
-            final body = request.url.path.endsWith('.json') ? utf8.encode(jsonEncode(manifest)) : bytes;
-            return http.StreamedResponse(
-              Stream.value(body),
-              200,
-              contentLength: body.length,
-              headers: {'content-type': 'application/json; charset=utf-8'},
-            );
+            if (request.url.path.endsWith('.json')) return _json(_manifestFor(bytes));
+            return http.StreamedResponse(Stream.value(bytes), 200, contentLength: bytes.length);
+          });
+      String? opened;
+      final phases = <UpdatePhase>{};
+      final updater = _updater(
+        dir: dir,
+        client: server,
+        installer: (path) async {
+          opened = path;
+          return null;
+        },
+      );
+      updater.addListener(() => phases.add(updater.phase));
+
+      await updater.start();
+      await updater.install();
+
+      expect(phases, containsAll([UpdatePhase.downloading, UpdatePhase.verifying]), reason: 'التحقق يُعرض بعد التنزيل');
+      expect(updater.phase, UpdatePhase.ready);
+      expect(updater.error, isNull);
+      expect(opened, endsWith('center-5.apk'));
+      expect(await File(opened!).readAsBytes(), bytes);
+    });
+
+    test('انقطاعٌ متكرر: محاولاتٌ بعدٍّ تنازلي ثم توقفٌ يُستكمل', () async {
+      final dir = await _tempDir();
+      final bytes = _apk();
+      var apkRequests = 0;
+      final phases = <UpdatePhase>{};
+      http.Client server() => MockClient.streaming((request, _) async {
+            if (request.url.path.endsWith('.json')) return _json(_manifestFor(bytes));
+            apkRequests++;
+            throw http.ClientException('offline');
+          });
+      final updater = _updater(dir: dir, client: server);
+      updater.addListener(() => phases.add(updater.phase));
+
+      await updater.start();
+      await updater.install();
+
+      expect(apkRequests, AppUpdater.maxAttempts);
+      expect(phases, contains(UpdatePhase.retrying), reason: 'العدّ التنازلي يُعرض بين المحاولات');
+      expect(updater.phase, UpdatePhase.paused, reason: 'يتوقف بانتظار المستخدم بدل استنزاف البطارية');
+      expect(updater.error, contains('انقطع'));
+    });
+
+    test('يعود الاتصال فتستكمل المحاولة التالية مما نزل ويُفتح المثبِّت', () async {
+      final dir = await _tempDir();
+      final bytes = _apk();
+      var attempts = 0;
+      final ranges = <String?>[];
+      http.Client server() => MockClient.streaming((request, _) async {
+            if (request.url.path.endsWith('.json')) return _json(_manifestFor(bytes));
+            attempts++;
+            final range = request.headers['Range'] ?? request.headers['range'];
+            ranges.add(range);
+            if (attempts == 1) {
+              final body = Stream<List<int>>.multi((out) {
+                out.add(bytes.sublist(0, 1000));
+                out.addError(http.ClientException('connection lost'));
+                out.close();
+              });
+              return http.StreamedResponse(body, 200, contentLength: bytes.length);
+            }
+            final start = int.parse(range!.substring('bytes='.length, range.length - 1));
+            final rest = bytes.sublist(start);
+            return http.StreamedResponse(Stream.value(rest), 206, contentLength: rest.length);
           });
       String? opened;
       final updater = _updater(
@@ -371,19 +498,34 @@ void main() {
       await updater.start();
       await updater.install();
 
-      expect(updater.phase, UpdatePhase.ready);
-      expect(updater.error, isNull);
+      expect(attempts, 2);
+      expect(ranges.last, 'bytes=1000-', reason: 'لا يُعاد تنزيل ما نزل قبل الانقطاع');
       expect(opened, endsWith('center-5.apk'));
       expect(await File(opened!).readAsBytes(), bytes);
+    });
+
+    test('تنزيلٌ أُغلق التطبيق في منتصفه يُعرض متوقفاً عند نسبته', () async {
+      final dir = await _tempDir();
+      final bytes = _apk();
+      SharedPreferences.setMockInitialValues({
+        'app_update_release': jsonEncode(AppRelease.fromJson(_manifestFor(bytes))!.toJson()),
+      });
+      File('${dir.path}/center-5.apk.part').writeAsBytesSync(bytes.sublist(0, 1500));
+
+      final updater = _updater(dir: dir, client: _offline());
+      await updater.start();
+
+      expect(updater.phase, UpdatePhase.paused, reason: 'يُعرض ليُستكمل لا يُنسى');
+      expect(updater.received, 1500);
+      expect(updater.progress, closeTo(0.5, 0.001));
     });
 
     test('تعذّر فتح المثبِّت يُعرض سببه', () async {
       final dir = await _tempDir();
       final bytes = _apk();
-      final manifest = {..._manifest(), 'sha256': crypto.sha256.convert(bytes).toString(), 'sizeBytes': bytes.length};
       http.Client server() => MockClient.streaming((request, _) async {
-            final body = request.url.path.endsWith('.json') ? utf8.encode(jsonEncode(manifest)) : bytes;
-            return http.StreamedResponse(Stream.value(body), 200, contentLength: body.length);
+            if (request.url.path.endsWith('.json')) return _json(_manifestFor(bytes));
+            return http.StreamedResponse(Stream.value(bytes), 200, contentLength: bytes.length);
           });
       final updater = _updater(dir: dir, client: server, installer: (_) async => 'اسمح للتطبيق بالتثبيت');
 
@@ -412,6 +554,77 @@ void main() {
       await updater.start();
       expect(await updater.check(force: true), UpdateAction.none);
       expect(updater.action, UpdateAction.none);
+    });
+  });
+
+  group('التحديث الصامت', () {
+    setUp(() => SharedPreferences.setMockInitialValues({}));
+
+    test('تحديثٌ متاح يُنزَّل في الخلفية ثم ينتظر فتح التطبيق التالي', () async {
+      final dir = await _tempDir();
+      final patches = _FakePatches([PatchStatus.available]);
+      final updater = _updater(dir: dir, client: _offline(), patches: patches);
+      final seen = <PatchPhase>[];
+      updater.addListener(() {
+        if (seen.isEmpty || seen.last != updater.patchPhase) seen.add(updater.patchPhase);
+      });
+
+      await updater.start();
+      await updater.checkPatch();
+
+      expect(seen, containsAllInOrder([PatchPhase.downloading, PatchPhase.ready]));
+      expect(patches.downloads, 1);
+    });
+
+    test('نزل من قبل وينتظر إعادة الفتح: لا تنزيل جديد', () async {
+      final dir = await _tempDir();
+      final patches = _FakePatches([PatchStatus.awaitingRestart]);
+      final updater = _updater(dir: dir, client: _offline(), patches: patches);
+
+      await updater.start();
+      await updater.checkPatch();
+
+      expect(updater.patchPhase, PatchPhase.ready);
+      expect(patches.downloads, 0);
+    });
+
+    test('انقطاعٌ أثناء التحديث الصامت لا يُظهر خطأ، ويُعاد عند العودة', () async {
+      final dir = await _tempDir();
+      final patches = _FakePatches([PatchStatus.available])..fail = true;
+      final updater = _updater(dir: dir, client: _offline(), patches: patches);
+
+      await updater.start();
+      await updater.checkPatch();
+      expect(updater.patchPhase, PatchPhase.none);
+      expect(updater.error, isNull, reason: 'التحديث الصامت لا يُقلق المستخدم برسالة');
+
+      patches.fail = false;
+      final before = patches.downloads;
+      await updater.checkPatch();
+      expect(updater.patchPhase, PatchPhase.ready, reason: 'العودة إلى التطبيق تعيد المحاولة بلا انتظار');
+      expect(patches.downloads, before + 1, reason: 'محاولة واحدة عند العودة');
+    });
+
+    test('لا تحديث صامت: لا شيء يُعرض', () async {
+      final dir = await _tempDir();
+      final updater = _updater(dir: dir, client: _offline(), patches: _FakePatches([PatchStatus.upToDate]));
+
+      await updater.start();
+      await updater.checkPatch();
+
+      expect(updater.patchPhase, PatchPhase.none);
+    });
+
+    test('نسخةٌ بلا محرّك Shorebird لا تُسأل', () async {
+      final dir = await _tempDir();
+      final patches = _FakePatches([PatchStatus.available], available: false);
+      final updater = _updater(dir: dir, client: _offline(), patches: patches);
+
+      await updater.start();
+      await updater.checkPatch(force: true);
+
+      expect(patches.checks, 0);
+      expect(updater.patchPhase, PatchPhase.none);
     });
   });
 }

@@ -3,6 +3,9 @@
 /// الملفان معاً في إصدار واحد على الاستضافة: حزمة التثبيت، وملف وصف يقول ما
 /// أحدث إصدار وأين يُنزَّل. التطبيق يقرأ الوصف ويقارنه بنفسه، فإن كان أحدث عرض
 /// التحديث؛ ولا يفرضه إلا حين يصير القديم غير صالح للعمل مع السحابة.
+///
+/// وبجانبه التحديث الصامت (Shorebird): تصليحات كود Dart تُنزَّل في الخلفية
+/// وتُطبَّق عند فتح التطبيق التالي، بلا تثبيت.
 library;
 
 import 'dart:async';
@@ -16,7 +19,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:shorebird_code_push/shorebird_code_push.dart' show ShorebirdUpdater;
+import 'package:shorebird_code_push/shorebird_code_push.dart' as shorebird;
 
 /// ملف وصف أحدث إصدار — `latest` في GitHub يحيل دائماً إلى آخر إصدار منشور،
 /// فالرابط ثابت لا يتغيّر مع كل تحديث.
@@ -135,48 +138,89 @@ http.Client _defaultClient() => http.Client();
 
 /// تعذّرٌ في التنزيل رسالته جاهزة للعرض.
 class UpdateException implements Exception {
-  const UpdateException(this.message);
+  const UpdateException(this.message, {this.retryable = false});
   final String message;
+
+  /// انقطاعٌ يُستكمل التنزيل بعده، لا خللٌ في الملف أو الاستضافة.
+  final bool retryable;
 
   @override
   String toString() => message;
 }
 
+String _packagePath(Directory dir, AppRelease release) =>
+    '${dir.path}${Platform.pathSeparator}center-${release.versionCode}.apk';
+
+/// ما نزل من حزمة الإصدار قبل انقطاعٍ أو إغلاقٍ للتطبيق، أو 0.
+Future<int> partialBytes(AppRelease release, Directory dir) async {
+  final part = File('${_packagePath(dir, release)}.part');
+  return await part.exists() ? await part.length() : 0;
+}
+
 /// تنزيل حزمة الإصدار إلى [dir] والتحقق منها قبل تسليمها.
 ///
-/// يُكتب إلى ملف `.part` ولا يُسمّى باسمه النهائي إلا بعد مطابقة الحجم والبصمة:
-/// تنزيلٌ انقطع في منتصفه لا يُترك ملفاً يبدو صالحاً فيُعرض على المثبِّت. وحزمةٌ
-/// نُزّلت وتحقّقت سابقاً تُعاد كما هي بلا شبكة.
+/// يُكتب إلى ملف `.part` ولا يُسمّى باسمه النهائي إلا بعد مطابقة الحجم والبصمة،
+/// فلا يُعرض على المثبِّت ملفٌ ناقص. وما نزل منه يبقى عند الانقطاع أو إغلاق
+/// التطبيق، فيُطلب ما بعده وحده بدل ٢٥ م.ب من أولها على اتصالٍ متقطع.
+/// [onVerifying] يُستدعى حين يكتمل التنزيل ويبدأ التحقق من البصمة.
 Future<File> downloadRelease(
   AppRelease release,
   Directory dir, {
   http.Client? client,
   void Function(int received, int? total)? onProgress,
+  void Function()? onVerifying,
 }) async {
-  final target = File('${dir.path}${Platform.pathSeparator}center-${release.versionCode}.apk');
+  final target = File(_packagePath(dir, release));
   if (await target.exists() && await _matches(target, release)) return target;
 
   final part = File('${target.path}.part');
   final c = client ?? _defaultClient();
   try {
-    final res = await c.send(http.Request('GET', Uri.parse(release.apkUrl)));
-    if (res.statusCode >= 400) {
-      throw UpdateException('تعذّر تنزيل التحديث من الاستضافة (${res.statusCode})');
-    }
-    final total = res.contentLength ?? (release.sizeBytes > 0 ? release.sizeBytes : null);
-    final sink = part.openWrite();
-    var received = 0;
-    try {
-      await for (final chunk in res.stream) {
-        sink.add(chunk);
-        received += chunk.length;
-        onProgress?.call(received, total);
-      }
-      await sink.flush();
-    } finally {
-      await sink.close();
+    var offset = await part.exists() ? await part.length() : 0;
+    if (release.sizeBytes > 0 && offset > release.sizeBytes) {
+      await part.delete();
+      offset = 0;
     }
 
+    // نزل كاملاً في تشغيلٍ سابق وأُغلق التطبيق قبل التحقق: لا شبكة
+    final complete = release.sizeBytes > 0 && offset == release.sizeBytes;
+    if (!complete) {
+      final request = http.Request('GET', Uri.parse(release.apkUrl));
+      if (offset > 0) request.headers['Range'] = 'bytes=$offset-';
+      final res = await c.send(request);
+      if (res.statusCode == 416) {
+        // الجزء المحفوظ لا يقابل الملف على الاستضافة: يُعاد من أوله
+        await part.delete();
+        throw const UpdateException('يُعاد التنزيل من البداية', retryable: true);
+      }
+      if (res.statusCode >= 400) {
+        throw UpdateException(
+          'تعذّر تنزيل التحديث من الاستضافة (${res.statusCode})',
+          retryable: res.statusCode >= 500,
+        );
+      }
+
+      // خادمٌ تجاهل النطاق فأعاد الملف كاملاً: يُكتب من أوله لا فوق ما سبق
+      final resumed = offset > 0 && res.statusCode == 206;
+      if (!resumed) offset = 0;
+      final length = res.contentLength;
+      final total = release.sizeBytes > 0 ? release.sizeBytes : (length == null ? null : offset + length);
+
+      final sink = part.openWrite(mode: resumed ? FileMode.append : FileMode.write);
+      var received = offset;
+      onProgress?.call(received, total);
+      try {
+        await for (final chunk in res.stream) {
+          sink.add(chunk);
+          received += chunk.length;
+          onProgress?.call(received, total);
+        }
+      } finally {
+        await sink.close();
+      }
+    }
+
+    onVerifying?.call();
     if (!await _matches(part, release)) {
       await part.delete();
       throw const UpdateException('الملف المنزَّل لا يطابق الإصدار المنشور فلم يُثبَّت. أعد المحاولة');
@@ -186,10 +230,8 @@ Future<File> downloadRelease(
   } on UpdateException {
     rethrow;
   } catch (_) {
-    try {
-      if (await part.exists()) await part.delete();
-    } catch (_) {}
-    throw const UpdateException('انقطع التنزيل. تحقّق من الاتصال بالإنترنت وأعد المحاولة');
+    // ما نزل يبقى في `.part`: المحاولة التالية تستكمل منه
+    throw const UpdateException('انقطع الاتصال أثناء التنزيل', retryable: true);
   } finally {
     if (client == null) c.close();
   }
@@ -204,13 +246,69 @@ Future<bool> _matches(File file, AppRelease release) async {
   return digest.toString() == release.sha256;
 }
 
-/// مرحلة التحديث الجارية.
-enum UpdatePhase { idle, checking, downloading, ready, failed }
+/// مرحلة تحديث البناء (APK) الجارية.
+enum UpdatePhase {
+  idle,
+  checking,
+  downloading,
+
+  /// انقطع الاتصال: محاولة جديدة بعد عدٍّ تنازلي.
+  retrying,
+
+  /// توقف التنزيل وما نزل محفوظ — يُستكمل من مكانه ولو أُغلق التطبيق.
+  paused,
+
+  /// اكتمل التنزيل ويُتحقق من بصمة الملف.
+  verifying,
+  ready,
+  failed,
+}
+
+/// حالة التحديث الصامت (Shorebird).
+enum PatchPhase {
+  none,
+
+  /// يُنزَّل في الخلفية والتطبيق يعمل.
+  downloading,
+
+  /// نزل، ويُطبَّق عند فتح التطبيق التالي.
+  ready,
+}
+
+/// ما يقوله مصدر التحديثات الصامتة عن هذا الجهاز.
+enum PatchStatus { upToDate, available, awaitingRestart }
+
+/// ما يحتاجه التطبيق من Shorebird، مجرَّداً كي يُختبر بلا محرّكه.
+abstract class PatchSource {
+  /// نسخةٌ بُنيت بغير `shorebird release` لا تحمل محرّكه ولا تستقبل تحديثاً صامتاً.
+  bool get isAvailable;
+  Future<PatchStatus> status();
+  Future<void> download();
+}
+
+class ShorebirdPatchSource implements PatchSource {
+  ShorebirdPatchSource() : _updater = shorebird.ShorebirdUpdater();
+
+  final shorebird.ShorebirdUpdater _updater;
+
+  @override
+  bool get isAvailable => _updater.isAvailable;
+
+  @override
+  Future<PatchStatus> status() async => switch (await _updater.checkForUpdate()) {
+        shorebird.UpdateStatus.outdated => PatchStatus.available,
+        shorebird.UpdateStatus.restartRequired => PatchStatus.awaitingRestart,
+        _ => PatchStatus.upToDate,
+      };
+
+  @override
+  Future<void> download() => _updater.update();
+}
 
 /// الإصدار المثبَّت على الجهاز.
 typedef InstalledVersion = ({int code, String name});
 
-/// حالة التحديث المشتركة بين الإقلاع والقائمة وورقة التحديث.
+/// حالة التحديث المشتركة بين الإقلاع والقائمة وورقة التحديث والشريط.
 ///
 /// آخر وصفٍ وصل يُحفظ على الجهاز، فيبقى القرار معروفاً بلا إنترنت: جهازٌ عُرف
 /// أن إصداره لم يعد مقبولاً يُحجب من أول إطار في الإقلاع التالي، لا بعد أن
@@ -224,17 +322,30 @@ class AppUpdater extends ChangeNotifier {
     Future<String?> Function(String path)? openInstaller,
     http.Client Function()? client,
     DateTime Function()? clock,
+    PatchSource? patches,
+    Future<void> Function(Duration delay)? wait,
   })  : _installedVersion = installedVersion ?? _packageVersion,
         _downloadDir = downloadDir ?? getTemporaryDirectory,
         _openInstaller = openInstaller ?? _systemInstaller,
         _client = client ?? _defaultClient,
-        _clock = clock ?? DateTime.now;
+        _clock = clock ?? DateTime.now,
+        _patches = patches ?? (supported ? ShorebirdPatchSource() : null),
+        _wait = wait ?? Future<void>.delayed;
 
   /// على أندرويد وحده: غيره لا يثبّت حزم APK.
   static final instance = AppUpdater(supported: !kIsWeb && Platform.isAndroid);
 
   /// لا يُعاد فحص الاستضافة تلقائياً قبل مرور هذه المدة.
   static const checkEvery = Duration(hours: 6);
+
+  /// التحديث الصامت أخفّ: يُفحص عند العودة إلى التطبيق بعد هذه المدة.
+  static const patchCheckEvery = Duration(minutes: 30);
+
+  /// محاولات التنزيل عند انقطاع الاتصال قبل أن يتوقف بانتظار المستخدم.
+  static const maxAttempts = 4;
+
+  /// الانتظار قبل كل محاولة: يطول مع تكرار الانقطاع.
+  static const retryDelays = [Duration(seconds: 3), Duration(seconds: 8), Duration(seconds: 15)];
 
   static const _kRelease = 'app_update_release';
   static const _kCheckedAt = 'app_update_checked_at';
@@ -247,16 +358,29 @@ class AppUpdater extends ChangeNotifier {
   final Future<String?> Function(String path) _openInstaller;
   final http.Client Function() _client;
   final DateTime Function() _clock;
+  final PatchSource? _patches;
+  final Future<void> Function(Duration delay) _wait;
 
   int installedCode = 0;
   String installedName = '';
   AppRelease? release;
   DateTime? lastChecked;
   UpdatePhase phase = UpdatePhase.idle;
+  PatchPhase patchPhase = PatchPhase.none;
 
   /// نسبة التنزيل بين 0 و1، أو `null` إن لم يُعرف الحجم.
   double? progress;
   int received = 0;
+  int? totalBytes;
+
+  /// سرعة التنزيل بالبايت في الثانية — متوسط الثانية الأخيرة، أو 0 قبل أن تُعرف.
+  double speed = 0;
+
+  /// الثواني الباقية قبل المحاولة التالية بعد انقطاع.
+  int retryIn = 0;
+
+  /// رقم محاولة التنزيل الجارية.
+  int attempt = 0;
   String? error;
   String? _readyPath;
   int _dismissed = 0;
@@ -265,6 +389,12 @@ class AppUpdater extends ChangeNotifier {
   Future<void>? _loading;
   Future<UpdateAction>? _checking;
   Future<void>? _installing;
+  Future<void>? _patching;
+  DateTime? _patchCheckedAt;
+  bool _retryNow = false;
+  DateTime? _speedAt;
+  int _speedBytes = 0;
+  int _shownPercent = -1;
 
   UpdateAction get action {
     // إصدارٌ مثبَّت مجهول لا يُقارن: خيرٌ من إلزامٍ خاطئ يحجب التطبيق
@@ -275,12 +405,31 @@ class AppUpdater extends ChangeNotifier {
   /// تحديثٌ اختياري لم يُعرض بعد على هذا الجهاز.
   bool get shouldPrompt => action == UpdateAction.optional && release!.versionCode != _dismissed;
 
-  bool get busy => phase == UpdatePhase.checking || phase == UpdatePhase.downloading;
+  bool get busy =>
+      phase == UpdatePhase.checking ||
+      phase == UpdatePhase.downloading ||
+      phase == UpdatePhase.retrying ||
+      phase == UpdatePhase.verifying;
+
+  /// تنزيل البناء جارٍ أو متوقف في منتصفه — ما يستحق أن يُرى خارج الورقة.
+  bool get transferring =>
+      phase == UpdatePhase.downloading ||
+      phase == UpdatePhase.retrying ||
+      phase == UpdatePhase.verifying ||
+      phase == UpdatePhase.paused;
+
+  /// الوقت الباقي على اكتمال التنزيل بسرعته الحالية.
+  Duration? get remaining {
+    final total = totalBytes;
+    if (total == null || speed <= 0 || phase != UpdatePhase.downloading) return null;
+    return Duration(seconds: ((total - received) / speed).ceil());
+  }
 
   /// يُستدعى مرة عند الإقلاع: يقرأ المحفوظ ثم يفحص إن حان الفحص.
   Future<void> start() => _starting ??= () async {
         if (!supported) return;
         await _load();
+        unawaited(checkPatch());
         await check();
       }();
 
@@ -301,7 +450,30 @@ class AppUpdater extends ChangeNotifier {
       // قراءة الحالة المحفوظة تعذّرت: يُكمل التطبيق، والفحص التالي يعيد بناءها
     }
     await _cleanOldPackages();
+    await _restoreDownload();
     notifyListeners();
+  }
+
+  /// تنزيلٌ انقطع أو أُغلق التطبيق في منتصفه: يُعرض متوقفاً عند نسبته ليُستكمل،
+  /// وحزمةٌ اكتمل تنزيلها وتحقّقها تُعرض جاهزة للتثبيت.
+  Future<void> _restoreDownload() async {
+    final target = release;
+    if (target == null || action == UpdateAction.none) return;
+    try {
+      final dir = await _downloadDir();
+      final ready = File(_packagePath(dir, target));
+      if (await ready.exists()) {
+        _readyPath = ready.path;
+        phase = UpdatePhase.ready;
+        return;
+      }
+      final got = await partialBytes(target, dir);
+      if (got <= 0) return;
+      received = got;
+      totalBytes = target.sizeBytes > 0 ? target.sizeBytes : null;
+      progress = totalBytes == null ? null : (got / totalBytes!).clamp(0.0, 1.0);
+      phase = UpdatePhase.paused;
+    } catch (_) {}
   }
 
   /// فحص الاستضافة. بلا [force] لا يُعاد قبل [checkEvery] من آخر فحص ناجح.
@@ -315,8 +487,9 @@ class AppUpdater extends ChangeNotifier {
     final last = lastChecked;
     if (!force && last != null && _clock().difference(last) < checkEvery) return action;
 
-    final wasDownloading = phase == UpdatePhase.downloading;
-    if (!wasDownloading) {
+    // تنزيلٌ جارٍ أو متوقف أو حزمة جاهزة: الفحص لا يمسح حالتها من الشاشة
+    final quiet = phase != UpdatePhase.idle && phase != UpdatePhase.failed;
+    if (!quiet) {
       phase = UpdatePhase.checking;
       error = null;
       notifyListeners();
@@ -324,8 +497,15 @@ class AppUpdater extends ChangeNotifier {
 
     final fetched = await fetchLatestRelease(manifestUrl, client: _client());
     if (fetched != null) {
-      // إصدار جديد نُشر بعد تنزيل سابق: الحزمة الجاهزة لم تعد هي المطلوبة
-      if (release?.versionCode != fetched.versionCode) _readyPath = null;
+      // إصدار أحدث نُشر بعد تنزيلٍ سابق: الحزمة الجاهزة أو الناقصة لم تعد المطلوبة
+      final replaced = release != null && release!.versionCode != fetched.versionCode;
+      if (replaced && !busy) {
+        _readyPath = null;
+        received = 0;
+        progress = null;
+        totalBytes = null;
+        phase = UpdatePhase.idle;
+      }
       release = fetched;
       lastChecked = _clock();
       try {
@@ -335,7 +515,7 @@ class AppUpdater extends ChangeNotifier {
       } catch (_) {}
     }
 
-    if (!wasDownloading) {
+    if (!quiet) {
       phase = _readyPath != null ? UpdatePhase.ready : UpdatePhase.idle;
       // الفحص اليدوي وحده يقول إن الاتصال تعذّر؛ التلقائي يصمت ويعيد لاحقاً
       if (fetched == null && force) {
@@ -358,8 +538,11 @@ class AppUpdater extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// تنزيل الحزمة إن لم تكن جاهزة، ثم فتح مثبِّت النظام.
+  /// تنزيل الحزمة (أو استكمالها) إن لم تكن جاهزة، ثم فتح مثبِّت النظام.
   Future<void> install() => _installing ??= _install().whenComplete(() => _installing = null);
+
+  /// «المحاولة الآن» أثناء العدّ التنازلي بعد انقطاع.
+  void retryNow() => _retryNow = true;
 
   Future<void> _install() async {
     final target = release;
@@ -368,34 +551,9 @@ class AppUpdater extends ChangeNotifier {
 
     var path = _readyPath;
     if (path == null || !await File(path).exists()) {
-      phase = UpdatePhase.downloading;
-      progress = 0;
-      received = 0;
-      notifyListeners();
-      try {
-        var shown = -1;
-        final file = await downloadRelease(
-          target,
-          await _downloadDir(),
-          client: _client(),
-          onProgress: (got, total) {
-            received = got;
-            progress = total == null || total <= 0 ? null : (got / total).clamp(0.0, 1.0);
-            // إخطارٌ مع كل جزء يعيد رسم الورقة مئات المرات؛ مرة لكل واحد بالمئة تكفي
-            final percent = progress == null ? got ~/ (512 * 1024) : (progress! * 100).floor();
-            if (percent != shown) {
-              shown = percent;
-              notifyListeners();
-            }
-          },
-        );
-        path = _readyPath = file.path;
-      } on UpdateException catch (e) {
-        phase = UpdatePhase.failed;
-        error = e.message;
-        notifyListeners();
-        return;
-      }
+      final file = await _downloadWithRetries(target);
+      if (file == null) return;
+      path = _readyPath = file.path;
     }
 
     phase = UpdatePhase.ready;
@@ -405,6 +563,121 @@ class AppUpdater extends ChangeNotifier {
       error = failure;
       notifyListeners();
     }
+  }
+
+  /// التنزيل بمحاولاتٍ متتالية عند الانقطاع، كلٌّ تستكمل مما نزل قبلها.
+  ///
+  /// بعد [maxAttempts] يتوقف بانتظار المستخدم بدل أن يستنزف البطارية في
+  /// محاولاتٍ بلا اتصال، وما نزل يبقى محفوظاً.
+  Future<File?> _downloadWithRetries(AppRelease target) async {
+    final dir = await _downloadDir();
+    for (attempt = 1;; attempt++) {
+      phase = UpdatePhase.downloading;
+      error = null;
+      speed = 0;
+      _speedAt = null;
+      _shownPercent = -1;
+      notifyListeners();
+      try {
+        return await downloadRelease(
+          target,
+          dir,
+          client: _client(),
+          onProgress: _onProgress,
+          onVerifying: () {
+            phase = UpdatePhase.verifying;
+            speed = 0;
+            notifyListeners();
+          },
+        );
+      } on UpdateException catch (e) {
+        speed = 0;
+        if (!e.retryable) {
+          phase = UpdatePhase.failed;
+          error = e.message;
+          notifyListeners();
+          return null;
+        }
+        if (attempt >= maxAttempts) {
+          phase = UpdatePhase.paused;
+          error = 'انقطع الاتصال بالإنترنت فتوقف التنزيل';
+          notifyListeners();
+          return null;
+        }
+        await _countdown(retryDelays[(attempt - 1).clamp(0, retryDelays.length - 1)]);
+      }
+    }
+  }
+
+  Future<void> _countdown(Duration delay) async {
+    phase = UpdatePhase.retrying;
+    _retryNow = false;
+    for (retryIn = delay.inSeconds; retryIn > 0 && !_retryNow; retryIn--) {
+      notifyListeners();
+      await _wait(const Duration(seconds: 1));
+    }
+    retryIn = 0;
+  }
+
+  void _onProgress(int got, int? total) {
+    received = got;
+    totalBytes = total;
+    progress = total == null || total <= 0 ? null : (got / total).clamp(0.0, 1.0);
+
+    final now = _clock();
+    final at = _speedAt;
+    var speedChanged = false;
+    if (at == null) {
+      _speedAt = now;
+      _speedBytes = got;
+    } else if (now.difference(at) >= const Duration(seconds: 1)) {
+      // متوسط الثانية الأخيرة: سرعة كل جزء وحده تقفز بين الصفر وأضعاف الحقيقية
+      speed = (got - _speedBytes) / (now.difference(at).inMilliseconds / 1000);
+      _speedAt = now;
+      _speedBytes = got;
+      speedChanged = true;
+    }
+
+    // إخطارٌ مع كل جزء يعيد رسم الورقة مئات المرات؛ مرة لكل واحد بالمئة أو ثانية تكفي
+    final percent = progress == null ? got ~/ (512 * 1024) : (progress! * 100).floor();
+    if (percent != _shownPercent || speedChanged) {
+      _shownPercent = percent;
+      notifyListeners();
+    }
+  }
+
+  /// التحديث الصامت: يُنزَّل في الخلفية ويُطبَّق عند فتح التطبيق التالي.
+  Future<void> checkPatch({bool force = false}) {
+    if (!supported) return Future.value();
+    return _patching ??= _checkPatch(force).whenComplete(() => _patching = null);
+  }
+
+  Future<void> _checkPatch(bool force) async {
+    final source = _patches;
+    if (source == null || !source.isAvailable) return;
+    // نزل وينتظر إعادة الفتح: لا جديد يُطلب قبل ذلك
+    if (patchPhase == PatchPhase.ready) return;
+    final last = _patchCheckedAt;
+    if (!force && last != null && _clock().difference(last) < patchCheckEvery) return;
+
+    try {
+      final status = await source.status();
+      _patchCheckedAt = _clock();
+      if (status == PatchStatus.awaitingRestart) {
+        patchPhase = PatchPhase.ready;
+      } else if (status == PatchStatus.available) {
+        patchPhase = PatchPhase.downloading;
+        notifyListeners();
+        await source.download();
+        patchPhase = PatchPhase.ready;
+      }
+    } catch (_) {
+      // انقطاعٌ أثناء التنزيل الصامت لا يُقلق المستخدم برسالة: يُعاد عند العودة
+      // إلى التطبيق، وShorebird يستكمل ما نزل
+      patchPhase = PatchPhase.none;
+      _patchCheckedAt = null;
+    }
+    notifyListeners();
   }
 
   /// حزمٌ نُزّلت لإصدارات صارت مثبّتة: ٢٥ م.ب لكلٍّ منها لا داعي لبقائها.
@@ -437,7 +710,7 @@ Future<InstalledVersion> _packageVersion() async {
 /// رقم التحديث الصامت المثبَّت، أو 0: نسخة بُنيت بغير Shorebird لا تحمل محرّكه.
 Future<int> _currentPatchNumber() async {
   try {
-    final updater = ShorebirdUpdater();
+    final updater = shorebird.ShorebirdUpdater();
     if (!updater.isAvailable) return 0;
     return (await updater.readCurrentPatch())?.number ?? 0;
   } catch (_) {

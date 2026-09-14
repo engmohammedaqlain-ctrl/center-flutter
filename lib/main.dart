@@ -170,6 +170,7 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
     if (state != AppLifecycleState.resumed) return;
     // جهازٌ يبقى التطبيق مفتوحاً عليه أياماً لا يُعاد إقلاعه ليفحص
     unawaited(updater.check());
+    unawaited(updater.checkPatch());
     final store = AppStore.instance;
     if (!store.loggedIn || store.isMasterAdmin || !store.networkEnabled) return;
     if (store.autoSync) {
