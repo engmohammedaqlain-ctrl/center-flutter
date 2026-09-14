@@ -13,9 +13,24 @@ plugins {
 // عاملاً على أجهزة التطوير — لكن نسخةً كهذه لا تصلح للتوزيع.
 val keystoreProperties = Properties().apply {
     val file = rootProject.file("key.properties")
-    if (file.exists()) file.inputStream().use { load(it) }
+    // يُقرأ بـ UTF-8 صراحةً: `load(InputStream)` يفكّ الترميز بـ ISO-8859-1، فكلمة
+    // سرٍّ غير لاتينية تصل إلى المُوقِّع محرَّفة، ويفشل التغليف بخطأٍ يقول
+    // «كلمة السر خاطئة» ولا يقول لماذا.
+    if (file.exists()) file.reader(Charsets.UTF_8).use { load(it) }
 }
 val hasReleaseKey = keystoreProperties.getProperty("storeFile") != null
+
+// بياناتٌ ناقصة تُوقِف البناء هنا بكلامٍ مفهوم، بدل أن تفشل بعد عشر دقائق
+// في `packageRelease` بخطأٍ عن مخزنٍ «عُبث به».
+if (hasReleaseKey) {
+    val missing = listOf("storePassword", "keyAlias", "keyPassword")
+        .filter { keystoreProperties.getProperty(it).isNullOrBlank() }
+    require(missing.isEmpty()) { "android/key.properties: حقول ناقصة: ${missing.joinToString()}" }
+    require(rootProject.file(keystoreProperties.getProperty("storeFile")).exists()) {
+        "android/key.properties: لا يوجد مفتاح على المسار ${keystoreProperties.getProperty("storeFile")} " +
+            "(المسار نسبةً إلى مجلد android)"
+    }
+}
 
 android {
     namespace = "com.center.center_mobile"
