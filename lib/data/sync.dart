@@ -203,9 +203,28 @@ const syncedTables = [
   'attendance',
   'teacher_payouts',
   'expenses',
-  'class_announcements',
   'student_evaluations',
 ];
+
+/// عدد الجداول التي تُسأل عنها السحابة معاً. التتابع كان يجعل كل سحب ينتظر نحو
+/// عشرين رحلة ذهاب وإياب واحدة بعد أخرى، فبدا السحب التلقائي بطيئاً.
+const pullConcurrency = 6;
+
+/// تشغيل [task] على [items] بحدٍّ أقصى [limit] معاً، والنتائج بترتيب العناصر.
+Future<List<R>> mapPooled<T, R>(List<T> items, int limit, Future<R> Function(T item) task) async {
+  final results = List<R?>.filled(items.length, null);
+  var next = 0;
+  Future<void> worker() async {
+    while (next < items.length) {
+      final i = next++;
+      results[i] = await task(items[i]);
+    }
+  }
+
+  final workers = items.isEmpty ? 0 : limit.clamp(1, items.length);
+  await Future.wait([for (var w = 0; w < workers; w++) worker()]);
+  return [for (final r in results) r as R];
+}
 
 /// هل ردّ الخادم أن الجدول غير موجود في القاعدة؟ (PostgREST: `PGRST205`)
 ///
@@ -683,20 +702,17 @@ class SyncService {
     var total = 0;
     var failed = false;
 
-    // أقدم مؤشر جدول: يُعرض للمستخدم «منذ متى» لم يصله شيء
-    String? since;
-
-    for (final cloud in syncedTables) {
+    // الجداول تُسأل معاً، والنتائج تُجمع بترتيبها
+    final checks = await mapPooled(syncedTables, pullConcurrency, (cloud) async {
+      String? cursor;
+      final newIds = <String>[];
+      final samples = <PendingSummaryItem>[];
+      var tableFailed = false;
       try {
-        final cursor = await _cursor(tenantId, cloud);
-        since = since == null ? cursor : (toTimestamp(cursor) < toTimestamp(since) ? cursor : since);
+        cursor = await _cursor(tenantId, cloud);
         final localStamps = local.serverStampsOf(cloud);
-
-        final newIds = <String>[];
         var from = 0;
-        var keepFetching = true;
-
-        while (keepFetching) {
+        while (true) {
           // ختم السيرفر هو الفيصل: `updated_at` يكتبه الجهاز بساعته، فتعديلٌ
           // رُفع متأخراً كان يبدو «قديماً» فلا يُحسب تغييراً قادماً
           final page = await _select(
@@ -709,29 +725,18 @@ class SyncService {
             order: 'server_updated_at.desc',
           );
           if (page == null) {
-            if (!missingTables.contains(cloud)) failed = true;
+            if (!missingTables.contains(cloud)) tableFailed = true;
             break;
           }
           newIds.addAll(pickChangedIds(page, localStamps));
-          if (page.length < pullPageSize) {
-            keepFetching = false;
-          } else {
-            from += page.length;
-          }
+          if (page.length < pullPageSize) break;
+          from += page.length;
         }
 
-        if (newIds.isEmpty) continue;
-        rows.add(SyncRow(cloud, newIds.length));
-        total += newIds.length;
-        for (final id in newIds) {
-          allNewKeys.add('$cloud:$id');
-        }
-
-        if (items.length < 40) {
-          final sampleIds = newIds.take((10).clamp(0, 40 - items.length)).toList();
-          final full = await _selectIn(cloud, tenantId, sampleIds);
+        if (newIds.isNotEmpty) {
+          final full = await _selectIn(cloud, tenantId, newIds.take(10).toList());
           for (final row in full) {
-            items.add(
+            samples.add(
               PendingSummaryItem(
                 table: cloud,
                 action: local.recordOf(cloud, '${row['id']}') != null ? 'UPDATE' : 'INSERT',
@@ -742,8 +747,24 @@ class SyncService {
           }
         }
       } catch (_) {
-        failed = true;
+        tableFailed = true;
       }
+      return (cloud: cloud, cursor: cursor, newIds: newIds, samples: samples, failed: tableFailed);
+    });
+
+    // أقدم مؤشر جدول: يُعرض للمستخدم «منذ متى» لم يصله شيء
+    String? since;
+    for (final check in checks) {
+      if (check.failed) failed = true;
+      final cursor = check.cursor;
+      since = since == null ? cursor : (toTimestamp(cursor) < toTimestamp(since) ? cursor : since);
+      if (check.newIds.isEmpty) continue;
+      rows.add(SyncRow(check.cloud, check.newIds.length));
+      total += check.newIds.length;
+      for (final id in check.newIds) {
+        allNewKeys.add('${check.cloud}:$id');
+      }
+      items.addAll(check.samples);
     }
 
     // الحذف القادم تغييرٌ كبقيته: عدّه يمنع «متزامن» وفي السحابة حذفٌ لم يصل
@@ -759,6 +780,7 @@ class SyncService {
     }
 
     items.sort((a, b) => b.at.compareTo(a.at));
+    if (items.length > 40) items.removeRange(40, items.length);
     if (failed) {
       // فحص ناقص لا يُثبت خلوّ السحابة: يُضاف ما وُجد ولا يُمسح ما عُرف، ولا
       // يُسجَّل وقت فحص كان سيُظهر «متزامن» على غير حقيقة.
@@ -1128,43 +1150,21 @@ class SyncService {
     // تغيّر بصمة الأعمدة يُصفّر المؤشرات فيعود السحب التالي كاملاً مرة واحدة
     await _resetCursorsIfColumnsChanged(tenantId);
 
-    for (final cloud in syncedTables) {
-      // مرفقات الطلاب لا تُسحب دورياً: صور Base64 تُجلب عند فتح ملف الطالب وحده
-      if (cloud == 'student_attachments') continue;
+    // الجلب شبكيٌّ فيُطلب للجداول معاً، والتطبيق محليٌّ فيسير بترتيب الجداول بعده
+    // مرفقات الطلاب لا تُسحب دورياً: صور Base64 تُجلب عند فتح ملف الطالب وحده
+    final tables = syncedTables.where((t) => t != 'student_attachments').toList();
+    final fetched = await mapPooled(tables, pullConcurrency, (cloud) => _fetchTableChanges(cloud, tenantId));
+
+    for (final f in fetched) {
+      final cloud = f.cloud;
+      if (f.error != null) {
+        failedTables[cloud] = f.error!;
+        continue;
+      }
+      final rows = f.rows;
+      if (rows == null) continue;
 
       try {
-        final since = await _cursor(tenantId, cloud);
-        final startedAt = DateTime.now().millisecondsSinceEpoch;
-        var maxStamp = since;
-        List<Map<String, dynamic>>? rows;
-
-        if (since == null) {
-          rows = await _fetchPages(cloud, tenantId, null);
-          for (final r in rows ?? const <Map<String, dynamic>>[]) {
-            maxStamp = laterStamp(maxStamp, '${r['server_updated_at'] ?? ''}');
-          }
-        } else {
-          final changed = await _findChanged(cloud, tenantId, since);
-          if (changed == null) {
-            if (!missingTables.contains(cloud)) {
-              failedTables[cloud] = 'تعذّر جلب بيانات ${tableLabelsAr[cloud] ?? cloud} من السحابة.';
-            }
-            continue;
-          }
-          maxStamp = changed.maxStamp;
-          rows = changed.ids.isEmpty
-              ? <Map<String, dynamic>>[]
-              : changed.ids.length > maxIdFetch
-                  ? await _fetchPages(cloud, tenantId, since)
-                  : await _fetchByIds(cloud, tenantId, changed.ids);
-        }
-
-        if (rows == null) {
-          if (missingTables.contains(cloud)) continue;
-          failedTables[cloud] = 'تعذّر جلب بيانات ${tableLabelsAr[cloud] ?? cloud} من السحابة.';
-          continue;
-        }
-
         final pendingIds = local.pendingSyncs.where((p) => p.tableName == cloud).map((p) => p.recordId).toSet();
         final toWrite = <Map<String, dynamic>>[];
         final stamps = <String, String>{};
@@ -1198,14 +1198,14 @@ class SyncService {
 
         // الجلب الكامل يعرف السحابة كلها: سجلٌ مُزامَن غائب عنها حُذف هناك. وما
         // كُتب محلياً قُبيل بدء الجلب قد يكون رُفع للتوّ فلا يُحكم عليه.
-        if (since == null) {
+        if (f.since == null) {
           final cloudIds = rows.map((r) => '${r['id']}').toSet();
           final toRemove = [
             for (final r in local.allOf(cloud))
               if (r['sync_status'] == 'synced' &&
                   !cloudIds.contains('${r['id']}') &&
                   !pendingIds.contains('${r['id']}') &&
-                  toTimestamp(r['updated_at']) < startedAt - cursorOverlapMs)
+                  toTimestamp(r['updated_at']) < f.startedAt - cursorOverlapMs)
                 '${r['id']}',
           ];
           if (toRemove.isNotEmpty) {
@@ -1214,7 +1214,7 @@ class SyncService {
           }
         }
 
-        await _setCursor(tenantId, cloud, maxStamp);
+        await _setCursor(tenantId, cloud, f.maxStamp);
       } catch (err) {
         failedTables[cloud] = describeSupabaseError(err, cloud);
       }
@@ -1232,6 +1232,46 @@ class SyncService {
       await _setLastPullAt(tenantId, DateTime.now().toUtc().toIso8601String());
     }
     return PullOutcome(pulled: totalPulled, removed: totalRemoved, failedTables: failedTables);
+  }
+
+  /// الشقّ الشبكي من سحب جدول: ما تغيّر منذ مؤشره، بلا لمس للبيانات المحلية.
+  ///
+  /// [rows] `null` مع [error] فارغ يعني جدولاً غير موجود في قاعدة المنشأة بعد.
+  Future<({String cloud, String? since, int startedAt, String? maxStamp, List<Map<String, dynamic>>? rows, String? error})>
+      _fetchTableChanges(String cloud, String tenantId) async {
+    final startedAt = DateTime.now().millisecondsSinceEpoch;
+    String? since;
+    try {
+      since = await _cursor(tenantId, cloud);
+      var maxStamp = since;
+      List<Map<String, dynamic>>? rows;
+
+      if (since == null) {
+        rows = await _fetchPages(cloud, tenantId, null);
+        for (final r in rows ?? const <Map<String, dynamic>>[]) {
+          maxStamp = laterStamp(maxStamp, '${r['server_updated_at'] ?? ''}');
+        }
+      } else {
+        final changed = await _findChanged(cloud, tenantId, since);
+        if (changed == null) {
+          final error = missingTables.contains(cloud) ? null : 'تعذّر جلب بيانات ${tableLabelsAr[cloud] ?? cloud} من السحابة.';
+          return (cloud: cloud, since: since, startedAt: startedAt, maxStamp: maxStamp, rows: null, error: error);
+        }
+        maxStamp = changed.maxStamp;
+        rows = changed.ids.isEmpty
+            ? <Map<String, dynamic>>[]
+            : changed.ids.length > maxIdFetch
+                ? await _fetchPages(cloud, tenantId, since)
+                : await _fetchByIds(cloud, tenantId, changed.ids);
+      }
+
+      final error = rows == null && !missingTables.contains(cloud)
+          ? 'تعذّر جلب بيانات ${tableLabelsAr[cloud] ?? cloud} من السحابة.'
+          : null;
+      return (cloud: cloud, since: since, startedAt: startedAt, maxStamp: maxStamp, rows: rows, error: error);
+    } catch (err) {
+      return (cloud: cloud, since: since, startedAt: startedAt, maxStamp: since, rows: null, error: describeSupabaseError(err, cloud));
+    }
   }
 
   /// ما حُذف في السحابة منذ آخر سحب، من سجل المحذوفات الذي تملؤه القاعدة.

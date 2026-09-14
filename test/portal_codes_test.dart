@@ -112,7 +112,8 @@ void main() {
     expect(tableAllowedColumns['teachers'], contains('national_id'));
     expect(tableAllowedColumns.containsKey('class_announcements'), isTrue);
     expect(tableAllowedColumns.containsKey('student_evaluations'), isTrue);
-    expect(syncedTables, contains('class_announcements'));
+    // الإعلانات الصفية أُزيلت من السحابة وحلّ محلها المودل: لا تُسحب
+    expect(syncedTables, isNot(contains('class_announcements')));
     expect(syncedTables, contains('student_evaluations'));
   });
 
