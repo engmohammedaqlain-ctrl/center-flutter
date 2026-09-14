@@ -8,7 +8,6 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/auth_frame.dart';
-import '../widgets/widgets.dart';
 
 /// تهيئة الجهاز الجديد — المقابل لـ `NewDeviceSetupModal` في النسخة المكتبية.
 ///
@@ -239,21 +238,21 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
         const SizedBox(height: 16),
         authLabel('المستخدم على هذا الجهاز:'),
         const SizedBox(height: 6),
-        AppDropdown<String>(
-          value: selected.id,
-          items: [
-            for (final u in candidates)
-              DropdownMenuItem(
-                value: u.id,
-                child: Text('${u.name}  (${u.role == 'admin' ? 'مدير' : 'سكرتير'})'),
-              ),
-          ],
-          onChanged: (v) => setState(() {
-            selectedUserId = v;
-            passwordError = null;
-            password.clear();
-          }),
-        ),
+        // بطاقة لكل مستخدم بدل قائمة منسدلة: الاختيار هنا يحدد صلاحية الجهاز
+        // واسم المستلم على السندات، فيستحق أن يُرى كاملاً قبل اللمس
+        for (final u in candidates)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 7),
+            child: _UserOption(
+              user: u,
+              selected: u.id == selected.id,
+              onTap: () => setState(() {
+                selectedUserId = u.id;
+                passwordError = null;
+                password.clear();
+              }),
+            ),
+          ),
         const SizedBox(height: 14),
         authLabel('كلمة مرور المدير الرئيسية:'),
         const SizedBox(height: 6),
@@ -338,6 +337,61 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// خيار مستخدم في التهيئة: الاسم ودوره، وعلامة على المختار.
+class _UserOption extends StatelessWidget {
+  const _UserOption({required this.user, required this.selected, required this.onTap});
+
+  final AppUser user;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final admin = user.role == 'admin';
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(Corner.box),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.amberSoft : Colors.white,
+          borderRadius: BorderRadius.circular(Corner.box),
+          border: Border.all(color: selected ? AppColors.amber : AppColors.line),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              admin ? Icons.shield_outlined : Icons.badge_outlined,
+              size: 17,
+              color: selected ? AppColors.amberDark : AppColors.muted,
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    user.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: AppColors.heading),
+                  ),
+                  Text(
+                    admin ? 'مدير — صلاحية كاملة' : 'سكرتير — صلاحية محدودة',
+                    style: const TextStyle(fontSize: 10.5, color: AppColors.muted, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+            if (selected) Icon(Icons.check_circle, size: 18, color: AppColors.amberDark),
+          ],
         ),
       ),
     );

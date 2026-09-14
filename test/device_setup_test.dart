@@ -349,7 +349,10 @@ void main() {
   testWidgets('the splash box sits exactly where the native splash draws it', (tester) async {
     await tester.pumpWidget(const MaterialApp(home: SplashScreen()));
     final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
-    expect(tester.getCenter(find.byIcon(Icons.school_outlined)), screen.center(Offset.zero));
-    expect(tester.getSize(find.byIcon(Icons.school_outlined)), const Size(42, 42));
+    // الشعار نفسه الذي يحمله تطبيق سطح المكتب، في صندوق شاشة البداية الأصلية
+    final logo = find.byType(Image);
+    expect(tester.getCenter(logo), screen.center(Offset.zero));
+    // الحشوة حول الشعار داخل الصندوق نفسه (84dp) — يبقى المركز واحداً
+    expect(tester.getSize(logo).width, lessThan(SplashScreen.logoBox));
   });
 }
