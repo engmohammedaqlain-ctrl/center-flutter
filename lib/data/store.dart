@@ -1440,8 +1440,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _realtime ??= RealtimeListener(
       tables: syncedTables,
       onChange: handleRemoteEvent,
-      onJoined: _onRealtimeJoined,
-      onBroadcast: () => scheduleAutoPull(),
+      onJoined: handleRealtimeJoined,
+      onBroadcast: handlePeerChanged,
     );
     await _realtime!.connect(tid);
   }
@@ -1457,12 +1457,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   /// (إعادة) الاشتراك: ما تغيّر أثناء الانقطاع لم يصل حدثاً، فيُفحص مرة واحدة
   /// بعد أن تستقر ردود الاشتراك لكل الجداول.
-  void _onRealtimeJoined() {
+  void handleRealtimeJoined() {
     if (autoSync) {
-      // الاشتراك يعني أن الاتصال عاد: ما تعثّر رفعه لا ينتظر بقية مهلته
+      // الاشتراك يعني أن الاتصال عاد: ما تعثّر رفعه لا ينتظر بقية مهلته، والسحب
+      // فوري كما عند `SUBSCRIBED` في النسخة المكتبية
       _pushFailures = 0;
       if (pendingSyncs.any((a) => a.retryCount < maxSyncRetries)) scheduleAutoPush(Duration.zero);
-      scheduleAutoPull();
+      scheduleAutoPull(Duration.zero);
       return;
     }
     _joinCheck?.cancel();
@@ -1556,18 +1557,38 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     scheduleAutoPush();
   }
 
+  /// جهاز آخر رفع تعديلاته — إشارة `changed` على قناة المنشأة.
+  void handlePeerChanged() => scheduleAutoPull();
+
+  @visibleForTesting
+  bool get autoPullScheduled => _autoPullTimer?.isActive ?? false;
+
+  @visibleForTesting
+  Duration? lastAutoPullDelay;
+
+  /// عدد إشارات `changed` التي أرسلها هذا الجهاز بعد رفع ناجح.
+  @visibleForTesting
+  int peerNotifications = 0;
+
+  void _notifyPeers() {
+    peerNotifications++;
+    _realtime?.broadcastChanged();
+  }
+
   /// إشارات متتالية من أجهزة أخرى تُجمع في سحبٍ واحد.
   void scheduleAutoPull([Duration delay = autoPullDelay]) {
     if (!autoSync) return;
+    lastAutoPullDelay = delay;
     _autoPullTimer?.cancel();
     _autoPullTimer = Timer(delay, () => _runAuto(push: false));
   }
 
   /// العودة إلى التطبيق ترفع وتسحب، لكن لا أكثر من مرة في الدقيقة.
-  void pullOnResume() {
+  void pullOnResume([DateTime? now]) {
+    final at = now ?? DateTime.now();
     final last = _lastResumePull;
-    if (last != null && DateTime.now().difference(last) < _resumePullGap) return;
-    _lastResumePull = DateTime.now();
+    if (last != null && at.difference(last) < _resumePullGap) return;
+    _lastResumePull = at;
     scheduleAutoPush(Duration.zero);
     scheduleAutoPull(Duration.zero);
   }
@@ -1593,7 +1614,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         if (attempted.isEmpty) return;
         final result = await sync.push(refreshRemote: false);
         // الأجهزة الأخرى تسحب فور الإشارة بدل أن تنتظر عودة مستخدمها
-        if (result.pushed > 0) _realtime?.broadcastChanged();
+        if (result.pushed > 0) _notifyPeers();
         final next = autoPushFollowUp(attempted, pendingSyncs, _pushFailures);
         _pushFailures = next.stalled ? _pushFailures + 1 : 0;
         if (next.delay != null) scheduleAutoPush(next.delay!);
