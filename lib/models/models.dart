@@ -2,7 +2,7 @@ import '../data/phone.dart';
 
 const currency = '₪';
 const appName = 'نظام الإدارة المدرسي';
-const appVersion = '1.2.4';
+const appVersion = '1.2.7';
 
 /// مطابق لـ GRADE_LEVELS في types/student.ts
 const gradeLevels = [
