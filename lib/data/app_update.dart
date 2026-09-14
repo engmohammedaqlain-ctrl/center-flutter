@@ -16,6 +16,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shorebird_code_push/shorebird_code_push.dart' show ShorebirdUpdater;
 
 /// ملف وصف أحدث إصدار — `latest` في GitHub يحيل دائماً إلى آخر إصدار منشور،
 /// فالرابط ثابت لا يتغيّر مع كل تحديث.
@@ -427,7 +428,21 @@ class AppUpdater extends ChangeNotifier {
 
 Future<InstalledVersion> _packageVersion() async {
   final info = await PackageInfo.fromPlatform();
-  return (code: int.tryParse(info.buildNumber) ?? 0, name: info.version);
+  // التحديث الصامت جزءٌ رابع كما يُكتب عند النشر: 1.2.7.3. رقم البناء لا يتغيّر
+  // به، فالمقارنة مع الإصدارات المنشورة تبقى على رقم البناء وحده
+  final patch = await _currentPatchNumber();
+  return (code: int.tryParse(info.buildNumber) ?? 0, name: patch > 0 ? '${info.version}.$patch' : info.version);
+}
+
+/// رقم التحديث الصامت المثبَّت، أو 0: نسخة بُنيت بغير Shorebird لا تحمل محرّكه.
+Future<int> _currentPatchNumber() async {
+  try {
+    final updater = ShorebirdUpdater();
+    if (!updater.isAvailable) return 0;
+    return (await updater.readCurrentPatch())?.number ?? 0;
+  } catch (_) {
+    return 0;
+  }
 }
 
 /// يعيد رسالة للعرض إن تعذّر فتح المثبِّت، أو `null`.

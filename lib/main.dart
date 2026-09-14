@@ -400,7 +400,11 @@ class _LoginScreenState extends State<LoginScreen> {
       title: store.institutionName.isEmpty ? appName : store.institutionName,
       subtitle: 'بوابة تسجيل الدخول الرسمية',
       logo: store.institutionLogo,
-      footer: Text('الإصدار $appVersion', style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
+      // الرقم المثبَّت فعلاً مع تحديثه الصامت (1.2.7.3)، والثابت حيث لا يُعرف
+      footer: Text(
+        'الإصدار ${AppUpdater.instance.installedName.isEmpty ? appVersion : AppUpdater.instance.installedName}',
+        style: const TextStyle(color: AppColors.faint, fontSize: 10.5),
+      ),
       children: [
         _tabs(),
         const SizedBox(height: 12),

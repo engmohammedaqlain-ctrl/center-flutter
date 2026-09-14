@@ -33,7 +33,11 @@ const _usage = '''
 
   --notes "..."               ما الجديد، يظهر للمستخدم في ورقة التحديث
   --notes-file <ملف>          بديل --notes لنصٍّ من عدة أسطر
-  --bump patch|minor|major    الجزء الذي يزيد من رقم الإصدار (patch افتراضياً)
+  --version <رقم>             رقم الإصدار بنفسك. عدد أجزائه يحدد النوع:
+                                1.2.8     ثلاثة أجزاء = بناء APK جديد يثبّته المستخدم
+                                1.2.7.3   أربعة أجزاء = تحديث صامت (Shorebird) مهما كبر رقمه
+  --patch                     تحديث صامت على آخر إصدار منشور، برقمه التالي تلقائياً
+  --bump patch|minor|major    بلا --version: الجزء الذي يزيد في البناء (patch افتراضياً)
   --min-supported <رقم>|current
                               أقدم رقم بناء يبقى يعمل؛ ما دونه يُلزَم بالتحديث.
                               بلا هذا الخيار يبقى كما في الإصدار السابق
@@ -149,6 +153,76 @@ Map<String, dynamic> buildManifest({
 /// إصدار Flutter من مخرجات `flutter --version`.
 String? flutterVersionOf(String output) => RegExp(r'Flutter (\d+\.\d+\.\d+)').firstMatch(output)?.group(1);
 
+/// نوع النشر.
+enum PublishKind {
+  /// APK جديد يُرفع على GitHub ويثبّته المستخدم.
+  build,
+
+  /// تحديث صامت لكود Dart عبر Shorebird على إصدار منشور.
+  patch,
+}
+
+/// رقم إصدار كتبه الناشر.
+typedef RequestedVersion = ({PublishKind kind, String base, int? patchNumber});
+
+/// النوع من عدد أجزاء الرقم لا من قيمته: ثلاثة أجزاء بناء، وأربعة تحديث صامت.
+///
+/// لو كان النوع من القيمة — عشري تحديث وصحيح بناء — لصار التحديث العاشر بعد
+/// `2.9` بناءً بالخطأ. `1.2.7.10` يبقى تحديثاً صامتاً مهما كبر رقمه الرابع.
+RequestedVersion parseRequestedVersion(String raw) {
+  final value = raw.trim();
+  final m = RegExp(r'^(\d+\.\d+\.\d+)(?:\.(\d+))?$').firstMatch(value);
+  if (m == null) {
+    throw ArgumentError('رقم الإصدار: 1.2.8 للبناء، أو 1.2.7.1 للتحديث الصامت — لا "$value"');
+  }
+  final patch = m[2] == null ? null : int.parse(m[2]!);
+  if (patch != null && patch < 1) throw ArgumentError('رقم التحديث الصامت يبدأ من 1');
+  return (kind: patch == null ? PublishKind.build : PublishKind.patch, base: m[1]!, patchNumber: patch);
+}
+
+/// مقارنة اسمي إصدار جزءاً جزءاً: `1.2.10` أحدث من `1.2.9` وإن سبقه نصياً.
+int compareVersionNames(String a, String b) {
+  List<int> parts(String s) => s.split('.').map((p) => int.tryParse(p) ?? 0).toList();
+  final pa = parts(a);
+  final pb = parts(b);
+  for (var i = 0; i < 3; i++) {
+    final x = i < pa.length ? pa[i] : 0;
+    final y = i < pb.length ? pb[i] : 0;
+    if (x != y) return x.compareTo(y);
+  }
+  return 0;
+}
+
+PubVersion versionFromName(String name, {required int build}) {
+  final p = name.split('.').map(int.parse).toList();
+  return PubVersion(p[0], p[1], p[2], build);
+}
+
+/// رقم التحديث الصامت التالي من مخرجات `shorebird patches list`.
+///
+/// يُقرأ من الصيغتين معاً — `"number": 2` في JSON و`#2` في النص — بلا فكّ JSON:
+/// الأداة تطبع قبله أحياناً تحذيرات تُفسد فكّه.
+int nextPatchNumber(String listOutput) {
+  var highest = 0;
+  for (final m in RegExp(r'"number"\s*:\s*(\d+)|#(\d+)').allMatches(listOutput)) {
+    final n = int.parse(m[1] ?? m[2]!);
+    if (n > highest) highest = n;
+  }
+  return highest + 1;
+}
+
+/// سبب رفض تحديث صامت، أو `null`.
+///
+/// Shorebird يرقّم التحديثات بنفسه بالتتابع، والتطبيق يعرض رقمه هو: رقمٌ مكتوب
+/// لا يطابق التالي كان سيظهر على الأجهزة بغير ما نشره الناشر.
+String? patchProblem({required String base, required int number, required String published, required int next}) {
+  if (base != published) {
+    return 'التحديث الصامت يكون على آخر إصدار منشور ($published) — اكتب $published.$next';
+  }
+  if (number != next) return 'التحديث التالي لـ $published رقمه $next — اكتب $published.$next لا $base.$number';
+  return null;
+}
+
 /// بصمة شهادة الموقِّع الأول من مخرجات `apksigner verify --print-certs`.
 String? signerDigest(String apksignerOutput) => RegExp(r'Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F]+)')
     .firstMatch(apksignerOutput)
@@ -163,7 +237,6 @@ Future<void> main(List<String> arguments) async {
       !RegExp(r'^name:\s*center_mobile\b', multiLine: true).hasMatch(pubspecFile.readAsStringSync())) {
     _fail('شغّل الأمر من داخل مجلد center-mobile-app');
   }
-  if (args.notes.trim().isEmpty) _fail('اكتب ما الجديد في هذا الإصدار: --notes "..."');
 
   if (!args.allowDirty) {
     final status = await _capture('git', ['status', '--porcelain', '--untracked-files=no']);
@@ -179,9 +252,24 @@ Future<void> main(List<String> arguments) async {
   final previousMin = (previous?['minSupported'] as num?)?.toInt() ?? 0;
   _info(previous == null ? 'لا يوجد إصدار منشور بعد — هذا أول نشر' : 'المنشور: ${previous['version']} (بناء $previousCode)');
 
+  final published = '${previous?['version'] ?? ''}'.trim();
+  final requested = args.version == null ? null : _orFail(() => parseRequestedVersion(args.version!));
+
+  // تحديث صامت: رقم من أربعة أجزاء، أو --patch
+  if (args.patch || requested?.kind == PublishKind.patch) {
+    await _publishPatch(args, requested, published, previousCode);
+    return;
+  }
+  if (args.notes.trim().isEmpty) _fail('اكتب ما الجديد في هذا الإصدار: --notes "..."');
+
   final pubspec = pubspecFile.readAsStringSync();
   final current = parsePubspecVersion(pubspec) ?? _fail('لم أجد سطر version: x.y.z+n في pubspec.yaml');
-  var next = _orFail(() => bumpVersion(current, args.bump));
+  if (requested != null && published.isNotEmpty && compareVersionNames(requested.base, published) <= 0) {
+    _fail('الإصدار ${requested.base} ليس أحدث من المنشور $published — البناء الجديد رقمه أكبر');
+  }
+  var next = requested == null
+      ? _orFail(() => bumpVersion(current, args.bump))
+      : versionFromName(requested.base, build: current.build + 1);
   // pubspec متأخر عن المنشور — نُشر من نسخة أخرى من المشروع: رقم البناء يتجاوزه
   if (next.build <= previousCode) next = PubVersion(next.major, next.minor, next.patch, previousCode + 1);
   final minSupported = _orFail(
@@ -264,6 +352,8 @@ Future<void> main(List<String> arguments) async {
 class _Args {
   String notes = '';
   String bump = 'patch';
+  String? version;
+  bool patch = false;
   String? minSupported;
   bool mandatory = false;
   bool dryRun = false;
@@ -280,6 +370,10 @@ class _Args {
           args.notes = value();
         case '--notes-file':
           args.notes = File(value()).readAsStringSync();
+        case '--version':
+          args.version = value();
+        case '--patch':
+          args.patch = true;
         case '--bump':
           args.bump = value();
         case '--min-supported':
@@ -300,6 +394,44 @@ class _Args {
     }
     return args;
   }
+}
+
+/// تحديث صامت: patch على آخر إصدار منشور عبر Shorebird.
+///
+/// لا يمسّ GitHub ولا `pubspec.yaml`: الحزمة المثبَّتة نفسها تستقبله، ورقمه
+/// الرابع يرقّمه Shorebird ويقرؤه التطبيق منه.
+Future<void> _publishPatch(_Args args, RequestedVersion? requested, String published, int publishedCode) async {
+  if (!File('shorebird.yaml').existsSync()) _fail('التحديث الصامت يحتاج Shorebird: شغّل shorebird init');
+  if (published.isEmpty || publishedCode <= 0) {
+    _fail('لا يوجد إصدار منشور بعد — انشر بناءً أولاً برقم من ثلاثة أجزاء');
+  }
+  final releaseVersion = '$published+$publishedCode';
+
+  _step('قراءة التحديثات الصامتة لـ $published');
+  final listed = await _capture(
+    'shorebird',
+    ['patches', 'list', '--release-version', releaseVersion, '--json'],
+    shell: true,
+  );
+  final next = nextPatchNumber(listed);
+  final number = requested?.patchNumber ?? next;
+  final problem = patchProblem(base: requested?.base ?? published, number: number, published: published, next: next);
+  if (problem != null) _fail(problem);
+  _info('التحديث: $published.$number');
+
+  _step('بناء التحديث ورفعه إلى Shorebird');
+  await _run(
+    'shorebird',
+    ['patch', 'android', '--release-version', releaseVersion, if (args.dryRun) '--dry-run'],
+    shell: true,
+  );
+
+  if (args.dryRun) {
+    _step('تجربة بلا رفع — لم يُنشر شيء');
+    return;
+  }
+  _step('تم نشر $published.$number');
+  _info('يصل الأجهزة بصمت: يُنزَّل عند فتح التطبيق ويُطبَّق عند فتحه التالي');
 }
 
 /// GitHub لا ينشئ إصداراً في مستودع بلا كوميت: الوسم يحتاج كوميتاً يشير إليه.

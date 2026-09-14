@@ -86,6 +86,50 @@ void main() {
     });
   });
 
+  group('رقم الإصدار المكتوب', () {
+    test('ثلاثة أجزاء بناء، وأربعة تحديث صامت مهما كبر رقمه', () {
+      final build = publish.parseRequestedVersion('1.2.8');
+      expect(build.kind, publish.PublishKind.build);
+      expect(build.base, '1.2.8');
+      expect(build.patchNumber, isNull);
+
+      final tenth = publish.parseRequestedVersion('1.2.7.10');
+      expect(tenth.kind, publish.PublishKind.patch, reason: 'التحديث العاشر لا يصير بناءً');
+      expect(tenth.base, '1.2.7');
+      expect(tenth.patchNumber, 10);
+    });
+
+    test('ما ليس ثلاثة أجزاء أو أربعة يُرفض', () {
+      for (final bad in ['1.2', '1.2.7.0', 'v1.2.7', '1.2.7.1.2', '1.2.x']) {
+        expect(() => publish.parseRequestedVersion(bad), throwsArgumentError, reason: bad);
+      }
+    });
+
+    test('المقارنة جزءاً جزءاً لا نصياً', () {
+      expect(publish.compareVersionNames('1.2.10', '1.2.9'), greaterThan(0));
+      expect(publish.compareVersionNames('1.3.0', '1.2.99'), greaterThan(0));
+      expect(publish.compareVersionNames('1.2.7', '1.2.7'), 0);
+      expect('${publish.versionFromName('1.2.8', build: 5)}', '1.2.8+5');
+    });
+
+    test('رقم التحديث التالي يُقرأ من مخرجات Shorebird بصيغتيها', () {
+      expect(publish.nextPatchNumber('  42  #1  track: stable\n  43  #2  [no track]\n'), 3);
+      expect(publish.nextPatchNumber('[{"id":42,"number":1},{"id":43,"number":2}]'), 3);
+      expect(
+        publish.nextPatchNumber('Git is not configured to allow long paths.\n[{"number": 4}]'),
+        5,
+        reason: 'تحذيرٌ يسبق JSON لا يُسقط القراءة',
+      );
+      expect(publish.nextPatchNumber('[]'), 1, reason: 'أول تحديث على الإصدار');
+    });
+
+    test('التحديث على غير آخر إصدار أو برقمٍ غير التالي يُرفض بالرقم الصحيح', () {
+      expect(publish.patchProblem(base: '1.2.7', number: 3, published: '1.2.7', next: 3), isNull);
+      expect(publish.patchProblem(base: '1.2.6', number: 1, published: '1.2.7', next: 3), contains('1.2.7.3'));
+      expect(publish.patchProblem(base: '1.2.7', number: 5, published: '1.2.7', next: 3), contains('1.2.7.3'));
+    });
+  });
+
   group('أمر البناء', () {
     test('مع Shorebird يُبنى بإصدار Flutter المشروع كي تقبل الأجهزة الـ patches', () {
       final cmd = publish.buildCommand(const publish.PubVersion(1, 2, 7, 2), shorebird: true, flutterVersion: '3.41.6');
