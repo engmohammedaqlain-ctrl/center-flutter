@@ -96,13 +96,11 @@ Map<String, double> allocatePaymentsToInstallments(
 
 /// الرصيد من السجلات — مطابق لـ `balanceFrom`.
 ///
-/// [countInstallments] تتبع نوع المنشأة: المدرسة تحسب أقساطها المستحقة، والمركز
-/// لا يحسبها لأن مطالبته في رسوم التسجيل.
+/// الأقساط المستحقة حتى [today] وحدها تدخل الرصيد.
 double balanceFrom({
   required Iterable<StudentEnrollment> enrollments,
   required Iterable<Installment> installments,
   required Iterable<Payment> payments,
-  required bool countInstallments,
   DateTime? today,
 }) {
   var enrollmentFees = 0.0;
@@ -112,13 +110,11 @@ double balanceFrom({
   }
 
   var installmentFees = 0.0;
-  if (countInstallments) {
-    final day = today ?? startOfToday();
-    for (final i in installments) {
-      // القسط القادم ليس ديناً بعد؛ يصير كذلك يوم استحقاقه
-      if (!isInstallmentDue(i, day)) continue;
-      installmentFees += i.amount;
-    }
+  final day = today ?? startOfToday();
+  for (final i in installments) {
+    // القسط القادم ليس ديناً بعد؛ يصير كذلك يوم استحقاقه
+    if (!isInstallmentDue(i, day)) continue;
+    installmentFees += i.amount;
   }
 
   var totalPaid = 0.0;

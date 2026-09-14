@@ -119,25 +119,7 @@ void main() {
       s.recalculateAllBalances();
       expect(student.balance, closeTo(-200, 0.01), reason: 'المستحق قسط واحد');
       expect(student.balance, closeTo(s.computeStudentBalance(student.id), 0.01));
-    });
-
-    test('في المركز لا تدخل الأقساط الرصيد، بل رسوم التسجيلات', () async {
-      final s = _seeded();
-      final student = _cleanStudent(s);
-      _installment(s, student, daysFromNow: -5);
-
-      await s.saveInstitution(type: 'center');
-      expect(s.computeStudentBalance(student.id), 0, reason: 'مطالبة المركز في تسجيلاته');
-
-      s.enrollments.add(StudentEnrollment(
-        id: s.newId(),
-        studentId: student.id,
-        groupId: 'g-x',
-        appliedPrice: 150,
-      ));
-      expect(s.computeStudentBalance(student.id), closeTo(-150, 0.01));
-    });
-  });
+    });  });
 
   group('توزيع السندات على الأقساط', () {
     test('السند المربوط يُسدِّد قسطه، والفائض ينزل على الأقدم استحقاقاً', () {

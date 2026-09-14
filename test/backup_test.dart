@@ -20,7 +20,7 @@ void main() {
 
   test('an export carries every table plus the settings', () async {
     final s = await seeded();
-    await s.saveInstitution(name: 'مدرسة الاختبار', type: 'center');
+    await s.saveInstitution(name: 'مدرسة الاختبار');
 
     final decoded = jsonDecode(service.encode(s)) as Map<String, dynamic>;
     expect(decoded['format_version'], BackupService.formatVersion);
@@ -32,7 +32,6 @@ void main() {
     }
     expect((data['students'] as List).length, s.students.length);
     expect((data['payments'] as List).length, s.payments.length);
-    expect((decoded['settings'] as Map)['institution_type'], 'center');
   });
 
   test('the file name carries the institution and stays filesystem-safe', () async {

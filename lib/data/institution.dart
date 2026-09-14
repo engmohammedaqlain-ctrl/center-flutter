@@ -7,7 +7,6 @@ import 'dart:ui' as ui;
 /// المفاتيح وأسماء حقول الألوان مطابقة حرفياً، لأن السجل يُحفظ في جدول
 /// `institution_settings` المشترك: أي اختلاف في التسمية يجعل الهوية التي
 /// يحفظها الجوال غير مقروءة على سطح المكتب والعكس.
-const institutionTypeKey = 'institution_type';
 const institutionNameKey = 'institution_name';
 const institutionLogoKey = 'institution_logo';
 const institutionColorsKey = 'institution_colors';
@@ -29,18 +28,6 @@ const sectionNameMigrationKey = 'section_names_sanitized_v1';
 
 /// دمج حالة «غير نشط» في «منسحب» — مطابق لترقية v9 في db.ts
 const withdrawnStatusMigrationKey = 'student_status_withdrawn_v1';
-
-/// `school` = نظام مدرسة (صفوف وشعب ورسوم مراحل).
-/// `center` = نظام مركز تعليمي (مجموعات وقاعات وجداول).
-const institutionTypes = {
-  'school': 'نظام مدرسة تعليمية',
-  'center': 'نظام مركز تعليمي / دورات',
-};
-
-const institutionTypeHints = {
-  'school': 'إدارة الصفوف، الشعب المدرسية، ورسوم المراحل',
-  'center': 'إدارة المجموعات، القاعات، وحصص المدرسين',
-};
 
 /// ألوان الهوية — الحقول الخمسة نفسها الموجودة في `InstitutionColors`.
 class InstitutionColors {

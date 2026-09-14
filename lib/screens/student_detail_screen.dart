@@ -13,7 +13,7 @@ import '../widgets/panels.dart';
 import '../widgets/widgets.dart';
 import 'payment_form_screen.dart';
 import 'receipt_screen.dart';
-import 'schedule_screen.dart';
+import 'student_subjects_card.dart';
 import 'student_form_screen.dart';
 
 /// ملف الطالب — بتخطيط واجهة الهاتف في `pages/StudentDetail.tsx`.
@@ -343,7 +343,7 @@ class StudentDetailScreen extends StatelessWidget {
 
               // ── الصفوف والمجموعات: مواد الشعبة ومعلموها في المدرسة، ومجموعات المركز ──
               if (store.can('schedule.view')) ...[
-                StudentGroupsCard(student: student),
+                StudentSubjectsCard(student: student),
                 const SizedBox(height: 10),
               ],
 

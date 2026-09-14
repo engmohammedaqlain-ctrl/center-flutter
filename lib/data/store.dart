@@ -537,14 +537,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   // ── إعدادات المنشأة (المقابل لـ institution.ts) ─────────────────────────────
-  String get institutionType => db.settings[institutionTypeKey] ?? 'school';
-  bool get isSchool => institutionType == 'school';
 
   /// المراحل التي تُعرض في النماذج والتصفية.
   ///
-  /// للمدرسة مراحلها كما أضافتها في «المراحل والرسوم» وحدها: مدرسةٌ جديدة لم
-  /// تُضف مراحل لا تُعرض عليها «عاشر» و«حادي عشر» كأنها مراحلها. للمركز مراحل
-  /// جدول الرسوم إن وُجدت، وإلا القائمة العامة.
+  /// مراحل المنشأة كما أضافتها في «المراحل والرسوم» وحدها: مدرسةٌ جديدة لم
+  /// تُضف مراحل لا تُعرض عليها «عاشر» و«حادي عشر» كأنها مراحلها.
   List<String> get gradeOptions {
     final fees = [...gradeFees]..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
     final names = <String>[];
@@ -552,8 +549,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       final name = f.gradeName.trim();
       if (name.isNotEmpty && !names.contains(name)) names.add(name);
     }
-    if (isSchool || names.isNotEmpty) return names;
-    return [...gradeLevelsFilter];
+    return names;
   }
 
   String get institutionLogo => db.settings[institutionLogoKey] ?? '';
@@ -901,7 +897,6 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// الرسم لاحقاً يسري على ما بعده. ومن له خطة أقساط يدوية لا يُولَّد له شيء
   /// حتى لا يُطالَب مرتين.
   ({int created, int missingFee}) generateMonthlyDues({DateTime? now}) {
-    if (!isSchool) return (created: 0, missingFee: 0);
     final months = studyMonths;
     if (months == null) return (created: 0, missingFee: 0);
 
@@ -1128,12 +1123,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   Future<void> saveInstitution({
-    String? type,
     String? name,
     String? logo,
     InstitutionColors? colors,
   }) async {
-    if (type != null) await db.setSetting(institutionTypeKey, type);
     if (name != null) {
       institutionName = name.trim();
       await db.setSetting(institutionNameKey, institutionName.isEmpty ? null : institutionName);
@@ -1154,7 +1147,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (tid == null) return;
     final row = {
       'id': tid,
-      'institution_type': institutionType,
+      // النظام مدرسي وحده: يُكتب ثابتاً ولا يُقرأ، لأن أجهزة لم تُحدَّث ما زالت تقرؤه
+      'institution_type': 'school',
       'institution_name': institutionName,
       'logo': institutionLogo.isEmpty ? null : institutionLogo,
       'colors': {..._storedColorsMap, ...institutionColors.toMap()},
@@ -1179,10 +1173,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final row = extraCloud['institution_settings']?.where((e) => '${e['id']}' == tid).firstOrNull;
     if (row == null) return;
     final name = '${row['institution_name'] ?? ''}'.trim();
-    final type = '${row['institution_type'] ?? ''}'.trim();
     final logo = row['logo'];
     final colors = row['colors'];
-    if (type.isNotEmpty) await db.setSetting(institutionTypeKey, type);
     if (name.isNotEmpty) {
       institutionName = name;
       await db.setSetting(institutionNameKey, name);
@@ -1587,7 +1579,6 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// وهوية الجهاز وأعلام الترحيل: تركها كان يجعل المنشأة الجديدة تقرأ مخلفات
   /// سابقتها — تفتح باسمها وشعارها، وتُصدر سنداتها باسم موظف مدرسة أخرى.
   static const _tenantScopedSettings = [
-    institutionTypeKey,
     institutionNameKey,
     institutionLogoKey,
     institutionColorsKey,
@@ -1888,7 +1879,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     // الجلسة تُنشأ عند الحاجة فقط، بعد التأكد من وجود ما يُرصد
     final sessionId = ownerId == null || ownerId.isEmpty
         ? ''
-        : sessionFor(ownerId, date, school: isSchool).id;
+        : sessionFor(ownerId, date).id;
 
     if (existing != null) {
       if (existing.status == status && (sessionId.isEmpty || existing.sessionId == sessionId)) {
@@ -1941,7 +1932,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (list.isEmpty) return 0;
     final sessionId = ownerId == null || ownerId.isEmpty
         ? ''
-        : sessionFor(ownerId, date, school: isSchool).id;
+        : sessionFor(ownerId, date).id;
 
     final now = _nowIso();
     var changed = 0;
@@ -2489,16 +2480,14 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   ///
   /// الأقساط تدخل كاملةً في المدرسة كما في النسخة المكتبية: مديونية الطالب كلها
   /// في أقساطه، والقسط المجدول دَينٌ قائم وإن لم يحن موعده — «المستحق الآن» شيء
-  /// آخر يحسبه [overdueByStudent]. وفي المركز تبقى رسوم التسجيل وحدها.
+  /// آخر يحسبه [overdueByStudent].
   ///
   /// حسابه من السجلات لا تراكمياً: جمعه وطرحه مع كل حركة كان يتضارب بين جهازين
   /// بلا اتصال، فيفوز آخر رقم يصل السحابة وتضيع حركة الجهاز الآخر.
   double computeStudentBalance(String studentId) => balanceFrom(
         enrollments: enrollments.where((e) => e.studentId == studentId),
         installments: installments.where((i) => i.studentId == studentId),
-        payments: payments.where((p) => p.studentId == studentId),
-        countInstallments: isSchool,
-      );
+        payments: payments.where((p) => p.studentId == studentId),      );
 
   /// إعادة حساب أرصدة كل الطلاب من سجلاتهم — تُستدعى بعد كل سحب.
   ///
@@ -2546,9 +2535,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       final computed = balanceFrom(
         enrollments: enrs,
         installments: insts,
-        payments: pays,
-        countInstallments: isSchool,
-      );
+        payments: pays,      );
       // فرق أقل من قرش لا يستحق كتابة
       if ((student.balance - computed).abs() <= 0.01) continue;
       student.balance = computed;
@@ -2597,9 +2584,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final computed = balanceFrom(
       enrollments: enrollments.where((e) => e.studentId == student.id),
       installments: insts,
-      payments: pays,
-      countInstallments: isSchool,
-    );
+      payments: pays,    );
     if ((student.balance - computed).abs() > 0.01) {
       student.balance = computed;
       student.updatedAt = now;
@@ -2698,19 +2683,6 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final ids = enrollmentsInGroup(groupId).map((e) => e.studentId).toSet();
     return students.where((s) => ids.contains(s.id)).toList();
   }
-
-  /// من يمكن تسجيله في مجموعة: غير المسجلين فيها، ومن مرحلتها وحدها إن كانت
-  /// لها مرحلة — طالب العاشر لا يُعرض عند التسجيل في مجموعة الحادي عشر.
-  /// مجموعة «كل المراحل» تقبل الجميع.
-  List<Student> enrollmentCandidates(Group group) {
-    final enrolled = enrollmentsInGroup(group.id).map((e) => e.studentId).toSet();
-    final grade = group.gradeLevel.trim().toLowerCase();
-    return students.where((s) {
-      if (enrolled.contains(s.id)) return false;
-      return grade.isEmpty || s.gradeLevel.trim().toLowerCase() == grade;
-    }).toList();
-  }
-
   void upsertGroup(Group g) {
     requireCapability('schedule.edit');
     if (g.name.trim().isEmpty) throw StoreException('يرجى إدخال اسم المجموعة');
@@ -2994,21 +2966,20 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   // ── الجلسات (المقابل لـ attendance.service.ts) ──────────────────────────────
 
   /// إيجاد جلسة لتاريخ ومجموعة/قاعة، أو إنشاؤها.
-  ClassSession sessionFor(String ownerId, String dateStr, {bool school = true}) {
+  ClassSession sessionFor(String roomId, String dateStr) {
     final found = sessions
-        .where((s) => s.sessionDate == dateStr && (s.groupId == ownerId || s.roomId == ownerId))
+        .where((s) => s.sessionDate == dateStr && (s.groupId == roomId || s.roomId == roomId))
         .firstOrNull;
     if (found != null) return found;
 
-    final group = school ? null : groupById(ownerId);
     final created = ClassSession(
       id: newId(),
-      groupId: ownerId,
+      groupId: roomId,
       sessionDate: dateStr,
-      startTime: group?.startTime ?? '08:00',
-      endTime: group?.endTime ?? '10:00',
-      teacherId: group?.teacherId ?? '',
-      roomId: school ? ownerId : (group?.roomId ?? ''),
+      startTime: '08:00',
+      endTime: '10:00',
+      teacherId: '',
+      roomId: roomId,
       status: 'scheduled',
       syncStatus: 'pending',
       createdAt: _nowIso(),

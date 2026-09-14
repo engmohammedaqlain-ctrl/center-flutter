@@ -68,7 +68,6 @@ void main() {
 
   testWidgets('المدرسة ترى «المواد والمعلمون» بلا ذكر رسوم', (tester) async {
     final s = await _store();
-    expect(s.isSchool, isTrue);
 
     final room = s.rooms.first;
     final student = s.studentsOf(room).first;

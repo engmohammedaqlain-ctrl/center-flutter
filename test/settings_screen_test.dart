@@ -74,19 +74,6 @@ void main() {
     await s.flush();
   });
 
-  testWidgets('المركز يرى القاعات لا المراحل والرسوم', (tester) async {
-    final s = await _store();
-    await s.saveInstitution(type: 'center');
-    expect(s.isSchool, isFalse);
-    await _pump(tester, s, const Scaffold(body: SettingsScreen()));
-
-    // شريط التبويبات يتمرّر أفقياً، فما خرج منه لا يُبنى حتى يُمرَّر إليه
-    await tester.scrollUntilVisible(find.text('القاعات'), 120, scrollable: find.byType(Scrollable).first);
-    expect(find.text('القاعات'), findsOneWidget);
-    expect(find.text('المراحل والرسوم'), findsNothing);
-    await s.flush();
-  });
-
   testWidgets('نموذج المدرس الفارغ يشير إلى حقوله الناقصة', (tester) async {
     final s = await _store();
     final before = s.teachers.length;

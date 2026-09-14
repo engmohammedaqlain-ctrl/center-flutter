@@ -438,7 +438,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     final fullStudentPhone = combinePhoneAndPrefix(phoneNumber, phonePrefix);
     final grades = _gradeOptions(store);
     // المدرسة تختار من مراحلها وحدها: لا «عاشر» افتراضياً لم تضفه
-    if (store.isSchool && !grades.contains(grade)) {
+    if (!grades.contains(grade)) {
       final current = widget.student?.gradeLevel.trim() ?? '';
       grade = grades.contains(current) ? current : (grades.isEmpty ? '' : grades.first);
     }
@@ -1065,11 +1065,10 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
 
   double get _discountRateValue => double.tryParse(discountRate.text.trim()) ?? 0;
 
-  /// مراحل القائمة — `gradeOptions` في StudentForm.tsx: للمدرسة مراحلها التي
-  /// أضافتها، وللمركز القائمة العامة. مرحلة طالب قائم لم تعد في القائمة تبقى
-  /// ظاهرة حتى لا تتبدل بصمت عند فتح التعديل.
+  /// مراحل القائمة — `gradeOptions` في StudentForm.tsx: مراحل المنشأة التي
+  /// أضافتها. مرحلة طالب قائم لم تعد في القائمة تبقى ظاهرة حتى لا تتبدل بصمت
+  /// عند فتح التعديل.
   List<String> _gradeOptions(AppStore store) {
-    if (!store.isSchool) return gradeLevels;
     final current = widget.student?.gradeLevel.trim() ?? '';
     final own = store.gradeOptions;
     return current.isNotEmpty && !own.contains(current) ? [current, ...own] : own;

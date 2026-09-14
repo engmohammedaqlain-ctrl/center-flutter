@@ -9,7 +9,6 @@ import 'app_update_sheet.dart';
 import 'attendance_screen.dart';
 import 'classes_screen.dart';
 import 'finance_screen.dart';
-import 'schedule_screen.dart';
 import 'settings_screen.dart';
 import 'students_screen.dart';
 import 'sync_sheet.dart';
@@ -36,19 +35,12 @@ class _AppShellState extends State<AppShell> {
   String current = 'students';
 
   /// الأقسام المتاحة لهذا المستخدم على هذا الجهاز.
-  ///
-  /// القسم الرابع يتبع نوع المنشأة: «الصفوف» للمدرسة و«الجدول» للمركز —
-  /// تثبيته على الصفوف كان يخفي قسم المجموعات كلياً عن المراكز التعليمية.
   List<Section> _sections(AppStore store) {
-    final school = store.isSchool;
     final all = [
       const Section('students', 'الطلاب', 'الطلاب', Icons.groups_outlined, Icons.groups, StudentsScreen()),
       const Section('attendance', 'الحضور', 'الحضور', Icons.fact_check_outlined, Icons.fact_check, AttendanceScreen()),
       const Section('finance', 'المالية', 'المالية', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet, FinanceScreen()),
-      if (school)
-        const Section('classes', 'الصفوف', 'الصفوف', Icons.apartment_outlined, Icons.apartment, ClassesScreen())
-      else
-        const Section('schedule', 'الجداول', 'الجدول', Icons.calendar_month_outlined, Icons.calendar_month, ScheduleScreen()),
+      const Section('classes', 'الصفوف', 'الصفوف', Icons.apartment_outlined, Icons.apartment, ClassesScreen()),
       const Section('settings', 'الإعدادات', 'الإعدادات', Icons.settings_outlined, Icons.settings, SettingsScreen()),
     ];
     final allowed = all.where((s) => store.canOpenSection(s.id)).toList();

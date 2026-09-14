@@ -212,7 +212,7 @@ void main() {
       final s = seeded();
       final g = makeGroup(s);
       s.upsertGroup(g);
-      s.sessionFor(g.id, isoDate(DateTime.now()), school: false);
+      s.sessionFor(g.id, isoDate(DateTime.now()));
 
       expect(s.deleteGroup(g.id), isFalse);
       expect(s.groupById(g.id)?.status, 'archived');
@@ -267,16 +267,6 @@ void main() {
       final b = s.sessionFor(room, date);
       expect(a.id, b.id);
       expect(s.sessions.where((x) => x.sessionDate == date && x.roomId == room).length, 1);
-    });
-
-    test('a centre session inherits the group time and teacher', () {
-      final s = seeded();
-      final g = makeGroup(s, start: '17:00', end: '19:00');
-      s.upsertGroup(g);
-      final session = s.sessionFor(g.id, isoDate(DateTime.now()), school: false);
-      expect(session.startTime, '17:00');
-      expect(session.endTime, '19:00');
-      expect(session.teacherId, g.teacherId);
     });
   });
 }

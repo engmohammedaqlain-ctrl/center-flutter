@@ -34,7 +34,6 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
   final gate = TextEditingController();
   String? gateError;
 
-  late String type;
   late TextEditingController name;
   late String logo;
   late InstitutionColors colors;
@@ -49,7 +48,6 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
   void initState() {
     super.initState();
     final store = AppStore.instance;
-    type = store.institutionType;
     name = TextEditingController(text: store.institutionName);
     logo = store.institutionLogo;
     colors = store.institutionColors;
@@ -171,7 +169,6 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
         children: [
-          ..._institutionType(),
           ..._identity(),
           ..._colors(),
           ..._financeRules(),
@@ -180,64 +177,6 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
           ..._tools(context, store),
           ..._systemInfo(store),
         ],
-      ),
-    );
-  }
-
-  List<Widget> _institutionType() => [
-        const FormSection(icon: Icons.apartment_outlined, title: 'نوع المنشأة التشغيلي'),
-        for (final e in institutionTypes.entries)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: _choiceTile(
-              selected: type == e.key,
-              title: e.value,
-              subtitle: institutionTypeHints[e.key] ?? '',
-              onTap: () => setState(() => type = e.key),
-            ),
-          ),
-        const Text(
-          'تغيير النوع يبدّل قسم «الصفوف» بقسم «الجدول والمجموعات» وبالعكس.',
-          style: TextStyle(color: AppColors.faint, fontSize: 10.5),
-        ),
-      ];
-
-  Widget _choiceTile({
-    required bool selected,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(Corner.box),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(Corner.box),
-          color: selected ? AppColors.amberSoft : Colors.white,
-          border: Border.all(color: selected ? AppColors.amber : AppColors.line),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_off,
-              size: 18,
-              color: selected ? AppColors.amber : AppColors.faint,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading)),
-                  if (subtitle.isNotEmpty)
-                    Text(subtitle, style: const TextStyle(color: AppColors.muted, fontSize: 11, height: 1.4)),
-                ],
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -683,7 +622,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
     if (errors.report(context)) return;
 
     setState(() => busy = true);
-    await store.saveInstitution(type: type, name: name.text, logo: logo, colors: colors);
+    await store.saveInstitution(name: name.text, logo: logo, colors: colors);
     await store.setSeatReservationFee(feeValue ?? 0);
     await store.db.setSetting(SupabaseConfig.urlSettingKey, url.isEmpty ? null : url);
     await store.db.setSetting(

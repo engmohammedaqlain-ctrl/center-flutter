@@ -180,7 +180,7 @@ void main() {
     await first.bootstrap(disk);
     injectDemoData(first);
     await first.login('amal', 'amal2026');
-    await first.saveInstitution(name: 'مدرسة مخصصة', type: 'center');
+    await first.saveInstitution(name: 'مدرسة مخصصة');
     await first.flush();
     expect(first.loggedIn, isTrue);
 
@@ -190,7 +190,6 @@ void main() {
     expect(second.isMasterAdmin, isFalse);
     expect(second.currentTenant?.username, 'amal');
     expect(second.institutionName, 'مدرسة مخصصة');
-    expect(second.institutionType, 'center');
     expect(second.lastUsername, 'amal');
   });
 

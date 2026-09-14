@@ -31,29 +31,26 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-/// تبويب في الإعدادات، مع صلاحيته ونوع المنشأة الذي يظهر فيه.
+/// تبويب في الإعدادات مع صلاحيته.
 class _Tab {
-  const _Tab(this.id, this.icon, this.label, {this.capability, this.schoolOnly = false, this.centerOnly = false});
+  const _Tab(this.id, this.icon, this.label, {this.capability});
 
   final String id;
   final IconData icon;
   final String label;
   final String? capability;
-  final bool schoolOnly;
-  final bool centerOnly;
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
   String current = 'teachers';
 
-  /// التبويبات بترتيب Settings.tsx — تُخفى بحسب الصلاحية ونوع المنشأة.
+  /// التبويبات بترتيب Settings.tsx — تُخفى بحسب الصلاحية.
   static const _allTabs = [
-    _Tab('grade_fees', Icons.payments_outlined, 'المراحل والرسوم', capability: 'settings.fees', schoolOnly: true),
+    _Tab('grade_fees', Icons.payments_outlined, 'المراحل والرسوم', capability: 'settings.fees'),
     _Tab('payment_methods', Icons.credit_card_outlined, 'وسائل الدفع'),
     _Tab('teachers', Icons.school_outlined, 'المعلمون'),
     _Tab('subjects', Icons.menu_book_outlined, 'المواد'),
-    _Tab('grading', Icons.workspace_premium_outlined, 'مخطط العلامات', schoolOnly: true),
-    _Tab('rooms', Icons.meeting_room_outlined, 'القاعات', centerOnly: true),
+    _Tab('grading', Icons.workspace_premium_outlined, 'مخطط العلامات'),
     _Tab('users', Icons.manage_accounts_outlined, 'المستخدمون', capability: 'settings.users'),
     _Tab('backup', Icons.storage_outlined, 'البيانات والنسخ', capability: 'settings.backup'),
   ];
@@ -68,8 +65,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return NoAccess(section: 'settings', roleName: store.roleName);
         }
         final tabs = _allTabs.where((t) {
-          if (t.schoolOnly && !store.isSchool) return false;
-          if (t.centerOnly && store.isSchool) return false;
           if (t.capability != null && !store.can(t.capability!)) return false;
           return true;
         }).toList();
@@ -88,7 +83,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   'payment_methods' => const PaymentMethodsTab(),
                   'subjects' => const _SubjectsTab(),
                   'grading' => const GradingSchemeTab(),
-                  'rooms' => const _HallsTab(),
                   'users' => const _UsersTab(),
                   'backup' => const _DataTab(),
                   _ => const _TeachersTab(),
@@ -117,7 +111,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onPressed: () => addPaymentMethod(context),
         ),
       'subjects' => ThumbAction(label: 'إضافة مادة', icon: Icons.add, onPressed: () => open(const SubjectFormScreen())),
-      'rooms' => ThumbAction(label: 'إضافة قاعة', icon: Icons.add, onPressed: () => open(const HallFormScreen())),
       'users' => ThumbAction(
           label: 'مستخدم جديد',
           icon: Icons.person_add_alt_1_outlined,
@@ -956,62 +949,6 @@ class _SubjectCard extends StatelessWidget {
   }
 }
 
-// ═══ القاعات (للمراكز) ══════════════════════════════════════════════════════
-
-class _HallsTab extends StatelessWidget {
-  const _HallsTab();
-
-  @override
-  Widget build(BuildContext context) {
-    final store = StoreScope.of(context);
-    final rooms = [...store.rooms]..sort((a, b) => a.name.compareTo(b.name));
-    return _cardList(
-      count: rooms.length,
-      empty: const EmptyState(message: 'لا توجد قاعات مسجلة بعد.'),
-      item: (context, i) {
-        final r = rooms[i];
-        final groups = store.groups.where((g) => g.roomId == r.id && g.isActive).length;
-        return AppCard(
-          onTap: () => _open(context, HallFormScreen(room: r)),
-          padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 6, 10),
-          child: Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                alignment: Alignment.center,
-                decoration: tileDecoration(),
-                child: Icon(Icons.meeting_room_outlined, size: 18, color: AppColors.amber),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(r.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: _titleStyle),
-                    const SizedBox(height: 2),
-                    Text(
-                      ['السعة: ${r.capacity}', if (r.notes.trim().isNotEmpty) r.notes.trim()].join('  ·  '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: _metaStyle,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text('$groups مجموعة', style: _metaStyle),
-              const SizedBox(width: 2),
-              _chevron,
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
 // ═══ المستخدمون والصلاحيات ══════════════════════════════════════════════════
 
 class _UsersTab extends StatelessWidget {
@@ -1301,13 +1238,13 @@ class _DataTab extends StatelessWidget {
     final tenant = store.currentTenant;
     final counts = <(String, int)>[
       ('الطلاب', store.students.length),
-      (store.isSchool ? 'الصفوف' : 'القاعات', store.rooms.length),
+      ('الصفوف', store.rooms.length),
       ('المدرسون', store.teachers.length),
       ('المواد', store.subjects.length),
       ('المقبوضات', store.payments.length),
       ('الأقساط', store.installments.length),
       ('الحضور', store.attendance.length),
-      store.isSchool ? ('المراحل', store.gradeFees.length) : ('المجموعات', store.groups.length),
+      ('المراحل', store.gradeFees.length),
     ];
 
     return ListView(

@@ -31,7 +31,7 @@ void main() {
     // رصد أُنشئ ورُفع، ثم صار معروفاً للسحابة
     s.setAttendance(student.id, date, 'present', ownerId: room.id);
     final mark = s.markFor(room.id, student.id, date)!;
-    final session = s.sessionFor(room.id, date, school: true);
+    final session = s.sessionFor(room.id, date);
     pretendSynced(s, 'sessions', [session.toCloud()]);
     pretendSynced(s, 'attendance', [mark.toCloud()]);
     expect(s.pendingPush, 0);
@@ -59,7 +59,7 @@ void main() {
 
     s.setAttendance(student.id, date, 'present', ownerId: room.id);
     final mark = s.markFor(room.id, student.id, date)!;
-    pretendSynced(s, 'sessions', [s.sessionFor(room.id, date, school: true).toCloud()]);
+    pretendSynced(s, 'sessions', [s.sessionFor(room.id, date).toCloud()]);
     pretendSynced(s, 'attendance', [mark.toCloud()]);
 
     s.setAttendance(student.id, date, 'absent', ownerId: room.id);
@@ -116,7 +116,7 @@ void main() {
 
     s.setAttendance(student.id, date, 'present', ownerId: room.id);
     final mark = s.markFor(room.id, student.id, date)!;
-    pretendSynced(s, 'sessions', [s.sessionFor(room.id, date, school: true).toCloud()]);
+    pretendSynced(s, 'sessions', [s.sessionFor(room.id, date).toCloud()]);
     pretendSynced(s, 'attendance', [mark.toCloud()]);
 
     s.setAttendance(student.id, date, null, ownerId: room.id);

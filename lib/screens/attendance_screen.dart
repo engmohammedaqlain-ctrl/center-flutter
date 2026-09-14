@@ -82,37 +82,21 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         }
 
         final week = AppStore.schoolWeek(weekOffset);
-        final school = store.isSchool;
         final canEdit = store.can('attendance.edit');
 
-        // نظام المدرسة: المرحلة ثم الشعبة. نظام المركز: المجموعة مباشرة.
-        final grades = school
-            ? store.rooms.map((r) => r.gradeLevel).where((g) => g.trim().isNotEmpty).toSet().toList()
-            : <String>[];
-        final currentGrade = school
-            ? (grade != null && grades.contains(grade) ? grade : (grades.isNotEmpty ? grades.first : null))
-            : null;
-        final owners = school
-            ? store.rooms.where((r) => currentGrade == null || r.gradeLevel == currentGrade).toList()
-            : store.groups.where((g) => g.isActive).toList();
+        // المرحلة ثم الشعبة
+        final grades = store.rooms.map((r) => r.gradeLevel).where((g) => g.trim().isNotEmpty).toSet().toList();
+        final currentGrade =
+            grade != null && grades.contains(grade) ? grade : (grades.isNotEmpty ? grades.first : null);
+        final owners = store.rooms.where((r) => currentGrade == null || r.gradeLevel == currentGrade).toList();
 
-        final ownerIds = school
-            ? owners.cast<Classroom>().map((r) => r.id).toList()
-            : owners.cast<Group>().map((g) => g.id).toList();
+        final ownerIds = owners.map((r) => r.id).toList();
         final currentOwner =
             (ownerId != null && ownerIds.contains(ownerId)) ? ownerId! : (ownerIds.isNotEmpty ? ownerIds.first : '');
+        final room = store.rooms.where((r) => r.id == currentOwner).firstOrNull;
 
-        final list = currentOwner.isEmpty
-            ? <Student>[]
-            : school
-                ? store.studentsOf(store.rooms.firstWhere((r) => r.id == currentOwner))
-                : store.studentsInGroup(currentOwner);
-
-        final ownerName = currentOwner.isEmpty
-            ? ''
-            : school
-                ? store.rooms.firstWhere((r) => r.id == currentOwner).name
-                : store.groupById(currentOwner)?.name ?? '';
+        final list = room == null ? <Student>[] : store.studentsOf(room);
+        final ownerName = room?.name ?? '';
 
         // اليوم المختار داخل الأسبوع المعروض، وإلا اليوم الحالي أو أوله
         final day = week.firstWhere(
@@ -149,7 +133,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             children: [
               _pickers(
                 store,
-                school: school,
                 grades: grades,
                 currentGrade: currentGrade,
                 owners: owners,
@@ -268,10 +251,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   Widget _pickers(
     AppStore store, {
-    required bool school,
     required List<String> grades,
     required String? currentGrade,
-    required List<dynamic> owners,
+    required List<Classroom> owners,
     required String currentOwner,
     required VoidCallback onCalendar,
   }) {
@@ -279,7 +261,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
       child: Row(
         children: [
-          if (school) ...[
+          ...[
             Expanded(
               child: AppDropdown<String>(
                 value: currentGrade,
@@ -296,13 +278,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           Expanded(
             child: AppDropdown<String>(
               value: currentOwner.isEmpty ? null : currentOwner,
-              hint: school ? 'الشعبة' : 'المجموعة',
+              hint: 'الشعبة',
               items: [
-                for (final o in owners)
-                  DropdownMenuItem(
-                    value: school ? (o as Classroom).id : (o as Group).id,
-                    child: Text(school ? (o as Classroom).name : (o as Group).name),
-                  ),
+                for (final o in owners) DropdownMenuItem(value: o.id, child: Text(o.name)),
               ],
               onChanged: (v) => setState(() => ownerId = v),
             ),

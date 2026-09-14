@@ -85,7 +85,7 @@ void main() {
     const date = '2026-04-15';
     final student = s.studentsOf(a).first;
 
-    final other = s.sessionFor(b.id, date, school: true);
+    final other = s.sessionFor(b.id, date);
     s.attendance.add(
       AttendanceMark(
         id: s.newId(),
@@ -163,7 +163,7 @@ void main() {
   test('a school session keeps the desktop shape so both write one row', () async {
     final s = await school();
     final room = s.rooms.first;
-    final session = s.sessionFor(room.id, isoDate(DateTime.now()), school: true);
+    final session = s.sessionFor(room.id, isoDate(DateTime.now()));
     expect(session.groupId, room.id);
     expect(session.roomId, room.id);
   });
@@ -237,7 +237,7 @@ void main() {
 
     // سجلان لنفس الطالب واليوم: واحد يخص صفاً آخر. القارئ كان يأخذ الأخير
     // والكاتب الأول، فتبدو النقرة بلا أثر.
-    final other = s.sessionFor(s.rooms[1].id, date, school: true);
+    final other = s.sessionFor(s.rooms[1].id, date);
     s.attendance.add(AttendanceMark(
       id: s.newId(),
       studentId: student.id,
@@ -267,7 +267,7 @@ void main() {
     expect(list.length, greaterThan(1));
 
     // طالب سجله مرتبط بجلسة صف آخر، وآخر مرصود غائباً هنا
-    final other = s.sessionFor(s.rooms[1].id, date, school: true);
+    final other = s.sessionFor(s.rooms[1].id, date);
     s.attendance.add(AttendanceMark(
       id: s.newId(),
       studentId: list.first.id,
@@ -306,7 +306,7 @@ void main() {
     final room = s.rooms.first;
     final student = s.studentsOf(room).first;
     const date = '2026-04-23';
-    final session = s.sessionFor(room.id, date, school: true);
+    final session = s.sessionFor(room.id, date);
 
     for (final status in ['present', 'absent', 'present']) {
       s.attendance.add(AttendanceMark(
