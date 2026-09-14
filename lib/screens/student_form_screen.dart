@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../data/academic_matching.dart';
 import '../data/phone.dart';
 import '../data/store.dart';
 import '../models/models.dart';
@@ -438,7 +439,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     final parentComplete = isPhoneComplete(parentPhoneNumber, parentPhonePrefix);
     final fullStudentPhone = combinePhoneAndPrefix(phoneNumber, phonePrefix);
     final grades = _gradeOptions(store);
-    final matchingSections = store.rooms.where((r) => r.gradeLevel.trim().isEmpty || r.gradeLevel.trim() == grade.trim()).toList();
+    final matchingSections = store.rooms.where((r) => isSameGrade(r.gradeLevel, grade)).toList();
     final idLen = nationalId.text.length;
 
     return Scaffold(

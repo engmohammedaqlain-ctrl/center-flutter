@@ -95,7 +95,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             (ownerId != null && ownerIds.contains(ownerId)) ? ownerId! : (ownerIds.isNotEmpty ? ownerIds.first : '');
         final room = store.rooms.where((r) => r.id == currentOwner).firstOrNull;
 
-        final list = room == null ? <Student>[] : store.studentsOf(room);
+        final list = room == null ? <Student>[] : store.attendanceRosterOf(room);
         final ownerName = room?.name ?? '';
 
         // اليوم المختار داخل الأسبوع المعروض، وإلا اليوم الحالي أو أوله

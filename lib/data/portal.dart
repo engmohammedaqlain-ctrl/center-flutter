@@ -1,6 +1,7 @@
 import 'package:uuid/uuid.dart';
 
 import '../models/models.dart';
+import 'academic_matching.dart';
 import 'institution.dart';
 import 'payment_methods.dart';
 import 'supabase.dart';
@@ -647,20 +648,11 @@ class PortalService {
   static String attendanceIdFor(String sessionId, String studentId) => 'att_${sessionId}_$studentId';
 
   /// هل الطالب من شعبة القاعة — بديل المجموعة التي لا تسجيلات يدوية لها.
-  /// مطابق للمطابقة في `getTeacherClasses`.
-  static bool studentInRoom(Student s, {required String roomName, required String roomGrade}) {
-    if (s.status != 'active') return false;
-    final rName = roomName.trim().toLowerCase();
-    final rGrade = roomGrade.trim().toLowerCase();
-    final sSec = s.section.trim().toLowerCase();
-    final sGrade = s.gradeLevel.trim().toLowerCase();
-    final matchesSection = sSec == rName || sSec.contains(rName) || rName.contains(sSec);
-    if (!matchesSection) return false;
-    if (rGrade.isNotEmpty && sGrade.isNotEmpty) {
-      return rGrade == sGrade || rGrade.contains(sGrade) || sGrade.contains(rGrade);
-    }
-    return true;
-  }
+  /// مطابق لـ `getTeacherClasses`: مطابقة تامة، فلا تُدخل «علمي 1» طلاب
+  /// «علمي 10»، ولا يصير الطالب بلا مرحلة عضواً في كل شعبة.
+  static bool studentInRoom(Student s, {required String roomName, required String roomGrade}) =>
+      s.status == 'active' &&
+      belongsToSection(section: s.section, grade: s.gradeLevel, roomName: roomName, roomGrade: roomGrade);
 
   /// دخول الطلاب وأولياء الأمور والمعلمين — المقابل لـ `loginWithPortalCode`.
   ///

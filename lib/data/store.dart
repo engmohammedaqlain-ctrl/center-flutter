@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import 'academic_matching.dart';
 import 'balance.dart';
 import 'grading.dart';
 import 'institution.dart';
@@ -982,13 +983,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// المعلّق بعد الترقية يحتاج شعبة، ومن في شعبة أخرى يُنقل منها؛ ومن بلا شعبة
   /// يتصدّر لأنه بلا مكان أصلاً.
   List<Student> sectionCandidates(Classroom room) {
-    final grade = room.gradeLevel.trim().toLowerCase();
-    final name = room.name.trim().toLowerCase();
     final list = students.where((s) {
       if (s.status != 'active' && s.status != 'pending') return false;
-      if (s.section.trim().toLowerCase() == name) return false;
-      // مطابقة تامة كـ `sameGrade`: شعبةٌ بلا مرحلة كانت تعرض طلاب كل المراحل
-      return s.gradeLevel.trim().toLowerCase() == grade;
+      if (isSameSectionName(s.section, room.name)) return false;
+      // مطابقة تامة كـ `isSameGrade`: شعبةٌ بلا مرحلة كانت تعرض طلاب كل المراحل
+      return isSameGrade(s.gradeLevel, room.gradeLevel);
     }).toList();
 
     list.sort((a, b) {
@@ -1771,37 +1770,32 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
   }
 
-  /// طلاب الشعبة — مطابق لمنطق `SchoolClasses.tsx`.
+  /// طلاب الشعبة — مطابق لـ `SchoolClasses.tsx`.
   ///
-  /// الطالب بلا شعبة لا يُحسب على كل شعب مرحلته: `name.contains('')` صحيحٌ
-  /// دائماً، فكان الطالب الواحد يظهر في كل شعبة ويتضاعف عدد الطلاب. لا يُحسب
-  /// إلا حين تكون لمرحلته شعبة واحدة، فلا مكان له غيرها. والمؤرشف خريجٌ لم يعد
-  /// من طلاب أي شعبة.
+  /// المطابقة تامة كما في حفظ توزيع المواد (`studentBelongsToRoom`): كانت هنا
+  /// باحتواء النص، فتعرض الشاشة طلاب «علمي 1» ضمن «علمي 10» ولا يسجّلهم الحفظ.
+  /// الطالب بلا شعبة يُحسب على الشعبة فقط إن كانت الوحيدة لمرحلته، والمؤرشف
+  /// خريجٌ لم يعد من طلاب أي شعبة.
   List<Student> studentsOf(Classroom room) {
-    final roomGrade = room.gradeLevel.trim().toLowerCase();
-    final roomName = room.name.trim().toLowerCase();
-
     return students.where((s) {
       if (s.status == 'archived') return false;
+      if (s.section.trim().isNotEmpty) return studentBelongsToRoom(s, room);
+      if (room.gradeLevel.trim().isEmpty || s.gradeLevel.trim().isEmpty) return false;
+      final ofGrade = rooms.where((r) => isSameGrade(r.gradeLevel, s.gradeLevel)).toList();
+      return ofGrade.length == 1 && ofGrade.first.id == room.id;
+    }).toList();
+  }
 
-      final grade = s.gradeLevel.trim().toLowerCase();
-      if (roomGrade.isNotEmpty && grade.isNotEmpty) {
-        final sameGrade = grade == roomGrade || grade.contains(roomGrade) || roomGrade.contains(grade);
-        if (!sameGrade) return false;
-      }
-
-      final section = s.section.trim().toLowerCase();
-      if (section.isNotEmpty && roomName.isNotEmpty) {
-        return section == roomName || section.contains(roomName) || roomName.contains(section);
-      }
-
-      // بلا شعبة: يُحسب على الصف فقط إن كان الصف الوحيد لمرحلته — كما في
-      // `SchoolClasses.tsx`. مكانه معروف حينها ولا لبس فيه.
-      if (section.isEmpty && roomGrade.isNotEmpty && grade.isNotEmpty) {
-        final ofGrade = rooms.where((r) => r.gradeLevel.trim().toLowerCase() == grade).toList();
-        return ofGrade.length == 1 && ofGrade.first.id == room.id;
-      }
-      return false;
+  /// طلاب الشعبة في الحضور — مطابق لـ `Attendance.tsx`.
+  ///
+  /// من له شعبة يُرصد في شعبته وحدها، ومن لا شعبة له يبقى ضمن شعب مرحلته حتى
+  /// تُسنَد شعبته، فلا يغيب عن الرصد يوم تسجيله.
+  List<Student> attendanceRosterOf(Classroom room) {
+    return students.where((s) {
+      if (s.status == 'archived') return false;
+      return s.section.trim().isNotEmpty
+          ? studentBelongsToRoom(s, room)
+          : isSameGrade(s.gradeLevel, room.gradeLevel);
     }).toList();
   }
 
@@ -2772,17 +2766,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       groups.where((g) => g.roomId == roomId && g.isActive).toList();
 
   /// المواد التي تنطبق على مرحلة — مطابق لـ `getGradeApplicableSubjects`.
-  /// «عام / كل المراحل» ينطبق على الجميع، والمرحلة تُطابَق باحتواء الاسم.
-  List<SubjectItem> gradeApplicableSubjects(String? gradeLevel) {
-    final grade = (gradeLevel ?? '').trim().toLowerCase();
-    if (grade.isEmpty) return List.of(subjects);
-    return subjects.where((s) {
-      final raw = s.gradeLevel.trim();
-      if (raw.isEmpty || raw == 'عام / كل المراحل') return true;
-      final low = raw.toLowerCase();
-      return low == grade || low.contains(grade) || grade.contains(low);
-    }).toList();
-  }
+  /// المادة العامة تنطبق على الجميع، والمرحلة تُطابَق تماماً: كان «حادي عشر»
+  /// يطابق «حادي عشر علمي» فتُعرض مواد الفرع الآخر.
+  List<SubjectItem> gradeApplicableSubjects(String? gradeLevel) =>
+      subjects.where((s) => subjectAppliesToGrade(s.gradeLevel, gradeLevel)).toList();
 
   /// معلمو الشعبة: مربّيها ومعلمو موادها بلا تكرار.
   Set<String> sectionTeacherIds(Classroom room) {
@@ -3216,7 +3203,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   void deleteGradeFee(GradeFee f) {
     requireCapability('settings.fees');
-    final count = students.where((s) => s.gradeLevel.trim().toLowerCase() == f.gradeName.trim().toLowerCase()).length;
+    final count = students.where((s) => isSameGrade(s.gradeLevel, f.gradeName)).length;
     if (count > 0) {
       throw StoreException(
         'لا يمكن حذف مرحلة "${f.gradeName}" لوجود ($count) طالب مسجلين بها حالياً.\nيرجى نقل أو تعديل مراحل هؤلاء الطلاب أولاً قبل حذف المرحلة الدراسية.',

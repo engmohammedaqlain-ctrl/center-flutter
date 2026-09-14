@@ -92,7 +92,7 @@ void main() {
       final s = _store();
       final a = _room(s, 'شعبة (أ)');
       final b = _room(s, 'شعبة (ب)');
-      final inA = _student(s, section: 'أ');
+      final inA = _student(s, section: 'شعبة (أ)');
 
       expect(s.studentsOf(a).map((e) => e.id), [inA.id]);
       expect(s.studentsOf(b), isEmpty);
@@ -101,7 +101,7 @@ void main() {
     test('المؤرشف خريجٌ لا يُحسب على شعبته', () {
       final s = _store();
       final room = _room(s, 'شعبة (أ)');
-      _student(s, section: 'أ', status: 'archived');
+      _student(s, section: 'شعبة (أ)', status: 'archived');
 
       expect(s.studentsOf(room), isEmpty);
     });
@@ -124,7 +124,7 @@ void main() {
       final s = _store();
       final tenth = _room(s, 'شعبة (أ)');
       _room(s, 'شعبة (أ)', grade: 'حادي عشر علمي');
-      _student(s, section: 'أ', grade: 'حادي عشر علمي');
+      _student(s, section: 'شعبة (أ)', grade: 'حادي عشر علمي');
 
       expect(s.studentsOf(tenth), isEmpty, reason: 'طالب مرحلة أخرى');
     });

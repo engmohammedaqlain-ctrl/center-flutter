@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/academic_matching.dart';
 import '../data/backup.dart';
 import '../data/permissions.dart';
 import '../data/phone.dart';
@@ -531,7 +532,7 @@ class _GradeFeeCard extends StatelessWidget {
     final store = StoreScope.of(context);
     final f = fee;
     final sections = store.rooms.where((r) => r.gradeLevel == f.gradeName).toList();
-    final students = store.students.where((s) => s.gradeLevel.trim() == f.gradeName.trim()).length;
+    final students = store.students.where((s) => isSameGrade(s.gradeLevel, f.gradeName)).length;
 
     return AppCard(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),

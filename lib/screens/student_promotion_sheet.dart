@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/academic_matching.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -38,7 +39,7 @@ class _PromotionSheetState extends State<_PromotionSheet> {
   bool running = false;
   String? result;
 
-  String _key(String? name) => (name ?? '').trim().toLowerCase();
+  String _key(String? name) => normalizeAcademicText(name);
 
   Map<String, int> _countByGrade() {
     final map = <String, int>{};

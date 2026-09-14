@@ -25,7 +25,9 @@ class _StudentSubjectsCardState extends State<StudentSubjectsCard> {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    final mine = store.enrollmentsOf(widget.student.id);
+    // التسجيل المنتهي (شعبة سابقة أو مادة أُلغيت) يبقى لأجل درجاته، لكنه ليس
+    // من مواد الطالب الحالية — كما في `StudentDetail.tsx`
+    final mine = store.enrollmentsOf(widget.student.id).where((e) => e.status != 'withdrawn').toList();
     if (mine.isEmpty && store.groups.isEmpty) return const SizedBox.shrink();
 
     return AppCard(
