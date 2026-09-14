@@ -28,8 +28,15 @@ class RealtimeListener {
     required this.onChange,
     required this.tables,
     this.onJoined,
+    this.onBroadcast,
     @visibleForTesting WebSocketChannel Function(Uri uri)? connector,
   }) : _connector = connector ?? WebSocketChannel.connect;
+
+  /// يُستدعى حين يُعلن جهازٌ آخر في المنشأة أن بياناتها تغيّرت.
+  final void Function()? onBroadcast;
+
+  /// قناة المنشأة كما يفتحها sync.ts: `supabase.channel('tenant-<id>')`.
+  static String broadcastTopic(String tenantId) => 'realtime:tenant-$tenantId';
 
   /// يُستدعى لكل تغيير بجدوله وصفّه.
   final void Function(RealtimeEvent event) onChange;
@@ -99,6 +106,22 @@ class RealtimeListener {
         });
       }
 
+      // قناة الإشارة: الويب يُعلن فيها بعد كل رفع ويستمع لها وحدها، فبلا
+      // الانضمام إليها لا يصل الجهازَ رفعُ الويب ولا يصل الويبَ رفعُ الجهاز
+      _send({
+        'topic': broadcastTopic(tenantId),
+        'event': 'phx_join',
+        'payload': {
+          'config': {
+            'broadcast': {'ack': false, 'self': false},
+            'presence': {'key': ''},
+            'postgres_changes': <Object>[],
+          },
+          if (SupabaseAuth.accessToken != null) 'access_token': SupabaseAuth.accessToken,
+        },
+        'ref': '${_ref++}',
+      });
+
       _heartbeat?.cancel();
       _heartbeat = Timer.periodic(const Duration(seconds: 25), (_) {
         _send({'topic': 'phoenix', 'event': 'heartbeat', 'payload': {}, 'ref': '${_ref++}'});
@@ -127,6 +150,12 @@ class RealtimeListener {
         if (payload is Map && payload['status'] == 'ok' && '${decoded['topic']}'.startsWith('realtime:')) {
           onJoined?.call();
         }
+        return;
+      }
+
+      if (decoded['event'] == 'broadcast') {
+        final payload = decoded['payload'];
+        if (payload is Map && payload['event'] == 'changed') onBroadcast?.call();
         return;
       }
 
@@ -175,6 +204,18 @@ class RealtimeListener {
     _reconnect = Timer(const Duration(seconds: 8), () async {
       await SupabaseAuth.ensureFresh();
       _open();
+    });
+  }
+
+  /// إعلام أجهزة المنشأة بأن بياناتها تغيّرت — `notifyPeers` في sync.ts.
+  void broadcastChanged() {
+    final tenantId = _tenantId;
+    if (tenantId == null || _channel == null) return;
+    _send({
+      'topic': broadcastTopic(tenantId),
+      'event': 'broadcast',
+      'payload': {'type': 'broadcast', 'event': 'changed', 'payload': <String, dynamic>{}},
+      'ref': '${_ref++}',
     });
   }
 

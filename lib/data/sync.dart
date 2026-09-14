@@ -829,7 +829,9 @@ class SyncService {
     return out;
   }
 
-  Future<SyncResult> push() async {
+  /// [refreshRemote] يفحص بعد الرفع ما تغيّر في السحابة لعدّاد الواجهة — جولة
+  /// على كل الجداول. الرفع التلقائي يستغني عنها: السحب يليه عند أي إشارة.
+  Future<SyncResult> push({bool refreshRemote = true}) async {
     if (_syncing) return SyncResult(success: false, message: 'عملية مزامنة أخرى جارية');
     if (local.isMaster) {
       return SyncResult(success: false, message: 'وضع المطور لا يقوم بمزامنة بيانات المدارس');
@@ -845,7 +847,7 @@ class SyncService {
     _syncing = true;
     try {
       final result = await pushPendingChanges(tenantId);
-      if (result.pushed > 0) {
+      if (result.pushed > 0 && refreshRemote) {
         try {
           await checkRemoteChanges();
         } catch (_) {}

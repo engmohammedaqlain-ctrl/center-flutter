@@ -540,6 +540,22 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   String get institutionType => db.settings[institutionTypeKey] ?? 'school';
   bool get isSchool => institutionType == 'school';
 
+  /// المراحل التي تُعرض في النماذج والتصفية.
+  ///
+  /// للمدرسة مراحلها كما أضافتها في «المراحل والرسوم» وحدها: مدرسةٌ جديدة لم
+  /// تُضف مراحل لا تُعرض عليها «عاشر» و«حادي عشر» كأنها مراحلها. للمركز مراحل
+  /// جدول الرسوم إن وُجدت، وإلا القائمة العامة.
+  List<String> get gradeOptions {
+    final fees = [...gradeFees]..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
+    final names = <String>[];
+    for (final f in fees) {
+      final name = f.gradeName.trim();
+      if (name.isNotEmpty && !names.contains(name)) names.add(name);
+    }
+    if (isSchool || names.isNotEmpty) return names;
+    return [...gradeLevelsFilter];
+  }
+
   String get institutionLogo => db.settings[institutionLogoKey] ?? '';
 
   /// طبع ألوان المنشأة على الواجهة. تُستدعى بعد كل ما قد يغيّرها.
@@ -976,7 +992,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final list = students.where((s) {
       if (s.status != 'active' && s.status != 'pending') return false;
       if (s.section.trim().toLowerCase() == name) return false;
-      if (grade.isEmpty) return true;
+      // مطابقة تامة كـ `sameGrade`: شعبةٌ بلا مرحلة كانت تعرض طلاب كل المراحل
       return s.gradeLevel.trim().toLowerCase() == grade;
     }).toList();
 
@@ -1410,7 +1426,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     // الاستماع أولاً: لا يتوقف على نجاح خطوات الشبكة التي تليه
     await startRealtime();
     await primeReceiptCounter();
-    await sync.checkRemoteChanges();
+    // الدخول يرفع ما تراكم دون اتصال ويسحب ما فات، بلا فحصٍ كامل يسبقهما
+    startAutoSync();
     notifyListeners();
   }
 
@@ -1427,6 +1444,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       tables: syncedTables,
       onChange: handleRemoteEvent,
       onJoined: _onRealtimeJoined,
+      onBroadcast: () => scheduleAutoPull(),
     );
     await _realtime!.connect(tid);
   }
@@ -1443,11 +1461,92 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// (إعادة) الاشتراك: ما تغيّر أثناء الانقطاع لم يصل حدثاً، فيُفحص مرة واحدة
   /// بعد أن تستقر ردود الاشتراك لكل الجداول.
   void _onRealtimeJoined() {
+    if (autoSync) {
+      scheduleAutoPull();
+      return;
+    }
     _joinCheck?.cancel();
     _joinCheck = Timer(const Duration(milliseconds: 1500), () async {
       await sync.checkRemoteChanges();
       notifyListeners();
     });
+  }
+
+  // ── المزامنة التلقائية ─────────────────────────────────────────────────────
+  // مطابقة لـ `startAutoSync` في sync.ts: رفعٌ بعد كل تعديل، وسحبٌ عند إشارة جهاز
+  // آخر وعند الدخول والعودة إلى التطبيق. كانت المزامنة بزرٍّ يدوي يسبقه فحصٌ كامل
+  // لكل الجداول، فبدا الرفع والسحب بطيئين ولم تصل تعديلات الأجهزة الأخرى وحدها.
+  static const autoPushDelay = Duration(seconds: 3);
+  static const autoPullDelay = Duration(milliseconds: 1500);
+  static const _resumePullGap = Duration(seconds: 60);
+
+  bool autoSync = false;
+  Timer? _autoPushTimer;
+  Timer? _autoPullTimer;
+  DateTime? _lastResumePull;
+
+  void startAutoSync() {
+    if (autoSync || !networkEnabled || !loggedIn || isMasterAdmin) return;
+    autoSync = true;
+    scheduleAutoPush(Duration.zero);
+    scheduleAutoPull(Duration.zero);
+  }
+
+  void stopAutoSync() {
+    autoSync = false;
+    _autoPushTimer?.cancel();
+    _autoPullTimer?.cancel();
+    _autoPushTimer = null;
+    _autoPullTimer = null;
+  }
+
+  /// التعديلات المتتالية تُجمع في رفعٍ واحد بعد أن يهدأ المستخدم.
+  void scheduleAutoPush([Duration delay = autoPushDelay]) {
+    if (!autoSync) return;
+    _autoPushTimer?.cancel();
+    _autoPushTimer = Timer(delay, () => _runAuto(push: true));
+  }
+
+  /// إشارات متتالية من أجهزة أخرى تُجمع في سحبٍ واحد.
+  void scheduleAutoPull([Duration delay = autoPullDelay]) {
+    if (!autoSync) return;
+    _autoPullTimer?.cancel();
+    _autoPullTimer = Timer(delay, () => _runAuto(push: false));
+  }
+
+  /// العودة إلى التطبيق ترفع وتسحب، لكن لا أكثر من مرة في الدقيقة.
+  void pullOnResume() {
+    final last = _lastResumePull;
+    if (last != null && DateTime.now().difference(last) < _resumePullGap) return;
+    _lastResumePull = DateTime.now();
+    scheduleAutoPush(Duration.zero);
+    scheduleAutoPull(Duration.zero);
+  }
+
+  Future<void> _runAuto({required bool push}) async {
+    // جهازٌ في التهيئة ينزّل بياناته بنفسه: سحبٌ موازٍ يتزاحم معه
+    if (!autoSync || needsInitialSetup) return;
+    // عملية جارية: تُعاد المحاولة بعدها بدل التزاحم على الطابور نفسه
+    if (sync.isSyncing) {
+      if (push) {
+        scheduleAutoPush();
+      } else {
+        scheduleAutoPull();
+      }
+      return;
+    }
+    try {
+      if (push) {
+        if (pendingSyncs.isEmpty) return;
+        final result = await sync.push(refreshRemote: false);
+        // الأجهزة الأخرى تسحب فور الإشارة بدل أن تنتظر عودة مستخدمها
+        if (result.pushed > 0) _realtime?.broadcastChanged();
+      } else {
+        await sync.pull();
+      }
+    } catch (_) {
+      // الانقطاع لا يُظهر خطأ: المحاولة التالية عند تعديلٍ أو إشارة أو عودة
+    }
   }
 
   /// تغيير وصل لحظياً من السحابة — مطابق لـ `handleRealtimeChange` في sync.ts.
@@ -1467,6 +1566,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
     // تعديل ما زال في طابور الرفع عندنا — ليس قادماً من الخارج
     if (pendingSyncs.any((p) => p.tableName == e.table && p.recordId == id)) return;
+    scheduleAutoPull();
 
     final local = recordOf(e.table, id);
     if (e.type == 'DELETE') {
@@ -1586,6 +1686,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   Future<void> logout() async {
     await flush();
+    stopAutoSync();
     await stopRealtime();
     await supabaseSignOut();
     loggedIn = false;
@@ -1768,6 +1869,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     markRecord(table, recordId, deleted: action == 'DELETE');
     markDirty(_pendingTable);
     notifyListeners();
+    scheduleAutoPush();
   }
 
   /// رصد حالة محددة لطالب في يوم. `null` يمسح الرصد.
@@ -2595,6 +2697,18 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   List<Student> studentsInGroup(String groupId) {
     final ids = enrollmentsInGroup(groupId).map((e) => e.studentId).toSet();
     return students.where((s) => ids.contains(s.id)).toList();
+  }
+
+  /// من يمكن تسجيله في مجموعة: غير المسجلين فيها، ومن مرحلتها وحدها إن كانت
+  /// لها مرحلة — طالب العاشر لا يُعرض عند التسجيل في مجموعة الحادي عشر.
+  /// مجموعة «كل المراحل» تقبل الجميع.
+  List<Student> enrollmentCandidates(Group group) {
+    final enrolled = enrollmentsInGroup(group.id).map((e) => e.studentId).toSet();
+    final grade = group.gradeLevel.trim().toLowerCase();
+    return students.where((s) {
+      if (enrolled.contains(s.id)) return false;
+      return grade.isEmpty || s.gradeLevel.trim().toLowerCase() == grade;
+    }).toList();
   }
 
   void upsertGroup(Group g) {

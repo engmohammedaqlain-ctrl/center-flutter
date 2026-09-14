@@ -296,7 +296,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   value: gradeLevel,
                   items: [
                     const DropdownMenuItem(value: '', child: Text('-- كل المراحل --')),
-                    ...gradeLevelsFilter.map((g) => DropdownMenuItem(value: g, child: Text(g))),
+                    // مرحلة محفوظة لم تعد في القائمة تبقى ظاهرة ولا تُمحى بصمت
+                    for (final g in {...store.gradeOptions, if (gradeLevel.isNotEmpty) gradeLevel})
+                      DropdownMenuItem(value: g, child: Text(g)),
                   ],
                   onChanged: (v) => setSt(() => gradeLevel = v ?? ''),
                 ),
@@ -480,10 +482,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) {
           final enrolled = store.enrollmentsInGroup(group.id);
-          final enrolledIds = enrolled.map((e) => e.studentId).toSet();
           final q = query.text.trim();
-          final candidates = store.students
-              .where((s) => !enrolledIds.contains(s.id))
+          final candidates = store
+              .enrollmentCandidates(group)
               .where((s) => q.isEmpty || s.fullName.contains(q) || s.phone.contains(q))
               .take(25)
               .toList();

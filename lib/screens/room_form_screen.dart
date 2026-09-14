@@ -99,7 +99,7 @@ class _RoomFormScreenState extends State<RoomFormScreen> {
     }
 
     final grades = <String>[
-      ...(store.gradeFees.isEmpty ? gradeLevelsFilter : store.gradeFees.map((g) => g.gradeName.trim())),
+      ...store.gradeOptions,
     ];
     // مرحلة محفوظة لم تعد في جدول الرسوم تبقى ظاهرة ولا تُمحى بصمت عند الحفظ
     if (grade.isNotEmpty && !grades.contains(grade)) grades.add(grade);

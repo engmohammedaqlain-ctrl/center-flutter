@@ -316,6 +316,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
       errors
         ..reset()
         ..check('name', trimmedFullName.isEmpty, 'يرجى إدخال اسم الطالب الرباعي')
+        ..check('grade', grade.trim().isEmpty, 'اختر المرحلة — تُضاف من «الإعدادات ← المراحل والرسوم»')
         ..check('nationalId', cleanNatId.isEmpty, 'يرجى إدخال رقم هوية الطالب (9 أرقام)')
         ..check(
           'nationalId',
@@ -435,6 +436,12 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     final studentComplete = isPhoneComplete(phoneNumber, phonePrefix);
     final parentComplete = isPhoneComplete(parentPhoneNumber, parentPhonePrefix);
     final fullStudentPhone = combinePhoneAndPrefix(phoneNumber, phonePrefix);
+    final grades = _gradeOptions(store);
+    // المدرسة تختار من مراحلها وحدها: لا «عاشر» افتراضياً لم تضفه
+    if (store.isSchool && !grades.contains(grade)) {
+      final current = widget.student?.gradeLevel.trim() ?? '';
+      grade = grades.contains(current) ? current : (grades.isEmpty ? '' : grades.first);
+    }
     final matchingSections = store.rooms.where((r) => r.gradeLevel.trim().isEmpty || r.gradeLevel.trim() == (grade == 'أخرى (إدخال يدوي)' ? customGrade.text.trim() : grade).trim()).toList();
     final idLen = nationalId.text.length;
 
@@ -533,10 +540,11 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
             _gap,
             _pair(
               [
-                const FieldLabel('المرحلة', requiredField: true),
+                FieldLabel('المرحلة', key: errors.key('grade'), requiredField: true),
                 AppDropdown<String>(
-                  value: grade,
-                  items: gradeLevels.map((g) => DropdownMenuItem(value: g, child: Text(g, overflow: TextOverflow.ellipsis))).toList(),
+                  value: grades.contains(grade) ? grade : null,
+                  hint: grades.isEmpty ? 'أضف المراحل من الإعدادات' : null,
+                  items: grades.map((g) => DropdownMenuItem(value: g, child: Text(g, overflow: TextOverflow.ellipsis))).toList(),
                   onChanged: (v) => setState(() => grade = v ?? grade),
                 ),
               ],
@@ -1056,6 +1064,16 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   Widget _section(IconData icon, String title, {String? note}) => FormSection(icon: icon, title: title, note: note);
 
   double get _discountRateValue => double.tryParse(discountRate.text.trim()) ?? 0;
+
+  /// مراحل القائمة — `gradeOptions` في StudentForm.tsx: للمدرسة مراحلها التي
+  /// أضافتها، وللمركز القائمة العامة. مرحلة طالب قائم لم تعد في القائمة تبقى
+  /// ظاهرة حتى لا تتبدل بصمت عند فتح التعديل.
+  List<String> _gradeOptions(AppStore store) {
+    if (!store.isSchool) return gradeLevels;
+    final current = widget.student?.gradeLevel.trim() ?? '';
+    final own = store.gradeOptions;
+    return current.isNotEmpty && !own.contains(current) ? [current, ...own] : own;
+  }
 
   /// رسم المرحلة المختارة — أساس الخصم كما في `currentGradeFee`.
   double _gradeFeeOf(BuildContext context) {

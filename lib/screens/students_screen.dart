@@ -89,7 +89,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                     const SizedBox(width: 8),
                     FilterButton(
                       value: grade,
-                      options: {'': 'كل المراحل', for (final g in gradeLevelsFilter) g: g},
+                      options: {'': 'كل المراحل', for (final g in store.gradeOptions) g: g},
                       onSelected: (v) => setState(() => grade = v),
                     ),
                   ],

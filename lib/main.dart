@@ -172,6 +172,10 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
     unawaited(updater.check());
     final store = AppStore.instance;
     if (!store.loggedIn || store.isMasterAdmin || !store.networkEnabled) return;
+    if (store.autoSync) {
+      store.pullOnResume();
+      return;
+    }
     unawaited(store.sync.checkRemoteChanges().then((_) => store.notifySync()));
   }
 
