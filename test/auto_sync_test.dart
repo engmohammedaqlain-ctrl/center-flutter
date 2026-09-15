@@ -116,4 +116,28 @@ void main() {
       expect(next.delay, isNull);
     });
   });
+  group('بوابة تهيئة الجهاز', () {
+    test('ما تراكم أثناء التهيئة يُرفع فور إغلاقها', () async {
+      final s = AppStore.forTesting();
+      injectDemoData(s);
+      s.currentTenant = s.tenants.first;
+      s.loggedIn = true;
+      s.pendingSyncs.clear();
+      s.autoSync = true;
+      addTearDown(s.stopAutoSync);
+
+      // البوابة مفتوحة: حساب مدير المنشأة يُقيَّد ولا يُرفع
+      await s.resetInitialSetup();
+      expect(s.needsInitialSetup, isTrue);
+      s.ensureOwnerAdmin();
+      expect(s.pendingSyncs, isNotEmpty);
+
+      await s.completeInitialSetup(s.users.first);
+
+      expect(s.autoPushScheduled, isTrue, reason: 'يُرفع فور إغلاق البوابة');
+      expect(s.lastAutoPushDelay, Duration.zero);
+      expect(s.lastAutoPullDelay, Duration.zero, reason: 'ويُسحب ما فات');
+      await s.flush();
+    });
+  });
 }

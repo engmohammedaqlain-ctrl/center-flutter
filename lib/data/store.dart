@@ -4048,7 +4048,20 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     await db.setSetting(_kSetupPending, null);
     _setupPending = false;
     await flush();
+    // ما تراكم أثناء التهيئة يُرفع الآن: المزامنة التلقائية تمتنع ما دامت
+    // البوابة مفتوحة، فكان حساب مدير المنشأة يبقى معلّقاً حتى أول تعديل تالٍ
+    resumeAutoSync();
     notifyListeners();
+  }
+
+  /// استئناف المزامنة بعد أن تُغلق بوابة التهيئة.
+  void resumeAutoSync() {
+    if (!autoSync) {
+      startAutoSync();
+      return;
+    }
+    scheduleAutoPush(Duration.zero);
+    scheduleAutoPull(Duration.zero);
   }
 
   /// إعادة فتح التهيئة (لتغيير هوية الجهاز لاحقاً من الإعدادات).
