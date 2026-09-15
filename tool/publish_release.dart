@@ -43,7 +43,8 @@ Publish a new mobile release
   --min-supported <n>|current
                               oldest build number still allowed to run; older ones
                               must update. Left out, it stays as the last release
-  --mandatory                 force everyone on an older build to update
+  --optional                  let users keep working without installing it.
+                              Builds are mandatory unless you write this
   --dry-run                   build and stage files in build/release without uploading
   --allow-dirty               publish with uncommitted changes
 ''';
@@ -312,7 +313,10 @@ Future<void> main(List<String> arguments) async {
   final minSupported = _orFail(
     () => resolveMinSupported(args.minSupported, previous: previousMin, current: next.build),
   );
-  _info('New: ${next.name} ($next) - oldest supported build: $minSupported${args.mandatory ? ' - mandatory' : ''}');
+  _info('New: ${next.name} ($next) - oldest supported build: $minSupported');
+  _info(args.mandatory
+      ? 'Mandatory: devices are held on the update screen until they install it'
+      : 'Optional: devices are told on every open, and can keep working (--optional)');
 
   // Shorebird مُهيّأ: الإصدار يُبنى به كي تستقبل أجهزته الـ patches. التجربة بلا رفع
   // تبني بـ Flutter وحدها، فلا يُسجَّل عند Shorebird إصدارٌ لم يُنشر
@@ -409,7 +413,9 @@ class _Args {
   String? version;
   bool patch = false;
   String? minSupported;
-  bool mandatory = false;
+  /// البناء إلزامي ما لم يُطلب غير ذلك: نسختان مختلفتان على جهازين تتشاركان
+  /// قاعدةً واحدة، ومن يؤجّل يبقى على منطقٍ لم يعد يطابق ما ينتظره السيرفر.
+  bool mandatory = true;
   bool dryRun = false;
   bool allowDirty = false;
 
@@ -434,6 +440,8 @@ class _Args {
           args.minSupported = value();
         case '--mandatory':
           args.mandatory = true;
+        case '--optional':
+          args.mandatory = false;
         case '--dry-run':
           args.dryRun = true;
         case '--allow-dirty':

@@ -384,24 +384,19 @@ void main() {
       expect(updater.error, contains('تعذّر'));
     });
 
-    test('التحديث الاختياري يُعرض وحده مرة لكل إصدار', () async {
+    test('التحديث الاختياري يُعرض عند كل فتح، والتأجيل لجلسته وحدها', () async {
       final dir = await _tempDir();
       final first = _updater(dir: dir, client: _manifestServer(_manifest(versionCode: 5)));
       await first.start();
       expect(first.shouldPrompt, isTrue);
 
       await first.dismiss();
-      expect(first.shouldPrompt, isFalse);
+      expect(first.shouldPrompt, isFalse, reason: 'لا يُعاد عرضه وهو مفتوح');
 
       final restarted = _updater(dir: dir, client: _manifestServer(_manifest(versionCode: 5)));
       await restarted.start();
-      expect(restarted.shouldPrompt, isFalse, reason: 'التأجيل محفوظ');
-      expect(restarted.action, UpdateAction.optional, reason: 'ويبقى متاحاً من القائمة');
-
-      final newer = _updater(dir: dir, client: _manifestServer(_manifest(versionCode: 6)));
-      await newer.start();
-      await newer.check(force: true);
-      expect(newer.shouldPrompt, isTrue, reason: 'إصدارٌ أحدث يُعرض من جديد');
+      expect(restarted.shouldPrompt, isTrue, reason: 'فتحٌ جديد يُذكّر به من جديد');
+      expect(restarted.action, UpdateAction.optional);
     });
 
     test('الإلزامي لا يُعرض ورقةً تُؤجَّل', () async {

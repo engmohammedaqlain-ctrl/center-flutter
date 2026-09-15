@@ -349,7 +349,6 @@ class AppUpdater extends ChangeNotifier {
 
   static const _kRelease = 'app_update_release';
   static const _kCheckedAt = 'app_update_checked_at';
-  static const _kDismissed = 'app_update_dismissed';
 
   final bool supported;
   final String manifestUrl;
@@ -402,7 +401,7 @@ class AppUpdater extends ChangeNotifier {
     return decideUpdate(installed: installedCode, release: release);
   }
 
-  /// تحديثٌ اختياري لم يُعرض بعد على هذا الجهاز.
+  /// تحديثٌ اختياري لم يُعرض بعد في هذه الجلسة.
   bool get shouldPrompt => action == UpdateAction.optional && release!.versionCode != _dismissed;
 
   bool get busy =>
@@ -445,7 +444,6 @@ class AppUpdater extends ChangeNotifier {
       final cached = prefs.getString(_kRelease);
       if (cached != null) release = AppRelease.fromJson(jsonDecode(cached));
       lastChecked = DateTime.tryParse(prefs.getString(_kCheckedAt) ?? '');
-      _dismissed = prefs.getInt(_kDismissed) ?? 0;
     } catch (_) {
       // قراءة الحالة المحفوظة تعذّرت: يُكمل التطبيق، والفحص التالي يعيد بناءها
     }
@@ -526,15 +524,15 @@ class AppUpdater extends ChangeNotifier {
     return action;
   }
 
-  /// لا يُعرض هذا الإصدار تلقائياً مرة أخرى؛ يبقى متاحاً من القائمة.
+  /// تأجيل العرض التلقائي حتى فتح التطبيق التالي — لا يُحفظ على القرص.
+  ///
+  /// «لاحقاً» الدائمة كانت تُخفي التحديث إلى الأبد بنقرةٍ واحدة قد تكون سهواً،
+  /// فيبقى الجهاز على نسخة قديمة بلا أن يُذكَّر. الآن تسكت هذه الجلسة وحدها،
+  /// ويُعرَض عند الفتح التالي ما دام الإصدار متاحاً.
   Future<void> dismiss() async {
     final code = release?.versionCode ?? 0;
     if (code <= 0 || code == _dismissed) return;
     _dismissed = code;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(_kDismissed, code);
-    } catch (_) {}
     notifyListeners();
   }
 
