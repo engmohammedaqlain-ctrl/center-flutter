@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../data/balance.dart';
 import '../data/printing.dart';
 import '../data/store.dart';
 import '../models/models.dart';
@@ -38,6 +39,12 @@ class ReceiptScreen {
     msg
       ..writeln('📅 *تاريخ الدفعة:* ${formatDate(payment.date)}')
       ..write('⚖️ *المتبقي المستحق:* $remaining');
+    // ما زاد عن المستحق يُقال رقماً لا عبارةً
+    if (paymentAdvance(payment) > 0) {
+      msg
+        ..writeln()
+        ..write('💠 *رصيد مقدم:* ${money(paymentAdvance(payment))}');
+    }
 
     await launchWaWithText(raw, msg.toString());
   }
@@ -227,8 +234,12 @@ class _ReceiptSheet extends StatelessWidget {
       children: [
         cell('المبلغ المسدد', money(p.amount), color: AppColors.success),
         const SizedBox(width: 4),
-        cell('المتبقي المستحق', p.remainingAfter <= 0 ? '0 ₪' : money(p.remainingAfter),
-            color: p.remainingAfter <= 0 ? AppColors.success : AppColors.danger),
+        // ما زاد عن المستحق يُقال رقماً: «دفعة مقدمة» وحدها لا تخبر بكم
+        if (paymentAdvance(p) > 0)
+          cell('رصيد مقدم', money(paymentAdvance(p)), color: AppColors.amber)
+        else
+          cell('المتبقي المستحق', p.remainingAfter <= 0 ? '0 ₪' : money(p.remainingAfter),
+              color: p.remainingAfter <= 0 ? AppColors.success : AppColors.danger),
         const SizedBox(width: 4),
         cell('الحالة', p.cancelled ? 'ملغى' : 'معتمد', color: p.cancelled ? AppColors.danger : AppColors.success),
       ],
@@ -271,11 +282,17 @@ class _ReceiptSheet extends StatelessWidget {
         PdfKit.table(headers: const ['البيان', 'التفاصيل'], rows: rows, flex: [3, 8]),
         pw.SizedBox(height: 12),
         PdfKit.table(
-          headers: const ['المبلغ المسدد', 'المتبقي المستحق', 'الحالة'],
+          headers: [
+            'المبلغ المسدد',
+            paymentAdvance(payment) > 0 ? 'رصيد مقدم' : 'المتبقي المستحق',
+            'الحالة',
+          ],
           rows: [
             [
               money(payment.amount),
-              payment.remainingAfter <= 0 ? '0 ₪ (مسدد بالكامل)' : money(payment.remainingAfter),
+              paymentAdvance(payment) > 0
+                  ? money(paymentAdvance(payment))
+                  : (payment.remainingAfter <= 0 ? '0 ₪ (مسدد بالكامل)' : money(payment.remainingAfter)),
               payment.cancelled ? 'ملغى' : 'معتمد',
             ],
           ],

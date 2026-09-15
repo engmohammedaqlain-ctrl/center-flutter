@@ -48,6 +48,12 @@ Map<String, double> overdueByStudent(Iterable<Installment> installments, [DateTi
   return due;
 }
 
+/// ما زاد في الدفعة عن المستحق وقت دفعها: رصيد مقدَّم للطالب — `getPaymentAdvance`.
+double paymentAdvance(Payment p) {
+  final extra = p.amount + p.discountAmount - p.totalDueAtPayment;
+  return extra > 0 ? extra : 0;
+}
+
 /// عنوان قسط رسم الحجز — مطابق لـ `SEAT_INSTALLMENT_TITLE`.
 const seatTitle = 'رسم حجز مقعد';
 
