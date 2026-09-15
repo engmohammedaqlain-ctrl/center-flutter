@@ -32,20 +32,20 @@ class ReceiptScreen {
       ..writeln('حضرة ولي أمر الطالب/ة: *${student.fullName}* المحترم')
       ..writeln()
       ..writeln('نحيطكم علماً بأنه تم تسديد دفعة مالية وتوثيق وصل رسمي:')
-      ..writeln('📄 *رقم الوصل:* ${payment.receiptNumber}')
-      ..writeln('💰 *المبلغ:* ${money(payment.amount)}')
-      ..writeln('💳 *طريقة الدفع:* ${StoreScope.of(context).paymentMethodLabel(payment.method)}')
-      ..writeln('📌 *البيان / الغرض:* ${paymentPurposeNames[payment.purpose] ?? payment.purpose}');
-    if (payment.senderName.isNotEmpty) msg.writeln('👤 *اسم المحول منه:* ${payment.senderName}');
-    if (payment.reference.isNotEmpty) msg.writeln('🔢 *الرقم المرجعي:* ${payment.reference}');
+      ..writeln('*رقم الوصل:* ${payment.receiptNumber}')
+      ..writeln('*المبلغ:* ${money(payment.amount)}')
+      ..writeln('*طريقة الدفع:* ${StoreScope.of(context).paymentMethodLabel(payment.method)}')
+      ..writeln('*البيان:* ${paymentPurposeNames[payment.purpose] ?? payment.purpose}');
+    if (payment.senderName.isNotEmpty) msg.writeln('*المحول منه:* ${payment.senderName}');
+    if (payment.reference.isNotEmpty) msg.writeln('*الرقم المرجعي:* ${payment.reference}');
     msg
-      ..writeln('📅 *تاريخ الدفعة:* ${formatDate(payment.date)}')
-      ..write('⚖️ *المتبقي المستحق:* $remaining');
+      ..writeln('*تاريخ الدفعة:* ${formatDate(payment.date)}')
+      ..write('*المتبقي المستحق:* $remaining');
     // ما زاد عن المستحق يُقال رقماً لا عبارةً
     if (paymentAdvance(payment) > 0) {
       msg
         ..writeln()
-        ..write('💠 *رصيد مقدم:* ${money(paymentAdvance(payment))}');
+        ..write('*رصيد مقدم:* ${money(paymentAdvance(payment))}');
     }
 
     await launchWaWithText(raw, msg.toString());

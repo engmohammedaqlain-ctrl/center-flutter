@@ -231,7 +231,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     if (clean.length == 9) {
       final dup = StoreScope.of(context).findByNationalId(clean, exclude: widget.student?.id);
       setState(() {
-        idDuplicateError = dup == null ? null : 'رقم الهوية ($clean) مسجل مسبقاً للطالب "${dup.fullName}" ولا يمكن تكراره.';
+        idDuplicateError = dup == null ? null : 'رقم الهوية مسجَّل للطالب ${dup.fullName}';
       });
     } else {
       setState(() => idDuplicateError = null);
@@ -327,7 +327,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
       if (file == null) return;
       final bytes = await file.readAsBytes();
       if (bytes.length > 5 * 1024 * 1024) {
-        if (mounted) showAppSnack(context, 'حجم الملف كبير جداً، يرجى اختيار ملف بحجم أقل من 5 ميجابايت', error: true);
+        if (mounted) showAppSnack(context, 'الملف أكبر من 5 ميجابايت', error: true);
         return;
       }
       final mime = file.mimeType ?? 'image/jpeg';
@@ -1100,7 +1100,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
               const SizedBox(width: 8),
               const Expanded(
                 child: Text(
-                  'أقر أنا ولي أمر الطالب بصحة كافة البيانات المدخلة، وأوافق على سياسات ولوائح المركز التعليمي ونظام الدفع والدوام.',
+                  'أقرّ ولي الأمر بصحة البيانات وبالموافقة على لوائح المدرسة ونظام الدفع.',
                   style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, height: 1.5),
                 ),
               ),

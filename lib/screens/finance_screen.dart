@@ -410,7 +410,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
               ),
             ],
             count: dues.length,
-            empty: const EmptyState(message: 'لا توجد دفعات أو أقساط مستحقة مطابقة للبحث. الحسابات منتظمة ومسددة.'),
+            empty: const EmptyState(message: 'لا مستحقات'),
             item: (context, i) {
               final d = dues[i];
               return _DueCard(
@@ -508,7 +508,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
         ),
       ],
       count: rows.length,
-      empty: const EmptyState(message: 'لا توجد سندات صرف أو دفعات أجور مسجلة حتى الآن.'),
+      empty: const EmptyState(message: 'لا سندات صرف'),
       item: (context, i) => _SpendCard(row: rows[i]),
     );
   }

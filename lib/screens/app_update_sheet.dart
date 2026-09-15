@@ -356,7 +356,7 @@ class DownloadProgressCard extends StatelessWidget {
           if (interrupted) ...[
             const SizedBox(height: 8),
             const Text(
-              'ما نزل محفوظ على الجهاز، ويُستكمل من مكانه حتى لو أُغلق التطبيق.',
+              'ما نزل محفوظ، ويُستكمل من مكانه.',
               style: TextStyle(color: _warning, fontSize: 10.5, fontWeight: FontWeight.w600, height: 1.5),
             ),
           ],

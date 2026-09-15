@@ -122,7 +122,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
               ),
               const SizedBox(height: 4),
               const Text(
-                'أدخل كلمة مرور المطور للوصول إلى هوية المنشأة وأدوات البيانات.',
+                'كلمة مرور المطور',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.muted, fontSize: 12, height: 1.5),
               ),
@@ -366,7 +366,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
         ),
         const SizedBox(height: 4),
         const Text(
-          'يُضاف إلى رصيد الطالب عند تعليم «تم تسديد حجز المقعد». اتركه صفراً إن لم تعتمد الإدارة رسماً.',
+          'صفر يعني بلا رسم حجز',
           style: TextStyle(color: AppColors.faint, fontSize: 10.5, height: 1.4),
         ),
       ];
@@ -407,25 +407,25 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
       const FormSection(icon: Icons.toggle_on_outlined, title: 'الميزات والموديولات', note: 'تُحفظ فور تبديلها'),
       _featureRow(
         title: 'إدارة المصروفات وأجور المعلمين',
-        hint: 'إظهار تبويب وسجلات المصروفات وسندات الصرف وأجور المعلمين داخل الشاشة المالية.',
+        hint: 'تبويب المصروفات وأجور المعلمين',
         value: f.enableExpenses,
         onChanged: (v) => store.saveFeatures(enableExpenses: v),
       ),
       _featureRow(
         title: 'تقييمات ودرجات الطلاب',
-        hint: 'إتاحة رصد درجات الطلاب للمعلم، وظهور التقييمات بالإدارة، وعرض النتائج في بوابة وملف الطالب.',
+        hint: 'رصد الدرجات وعرضها في البوابة',
         value: f.enableEvaluations,
         onChanged: (v) => store.saveFeatures(enableEvaluations: v),
       ),
       _featureRow(
         title: 'مرفقات الطلاب (الصور والوثائق)',
-        hint: 'تخزين صورة الهوية وشهادة الميلاد. الصور ثقيلة وتُرفع مباشرةً للسحابة، وتُجلب عند فتح ملف الطالب.',
+        hint: 'صورة الهوية وشهادة الميلاد',
         value: f.enableStudentAttachments,
         onChanged: (v) => store.saveFeatures(enableStudentAttachments: v),
       ),
       _featureRow(
         title: 'بوابة الطالب الإلكترونية',
-        hint: 'تمكين الطلاب وأولياء الأمور من الدخول برقم الهوية ورمز الدخول لاستعراض الحضور والرسوم والمواد.',
+        hint: 'دخول الطلاب وأولياء الأمور',
         value: f.enableStudentPortal,
         onChanged: (v) => store.saveFeatures(enableStudentPortal: v),
       ),

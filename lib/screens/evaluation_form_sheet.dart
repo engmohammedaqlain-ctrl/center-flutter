@@ -352,7 +352,7 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                     const Padding(
                       padding: EdgeInsets.only(bottom: 6),
                       child: Text(
-                        'اترك الحقل فارغاً لمن لم تُرصد درجته — الفارغ لا يُحفظ صفراً.',
+                        'الفارغ لا يُحفظ صفراً.',
                         style: TextStyle(
                           color: AppColors.faint,
                           fontSize: 10.5,

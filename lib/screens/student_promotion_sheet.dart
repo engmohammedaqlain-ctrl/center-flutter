@@ -70,7 +70,7 @@ class _PromotionSheetState extends State<_PromotionSheet> {
     final ok = await confirmSheet(
       context,
       title: 'ترقية الطلاب',
-      message: 'سينتقل طلاب كل صف إلى ما اخترته له، ويصير الطالب «بانتظار التأكيد» وتُمسح شعبته. هل تتابع؟',
+      message: 'كل صف ينتقل لما اخترته له، والطالب يصير «بانتظار التأكيد».',
       confirmLabel: 'تنفيذ',
     );
     if (!ok || !mounted) return;
@@ -187,7 +187,7 @@ class _PromotionSheetState extends State<_PromotionSheet> {
               ),
               const SizedBox(height: 4),
               const Text(
-                'يصبح الطالب «بانتظار التأكيد» حتى تأكيده، وتُمسح شعبته. ديونه تبقى كما هي.',
+                'ديونه تبقى كما هي.',
                 style: TextStyle(fontSize: 10.5, color: AppColors.muted, fontWeight: FontWeight.w600),
               ),
               if (unknownGradeCount > 0)

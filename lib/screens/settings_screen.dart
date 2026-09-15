@@ -1410,7 +1410,7 @@ Future<void> _pinUser(BuildContext context, AppUser u) async {
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'تُطبَّق صلاحياته على هذا الجهاز، ويظهر الاسم التالي مستلماً على سندات القبض.',
+                  'اسمه يظهر مستلماً على السندات.',
                   style: TextStyle(color: AppColors.muted, fontSize: 11.5, height: 1.5),
                 ),
                 const SizedBox(height: 14),

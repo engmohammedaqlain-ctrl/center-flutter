@@ -614,7 +614,7 @@ class _SyncConfirmState extends State<_SyncConfirm> {
             const SizedBox(height: 10),
             Text(
               _push
-                  ? 'لا توجد تعديلات على هذا الجهاز بانتظار الرفع. كل شيء وصل السحابة.'
+                  ? 'لا تعديلات بانتظار الرفع'
                   : 'لا توجد تعديلات جديدة في السحابة. بياناتك محدَّثة.',
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 12, color: Color(0xFF334155), height: 1.7),

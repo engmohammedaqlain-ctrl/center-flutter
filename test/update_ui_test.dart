@@ -93,7 +93,7 @@ void main() {
       expect(find.text('50%'), findsOneWidget);
       expect(find.text('التنزيل متوقف'), findsOneWidget);
       expect(find.text('استكمال التنزيل'), findsOneWidget);
-      expect(find.textContaining('حتى لو أُغلق التطبيق'), findsOneWidget);
+      expect(find.textContaining('يُستكمل من مكانه'), findsOneWidget);
     });
 
     testWidgets('التحقق من الملف يُعرض بعد اكتمال التنزيل', (tester) async {

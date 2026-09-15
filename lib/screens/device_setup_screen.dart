@@ -194,7 +194,7 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
           ),
           const SizedBox(height: 6),
           const Text(
-            'يتم جلب الطلاب والصفوف والسجلات وحسابات المستخدمين للبدء.',
+            'جارٍ تنزيل بيانات المنشأة.',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppColors.muted, fontSize: 12, height: 1.6),
           ),

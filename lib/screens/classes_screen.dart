@@ -378,7 +378,7 @@ class _SubjectTeachersSheetState extends State<_SubjectTeachersSheet> {
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16, vertical: 28),
                 child: Text(
-                  'لا توجد مواد دراسية بعد. تُضاف من «الإعدادات ← المواد».',
+                  'لا مواد — تُضاف من الإعدادات',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: AppColors.muted, fontSize: 12, height: 1.6),
                 ),
@@ -499,7 +499,7 @@ Future<void> _confirmDeleteRoom(BuildContext context, Classroom room, {VoidCallb
   final ok = await confirmSheet(
     context,
     title: 'تأكيد حذف الصف',
-    message: 'هل تريد حذف الصف "${room.name}"؟ لن يتم حذف الطلاب المسجلين فيه.',
+    message: 'يُحذف الصف «${room.name}»، ويبقى طلابه.',
     confirmLabel: 'حذف',
   );
   if (!ok || !context.mounted) return;
