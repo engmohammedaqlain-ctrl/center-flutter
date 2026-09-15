@@ -1,6 +1,8 @@
 import 'package:center_mobile/data/demo_data.dart';
+import 'package:center_mobile/data/grading.dart';
 import 'package:center_mobile/data/store.dart';
 import 'package:center_mobile/models/models.dart';
+import 'package:center_mobile/screens/grading_scheme_tab.dart';
 import 'package:center_mobile/screens/settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -76,6 +78,32 @@ void main() {
     await tester.pump();
 
     expect(find.text('الرسوم الشهرية متوقفة'), findsOneWidget);
+    await s.flush();
+  });
+  testWidgets('مخطط العلامات يتبدّل والتبويب مفتوح', (tester) async {
+    tester.view.physicalSize = const Size(390, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final s = AppStore.forTesting();
+    injectDemoData(s);
+    await s.saveGradingScheme(const GradingScheme(term1: [GradingComponent(id: 'c1', name: 'اختبار قصير', weight: 40)]));
+    await s.flush();
+
+    await tester.pumpWidget(StoreScope(
+      store: s,
+      child: const MaterialApp(
+        home: Directionality(textDirection: TextDirection.rtl, child: Scaffold(body: GradingSchemeTab())),
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('اختبار قصير'), findsOneWidget);
+
+    // ضُبط على جهاز آخر ووصل بالسحب
+    await s.saveGradingScheme(const GradingScheme(term1: [GradingComponent(id: 'c1', name: 'امتحان نهائي', weight: 60)]));
+    await tester.pump();
+
+    expect(find.text('امتحان نهائي'), findsOneWidget);
     await s.flush();
   });
 }

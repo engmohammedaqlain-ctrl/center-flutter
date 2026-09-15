@@ -28,7 +28,9 @@ class _GradingSchemeTabState extends State<GradingSchemeTab> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (loaded) return;
+    // تُستدعى مع كل إخطار من المخزن: مخططٌ ضُبط على جهاز آخر يصل بالسحب، وكان
+    // لا يظهر حتى يُعاد فتح التبويب. وتعديلٌ لم يُحفظ بعد لا يُدهس.
+    if (loaded && dirty) return;
     scheme = StoreScope.of(context).gradingScheme;
     loaded = true;
   }
@@ -226,6 +228,19 @@ class _ComponentCardState extends State<_ComponentCard> {
   late final weight = TextEditingController(
     text: widget.component.weight == 0 ? '' : trimNum(widget.component.weight),
   );
+
+  @override
+  void didUpdateWidget(covariant _ComponentCard old) {
+    super.didUpdateWidget(old);
+    // مكوّن تغيّر على جهاز آخر: لا يُكتب فوق ما يكتبه المستخدم الآن
+    if (old.component.name != widget.component.name && !name.value.composing.isValid) {
+      name.text = widget.component.name;
+    }
+    final shown = widget.component.weight == 0 ? '' : trimNum(widget.component.weight);
+    if (old.component.weight != widget.component.weight && !weight.value.composing.isValid) {
+      weight.text = shown;
+    }
+  }
 
   @override
   void dispose() {

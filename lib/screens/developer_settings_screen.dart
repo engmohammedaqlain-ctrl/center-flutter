@@ -45,6 +45,23 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
 
   bool busy = false;
 
+  /// المستخدم بدأ يعدّل الهوية: ما يصل من جهاز آخر لا يُبدّل ما تحت يده.
+  bool touched = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // تُستدعى مع كل إخطار من المخزن، فتصل هوية ضُبطت على جهاز آخر بلا إعادة فتح
+    if (touched) return;
+    final store = StoreScope.of(context);
+    if (name.text != store.institutionName) name.text = store.institutionName;
+    final fee = trimNum(store.seatReservationFee);
+    if (seatFee.text != fee) seatFee.text = fee;
+    logo = store.institutionLogo;
+    stamp = store.institutionStamp;
+    colors = store.institutionColors;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -186,7 +203,11 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
   List<Widget> _identity() => [
         const FormSection(icon: Icons.badge_outlined, title: 'اسم المنشأة وشعارها'),
         const FieldLabel('اسم المنشأة والترويسة الرسمية'),
-        TextField(controller: name, decoration: const InputDecoration(hintText: 'مثال: مدرسة الأمل الخاصة')),
+        TextField(
+          controller: name,
+          onChanged: (_) => touched = true,
+          decoration: const InputDecoration(hintText: 'مثال: مدرسة الأمل الخاصة'),
+        ),
         const SizedBox(height: 12),
         const FieldLabel('الختم الرسمي'),
         Row(
@@ -202,7 +223,10 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
               color: AppColors.heading,
               background: Colors.white,
               border: AppColors.lineStrong,
-              onTap: _pickStamp,
+              onTap: () {
+                touched = true;
+                _pickStamp();
+              },
             ),
             if (stamp.isNotEmpty) ...[
               const SizedBox(width: 6),
@@ -212,7 +236,10 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
                 color: AppColors.danger,
                 background: Colors.white,
                 border: AppColors.dangerBorder,
-                onTap: () => setState(() => stamp = ''),
+                onTap: () => setState(() {
+                  touched = true;
+                  stamp = '';
+                }),
               ),
             ],
           ],
@@ -234,7 +261,10 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
                     color: AppColors.heading,
                     background: Colors.white,
                     border: AppColors.lineStrong,
-                    onTap: _pickLogo,
+                    onTap: () {
+                      touched = true;
+                      _pickLogo();
+                    },
                   ),
                   if (logo.isNotEmpty)
                     TileButton(
@@ -243,7 +273,10 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
                       color: AppColors.danger,
                       background: Colors.white,
                       border: AppColors.dangerBorder,
-                      onTap: () => setState(() => logo = ''),
+                      onTap: () => setState(() {
+                        touched = true;
+                        logo = '';
+                      }),
                     ),
                 ],
               ),
@@ -322,7 +355,10 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
         children: [
           for (final preset in colorPresets)
             InkWell(
-              onTap: () => setState(() => colors = preset.$2),
+              onTap: () => setState(() {
+                touched = true;
+                colors = preset.$2;
+              }),
               borderRadius: BorderRadius.circular(Corner.box),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -360,6 +396,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
           controller: seatFee,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           onChanged: (_) {
+            touched = true;
             if (errors.clear('seatFee')) setState(() {});
           },
           decoration: InputDecoration(errorText: errors['seatFee']),
@@ -665,6 +702,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
     setState(() => busy = true);
     await store.saveInstitution(name: name.text, logo: logo, colors: colors);
     await store.saveInstitutionStamp(stamp);
+    touched = false;
     await store.setSeatReservationFee(feeValue ?? 0);
     await store.db.setSetting(SupabaseConfig.urlSettingKey, url.isEmpty ? null : url);
     await store.db.setSetting(
