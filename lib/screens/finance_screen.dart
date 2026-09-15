@@ -9,6 +9,7 @@ import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import 'expense_form_sheet.dart';
 import 'payment_form_screen.dart';
+import 'expense_voucher_screen.dart';
 import 'receipt_screen.dart';
 import 'student_detail_screen.dart';
 
@@ -457,6 +458,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
           description: e.description,
           amount: e.amount,
           method: e.method,
+          voucher: ExpenseVoucher.fromExpense(e),
         ),
       for (final p in payouts)
         _SpendRow(
@@ -473,6 +475,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
           },
           amount: p.amount,
           method: p.method,
+          voucher: ExpenseVoucher.fromPayout(p),
         ),
     ]..sort((a, b) => b.date.compareTo(a.date));
 
@@ -746,6 +749,7 @@ class _SpendRow {
     required this.description,
     required this.amount,
     required this.method,
+    required this.voucher,
   });
 
   final String date;
@@ -754,6 +758,9 @@ class _SpendRow {
   final String description;
   final double amount;
   final String method;
+
+  /// السند المطبوع الذي يُفتح بلمس البطاقة.
+  final ExpenseVoucher voucher;
 }
 
 /// سند صرف: البيان مقابل المبلغ، ثم التاريخ وطريقة الصرف مقابل التصنيف.
@@ -772,6 +779,8 @@ class _SpendCard extends StatelessWidget {
 
     return AppCard(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      // السند المطبوع يُسلَّم لمن قبض المبلغ، فيُفتح بلمس بطاقته
+      onTap: () => ExpenseVoucher.open(context, row.voucher),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
