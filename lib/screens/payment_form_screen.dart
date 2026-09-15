@@ -218,9 +218,11 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
         final seat = store.seatReservationFee;
         if (seat > 0) amount.text = trimNum(seat);
       } else if (item == 'monthly_fee') {
+        // قيمة القسط في خطة مرحلته: ما يُطالَب به فعلاً لا رقم شهري مفترض
         final student = studentId == null ? null : store.studentById(studentId!);
-        final fee = student == null ? null : store.resolveMonthlyFee(student);
-        if (fee != null && fee > 0) amount.text = trimNum(fee);
+        final plan = student == null ? null : store.planForStudent(student);
+        final fee = plan?.monthlyFee ?? 0;
+        if (fee > 0) amount.text = trimNum(fee);
       }
     });
   }

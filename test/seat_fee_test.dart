@@ -1,11 +1,10 @@
 import 'package:center_mobile/data/balance.dart';
-import 'package:center_mobile/data/demo_data.dart';
-import 'package:center_mobile/data/store.dart';
+import 'package:center_mobile/data/fee_plan.dart';
 import 'package:center_mobile/models/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// منقول من `monthlyDues.test.ts`: رسم الحجز يُسدَّد أولاً، ولا يُطالَب منه
-/// بأكثر مما خُصم من المستحقات.
+/// منقول من `installmentPlans.test.ts`: رسم الحجز يُسدَّد أولاً، ولا يُطالَب منه
+/// بأكثر مما خُصم من أقساط الطالب.
 
 Installment _inst(String id, String title, double amount, DateTime due, {double paid = 0}) => Installment(
       id: id,
@@ -45,63 +44,38 @@ void main() {
     });
   });
 
-  group('سقف رسم الحجز', () {
-    Installment seatOf(double amount) => Installment(
-          id: 'seat-stu',
-          studentId: 'stu',
-          title: seatTitle,
-          amount: amount,
-          dueDate: DateTime(2026, 9, 20),
+  group('سقف رسم الحجز على خطة الطالب', () {
+    List<StudentPlanRow> planWith({required double seatFee, required double amount, int count = 1}) =>
+        buildStudentPlan(
+          [
+            for (var i = 0; i < count; i++)
+              PlanItem(id: 'p$i', title: 'القسط ${i + 1}', amount: amount, dueDate: '2026-1$i-05'),
+          ],
+          'stu',
+          seatFee: seatFee,
+          enrollmentDate: '2026-09-01',
         );
 
-    AppStore seeded(double seatFee, double monthlyFee) {
-      final s = AppStore.forTesting();
-      injectDemoData(s);
-      s.students.removeWhere((x) => true);
-      s.installments.clear();
-      s.gradeFees.clear();
-      s.gradeFees.add(GradeFee(id: 'g1', gradeName: 'عاشر', monthlyFee: monthlyFee, orderIndex: 0));
-      s.students.add(Student(
-        id: 'stu',
-        fullName: 'طالب الحجز',
-        gradeLevel: 'عاشر',
-        section: '',
-        phone: '0599000000',
-        parentName: 'ولي',
-        parentPhone: '0598000000',
-        nationalId: '401092599',
-        balance: 0,
-        status: 'active',
-      ));
-      s.installments.add(seatOf(seatFee));
-      return s;
-    }
+    test('يُقتطع من القسط، ويبقى كما هو إن غطّاه', () {
+      final rows = planWith(seatFee: 50, amount: 200);
 
-    test('رسم الحجز يُخصم من مستحق الشهر، ويبقى كما هو إن غطّاه', () async {
-      final s = seeded(50, 200);
-      await s.saveStudyMonths([9]);
-
-      final result = s.generateMonthlyDues(now: DateTime(2026, 9, 5));
-
-      expect(result.created, 1);
-      final due = s.installments.firstWhere((i) => i.id != 'seat-stu');
-      expect(due.amount, 150, reason: '200 ناقص رسم الحجز');
-      expect(s.installments.firstWhere((i) => i.id == 'seat-stu').amount, 50, reason: 'لم يُمسّ');
-      await s.flush();
+      expect(rows.first.title, seatTitle);
+      expect(rows.first.amount, 50, reason: 'لم يُمسّ');
+      expect(rows[1].amount, 150, reason: '200 ناقص رسم الحجز');
     });
 
-    test('رسم أكبر من مستحق الشهر: الحجز يُقصّ على ما خُصم فعلاً', () async {
-      final s = seeded(50, 30);
-      await s.saveStudyMonths([9]);
+    test('رسم أكبر من الخطة: الحجز يُقصّ على ما خُصم فعلاً', () {
+      final rows = planWith(seatFee: 50, amount: 30);
 
-      s.generateMonthlyDues(now: DateTime(2026, 9, 5));
+      expect(rows.first.amount, 30, reason: 'لا يُطالَب بعشرين لم تُخصم له');
+      expect(rows[1].amount, 0, reason: 'استُهلك القسط كله');
+    });
 
-      final due = s.installments.firstWhere((i) => i.id != 'seat-stu');
-      expect(due.amount, 0, reason: 'استُهلك المستحق كله');
-      expect(s.installments.firstWhere((i) => i.id == 'seat-stu').amount, 30,
-          reason: 'لا يُطالَب بعشرين لم تُخصم له');
-      expect(s.pendingSyncs.any((p) => p.recordId == 'seat-stu'), isTrue, reason: 'يصل بقية الأجهزة');
-      await s.flush();
+    test('ما يزيد عن قسط ينتقل للذي يليه بترتيبها الزمني', () {
+      final rows = planWith(seatFee: 50, amount: 30, count: 2);
+
+      expect(rows.first.amount, 50);
+      expect(rows.skip(1).map((r) => r.amount), [0, 10]);
     });
   });
 }

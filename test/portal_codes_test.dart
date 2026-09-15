@@ -29,8 +29,9 @@ Student draft(AppStore s, {String nationalId = '123456789'}) => Student(
     );
 
 void main() {
-  test('the version matches Center 1.2.7', () {
-    expect(appVersion, '1.2.7');
+  // رقمٌ مثبَّت هنا يكسر الاختبار مع كل نشر: السكربت يكتب الثابت ولا يمسّ الاختبار
+  test('version constant is a two-part release name', () {
+    expect(appVersion, matches(RegExp(r'^\d+\.\d+$')));
   });
 
   test('a portal code is six digits, as Center generates them', () async {

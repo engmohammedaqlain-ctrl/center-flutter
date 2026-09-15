@@ -37,6 +37,7 @@ const tableAllowedColumns = <String, List<String>>{
   ],
   'grade_fees': [
     'id', 'grade_name', 'monthly_fee', 'order_index', 'is_custom', 'stage_tier',
+    'term_1_start', 'term_1_end', 'term_2_start', 'term_2_end', 'plan_items',
     'tenant_id', 'created_at', 'updated_at',
   ],
   'students': [
@@ -73,7 +74,7 @@ const tableAllowedColumns = <String, List<String>>{
     'status', 'tenant_id', 'created_at', 'updated_at',
   ],
   'installments': [
-    'id', 'student_id', 'title', 'amount', 'due_date', 'paid_amount',
+    'id', 'student_id', 'title', 'amount', 'original_amount', 'due_date', 'paid_amount',
     'status', 'tenant_id',
     'created_at', 'updated_at',
   ],
@@ -125,13 +126,16 @@ const nonTextColumns = <String, List<String>>{
     'tenant_id', 'updated_at',
   ],
   'expenses': ['amount', 'created_at', 'expense_date', 'tenant_id', 'updated_at'],
-  'grade_fees': ['created_at', 'is_custom', 'monthly_fee', 'order_index', 'tenant_id', 'updated_at'],
+  'grade_fees': [
+    'created_at', 'is_custom', 'monthly_fee', 'order_index', 'plan_items',
+    'tenant_id', 'term_1_end', 'term_1_start', 'term_2_end', 'term_2_start', 'updated_at',
+  ],
   'groups': [
     'created_at', 'days', 'end_time', 'max_students', 'price_per_month', 'room_ids', 'start_time',
     'tenant_id', 'updated_at',
   ],
   'installments': [
-    'amount', 'created_at', 'due_date', 'paid_amount',
+    'amount', 'created_at', 'due_date', 'original_amount', 'paid_amount',
     'tenant_id', 'updated_at',
   ],
   'institution_settings': ['colors', 'created_at', 'settings', 'tenant_id', 'updated_at'],

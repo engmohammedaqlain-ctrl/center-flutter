@@ -23,7 +23,7 @@ void _cloudRow(AppStore s, Map<String, dynamic> colors, {Map<String, dynamic>? s
       'institution_name': 'مدرسة الأمل النموذجية',
       'logo': null,
       'colors': colors,
-      if (settings != null) 'settings': settings,
+      'settings': ?settings,
       'updated_at': '2026-09-13T10:00:00.000Z',
     },
   ];
@@ -51,15 +51,17 @@ void main() {
       expect(s.db.settings[seatReservationFeeKey], '50');
     });
 
-    test('أشهر الدراسة تُستعاد، وإفراغها في السحابة يوقف الرسوم هنا', () async {
+    test('الرسوم الإضافية تُستعاد من عمود الإعدادات', () async {
       final s = _store();
-      _cloudRow(s, {AppStore.studyMonthsColorKey: [9, 10, 11]});
+      _cloudRow(s, {}, settings: {
+        'fee_items': [
+          {'id': 'fee-1', 'name': 'الزي المدرسي', 'amount': 100, 'due_date': '2026-09-15'},
+        ],
+      });
       await s.hydrateInstitution();
-      expect(s.studyMonths, [9, 10, 11]);
 
-      _cloudRow(s, {AppStore.studyMonthsColorKey: <int>[]});
-      await s.hydrateInstitution();
-      expect(s.studyMonths, isNull, reason: 'الرسوم الشهرية متوقفة');
+      expect(s.feeItems.single.name, 'الزي المدرسي');
+      expect(s.feeItems.single.amount, 100);
     });
 
     test('الميزات وقواعد الخصم ووسائل الدفع تُستعاد كذلك', () async {
@@ -83,21 +85,19 @@ void main() {
   });
 
   group('ما يُضبط على الجوال يصل بقية الأجهزة', () {
-    Map<String, dynamic> _rowOf(AppStore s) =>
+    Map<String, dynamic> rowOf(AppStore s) =>
         s.extraCloud['institution_settings']!.firstWhere((e) => e['id'] == s.tenantId);
 
-    Map<String, dynamic> colorsOf(AppStore s) => Map<String, dynamic>.from(_rowOf(s)['colors'] as Map);
+    Map<String, dynamic> colorsOf(AppStore s) => Map<String, dynamic>.from(rowOf(s)['colors'] as Map);
 
-    Map<String, dynamic> settingsOf(AppStore s) => Map<String, dynamic>.from(_rowOf(s)['settings'] as Map);
+    Map<String, dynamic> settingsOf(AppStore s) => Map<String, dynamic>.from(rowOf(s)['settings'] as Map);
 
-    test('رسم الحجز يُكتب في عمود الإعدادات، وأشهر الدراسة في الألوان', () async {
+    test('رسم الحجز وطريقته يُكتبان في عمود الإعدادات', () async {
       final s = _store();
       await s.setSeatReservationFee(75, deduct: false);
-      await s.saveStudyMonths([9, 10]);
 
       expect(settingsOf(s)['seat_fee'], 75.0);
       expect(settingsOf(s)['seat_fee_mode'], 'separate');
-      expect(colorsOf(s)[AppStore.studyMonthsColorKey], [9, 10]);
     });
 
     test('الميزات وقواعد الخصم كذلك', () async {

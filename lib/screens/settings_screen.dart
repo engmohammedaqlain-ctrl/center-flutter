@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../data/academic_matching.dart';
@@ -262,7 +261,7 @@ class _FeesTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final fees = store.gradeFees;
-    final missing = store.studentsMissingFee;
+    final missing = store.studentsMissingPlan;
     return _cardList(
       header: [
         StatRow(
@@ -274,12 +273,8 @@ class _FeesTab extends StatelessWidget {
         const SizedBox(height: 10),
         // أقسام مطوية: التبويب كان يفتح على أربع بطاقات فوق قائمة المراحل
         _Collapsible(
-          title: 'الحجز وأشهر الدراسة',
-          children: [
-            _SeatFeeCard(store: store),
-            const SizedBox(height: 8),
-            _StudyMonthsCard(store: store),
-          ],
+          title: 'رسم حجز المقعد',
+          children: [_SeatFeeCard(store: store)],
         ),
         const SizedBox(height: 8),
         _Collapsible(
@@ -288,7 +283,7 @@ class _FeesTab extends StatelessWidget {
         ),
         if (missing > 0) ...[
           const SizedBox(height: 8),
-          // من لا رسم لمرحلته لا يُولَّد له مستحق، فيبقى بلا مطالبة بصمت
+          // مرحلةٌ بلا خطة لا تولّد أقساطاً لمن يُسجَّل فيها، فيبقى بلا مطالبة بصمت
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
@@ -297,7 +292,7 @@ class _FeesTab extends StatelessWidget {
               border: Border.all(color: AppColors.dangerBorder),
             ),
             child: Text(
-              'طلاب نشطون بلا رسم شهري معرّف: $missing',
+              'طلاب نشطون بلا خطة أقساط لمرحلتهم: $missing',
               style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: AppColors.danger),
             ),
           ),
@@ -702,90 +697,6 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
   }
 }
 
-/// أشهر الدراسة: الرسم الشهري يُستحق فيها وحدها.
-class _StudyMonthsCard extends StatefulWidget {
-  const _StudyMonthsCard({required this.store});
-
-  final AppStore store;
-
-  @override
-  State<_StudyMonthsCard> createState() => _StudyMonthsCardState();
-}
-
-class _StudyMonthsCardState extends State<_StudyMonthsCard> {
-  late Set<int> selected = {...?widget.store.studyMonths};
-
-  /// المستخدم بدأ يختار: ما يصل من جهاز آخر لا يُبدّل اختياره قبل حفظه.
-  bool editing = false;
-
-  @override
-  void didUpdateWidget(covariant _StudyMonthsCard old) {
-    super.didUpdateWidget(old);
-    if (editing) return;
-    final incoming = {...?widget.store.studyMonths};
-    if (!setEquals(incoming, selected)) selected = incoming;
-  }
-
-  Future<void> _save() async {
-    final store = widget.store;
-    editing = false;
-    await store.saveStudyMonths(selected.toList());
-    // المستحق يُولَّد فور اعتماد الأشهر، كما تفعل النسخة المكتبية عند الحفظ
-    final result = store.generateMonthlyDues();
-    if (!mounted) return;
-    showAppSnack(
-      context,
-      result.created > 0 ? 'حُفظت الأشهر، وأُنشئ ${result.created} مستحقاً' : 'حُفظت أشهر الدراسة',
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final store = widget.store;
-    return AppCard(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'أشهر الدراسة',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
-                ),
-              ),
-              if (store.studyMonths == null)
-                const Text(
-                  'الرسوم الشهرية متوقفة',
-                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: AppColors.danger),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (var m = 1; m <= 12; m++)
-                _MonthChip(
-                  label: gregorianMonths[m - 1],
-                  on: selected.contains(m),
-                  onTap: () => setState(() {
-                    editing = true;
-                    selected.contains(m) ? selected.remove(m) : selected.add(m);
-                  }),
-                ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          PrimaryButton(label: 'حفظ أشهر الدراسة', color: AppColors.navy, onPressed: _save),
-        ],
-      ),
-    );
-  }
-}
-
 class _MonthChip extends StatelessWidget {
   const _MonthChip({required this.label, required this.on, required this.onTap});
 
@@ -860,11 +771,13 @@ class _GradeFeeCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(money(f.monthlyFee), style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: AppColors.heading)),
-                  const Text('شهرياً', style: TextStyle(color: AppColors.faint, fontSize: 10.5)),
+                  const Text('قيمة القسط', style: TextStyle(color: AppColors.faint, fontSize: 10.5)),
                 ],
               ),
             ],
           ),
+          const _Rule(),
+          _GradePlanRow(fee: f),
           const _Rule(),
           Wrap(
             spacing: 5,
@@ -907,6 +820,73 @@ class _GradeFeeCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// خطة أقساط المرحلة: عددها ومجموعها، وتطبيقها على من لا أقساط له.
+///
+/// الخطة تُضبط من سطح المكتب؛ الجوال يعرضها ويطبّقها على من سُجّل قبل ضبطها.
+/// من له أقساط تُترك كما هي: تعديل الخطة لا يُعيد ضبط أقساط من سُجّل على سابقتها.
+class _GradePlanRow extends StatelessWidget {
+  const _GradePlanRow({required this.fee});
+
+  final GradeFee fee;
+
+  Future<void> _apply(BuildContext context) async {
+    final store = StoreScope.of(context);
+    final ok = await confirmSheet(
+      context,
+      title: 'تطبيق خطة «${fee.gradeName}»',
+      message: 'تُقيَّد أقساط الخطة على طلاب المرحلة النشطين ممن لا أقساط لهم بعد.',
+      confirmLabel: 'تطبيق',
+      confirmColor: AppColors.navy,
+    );
+    if (!ok || !context.mounted) return;
+    try {
+      final result = store.applyGradePlan(fee.gradeName);
+      if (!context.mounted) return;
+      showAppSnack(
+        context,
+        result.applied == 0
+            ? 'لا طالب بلا أقساط في هذه المرحلة'
+            : 'قُيّدت الخطة على ${result.applied} طالباً، وتُرك ${result.skipped} لهم أقساط',
+      );
+    } on StoreException catch (e) {
+      if (context.mounted) showAppSnack(context, e.message, error: true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = fee.planItems;
+    if (items.isEmpty) {
+      return const Text(
+        'لا خطة أقساط لهذه المرحلة — من يُسجَّل فيها لا تُقيَّد عليه أقساط',
+        style: TextStyle(fontSize: 11, color: AppColors.danger, fontWeight: FontWeight.w700),
+      );
+    }
+    var total = 0.0;
+    for (final i in items) {
+      total += i.amount;
+    }
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            '${items.length} قسطاً  ·  ${money(total)}',
+            style: const TextStyle(fontSize: 11.5, color: AppColors.muted, fontWeight: FontWeight.w700),
+          ),
+        ),
+        TileButton(
+          label: 'تطبيق الخطة',
+          icon: const Icon(Icons.playlist_add_check, size: 13),
+          color: AppColors.heading,
+          background: Colors.white,
+          border: AppColors.lineStrong,
+          onTap: () => _apply(context),
+        ),
+      ],
     );
   }
 }

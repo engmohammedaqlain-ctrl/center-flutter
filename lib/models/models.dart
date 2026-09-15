@@ -839,6 +839,39 @@ class SubjectItem {
       );
 }
 
+/// قسط في خطة مرحلة — `PlanItem`. الطالب يأخذ نسخته الخاصة منه عند تسجيله.
+class PlanItem {
+  const PlanItem({required this.id, required this.title, required this.amount, required this.dueDate});
+
+  final String id;
+  final String title;
+  final double amount;
+
+  /// تاريخ الاستحقاق بصيغة `YYYY-MM-DD`.
+  final String dueDate;
+
+  PlanItem copyWith({String? title, double? amount, String? dueDate}) => PlanItem(
+        id: id,
+        title: title ?? this.title,
+        amount: amount ?? this.amount,
+        dueDate: dueDate ?? this.dueDate,
+      );
+
+  Map<String, dynamic> toMap() => {'id': id, 'title': title, 'amount': amount, 'due_date': dueDate};
+
+  factory PlanItem.fromMap(Map<String, dynamic> m) => PlanItem(
+        id: '${m['id'] ?? ''}',
+        title: '${m['title'] ?? 'قسط'}',
+        amount: (m['amount'] as num?)?.toDouble() ?? 0,
+        dueDate: '${m['due_date'] ?? ''}',
+      );
+}
+
+/// المرحلة الدراسية وخطتها المالية.
+///
+/// [monthlyFee] قيمة القسط الافتراضية التي يُبنى منها الجدول، و[planItems] الجدول
+/// نفسه بعد ضبطه. التواريخ تخص المرحلة وحدها: صفوف الروضة لا تدرس بالضرورة أشهر
+/// التوجيهي نفسها، وهو ما كانت «أشهر الدوام» العامة تفترضه.
 class GradeFee {
   GradeFee({
     required this.id,
@@ -847,6 +880,11 @@ class GradeFee {
     this.tier = 'secondary',
     this.orderIndex = 0,
     this.isCustom = false,
+    this.term1Start = '',
+    this.term1End = '',
+    this.term2Start = '',
+    this.term2End = '',
+    this.planItems = const [],
     this.syncStatus = 'synced',
     this.createdAt,
     this.updatedAt,
@@ -858,6 +896,16 @@ class GradeFee {
   String tier;
   int orderIndex;
   bool isCustom;
+
+  /// تواريخ فصلي المرحلة بصيغة `YYYY-MM-DD`، والفارغ يعني لم تُضبط بعد.
+  String term1Start;
+  String term1End;
+  String term2Start;
+  String term2End;
+
+  /// جدول أقساط المرحلة؛ فارغٌ حين لم تُضبط خطتها.
+  List<PlanItem> planItems;
+
   String syncStatus;
   String? createdAt;
   String? updatedAt;
@@ -869,21 +917,37 @@ class GradeFee {
         'order_index': orderIndex,
         'is_custom': isCustom,
         'stage_tier': tier,
+        'term_1_start': term1Start.isEmpty ? null : term1Start,
+        'term_1_end': term1End.isEmpty ? null : term1End,
+        'term_2_start': term2Start.isEmpty ? null : term2Start,
+        'term_2_end': term2End.isEmpty ? null : term2End,
+        'plan_items': [for (final i in planItems) i.toMap()],
         'created_at': createdAt,
         'updated_at': updatedAt,
       };
 
-  factory GradeFee.fromCloud(Map<String, dynamic> m) => GradeFee(
-        id: '${m['id']}',
-        gradeName: '${m['grade_name'] ?? ''}',
-        monthlyFee: (m['monthly_fee'] as num?)?.toDouble() ?? 0,
-        tier: '${m['stage_tier'] ?? 'secondary'}',
-        orderIndex: (m['order_index'] as num?)?.toInt() ?? 0,
-        isCustom: m['is_custom'] == true,
-        syncStatus: '${m['sync_status'] ?? 'synced'}',
-        createdAt: m['created_at']?.toString(),
-        updatedAt: m['updated_at']?.toString(),
-      );
+  factory GradeFee.fromCloud(Map<String, dynamic> m) {
+    final items = m['plan_items'];
+    return GradeFee(
+      id: '${m['id']}',
+      gradeName: '${m['grade_name'] ?? ''}',
+      monthlyFee: (m['monthly_fee'] as num?)?.toDouble() ?? 0,
+      tier: '${m['stage_tier'] ?? 'secondary'}',
+      orderIndex: (m['order_index'] as num?)?.toInt() ?? 0,
+      isCustom: m['is_custom'] == true,
+      term1Start: '${m['term_1_start'] ?? ''}',
+      term1End: '${m['term_1_end'] ?? ''}',
+      term2Start: '${m['term_2_start'] ?? ''}',
+      term2End: '${m['term_2_end'] ?? ''}',
+      planItems: [
+        for (final e in (items is List ? items : const []))
+          if (e is Map) PlanItem.fromMap(Map<String, dynamic>.from(e)),
+      ],
+      syncStatus: '${m['sync_status'] ?? 'synced'}',
+      createdAt: m['created_at']?.toString(),
+      updatedAt: m['updated_at']?.toString(),
+    );
+  }
 }
 
 class Payment {
@@ -1297,6 +1361,7 @@ class Installment {
     required this.title,
     required this.amount,
     required this.dueDate,
+    this.originalAmount,
     this.paidAmount = 0,
     this.exception = false,
     this.exceptionNotes = '',
@@ -1310,6 +1375,10 @@ class Installment {
   final String studentId;
   String title;
   double amount;
+
+  /// قيمته قبل الخصم إن خُصم منه؛ يبقى الخصم ظاهراً في كشف الطالب.
+  double? originalAmount;
+
   DateTime dueDate;
   double paidAmount;
   bool exception;
@@ -1343,6 +1412,7 @@ class Installment {
         'student_id': studentId,
         'title': title,
         'amount': amount,
+        'original_amount': originalAmount,
         'due_date': isoDate(dueDate),
         'paid_amount': paidAmount,
         'status': _effectiveStatus,
@@ -1355,6 +1425,7 @@ class Installment {
         studentId: '${m['student_id'] ?? ''}',
         title: '${m['title'] ?? 'قسط'}',
         amount: (m['amount'] as num?)?.toDouble() ?? 0,
+        originalAmount: (m['original_amount'] as num?)?.toDouble(),
         dueDate: parseIsoDate('${m['due_date'] ?? ''}') ?? DateTime.now(),
         paidAmount: (m['paid_amount'] as num?)?.toDouble() ?? 0,
         status: '${m['status'] ?? 'pending'}',

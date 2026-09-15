@@ -1,4 +1,5 @@
 import 'package:center_mobile/data/demo_data.dart';
+import 'package:center_mobile/data/fee_plan.dart';
 import 'package:center_mobile/data/store.dart';
 import 'package:center_mobile/models/models.dart';
 import 'package:center_mobile/screens/settings_screen.dart';
@@ -11,11 +12,23 @@ AppStore _seeded() {
   return s;
 }
 
-/// طالب نشط بلا أقساط ولا سندات — لوحة نظيفة لتوليد المستحقات.
-Student _cleanStudent(AppStore s, {String grade = 'عاشر', double? customFee}) {
+/// خطة مرحلة: أقساط متساوية من بداية فصلها الأول.
+void _plan(AppStore s, String grade, {double amount = 100, int count = 3, String from = '2026-09-05'}) {
+  final fee = s.feeFor(grade)!;
+  fee.term1Start = from;
+  fee.planItems = generatePlanItems(
+    count: count,
+    amount: amount,
+    firstDueDate: from,
+    newId: s.newId,
+  );
+}
+
+/// طالب نشط بلا أقساط ولا سندات — لوحة نظيفة لتطبيق الخطة.
+Student _cleanStudent(AppStore s, {String grade = 'عاشر', bool seatPaid = false}) {
   final student = Student(
     id: s.newId(),
-    fullName: 'طالب المستحقات',
+    fullName: 'طالب الأقساط',
     gradeLevel: grade,
     section: 'أ',
     phone: '0599000222',
@@ -23,7 +36,8 @@ Student _cleanStudent(AppStore s, {String grade = 'عاشر', double? customFee}
     parentPhone: '0598000222',
     balance: 0,
     nationalId: '123123123',
-    customMonthlyFee: customFee,
+    enrolledAt: DateTime(2026, 9, 1),
+    seatReservationPaid: seatPaid,
   );
   s.students.add(student);
   return student;
@@ -43,119 +57,140 @@ Future<void> _pumpSettings(WidgetTester tester, AppStore s) async {
 }
 
 void main() {
-  group('أشهر الدراسة', () {
-    test('بلا أشهر محددة لا تُستحق رسوم، والحفظ يُنقّي المدخلات', () async {
+  group('خطة أقساط المرحلة', () {
+    test('بلا خطة لا تُقيَّد أقساط على من يُسجَّل', () {
       final s = _seeded();
-      expect(s.studyMonths, isNull, reason: 'الافتراضي: الرسوم الشهرية متوقفة');
+      final student = _cleanStudent(s);
 
-      await s.saveStudyMonths([9, 9, 13, 0, 1]);
-      expect(s.studyMonths, [1, 9], reason: 'بلا تكرار ولا شهر خارج 1-12، ومرتّبة');
-
-      await s.saveStudyMonths([]);
-      expect(s.studyMonths, isNull);
+      expect(s.planItemsOf(s.planForStudent(student)), isEmpty);
+      expect(s.studentsMissingPlan, greaterThan(0));
+      expect(s.applyGradePlan('عاشر').applied, 0);
+      expect(s.installments.where((i) => i.studentId == student.id), isEmpty);
     });
 
-    test('الأشهر تُكتب في كائن المنشأة كي تصل بقية الأجهزة', () async {
+    test('التطبيق يُقيَّد مرة واحدة ويترك من له أقساط', () {
       final s = _seeded();
-      s.currentTenant = s.tenants.first;
-      await s.saveStudyMonths([9, 10]);
+      _plan(s, 'عاشر');
+      final student = _cleanStudent(s);
 
-      final row = s.extraCloud['institution_settings']!.firstWhere((e) => e['id'] == s.tenantId);
-      final colors = row['colors'] as Map<String, dynamic>;
-      expect(colors[AppStore.studyMonthsColorKey], [9, 10]);
+      final first = s.applyGradePlan('عاشر');
+      expect(first.applied, greaterThan(0));
+
+      final own = s.installments.where((i) => i.studentId == student.id).toList();
+      expect(own.length, 3);
+      expect(own.every((i) => isPlanInstallmentId(i.id)), isTrue, reason: 'معرّف حتمي لا يتكرر بين الأجهزة');
+      expect(own.map((i) => i.amount), everyElement(100));
+
+      // تشغيل ثانٍ يتركه كما هو: تعديل الخطة لا يُعيد ضبط أقساط من سُجّل قبلها
+      final again = s.applyGradePlan('عاشر');
+      expect(again.applied, 0);
+      expect(again.skipped, greaterThan(0));
+      expect(s.installments.where((i) => i.studentId == student.id).length, 3);
+    });
+
+    test('تواريخ الأقساط تتبع تاريخ فصل المرحلة لا أول الشهر', () {
+      final s = _seeded();
+      _plan(s, 'عاشر', from: '2026-09-05');
+      final student = _cleanStudent(s);
+      s.applyGradePlan('عاشر');
+
+      final dates = s.installments
+          .where((i) => i.studentId == student.id)
+          .map((i) => isoDate(i.dueDate))
+          .toList()
+        ..sort();
+      expect(dates, ['2026-09-05', '2026-10-05', '2026-11-05']);
+    });
+
+    test('الطالب الجديد يأخذ نسخته من خطة مرحلته عند تسجيله', () {
+      final s = _seeded();
+      _plan(s, 'عاشر');
+
+      final student = Student(
+        id: s.newId(),
+        fullName: 'طالب مسجَّل حديثاً',
+        gradeLevel: 'عاشر',
+        section: 'أ',
+        phone: '0599777666',
+        parentName: 'ولي الأمر',
+        parentPhone: '0598777666',
+        balance: 0,
+        nationalId: '321321321',
+        enrolledAt: DateTime(2026, 9, 1),
+      );
+      s.upsertStudent(student, isNew: true);
+
+      expect(s.installments.where((i) => i.studentId == student.id).length, 3);
+    });
+
+    test('الخصم يوزَّع على الأقساط وتبقى قيمتها قبله ظاهرة', () {
+      final s = _seeded();
+      _plan(s, 'عاشر');
+      final student = _cleanStudent(s);
+
+      final rows = buildStudentPlan(
+        s.planItemsOf(s.planForStudent(student)),
+        student.id,
+        discount: const PlanDiscount.percent(10),
+      );
+
+      expect(rows.map((r) => r.amount), everyElement(90));
+      expect(rows.map((r) => r.originalAmount), everyElement(100), reason: 'الخصم يبقى ظاهراً في كشف الطالب');
+    });
+
+    test('المؤرشف لا يُقيَّد عليه شيء', () {
+      final s = _seeded();
+      _plan(s, 'عاشر');
+      final student = _cleanStudent(s);
+      s.promoteStudents({'عاشر': null});
+
+      s.applyGradePlan('عاشر');
+      expect(s.installments.where((i) => i.studentId == student.id), isEmpty);
     });
   });
 
-  group('توليد المستحق الشهري', () {
-    test('يُنشأ مرة واحدة للشهر الجاري برسم مرحلة الطالب', () async {
+  group('رسم الحجز على الخطة', () {
+    test('يُقتطع من الأقساط بترتيبها الزمني', () async {
       final s = _seeded();
+      _plan(s, 'عاشر', amount: 30);
+      await s.setSeatReservationFee(50, deduct: true);
       final student = _cleanStudent(s);
-      final fee = s.feeFor('عاشر')!.monthlyFee;
-      final now = DateTime.now();
-      await s.saveStudyMonths([now.month]);
 
-      final first = s.generateMonthlyDues(now: now);
-      expect(first.created, greaterThan(0));
+      s.applyGradePlan('عاشر');
+      final own = s.installments.where((i) => i.studentId == student.id).toList()
+        ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
 
-      final due = s.installments.firstWhere((i) => i.studentId == student.id);
-      expect(due.amount, fee);
-      expect(due.dueDate.day, 1);
-      expect(due.id.startsWith(AppStore.dueIdPrefix), isTrue, reason: 'معرّف حتمي لا يتكرر بين الأجهزة');
-
-      // تشغيل ثانٍ لا يكرّر شيئاً
-      expect(s.generateMonthlyDues(now: now).created, 0);
+      expect(own.first.title, AppStore.seatInstallmentTitle);
+      expect(own.first.amount, 50);
+      // خمسون على قسطين: الأول كاملاً وعشرون من الثاني
+      expect(own.skip(1).map((i) => i.amount), [0, 10, 30]);
+      expect(own.fold<double>(0, (sum, i) => sum + i.amount), 90, reason: 'لا يدفع أكثر من مجموع الخطة');
     });
 
-    test('لا يُولَّد شيء خارج أشهر الدراسة ولا حين تكون متوقفة', () async {
+    test('المستقل يبقى مطالبة فوق الأقساط كاملة', () async {
       final s = _seeded();
-      _cleanStudent(s);
-      final now = DateTime.now();
-
-      expect(s.generateMonthlyDues(now: now).created, 0, reason: 'بلا أشهر محددة');
-
-      await s.saveStudyMonths([now.month == 12 ? 1 : now.month + 1]);
-      expect(s.generateMonthlyDues(now: now).created, 0, reason: 'الشهر الجاري ليس شهر دراسة');
-    });
-
-    test('الرسم المخصص يسبق رسم المرحلة، والمعفى لا مستحق له', () async {
-      final s = _seeded();
-      final discounted = _cleanStudent(s, customFee: 120);
-      final exempt = _cleanStudent(s, customFee: 0);
-      final now = DateTime.now();
-      await s.saveStudyMonths([now.month]);
-
-      s.generateMonthlyDues(now: now);
-      expect(s.installments.firstWhere((i) => i.studentId == discounted.id).amount, 120);
-      expect(s.installments.where((i) => i.studentId == exempt.id), isEmpty, reason: 'الصفر إعفاء');
-    });
-
-    test('من لا رسم لمرحلته يُحصى ولا يُولَّد له', () async {
-      final s = _seeded();
-      final orphan = _cleanStudent(s, grade: 'مرحلة بلا رسم');
-      final now = DateTime.now();
-      await s.saveStudyMonths([now.month]);
-
-      expect(s.studentsMissingFee, greaterThan(0));
-      final result = s.generateMonthlyDues(now: now);
-      expect(result.missingFee, greaterThan(0));
-      expect(s.installments.where((i) => i.studentId == orphan.id), isEmpty);
-    });
-
-    test('رسم الحجز يُخصم من أول مستحق مرة واحدة', () async {
-      final s = _seeded();
+      _plan(s, 'عاشر', amount: 30);
+      await s.setSeatReservationFee(50, deduct: false);
       final student = _cleanStudent(s);
-      final fee = s.feeFor('عاشر')!.monthlyFee;
-      s.installments.add(Installment(
-        id: s.newId(),
-        studentId: student.id,
-        title: AppStore.seatInstallmentTitle,
-        amount: 50,
-        dueDate: DateTime.now().subtract(const Duration(days: 30)),
-      ));
 
-      final now = DateTime.now();
-      await s.saveStudyMonths([now.month]);
-      s.generateMonthlyDues(now: now);
+      s.applyGradePlan('عاشر');
+      final own = s.installments.where((i) => i.studentId == student.id).toList();
 
-      final due = s.installments.firstWhere((i) => i.id.startsWith(AppStore.dueIdPrefix));
-      expect(due.amount, fee - 50, reason: 'يُدفع مرة واحدة ويُخصم من أول مستحق');
+      expect(own.firstWhere((i) => i.title == AppStore.seatInstallmentTitle).amount, 50);
+      expect(own.where((i) => i.title != AppStore.seatInstallmentTitle).map((i) => i.amount), everyElement(30));
     });
 
-    test('صاحب خطة أقساط يدوية لا يُطالَب مرتين', () async {
+    test('من دفعه لا يُقيَّد عليه قسطٌ به', () async {
       final s = _seeded();
-      final student = _cleanStudent(s);
-      s.installments.add(Installment(
-        id: s.newId(),
-        studentId: student.id,
-        title: 'قسط يدوي',
-        amount: 300,
-        dueDate: DateTime.now(),
-      ));
+      _plan(s, 'عاشر');
+      await s.setSeatReservationFee(50);
+      final student = _cleanStudent(s, seatPaid: true);
 
-      final now = DateTime.now();
-      await s.saveStudyMonths([now.month]);
-      s.generateMonthlyDues(now: now);
-      expect(s.installments.where((i) => i.studentId == student.id && i.id.startsWith(AppStore.dueIdPrefix)), isEmpty);
+      s.applyGradePlan('عاشر');
+      final own = s.installments.where((i) => i.studentId == student.id);
+
+      expect(own.any((i) => i.title == AppStore.seatInstallmentTitle), isFalse);
+      expect(own.map((i) => i.amount), everyElement(100), reason: 'دفعه يزيد رصيده لا يخصم من أقساطه');
     });
   });
 
@@ -175,21 +210,10 @@ void main() {
       expect(last.status, 'archived');
       expect(s.pendingSyncs.any((p) => p.tableName == 'students' && p.recordId == tenth.id), isTrue);
     });
-
-    test('الطالب المؤرشف لا تُولَّد له مستحقات بعد الترقية', () async {
-      final s = _seeded();
-      final student = _cleanStudent(s);
-      s.promoteStudents({'عاشر': null});
-
-      final now = DateTime.now();
-      await s.saveStudyMonths([now.month]);
-      s.generateMonthlyDues(now: now);
-      expect(s.installments.where((i) => i.studentId == student.id), isEmpty);
-    });
   });
 
   group('شاشة المراحل والرسوم', () {
-    testWidgets('تعرض رسم الحجز وأشهر الدراسة وزر الترقية', (tester) async {
+    testWidgets('تعرض رسم الحجز وطريقته وزر الترقية', (tester) async {
       final s = _seeded();
       await s.login('amal', 'amal2026');
       await _pumpSettings(tester, s);
@@ -198,13 +222,9 @@ void main() {
       await tester.pumpAndSettle();
 
       // أقسام التبويب مطوية: تُفتح بعناوينها
-      await tester.tap(find.text('الحجز وأشهر الدراسة'));
+      await tester.tap(find.text('رسم حجز المقعد').first);
       await tester.pumpAndSettle();
-      expect(find.text('رسم حجز المقعد'), findsOneWidget);
       expect(find.text('يُدفع مرة واحدة ويُخصم من أول الأقساط'), findsOneWidget);
-      expect(find.text('أشهر الدراسة'), findsOneWidget);
-      expect(find.text('الرسوم الشهرية متوقفة'), findsOneWidget);
-      expect(find.text('سبتمبر'), findsOneWidget);
       await tester.tap(find.text('الترقية'));
       await tester.pumpAndSettle();
       expect(find.text('ترقية الطلاب'), findsOneWidget);
@@ -212,23 +232,25 @@ void main() {
       await s.flush();
     });
 
-    testWidgets('اختيار شهر وحفظه يعتمد أشهر الدراسة', (tester) async {
+    testWidgets('اعتماد رسم الحجز مستقلاً يُحفظ في الإعدادات المشتركة', (tester) async {
       final s = _seeded();
       await s.login('amal', 'amal2026');
       await _pumpSettings(tester, s);
-      // الشاشة تفتح على «المعلمون»: ننتقل إلى تبويب المراحل والرسوم
       await tester.tap(find.text('المراحل والرسوم'));
       await tester.pumpAndSettle();
-
-      await tester.tap(find.text('الحجز وأشهر الدراسة'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(gregorianMonths[DateTime.now().month - 1]));
-      await tester.pump();
-      await tester.tap(find.text('حفظ أشهر الدراسة'));
+      await tester.tap(find.text('رسم حجز المقعد').first);
       await tester.pumpAndSettle();
 
-      expect(s.studyMonths, [DateTime.now().month]);
-      expect(find.text('الرسوم الشهرية متوقفة'), findsNothing);
+      await tester.tap(find.byType(Switch).first);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, '40');
+      await tester.tap(find.text('رسم مستقل فوقها'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('حفظ'));
+      await tester.pumpAndSettle();
+
+      expect(s.seatReservationFee, 40);
+      expect(s.deductsSeatFee, isFalse);
 
       await s.flush();
     });

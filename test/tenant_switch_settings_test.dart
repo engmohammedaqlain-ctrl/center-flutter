@@ -14,20 +14,19 @@ void main() {
     TenantService.masterPassword = 'dev-tester-pass';
   });
 
-  test('رسم الحجز وأشهر الدراسة لا يتسرّبان إلى مدرسة أخرى', () async {
+  test('رسم الحجز وطريقته لا يتسرّبان إلى مدرسة أخرى', () async {
     final disk = FakeDisk();
     final s = AppStore.forTesting();
     await s.bootstrap(disk);
     injectDemoData(s);
     expect(await s.login('dev-tester', 'dev-tester-pass'), isNull);
 
-    // المدرسة الأولى: رسم حجز وأشهر دراسة
+    // المدرسة الأولى: رسم حجز مستقل فوق الأقساط
     final first = s.tenants.first;
     expect(await s.enterTenantAsDeveloper(first), isNull);
-    await s.setSeatReservationFee(500);
-    await s.saveStudyMonths([9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8]);
+    await s.setSeatReservationFee(500, deduct: false);
     expect(s.seatReservationFee, 500);
-    expect(s.studyMonths, isNotNull);
+    expect(s.deductsSeatFee, isFalse);
     s.stopAutoSync();
     await s.flush();
 
@@ -38,7 +37,7 @@ void main() {
     expect(await s.enterTenantAsDeveloper(second), isNull);
 
     expect(s.seatReservationFee, 0, reason: 'رسم المدرسة الأولى لا يُطالَب به هنا');
-    expect(s.studyMonths, isNull, reason: 'وأشهرها كذلك');
+    expect(s.deductsSeatFee, isTrue, reason: 'وطريقتها كذلك تعود إلى الافتراضي');
     s.stopAutoSync();
     await s.flush();
   });
@@ -48,10 +47,9 @@ void main() {
     await s.bootstrap(disk);
     injectDemoData(s);
 
-    // المدرسة الأولى: رسم حجز وأشهر ورسوم إضافية
+    // المدرسة الأولى: رسم حجز ورسوم إضافية
     expect(await s.login('amal', 'amal2026'), isNull);
     await s.setSeatReservationFee(500);
-    await s.saveStudyMonths([9, 10, 11]);
     await s.saveFeeItems([
       const FeeItem(id: 'fee-1', name: 'الزي المدرسي', amount: 100, dueDate: '2026-09-15'),
     ]);
@@ -63,7 +61,6 @@ void main() {
     expect(await s.login('noor', 'noor2026'), isNull);
 
     expect(s.seatReservationFee, 0, reason: 'رسم حجز المدرسة السابقة');
-    expect(s.studyMonths, isNull, reason: 'أشهر المدرسة السابقة');
     expect(s.feeItems, isEmpty, reason: 'رسوم المدرسة السابقة');
     expect(s.gradeFees, isEmpty, reason: 'مراحل المدرسة السابقة');
     s.stopAutoSync();
@@ -76,7 +73,6 @@ void main() {
     injectDemoData(first);
     expect(await first.login('amal', 'amal2026'), isNull);
     await first.setSeatReservationFee(500);
-    await first.saveStudyMonths([9, 10]);
     await first.saveFeeItems([
       const FeeItem(id: 'fee-1', name: 'الزي المدرسي', amount: 100, dueDate: '2026-09-15'),
     ]);
@@ -94,7 +90,6 @@ void main() {
     expect(await second.login('noor', 'noor2026'), isNull);
 
     expect(second.seatReservationFee, 0, reason: 'رسم حجز مدرسة أخرى');
-    expect(second.studyMonths, isNull);
     expect(second.feeItems, isEmpty);
     second.stopAutoSync();
     await second.flush();
@@ -105,8 +100,7 @@ void main() {
     await s.bootstrap(disk);
     injectDemoData(s);
     expect(await s.login('amal', 'amal2026'), isNull);
-    await s.setSeatReservationFee(500);
-    await s.saveStudyMonths([9, 10]);
+    await s.setSeatReservationFee(500, deduct: false);
     s.stopAutoSync();
     await s.flush();
 
@@ -129,7 +123,7 @@ void main() {
     expect(await s.enterTenantAsDeveloper(recreated), isNull);
 
     expect(s.seatReservationFee, 0, reason: 'مدرسة أخرى وإن تطابق اسمها');
-    expect(s.studyMonths, isNull);
+    expect(s.deductsSeatFee, isTrue);
     s.stopAutoSync();
     await s.flush();
   });

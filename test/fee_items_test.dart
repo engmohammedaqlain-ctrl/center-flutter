@@ -88,12 +88,19 @@ void main() {
     await s.flush();
   });
 
-  test('الرسم الإضافي لا يُعدّ خطة أقساط فيوقف المستحق الشهري', () async {
+  test('الرسم الإضافي يُقيَّد فوق أقساط الخطة لا بدلاً منها', () async {
     final s = _seeded();
     s.students.removeWhere((x) => true);
     s.installments.clear();
     s.gradeFees.clear();
-    s.gradeFees.add(GradeFee(id: 'g1', gradeName: 'عاشر', monthlyFee: 200, orderIndex: 0));
+    s.gradeFees.add(GradeFee(
+      id: 'g1',
+      gradeName: 'عاشر',
+      monthlyFee: 200,
+      orderIndex: 0,
+      term1Start: '2026-09-05',
+      planItems: const [PlanItem(id: 'p1', title: 'القسط 1', amount: 200, dueDate: '2026-09-05')],
+    ));
     s.students.add(Student(
       id: 'stu',
       fullName: 'طالب الرسوم',
@@ -106,13 +113,12 @@ void main() {
       balance: 0,
       status: 'active',
     ));
-    await s.saveStudyMonths([9]);
+    s.applyGradePlan('عاشر');
     s.applyFeeItem(_item(s));
 
-    final result = s.generateMonthlyDues(now: DateTime(2026, 9, 5));
-
-    expect(result.created, 1, reason: 'الرسم الإضافي فوق الرسم الشهري لا بدلاً منه');
-    expect(s.installments.any((i) => i.title.startsWith('رسوم 09')), isTrue);
+    final own = s.installments.where((i) => i.studentId == 'stu').toList();
+    expect(own.length, 2, reason: 'قسط الخطة والرسم الإضافي معاً');
+    expect(own.map((i) => i.amount).reduce((a, b) => a + b), 260);
     await s.flush();
   });
 }

@@ -17,7 +17,6 @@ Future<AppStore> _openFees(WidgetTester tester) async {
   final s = AppStore.forTesting();
   injectDemoData(s);
   await s.setSeatReservationFee(50);
-  await s.saveStudyMonths([9]);
   await s.flush();
 
   await tester.pumpWidget(StoreScope(
@@ -29,7 +28,7 @@ Future<AppStore> _openFees(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 300));
   await tester.tap(find.text('المراحل والرسوم'));
   await tester.pumpAndSettle();
-  await tester.tap(find.text('الحجز وأشهر الدراسة'));
+  await tester.tap(find.text('رسم حجز المقعد').first);
   await tester.pumpAndSettle();
   return s;
 }
@@ -70,14 +69,14 @@ void main() {
     await s.flush();
   });
 
-  testWidgets('أشهر الدراسة كذلك', (tester) async {
+  testWidgets('طريقة احتساب الرسم كذلك', (tester) async {
     final s = await _openFees(tester);
-    expect(find.text('الرسوم الشهرية متوقفة'), findsNothing);
+    expect(find.text('يُدفع مرة واحدة ويُخصم من أول الأقساط'), findsOneWidget);
 
-    await s.saveStudyMonths([]);
+    await s.setSeatReservationFee(50, deduct: false);
     await tester.pump();
 
-    expect(find.text('الرسوم الشهرية متوقفة'), findsOneWidget);
+    expect(find.text('يُدفع مرة واحدة، ويبقى مطالبةً مستقلة فوق أقساط الطالب'), findsOneWidget);
     await s.flush();
   });
   testWidgets('مخطط العلامات يتبدّل والتبويب مفتوح', (tester) async {

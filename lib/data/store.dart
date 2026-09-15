@@ -10,6 +10,7 @@ import '../theme/app_colors.dart';
 import 'academic_matching.dart';
 import 'app_settings.dart';
 import 'balance.dart';
+import 'fee_plan.dart';
 import 'grading.dart';
 import 'institution.dart';
 import 'local_db.dart';
@@ -861,7 +862,6 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   /// مفاتيح إعدادات المنشأة داخل كائن الألوان المتزامن — مطابقة للنسخة المكتبية.
   static const seatFeeColorKey = '__seat_reservation_fee';
-  static const studyMonthsColorKey = '__study_months';
 
   /// كتابة إعداد منشأة داخل الكائن المتزامن — المقابل لـ `syncInstitutionSetting`.
   Future<void> _syncInstitutionSetting(String key, Object? value) async {
@@ -869,178 +869,100 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _persistInstitutionRow();
   }
 
-  /// الأشهر (1-12) التي يُستحق فيها الرسم الشهري، أو `null` فلا يُستحق شيء.
-  ///
-  /// مدرسةٌ لم تحدّد أشهرها لا تُولَّد لطلابها مستحقات: توليدها على مدار السنة
-  /// يطالب الطالب بشهور العطلة — مطابق لـ `getStudyMonths`.
-  List<int>? get studyMonths {
-    final raw = db.settings[_kStudyMonths];
-    final decoded = raw == null || raw.isEmpty ? _storedColorsMap[studyMonthsColorKey] : _tryDecodeList(raw);
-    if (decoded is! List) return null;
-    final months = <int>{
-      for (final m in decoded)
-        if (m is num && m >= 1 && m <= 12) m.toInt(),
-    }.toList()
-      ..sort();
-    return months.isEmpty ? null : months;
-  }
-
-  static List<dynamic>? _tryDecodeList(String raw) {
-    try {
-      final data = jsonDecode(raw);
-      return data is List ? data : null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<void> saveStudyMonths(List<int> months) async {
-    requireSection('settings');
-    final clean = <int>{
-      for (final m in months)
-        if (m >= 1 && m <= 12) m,
-    }.toList()
-      ..sort();
-    await db.setSetting(_kStudyMonths, clean.isEmpty ? null : jsonEncode(clean));
-    await _syncInstitutionSetting(studyMonthsColorKey, clean);
-    notifyListeners();
-  }
-
-  static const _kStudyMonths = 'study_months';
-
-  /// بادئة معرّف المستحق الشهري — معرّف حتمي فلا يتكرر بين الأجهزة.
-  static const dueIdPrefix = 'due_';
-
   /// عنوان قسط رسم الحجز — معرّف في `balance.dart` مع ترتيب السداد الذي يقدّمه.
   static const seatInstallmentTitle = seatTitle;
 
-  String monthlyDueId(String studentId, String monthKey) => '$dueIdPrefix${studentId}_$monthKey';
+  // ── خطط أقساط المراحل (المقابل لـ students.service.ts) ────────────────────
 
-  /// رسم المرحلة لكل اسم مرحلة — المقابل لـ `loadFeeByGrade`.
-  Map<String, double> feeByGrade() {
-    final map = <String, double>{};
+  /// خطة كل مرحلة مفهرسة باسمها — `loadGradePlans`.
+  Map<String, GradeFee> gradePlans() {
+    final map = <String, GradeFee>{};
     for (final f in gradeFees) {
-      final key = f.gradeName.trim().toLowerCase();
-      map.putIfAbsent(key, () => f.monthlyFee);
+      map.putIfAbsent(f.gradeName.trim().toLowerCase(), () => f);
     }
     return map;
   }
 
-  /// رسم الطالب الخاص إن حُدِّد (والصفر إعفاء)، وإلا رسم صفه؛ `null` حين لا رسم له.
-  double? resolveMonthlyFee(Student student, [Map<String, double>? fees]) {
-    final custom = student.customMonthlyFee;
-    if (custom != null) return custom;
-    return (fees ?? feeByGrade())[student.gradeLevel.trim().toLowerCase()];
+  /// خطة مرحلة الطالب، أو `null` حين لا مرحلة له ولا خطة لها.
+  GradeFee? planForStudent(Student student, [Map<String, GradeFee>? plans]) =>
+      (plans ?? gradePlans())[student.gradeLevel.trim().toLowerCase()];
+
+  /// بنود خطة المرحلة؛ فارغة حين لم تُضبط بعد.
+  List<PlanItem> planItemsOf(GradeFee? grade) => grade?.planItems ?? const [];
+
+  /// عدد الطلاب النشطين بلا خطة لمرحلتهم — تحذير في شاشة المراحل.
+  int get studentsMissingPlan {
+    final plans = gradePlans();
+    return students
+        .where((s) => s.status == 'active' && planItemsOf(planForStudent(s, plans)).isEmpty)
+        .length;
   }
 
-  /// عدد الطلاب النشطين بلا رسم معرّف — تحذير في شاشة المراحل.
-  int get studentsMissingFee {
-    final fees = feeByGrade();
-    return students.where((s) => s.status == 'active' && resolveMonthlyFee(s, fees) == null).length;
+  /// أقساط الطالب من خطة مرحلته، مع خصمه ورسم الحجز — `buildStudentPlan`.
+  List<Installment> _studentPlanInstallments(
+    Student student, {
+    required List<PlanItem> items,
+    PlanDiscount? discount,
+  }) {
+    final rows = buildStudentPlan(
+      items,
+      student.id,
+      seatFee: student.seatReservationPaid ? 0 : seatReservationFee,
+      deductSeat: deductsSeatFee,
+      discount: discount,
+      enrollmentDate: isoDate(student.enrollmentDate),
+    );
+    return toInstallments(rows, student.id, _nowIso());
   }
 
-  /// توليد مستحق الشهر الحالي لطلاب المدرسة — المقابل لـ `generateMonthlyDues`.
+  /// تطبيق خطة المرحلة على طلابها النشطين ممن لا أقساط لهم بعد — `applyGradePlan`.
   ///
-  /// لا يمسّ مستحقاً قائماً: كل شهر يثبت بالرسم النافذ لحظة استحقاقه، وتغيير
-  /// الرسم لاحقاً يسري على ما بعده. ومن له خطة أقساط يدوية لا يُولَّد له شيء
-  /// حتى لا يُطالَب مرتين.
-  ({int created, int missingFee}) generateMonthlyDues({DateTime? now}) {
-    final months = studyMonths;
-    if (months == null) return (created: 0, missingFee: 0);
+  /// فعلٌ صريح بطلب المستخدم لا تشغيلٌ تلقائي: من له أقساط تُترك كما هي، فتعديل
+  /// الخطة لا يُعيد ضبط تواريخ من سُجّلوا على الخطة السابقة ولا مبالغهم.
+  ({int applied, int skipped}) applyGradePlan(String gradeName) {
+    requireSection('settings');
+    final items = planItemsOf(gradePlans()[gradeName.trim().toLowerCase()]);
+    if (items.isEmpty) return (applied: 0, skipped: 0);
 
-    final today = now ?? DateTime.now();
-    if (!months.contains(today.month)) return (created: 0, missingFee: 0);
-    final monthKey = '${today.year}-${today.month.toString().padLeft(2, '0')}';
-
-    final fees = feeByGrade();
-    var created = 0;
-    var missingFee = 0;
-
-    for (final student in students.where((s) => s.status == 'active').toList()) {
-      final dueId = monthlyDueId(student.id, monthKey);
-      final existing = installments.where((i) => i.studentId == student.id).toList();
-      if (existing.any((i) => i.id == dueId)) continue;
-
-      // خطة أقساط يدوية تغطي رسومه أصلاً. الرسم الإضافي ليس خطةً: يُقيَّد فوق
-      // الرسم الشهري، فوجوده لا يوقف توليد المستحق
-      final manual = existing.any((i) =>
-          !i.id.startsWith(dueIdPrefix) && !i.id.startsWith(feeIdPrefix) && i.title != seatInstallmentTitle);
-      if (manual) continue;
-
-      final fee = resolveMonthlyFee(student, fees);
-      if (fee == null) {
-        missingFee++;
+    var applied = 0;
+    var skipped = 0;
+    for (final student in students
+        .where((s) => s.status == 'active' && isSameGrade(s.gradeLevel, gradeName))
+        .toList()) {
+      if (installments.any((i) => i.studentId == student.id)) {
+        skipped++;
         continue;
       }
-      if (fee <= 0) continue;
-
-      // رسم الحجز يُخصم من أول مستحق مرة واحدة
-      final seat = existing.where((i) => i.title == seatInstallmentTitle).firstOrNull;
-      final hadDues = existing.any((i) => i.id.startsWith(dueIdPrefix));
-      final deduction = seat != null && !hadDues ? seat.amount : 0.0;
-      final amount = fee - deduction;
-
-      final inst = Installment(
-        id: dueId,
-        studentId: student.id,
-        title: 'رسوم ${today.month.toString().padLeft(2, '0')}/${today.year}',
-        amount: amount < 0 ? 0 : amount,
-        dueDate: DateTime(today.year, today.month, 1),
-        syncStatus: 'pending',
-        createdAt: _nowIso(),
-        updatedAt: _nowIso(),
-      );
-      installments.add(inst);
-      _queue('installments', inst.id, 'INSERT', inst.toCloud());
-
-      // خُصم من مستحق الشهر أقل من رسم الحجز: لا يُطالَب الطالب بفرقٍ لم يُخصم له
-      if (seat != null && deduction > fee) {
-        seat.amount = fee;
-        seat.updatedAt = _nowIso();
-        seat.syncStatus = 'pending';
-        _queue('installments', seat.id, 'UPDATE', seat.toCloud());
+      for (final inst in _studentPlanInstallments(student, items: items)) {
+        installments.add(inst);
+        _queue('installments', inst.id, 'INSERT', inst.toCloud());
       }
-
-      markDirty('installments');
       _persistStudentLedger(student);
-      created++;
+      applied++;
     }
 
-    if (created > 0) notifyListeners();
-    return (created: created, missingFee: missingFee);
-  }
-
-  /// أشهر الدراسة الباقية بعد [month] — `remainingStudyMonths`.
-  int remainingStudyMonths(int month) {
-    final months = studyMonths;
-    if (months == null) return 0;
-    // السنة الدراسية تبدأ في أيلول: كانون الثاني بعد كانون الأول لا قبله
-    int offset(int m) => (m - 9 + 12) % 12;
-    return months.where((m) => offset(m) > offset(month)).length;
+    if (applied > 0) {
+      markDirty('installments');
+      notifyListeners();
+    }
+    return (applied: applied, skipped: skipped);
   }
 
   /// المتوقع على الطلاب النشطين لباقي السنة — `projectRemainingYear`.
   ///
-  /// الأشهر القادمة والأقساط التي لم يحن موعدها، ناقصاً ما دفعه كل طالب مقدماً.
-  /// رقمٌ للإدارة وحدها: لا يُطالَب به قبل موعده، ولذلك لا يدخل في «المستحق».
+  /// أقساطهم التي لم يحن موعدها، ناقصاً ما دفعوه مقدماً. رقمٌ للإدارة وحدها:
+  /// لا يُطالَب به قبل موعده، ولذلك لا يدخل في «المستحق».
   double projectRemainingYear({DateTime? today}) {
     final day = today ?? DateTime.now();
-    final upcoming = remainingStudyMonths(day.month);
-    final fees = feeByGrade();
     var total = 0.0;
 
     for (final student in students.where((s) => s.status == 'active')) {
-      final own = installments.where((i) => i.studentId == student.id).toList();
-      // خطة أقساط يدوية تحلّ محل الرسم الشهري، فلا يُحتسب الشهري فوقها
-      final hasPlan = own.any((i) =>
-          !i.id.startsWith(dueIdPrefix) && !i.id.startsWith(feeIdPrefix) && i.title != seatInstallmentTitle);
-      final monthly = hasPlan ? 0.0 : math.max(0.0, resolveMonthlyFee(student, fees) ?? 0);
       var scheduled = 0.0;
-      for (final i in own) {
+      for (final i in installments.where((i) => i.studentId == student.id)) {
         if (!isInstallmentDue(i, day)) scheduled += math.max(0.0, i.remaining);
       }
       final credit = student.balance > 0 ? student.balance : 0.0;
-      final projected = monthly * upcoming + scheduled - credit;
+      final projected = scheduled - credit;
       if (projected > 0) total += projected;
     }
     return total;
@@ -1146,6 +1068,15 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
   }
 
+  static List<dynamic>? _decodeList(String raw) {
+    try {
+      final data = jsonDecode(raw);
+      return data is List ? data : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ── وسائل الدفع وقواعد الخصم (المقابل لـ finance/paymentMethods.ts) ───────
 
   /// وسائل الدفع كما ضبطتها المنشأة، أو الأساسية إن لم تُضبط.
@@ -1219,7 +1150,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   List<FeeItem> get _legacyFeeItems {
     final raw = db.settings[feeItemsKey];
-    final list = raw == null || raw.isEmpty ? _storedColorsMap['__fee_items'] : _tryDecodeList(raw);
+    final list = raw == null || raw.isEmpty ? _storedColorsMap['__fee_items'] : _decodeList(raw);
     return [
       for (final e in (list is List ? list : const []))
         if (e is Map) FeeItem.fromMap(Map<String, dynamic>.from(e)),
@@ -1395,18 +1326,6 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
       final seatFee = synced[seatFeeColorKey];
       if (seatFee is num) await db.setSetting(seatReservationFeeKey, '${seatFee < 0 ? 0 : seatFee}');
-
-      if (synced.containsKey(studyMonthsColorKey)) {
-        final months = synced[studyMonthsColorKey];
-        final clean = months is List
-            ? (<int>{
-                for (final m in months)
-                  if (m is num && m >= 1 && m <= 12) m.toInt(),
-              }.toList()
-              ..sort())
-            : const <int>[];
-        await db.setSetting(_kStudyMonths, clean.isEmpty ? null : jsonEncode(clean));
-      }
 
       final scheme = synced[gradingSchemeColorKey];
       if (scheme is Map) {
@@ -1879,7 +1798,6 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     customPaymentMethodsKey,
     discountRulesKey,
     gradingSchemeKey,
-    _kStudyMonths,
     receiptMigrationKey,
     attendanceIdMigrationKey,
     paymentSnapshotKey,
@@ -2563,7 +2481,12 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return null;
   }
 
-  void upsertStudent(Student incoming, {bool isNew = false, StudentAttachments? attachments}) {
+  void upsertStudent(
+    Student incoming, {
+    bool isNew = false,
+    StudentAttachments? attachments,
+    PlanDiscount? discount,
+  }) {
     requireSection('students');
     if (!isValidNationalId(incoming.nationalId)) {
       throw StoreException('رقم الهوية غير صالح! يجب أن يتكون من 9 أرقام.');
@@ -2603,9 +2526,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       if (placementChanged) syncStudentRoomEnrollments([incoming.id]);
     } else {
       incoming.createdAt ??= _nowIso();
-      // رسم حجز المقعد يُقرأ من الإعدادات ولا يُقيَّد إن لم تعتمد الإدارة قيمة له.
-      // لا تُولَّد أقساط تلقائياً: النسخة المكتبية تُنشئ الأقساط فقط إن مُرِّرت
-      // صراحةً، والطالب الجديد يبدأ برصيد صفر.
+      // من دفع رسم الحجز لا يُقيَّد عليه قسطٌ به: دفعه يزيد رصيده المقدَّم
       if (incoming.seatReservationPaid) {
         incoming.balance = incoming.balance + seatReservationFee;
       }
@@ -2615,6 +2536,18 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       }
       students.insert(0, incoming);
       _queue('students', incoming.id, 'INSERT', incoming.toCloud());
+
+      // نسخته من خطة مرحلته، ورسم الحجز بقاعدة واحدة فوقها أو مقتطعاً منها.
+      // خطةٌ لم تُضبط لمرحلته لا تولّد شيئاً: لا يُخترع للطالب جدول أقساط
+      final items = planItemsOf(planForStudent(incoming));
+      if (items.isNotEmpty) {
+        for (final inst in _studentPlanInstallments(incoming, items: items, discount: discount)) {
+          installments.add(inst);
+          _queue('installments', inst.id, 'INSERT', inst.toCloud());
+        }
+        markDirty('installments');
+        _persistStudentLedger(incoming);
+      }
     }
 
     if (attachments != null) {
