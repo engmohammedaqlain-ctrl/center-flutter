@@ -384,6 +384,12 @@ class AppUpdater extends ChangeNotifier {
   String? _readyPath;
   int _dismissed = 0;
 
+  /// انتهى فحصٌ يدوي ولم يجد جديداً.
+  ///
+  /// بلا هذا لا يتغيّر شيء على الشاشة حين لا يوجد تحديث، فلا يعرف الضاغط
+  /// أفُحص أصلاً أم لا. والفحص التلقائي لا يرفعه: خبرٌ لم يطلبه أحد.
+  bool checkedWithNoUpdate = false;
+
   Future<void>? _starting;
   Future<void>? _loading;
   Future<UpdateAction>? _checking;
@@ -484,6 +490,10 @@ class AppUpdater extends ChangeNotifier {
     await _load();
     final last = lastChecked;
     if (!force && last != null && _clock().difference(last) < checkEvery) return action;
+    if (force) {
+      checkedWithNoUpdate = false;
+      notifyListeners();
+    }
 
     // تنزيلٌ جارٍ أو متوقف أو حزمة جاهزة: الفحص لا يمسح حالتها من الشاشة
     final quiet = phase != UpdatePhase.idle && phase != UpdatePhase.failed;
@@ -520,6 +530,7 @@ class AppUpdater extends ChangeNotifier {
         error = 'تعذّر الوصول إلى خادم التحديثات. تحقّق من الاتصال بالإنترنت';
       }
     }
+    checkedWithNoUpdate = force && fetched != null && action == UpdateAction.none;
     notifyListeners();
     return action;
   }
