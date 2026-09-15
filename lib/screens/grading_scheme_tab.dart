@@ -25,13 +25,26 @@ class _GradingSchemeTabState extends State<GradingSchemeTab> {
   bool loaded = false;
   bool dirty = false;
 
+  /// المستخدم غيّر شيئاً بيده: عندها وحدها يتوقف التبويب عن متابعة ما يصل.
+  bool userEdited = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     // تُستدعى مع كل إخطار من المخزن: مخططٌ ضُبط على جهاز آخر يصل بالسحب، وكان
     // لا يظهر حتى يُعاد فتح التبويب. وتعديلٌ لم يُحفظ بعد لا يُدهس.
-    if (loaded && dirty) return;
-    scheme = StoreScope.of(context).gradingScheme;
+    if (loaded && userEdited) return;
+    final store = StoreScope.of(context);
+    final stored = store.gradingScheme;
+    if (stored.isEmpty) {
+      // مدرسة لم تعرّف نظامها بعد تبدأ بالنموذج الافتراضي جاهزاً للتعديل —
+      // كما في GradingSchemeSettings. ولا يصير نظامها حتى تحفظه.
+      scheme = defaultGradingScheme(store.newId);
+      dirty = true;
+    } else {
+      scheme = stored;
+      dirty = false;
+    }
     loaded = true;
   }
 
@@ -43,6 +56,7 @@ class _GradingSchemeTabState extends State<GradingSchemeTab> {
     setState(() {
       scheme = term == 'term_2' ? scheme.copyWith(term2: next) : scheme.copyWith(term1: next);
       dirty = true;
+      userEdited = true;
     });
   }
 
@@ -51,7 +65,10 @@ class _GradingSchemeTabState extends State<GradingSchemeTab> {
     try {
       await store.saveGradingScheme(scheme);
       if (!mounted) return;
-      setState(() => dirty = false);
+      setState(() {
+        dirty = false;
+        userEdited = false;
+      });
       showAppSnack(context, 'تم حفظ نظام العلامات');
     } on StoreException catch (e) {
       if (mounted) showAppSnack(context, e.message, error: true);

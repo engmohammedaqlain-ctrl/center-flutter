@@ -62,16 +62,40 @@ void main() {
       ),
     ));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.textContaining('لا مكوّنات'), findsOneWidget);
+    // مدرسة بلا نظام محفوظ: نموذج افتراضي جاهز للتعديل
+    expect(find.text('نهائي'), findsOneWidget);
 
-    // وصل السحب والتبويب مفتوح
+    // وصل السحب والتبويب مفتوح: نظام المدرسة يحلّ محل النموذج
     s.extraCloud['institution_settings'] = [_webRow(s.currentTenant!.id)];
     await s.onPulled();
     await tester.pump();
 
-    expect(find.textContaining('لا مكوّنات'), findsNothing);
     expect(find.text('شهري أول'), findsOneWidget);
     expect(find.text('100%'), findsOneWidget, reason: 'مجموع الأوزان كما في الويب');
+    await s.flush();
+  });
+  testWidgets('مدرسة جديدة تبدأ بالنموذج الافتراضي كما في الديسكتوب', (tester) async {
+    tester.view.physicalSize = const Size(390, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final s = _store();
+    expect(s.gradingScheme.isEmpty, isTrue, reason: 'لا نظام محفوظ');
+
+    await tester.pumpWidget(StoreScope(
+      store: s,
+      child: const MaterialApp(
+        home: Directionality(textDirection: TextDirection.rtl, child: Scaffold(body: GradingSchemeTab())),
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    for (final name in ['شهري أول', 'نصفي', 'شهري ثانٍ', 'نهائي']) {
+      expect(find.text(name), findsOneWidget, reason: name);
+    }
+    expect(find.text('100%'), findsOneWidget);
+    expect(find.text('حفظ'), findsOneWidget, reason: 'نموذج جاهز للتعديل لا نظام محفوظ');
+    expect(s.gradingScheme.isEmpty, isTrue, reason: 'لا يصير نظامها حتى تحفظه');
     await s.flush();
   });
 }
