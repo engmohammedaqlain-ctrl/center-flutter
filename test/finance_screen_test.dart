@@ -85,18 +85,31 @@ void main() {
     });
   }
 
-  testWidgets('البحث والتصفية في سطر واحد في المقبوضات والمستحقات', (tester) async {
+  testWidgets('المالية تفتح على المستحقات، وترتيب التبويبات كما في الديسكتوب', (tester) async {
     final s = await _store();
     await _pump(tester, s);
 
-    final search = tester.getRect(find.byType(SearchField));
-    expect(tester.getRect(find.byType(GroupedFilterButton)).center.dy, closeTo(search.center.dy, 1));
+    // المستحقات سبب فتح المالية، فهي أولها والمفتوحة عند الدخول
+    final tabs = ['المستحقات', 'المقبوضات', 'المصروفات'];
+    final order = [for (final t in tabs) tester.getRect(find.text(t)).center.dx];
+    expect(order[0], greaterThan(order[1]), reason: 'من اليمين لليسار');
+    expect(order[1], greaterThan(order[2]));
+    expect(find.text('لا مستحقات'), findsNothing);
+    await s.flush();
+  });
 
-    await _open(tester, 'المستحقات');
+  testWidgets('البحث والتصفية في سطر واحد في المستحقات والمقبوضات', (tester) async {
+    final s = await _store();
+    await _pump(tester, s);
+
     expect(
       tester.getRect(find.byType(FilterButton)).center.dy,
       closeTo(tester.getRect(find.byType(SearchField)).center.dy, 1),
     );
+
+    await _open(tester, 'المقبوضات');
+    final search = tester.getRect(find.byType(SearchField));
+    expect(tester.getRect(find.byType(GroupedFilterButton)).center.dy, closeTo(search.center.dy, 1));
     await s.flush();
   });
 
@@ -105,6 +118,7 @@ void main() {
     final target = s.payments.firstWhere((p) => !p.cancelled);
     s.cancelPayment(target);
     await _pump(tester, s);
+    await _open(tester, 'المقبوضات');
 
     await tester.tap(find.byType(GroupedFilterButton));
     await tester.pumpAndSettle();

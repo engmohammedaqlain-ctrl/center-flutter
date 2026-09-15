@@ -12,8 +12,8 @@ import 'payment_form_screen.dart';
 import 'receipt_screen.dart';
 import 'student_detail_screen.dart';
 
-/// المالية والصندوق — بتبويبات `pages/Finance.tsx`: المقبوضات، والمستحقات،
-/// والمصروفات وأجور المعلمين.
+/// المالية والصندوق — بتبويبات `pages/Finance.tsx` وترتيبها: المستحقات ثم
+/// المقبوضات ثم المصروفات وأجور المعلمين. المستحقات أولاً لأنها سبب فتح المالية.
 ///
 /// بتنسيق ملف الطالب: بطاقات أرقام متجاورة أول كل تبويب، ثم سجل من بطاقات مرتبة —
 /// سطر رئيسي مقابل مبلغه، وخط رفيع، ثم الحالة وأزرارها. البحث والتصفية سطر واحد
@@ -98,9 +98,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
               _tabBar(store, allDues.length, showExpenses),
               Expanded(
                 child: switch (tab) {
-                  1 => _dues(context, store, allDues, q),
+                  1 => _payments(context, store, q),
                   2 => _expenses(store),
-                  _ => _payments(context, store, q),
+                  _ => _dues(context, store, allDues, q),
                 },
               ),
             ],
@@ -121,8 +121,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
       ),
       child: Row(
         children: [
-          Expanded(child: _tab('المقبوضات', Icons.receipt_long_outlined, 0, store.payments.length)),
-          Expanded(child: _tab('المستحقات', Icons.schedule, 1, dueCount, alert: dueCount > 0)),
+          Expanded(child: _tab('المستحقات', Icons.schedule, 0, dueCount, alert: dueCount > 0)),
+          Expanded(child: _tab('المقبوضات', Icons.receipt_long_outlined, 1, store.payments.length)),
           if (showExpenses)
             Expanded(
               child: _tab('المصروفات', Icons.payments_outlined, 2, store.expenses.length + store.teacherPayouts.length),
