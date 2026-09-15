@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../data/permissions.dart';
-import '../data/teacher_salary.dart';
 import '../data/phone.dart';
 import '../data/store.dart';
 import '../models/models.dart';
@@ -108,11 +107,6 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
   );
   late final rate = TextEditingController(text: trimNum(widget.teacher?.rate ?? 70));
   late final notes = TextEditingController(text: widget.teacher?.notes ?? '');
-  /// الراتب شهري فقط؛ أنواع الأجر الأخرى أُلغيت.
-  final String paymentType = 'fixed_monthly';
-
-  /// الشهر الذي يسري منه الراتب المُدخل — الأشهر السابقة تبقى براتبها.
-  late String salaryFrom = monthKeyOf(DateTime.now());
   late final List<String> subjectIds = [...?widget.teacher?.subjectIds];
   final errors = FieldErrors();
   bool _seeded = false;
@@ -166,9 +160,6 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
           subject: names.isEmpty ? '' : names.first,
           rate: rateValue ?? 0,
           email: email.text.trim(),
-          paymentType: paymentType,
-          // الراتب الجديد يسري من شهره: راتب شهر مضى يبقى كما كان وقته
-          salaryHistory: applySalaryChange(widget.teacher, salaryFrom, rateValue ?? 0),
           notes: notes.text.trim(),
           nationalId: idDigits,
           portalCode: portalCode.text.trim(),
@@ -333,42 +324,20 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
 
             // ── ٤. المحاسبة ─────────────────────────────────────────────────
             const FormSection(icon: Icons.payments_outlined, title: 'المحاسبة والراتب'),
-            FieldPair(
-              start: [
-                FieldLabel('الراتب الشهري (₪)', key: errors.key('rate'), requiredField: true),
-                TextField(
-                  controller: rate,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (_) {
-                    if (errors.clear('rate')) setState(() {});
-                  },
-                  decoration: InputDecoration(errorText: errors['rate']),
-                ),
-              ],
-              end: [
-                const FieldLabel('يسري من شهر'),
-                SelectField(
-                  text: monthLabel(salaryFrom),
-                  icon: Icons.event_outlined,
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: DateTime.now(),
-                      firstDate: DateTime(DateTime.now().year - 2),
-                      lastDate: DateTime(DateTime.now().year + 1, 12),
-                    );
-                    if (picked != null) setState(() => salaryFrom = monthKeyOf(picked));
-                  },
-                ),
-              ],
+            const FieldLabel('الراتب الشهري (₪)'),
+            TextField(
+              controller: rate,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              onChanged: (_) {
+                if (errors.clear('rate')) setState(() {});
+              },
+              decoration: InputDecoration(errorText: errors['rate']),
             ),
-            if ((widget.teacher?.salaryHistory ?? const []).isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(
-                'سجل الراتب: ${widget.teacher!.salaryHistory.map(describeSalaryChange).join('  ·  ')}',
-                style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
-              ),
-            ],
+            const SizedBox(height: 6),
+            const Text(
+              'رقمٌ يُقترح به سند الصرف ويُعدَّل أو يُتجاهل — لا مطالبة شهرية',
+              style: TextStyle(color: AppColors.muted, fontSize: 10.5),
+            ),
             _gap,
             const FieldLabel('ملاحظات'),
             TextField(

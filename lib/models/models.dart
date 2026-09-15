@@ -710,22 +710,6 @@ class Classroom {
       );
 }
 
-/// تغيير راتب يسري من شهر — عنصر في `salary_history`.
-class SalaryChange {
-  const SalaryChange({required this.from, required this.amount});
-
-  /// أول شهر يسري فيه، بصيغة `YYYY-MM`.
-  final String from;
-  final double amount;
-
-  Map<String, dynamic> toMap() => {'from': from, 'amount': amount};
-
-  factory SalaryChange.fromMap(Map<String, dynamic> m) => SalaryChange(
-        from: '${m['from'] ?? ''}',
-        amount: (m['amount'] as num?)?.toDouble() ?? 0,
-      );
-}
-
 class Teacher {
   Teacher({
     required this.id,
@@ -734,8 +718,6 @@ class Teacher {
     required this.subject,
     this.rate = 70,
     this.email = '',
-    this.paymentType = 'fixed_monthly',
-    List<SalaryChange>? salaryHistory,
     this.notes = '',
     this.nationalId = '',
     this.portalCode = '',
@@ -743,18 +725,18 @@ class Teacher {
     this.syncStatus = 'synced',
     this.createdAt,
     this.updatedAt,
-  }) : salaryHistory = salaryHistory ?? <SalaryChange>[];
+  });
 
   final String id;
   String name;
   String phone;
   String subject;
-  double rate;
-  String email;
-  String paymentType;
 
-  /// تغييرات الراتب بترتيب شهورها — راتب شهر مضى يبقى كما كان وقته.
-  List<SalaryChange> salaryHistory;
+  /// الراتب الشهري المعتاد. رقمٌ يُقترح به سند الصرف ويُعدَّل أو يُتجاهل، لا
+  /// مطالبة: المدرسة عمل خاص — شهر بلا راتب، وشهر بأكثر منه، وشهر إجازة.
+  double rate;
+
+  String email;
   String notes;
 
   /// رقم هوية المعلم — اسم المستخدم في بوابة المعلم.
@@ -773,9 +755,7 @@ class Teacher {
         'phone': phone,
         'email': email,
         'subject_ids': subjectIds,
-        'payment_type': paymentType,
         'payment_rate': rate,
-        'salary_history': [for (final c in salaryHistory) c.toMap()],
         'national_id': nationalId.isEmpty ? null : nationalId,
         'portal_code': portalCode.isEmpty ? null : portalCode,
         'notes': notes,
@@ -798,12 +778,6 @@ class Teacher {
       subject: '${m['subject'] ?? ''}',
       rate: (m['payment_rate'] as num?)?.toDouble() ?? 0,
       email: '${m['email'] ?? ''}',
-      paymentType: '${m['payment_type'] ?? 'fixed_monthly'}',
-      salaryHistory: [
-        if (m['salary_history'] is List)
-          for (final c in m['salary_history'] as List)
-            if (c is Map) SalaryChange.fromMap(Map<String, dynamic>.from(c)),
-      ],
       notes: '${m['notes'] ?? ''}',
       nationalId: '${m['national_id'] ?? ''}',
       portalCode: '${m['portal_code'] ?? ''}',
@@ -1306,6 +1280,7 @@ class TeacherPayout {
     required this.amount,
     required this.paymentDate,
     this.groupId = '',
+    this.payoutType = 'salary',
     this.periodStart = '',
     this.periodEnd = '',
     this.paidByUserId = '',
@@ -1322,6 +1297,10 @@ class TeacherPayout {
   String teacherId;
   String groupId;
   double amount;
+
+  /// راتب أو سلفة أو مكافأة — للتمييز في كشف المعلم لا لتوليد مطالبة.
+  String payoutType;
+
   String periodStart;
   String periodEnd;
   String paymentDate;
@@ -1341,6 +1320,7 @@ class TeacherPayout {
         'teacher_id': teacherId,
         'group_id': groupId.isEmpty ? null : groupId,
         'amount': amount,
+        'payout_type': payoutType,
         'period_start': periodStart.isEmpty ? null : periodStart,
         'period_end': periodEnd.isEmpty ? null : periodEnd,
         'payment_date': paymentDate,
@@ -1359,6 +1339,7 @@ class TeacherPayout {
         teacherId: '${m['teacher_id'] ?? ''}',
         groupId: '${m['group_id'] ?? ''}',
         amount: (m['amount'] as num?)?.toDouble() ?? 0,
+        payoutType: '${m['payout_type'] ?? 'salary'}',
         periodStart: '${m['period_start'] ?? ''}'.split('T').first,
         periodEnd: '${m['period_end'] ?? ''}'.split('T').first,
         paymentDate: '${m['payment_date'] ?? ''}'.split('T').first,

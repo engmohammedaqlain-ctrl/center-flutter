@@ -5,6 +5,7 @@ import '../data/teacher_salary.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/form_layout.dart';
 import '../widgets/panels.dart';
 import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
@@ -820,9 +821,11 @@ class _SpendCard extends StatelessWidget {
   }
 }
 
-/// رواتب المعلمين المستحقة عن الشهر الجاري — المقابل لقائمة «رواتب مستحقة».
+/// رواتب الشهر الجاري: ما صُرف لكل معلم، وزر صرفها دفعةً واحدة.
 ///
-/// الصرف يُنسب لشهر الراتب لا ليوم صرفه، فراتب أيلول المصروف في تشرين يبقى لأيلول.
+/// لا «مستحق» ولا «متبقٍّ»: المدرسة عمل خاص لا وظيفة حكومية، فشهر بلا راتب وشهر
+/// بأكثر منه وشهر إجازة. الصرف يُنسب لشهر الراتب لا ليوم صرفه، فراتب أيلول
+/// المصروف في تشرين يبقى لأيلول.
 class _SalariesDueCard extends StatelessWidget {
   const _SalariesDueCard({required this.store});
 
@@ -830,23 +833,47 @@ class _SalariesDueCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (store.teachers.isEmpty) return const SizedBox.shrink();
     final month = monthKeyOf(DateTime.now());
-    final due = [
-      for (final t in store.teachers)
-        (teacher: t, salary: teacherSalaryDue(t, store.teacherPayouts, month)),
-    ].where((row) => row.salary.remaining > 0).toList();
-    if (due.isEmpty) return const SizedBox.shrink();
+    final rows = [
+      for (final t in store.teachers) (teacher: t, paid: paidInMonth(store.teacherPayouts, t.id, month)),
+    ];
+    final total = rows.fold<double>(0, (sum, r) => sum + r.paid.total);
 
     return AppCard(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'رواتب مستحقة — ${monthLabel(month)}',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'رواتب ${monthLabel(month)}',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () async {
+                  final count = await showPayrollSheet(context, store, month: month);
+                  if (count > 0 && context.mounted) {
+                    showAppSnack(context, 'صُرفت رواتب $count معلماً');
+                  }
+                },
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.amber,
+                  textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                ),
+                icon: const Icon(Icons.payments_outlined, size: 16),
+                label: const Text('صرف الرواتب'),
+              ),
+            ],
           ),
-          for (final row in due)
+          Text(
+            total > 0 ? 'صُرف هذا الشهر ${money(total)}' : 'لم يُصرف شيء هذا الشهر',
+            style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
+          ),
+          for (final row in rows.where((r) => r.paid.total > 0))
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Row(
@@ -863,33 +890,19 @@ class _SalariesDueCard extends StatelessWidget {
                           style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.text),
                         ),
                         Text(
-                          'الراتب ${money(row.salary.rate)}  ·  صُرف ${money(row.salary.paid)}',
+                          [
+                            if (row.paid.salary > 0) 'راتب ${money(row.paid.salary)}',
+                            if (row.paid.advance > 0) 'سلفة ${money(row.paid.advance)}',
+                            if (row.paid.bonus > 0) 'مكافأة ${money(row.paid.bonus)}',
+                          ].join('  ·  '),
                           style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
                         ),
                       ],
                     ),
                   ),
                   Text(
-                    money(row.salary.remaining),
-                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: AppColors.danger),
-                  ),
-                  const SizedBox(width: 8),
-                  TextButton(
-                    onPressed: () async {
-                      final saved = await showExpenseSheet(
-                        context,
-                        store,
-                        payoutTeacherId: row.teacher.id,
-                        payoutAmount: row.salary.remaining,
-                        salaryMonth: month,
-                      );
-                      if (saved && context.mounted) showAppSnack(context, 'تم صرف الراتب');
-                    },
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppColors.amber,
-                      textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5),
-                    ),
-                    child: const Text('صرف'),
+                    money(row.paid.total),
+                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: AppColors.success),
                   ),
                 ],
               ),
@@ -898,4 +911,174 @@ class _SalariesDueCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// صرف رواتب الشهر دفعةً واحدة — المقابل لـ `PayrollModal.tsx`.
+///
+/// العملية الشهرية المتكررة في أجور المعلمين: المدير يعطي عشرة معلمين رواتبهم في
+/// يوم، وكتابة عشرة سندات يدوياً غير عملية. الراتب المسجّل يُملأ مقترحاً ويُعدَّل في
+/// مكانه، ومن لا يأخذ هذا الشهر يُترك بلا تأشير. يعيد عدد من صُرف لهم.
+Future<int> showPayrollSheet(BuildContext context, AppStore store, {required String month}) async {
+  final amounts = <String, TextEditingController>{
+    for (final t in store.teachers) t.id: TextEditingController(text: t.rate > 0 ? trimNum(t.rate) : ''),
+  };
+  final chosen = <String>{};
+  var date = DateTime.now();
+  var method = store.activePaymentMethods.firstOrNull?.id ?? 'cash';
+
+  double amountOf(String id) => double.tryParse(amounts[id]?.text.trim() ?? '') ?? 0;
+
+  final saved = await showModalBottomSheet<int>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setSt) {
+        final selected = chosen.where((id) => amountOf(id) > 0).toList();
+        final total = selected.fold<double>(0, (sum, id) => sum + amountOf(id));
+
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 14, 16, 12 + MediaQuery.viewInsetsOf(ctx).bottom),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'صرف رواتب ${monthLabel(month)}',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SelectField(
+                        text: isoDate(date),
+                        icon: Icons.calendar_today_outlined,
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: ctx,
+                            initialDate: date,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now().add(const Duration(days: 1)),
+                          );
+                          if (picked != null) setSt(() => date = picked);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: AppDropdown<String>(
+                        value: method,
+                        items: [
+                          for (final m in store.activePaymentMethods)
+                            DropdownMenuItem(value: m.id, child: Text(m.name, overflow: TextOverflow.ellipsis)),
+                        ],
+                        onChanged: (v) => setSt(() => method = v ?? method),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.38),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: store.teachers.length,
+                    itemBuilder: (_, i) {
+                      final t = store.teachers[i];
+                      final paid = paidInMonth(store.teacherPayouts, t.id, month);
+                      return Row(
+                        children: [
+                          Checkbox(
+                            value: chosen.contains(t.id),
+                            activeColor: AppColors.amber,
+                            onChanged: (_) => setSt(() => chosen.contains(t.id) ? chosen.remove(t.id) : chosen.add(t.id)),
+                          ),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  t.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                                ),
+                                if (paid.total > 0)
+                                  Text(
+                                    'صُرف ${money(paid.total)}',
+                                    style: const TextStyle(color: AppColors.success, fontSize: 10, fontWeight: FontWeight.w700),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(
+                            width: 92,
+                            child: TextField(
+                              controller: amounts[t.id],
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                              onChanged: (_) => setSt(() => chosen.add(t.id)),
+                              decoration: const InputDecoration(isDense: true, hintText: '0'),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${selected.length} معلماً  ·  ${money(total)}',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx, 0))),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 2,
+                      child: PrimaryButton(
+                        label: 'صرف',
+                        color: AppColors.navy,
+                        onPressed: selected.isEmpty
+                            ? null
+                            : () {
+                                try {
+                                  for (final id in selected) {
+                                    store.addTeacherPayout(
+                                      teacherId: id,
+                                      amount: amountOf(id),
+                                      paymentDate: isoDate(date),
+                                      payoutType: 'salary',
+                                      periodStart: '$month-01',
+                                      periodEnd: monthEnd(month),
+                                      method: method,
+                                    );
+                                  }
+                                  Navigator.pop(ctx, selected.length);
+                                } on StoreException catch (e) {
+                                  showAppSnack(ctx, e.message, error: true);
+                                }
+                              },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
+
+  for (final c in amounts.values) {
+    c.dispose();
+  }
+  return saved ?? 0;
 }

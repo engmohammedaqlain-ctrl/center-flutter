@@ -745,6 +745,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     required double amount,
     required String paymentDate,
     String groupId = '',
+    String payoutType = 'salary',
     String periodStart = '',
     String periodEnd = '',
     String method = 'cash',
@@ -761,6 +762,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       teacherName: teacherById(teacherId)?.name ?? '',
       groupId: groupId,
       amount: amount,
+      payoutType: payoutType,
       // فترة الاستحقاق تساوي يوم الصرف ما لم تُحدَّد، كما في النسخة المكتبية
       periodStart: periodStart.isEmpty ? paymentDate : periodStart,
       periodEnd: periodEnd.isEmpty ? paymentDate : periodEnd,

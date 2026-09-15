@@ -68,11 +68,11 @@ DemoDataStats injectDemoData(AppStore store) {
     ]);
 
     store.teachers.addAll([
-      Teacher(id: 't1', name: 'أ. محمود الزهار', phone: '0599123456', subject: 'الرياضيات', rate: 70, paymentType: 'percentage', email: 'mahmoud@school.ps', subjectIds: ['s1'], nationalId: '900100001', portalCode: '210001'),
-      Teacher(id: 't2', name: 'أ. وفاء عاشور', phone: '0568112233', subject: 'اللغة العربية', rate: 70, paymentType: 'percentage', subjectIds: ['s2'], nationalId: '900100002', portalCode: '210002'),
-      Teacher(id: 't3', name: 'أ. رامي البيطار', phone: '0598776655', subject: 'اللغة الإنجليزية', rate: 70, paymentType: 'percentage', subjectIds: ['s3'], nationalId: '900100003', portalCode: '210003'),
-      Teacher(id: 't4', name: 'د. كمال الشرفا', phone: '0592881122', subject: 'الفيزياء', rate: 70, paymentType: 'percentage', subjectIds: ['s4'], nationalId: '900100004', portalCode: '210004'),
-      Teacher(id: 't5', name: 'أ. مريم النجار', phone: '0569443322', subject: 'الكيمياء', rate: 70, paymentType: 'percentage', subjectIds: ['s5'], nationalId: '900100005', portalCode: '210005'),
+      Teacher(id: 't1', name: 'أ. محمود الزهار', phone: '0599123456', subject: 'الرياضيات', rate: 70, email: 'mahmoud@school.ps', subjectIds: ['s1'], nationalId: '900100001', portalCode: '210001'),
+      Teacher(id: 't2', name: 'أ. وفاء عاشور', phone: '0568112233', subject: 'اللغة العربية', rate: 70, subjectIds: ['s2'], nationalId: '900100002', portalCode: '210002'),
+      Teacher(id: 't3', name: 'أ. رامي البيطار', phone: '0598776655', subject: 'اللغة الإنجليزية', rate: 70, subjectIds: ['s3'], nationalId: '900100003', portalCode: '210003'),
+      Teacher(id: 't4', name: 'د. كمال الشرفا', phone: '0592881122', subject: 'الفيزياء', rate: 70, subjectIds: ['s4'], nationalId: '900100004', portalCode: '210004'),
+      Teacher(id: 't5', name: 'أ. مريم النجار', phone: '0569443322', subject: 'الكيمياء', rate: 70, subjectIds: ['s5'], nationalId: '900100005', portalCode: '210005'),
     ]);
 
     store.subjects.addAll([

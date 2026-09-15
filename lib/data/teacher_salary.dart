@@ -1,66 +1,59 @@
+/// أجور المعلمين — المقابل لـ `features/finance/teacherSalary.ts`.
+///
+/// صرفٌ حرّ لا مستحقات: كان النظام يحسب «راتباً مستحقاً» و«متبقياً» لكل معلم عن
+/// كل شهر، ويلاحق المدير بها بلا طريقة لإيقافها. المدرسة عمل خاص لا وظيفة
+/// حكومية: شهر بلا راتب، وشهر بأكثر من الراتب، وشهر إجازة. فلم يبقَ إلا ما صُرف
+/// فعلاً، والراتب المسجّل للمعلم رقمٌ يُقترح في السند ويُعدَّل أو يُتجاهل.
+library;
+
 import '../models/models.dart';
 
-/// راتب المعلم الشهري وسجل تغييراته — المقابل لـ `features/finance/teacherSalary.ts`.
-///
-/// الراتب يتغيّر خلال السنة، وراتب شهر مضى يجب أن يبقى كما كان وقته: بلا سجل،
-/// كانت زيادةٌ اليوم تظهر ديناً على أشهر صُرفت وأُغلقت.
-
-/// بداية مفتوحة: راتب سُجّل قبل وجود السجل يسري على كل ما قبل أول تغيير.
-const openSalaryStart = '0000-01';
+/// أنواع سند صرف المعلم كما تُعرض — `PAYOUT_TYPE_NAMES`.
+const payoutTypeNames = <String, String>{
+  'salary': 'راتب',
+  'advance': 'سلفة',
+  'bonus': 'مكافأة',
+};
 
 String monthLabel(String month) =>
     month.length < 7 ? month : '${month.substring(5, 7)}/${month.substring(0, 4)}';
 
 String monthKeyOf(DateTime date) => '${date.year}-${date.month.toString().padLeft(2, '0')}';
 
-/// شهر الراتب الذي يُنسب له الصرف، لا يوم صرفه: راتب أيلول المصروف في تشرين لأيلول.
+/// آخر يوم في شهر بصيغة `YYYY-MM` — نهاية المدة التي يُنسب لها السند.
+String monthEnd(String month) {
+  final parts = month.split('-');
+  final y = int.tryParse(parts.first) ?? 0;
+  final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 1 : 1;
+  final last = DateTime(y, m + 1, 0).day;
+  return '$month-${last.toString().padLeft(2, '0')}';
+}
+
+/// شهر الصرف الذي يُنسب له السند، لا يوم صرفه: راتب أيلول المصروف في تشرين لأيلول.
 String salaryMonthOf(TeacherPayout p) {
   final raw = p.periodStart.isNotEmpty ? p.periodStart : p.paymentDate;
   return raw.length < 7 ? raw : raw.substring(0, 7);
 }
 
-/// الراتب النافذ في شهر: آخر تغيير بدأ فيه أو قبله، ولا راتب قبل أول تسجيل.
-double salaryForMonth(Teacher teacher, String month) {
-  final history = teacher.salaryHistory;
-  if (history.isEmpty) return teacher.rate;
-  final sorted = [...history]..sort((a, b) => a.from.compareTo(b.from));
-  var amount = 0.0;
-  for (final change in sorted) {
-    if (change.from.compareTo(month) <= 0) amount = change.amount;
-  }
-  return amount;
-}
-
-/// تسجيل راتب يسري من شهر؛ تغيير في الشهر نفسه يستبدل قيمته.
-List<SalaryChange> applySalaryChange(Teacher? teacher, String from, double amount) {
-  final current = teacher == null ? 0.0 : salaryForMonth(teacher, from);
-  final history = <SalaryChange>[
-    if (teacher != null && teacher.salaryHistory.isNotEmpty)
-      ...teacher.salaryHistory
-    else if (teacher != null && teacher.rate > 0)
-      SalaryChange(from: openSalaryStart, amount: teacher.rate),
-  ];
-  if (current == amount) return history;
-  return [
-    ...history.where((h) => h.from != from),
-    SalaryChange(from: from, amount: amount),
-  ]..sort((a, b) => a.from.compareTo(b.from));
-}
-
-String describeSalaryChange(SalaryChange change) =>
-    change.from == openSalaryStart ? 'سابقاً ${money(change.amount)}' : '${monthLabel(change.from)}: ${money(change.amount)}';
-
-/// راتب الشهر وما صُرف منه عن الشهر نفسه.
-({double rate, double paid, double remaining}) teacherSalaryDue(
-  Teacher teacher,
+/// ما صُرف لمعلم عن شهر، مفصولاً بنوعه — `paidInMonth`.
+({double salary, double advance, double bonus, double total}) paidInMonth(
   Iterable<TeacherPayout> payouts,
+  String teacherId,
   String month,
 ) {
-  final rate = salaryForMonth(teacher, month);
-  var paid = 0.0;
+  var salary = 0.0;
+  var advance = 0.0;
+  var bonus = 0.0;
   for (final p in payouts) {
-    if (p.teacherId == teacher.id && salaryMonthOf(p) == month) paid += p.amount;
+    if (p.teacherId != teacherId || salaryMonthOf(p) != month) continue;
+    switch (p.payoutType) {
+      case 'advance':
+        advance += p.amount;
+      case 'bonus':
+        bonus += p.amount;
+      default:
+        salary += p.amount;
+    }
   }
-  final remaining = rate - paid;
-  return (rate: rate, paid: paid, remaining: remaining < 0 ? 0 : remaining);
+  return (salary: salary, advance: advance, bonus: bonus, total: salary + advance + bonus);
 }
