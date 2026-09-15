@@ -102,10 +102,8 @@ void main() {
     test('معطّلة افتراضياً بنسب مطابقة للنسخة المكتبية', () {
       const r = SchoolDiscountRules.defaults;
       expect(r.autoSuggestExcellence, isFalse);
-      expect(r.autoSuggestSiblings, isFalse);
       expect(r.excellenceMinGpa, 90);
       expect(r.excellenceDiscountRate, 10);
-      expect(r.siblingsDiscountRate, 10);
     });
 
     test('أسماء الحقول حرفية كما يقرأها سطح المكتب', () {
@@ -115,8 +113,6 @@ void main() {
           'autoSuggestExcellence',
           'excellenceMinGpa',
           'excellenceDiscountRate',
-          'autoSuggestSiblings',
-          'siblingsDiscountRate',
         ],
       );
     });
@@ -126,14 +122,14 @@ void main() {
       final first = AppStore.forTesting();
       await first.bootstrap(disk);
       await first.saveDiscountRules(
-        SchoolDiscountRules.defaults.copyWith(autoSuggestSiblings: true, siblingsDiscountRate: 15),
+        SchoolDiscountRules.defaults.copyWith(autoSuggestExcellence: true, excellenceDiscountRate: 15),
       );
       await first.flush();
 
       final second = AppStore.forTesting();
       await second.bootstrap(disk);
-      expect(second.discountRules.autoSuggestSiblings, isTrue);
-      expect(second.discountRules.siblingsDiscountRate, 15);
+      expect(second.discountRules.autoSuggestExcellence, isTrue);
+      expect(second.discountRules.excellenceDiscountRate, 15);
       expect(second.discountRules.excellenceMinGpa, 90, reason: 'بقية القواعد على حالها');
     });
 

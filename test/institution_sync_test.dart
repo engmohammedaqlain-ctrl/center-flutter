@@ -91,11 +91,11 @@ void main() {
     test('الميزات وقواعد الخصم كذلك', () async {
       final s = _store();
       await s.saveFeatures(enableExpenses: false);
-      await s.saveDiscountRules(const SchoolDiscountRules(autoSuggestSiblings: true));
+      await s.saveDiscountRules(const SchoolDiscountRules(autoSuggestExcellence: true));
 
       final colors = colorsOf(s);
       expect((colors['__system_features'] as Map)['enableExpenses'], isFalse);
-      expect((colors['__discount_rules'] as Map)['autoSuggestSiblings'], isTrue);
+      expect((colors['__discount_rules'] as Map)['autoSuggestExcellence'], isTrue);
     });
 
     test('الكتابة لا تمسح إعدادات كتبتها نسخة أخرى في العمود نفسه', () async {

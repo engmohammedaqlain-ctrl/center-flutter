@@ -112,13 +112,12 @@ Object? _tryDecode(String raw) {
 /// قواعد الخصم المقترحة — مطابق لـ `SchoolDiscountRules`.
 ///
 /// اقتراح لا إلزام: النظام يقترح الخصم على من ينطبق عليه، والقرار للإدارة.
+/// خصم الإخوة أُلغي: لم يكن له مقابل في النسخة المكتبية ولا قاعدة عملٍ تحكمه.
 class SchoolDiscountRules {
   const SchoolDiscountRules({
     this.autoSuggestExcellence = false,
     this.excellenceMinGpa = 90,
     this.excellenceDiscountRate = 10,
-    this.autoSuggestSiblings = false,
-    this.siblingsDiscountRate = 10,
   });
 
   /// اقتراح خصم المتفوقين تلقائياً
@@ -130,27 +129,17 @@ class SchoolDiscountRules {
   /// نسبة خصم التفوق (%)
   final double excellenceDiscountRate;
 
-  /// اقتراح خصم الإخوة تلقائياً
-  final bool autoSuggestSiblings;
-
-  /// نسبة خصم الإخوة (%)
-  final double siblingsDiscountRate;
-
   static const defaults = SchoolDiscountRules();
 
   SchoolDiscountRules copyWith({
     bool? autoSuggestExcellence,
     double? excellenceMinGpa,
     double? excellenceDiscountRate,
-    bool? autoSuggestSiblings,
-    double? siblingsDiscountRate,
   }) {
     return SchoolDiscountRules(
       autoSuggestExcellence: autoSuggestExcellence ?? this.autoSuggestExcellence,
       excellenceMinGpa: excellenceMinGpa ?? this.excellenceMinGpa,
       excellenceDiscountRate: excellenceDiscountRate ?? this.excellenceDiscountRate,
-      autoSuggestSiblings: autoSuggestSiblings ?? this.autoSuggestSiblings,
-      siblingsDiscountRate: siblingsDiscountRate ?? this.siblingsDiscountRate,
     );
   }
 
@@ -158,8 +147,6 @@ class SchoolDiscountRules {
         'autoSuggestExcellence': autoSuggestExcellence,
         'excellenceMinGpa': excellenceMinGpa,
         'excellenceDiscountRate': excellenceDiscountRate,
-        'autoSuggestSiblings': autoSuggestSiblings,
-        'siblingsDiscountRate': siblingsDiscountRate,
       };
 
   String encode() => jsonEncode(toMap());
@@ -185,8 +172,6 @@ class SchoolDiscountRules {
       autoSuggestExcellence: flag('autoSuggestExcellence', defaults.autoSuggestExcellence),
       excellenceMinGpa: num_('excellenceMinGpa', defaults.excellenceMinGpa),
       excellenceDiscountRate: num_('excellenceDiscountRate', defaults.excellenceDiscountRate),
-      autoSuggestSiblings: flag('autoSuggestSiblings', defaults.autoSuggestSiblings),
-      siblingsDiscountRate: num_('siblingsDiscountRate', defaults.siblingsDiscountRate),
     );
   }
 
@@ -195,16 +180,12 @@ class SchoolDiscountRules {
       other is SchoolDiscountRules &&
       other.autoSuggestExcellence == autoSuggestExcellence &&
       other.excellenceMinGpa == excellenceMinGpa &&
-      other.excellenceDiscountRate == excellenceDiscountRate &&
-      other.autoSuggestSiblings == autoSuggestSiblings &&
-      other.siblingsDiscountRate == siblingsDiscountRate;
+      other.excellenceDiscountRate == excellenceDiscountRate;
 
   @override
   int get hashCode => Object.hash(
         autoSuggestExcellence,
         excellenceMinGpa,
         excellenceDiscountRate,
-        autoSuggestSiblings,
-        siblingsDiscountRate,
       );
 }
