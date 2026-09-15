@@ -37,7 +37,7 @@ class ReceiptScreen {
     if (payment.reference.isNotEmpty) msg.writeln('🔢 *الرقم المرجعي:* ${payment.reference}');
     msg
       ..writeln('📅 *تاريخ الدفعة:* ${formatDate(payment.date)}')
-      ..write('⚖️ *المتبقي بذمة الطالب:* $remaining');
+      ..write('⚖️ *المتبقي المستحق:* $remaining');
 
     await launchWaWithText(raw, msg.toString());
   }
@@ -115,7 +115,8 @@ class _ReceiptSheet extends StatelessWidget {
                   if (payment.channel.isNotEmpty) _row('جهة التحويل', payment.channel),
                   if (payment.transferDate.isNotEmpty) _row('تاريخ التحويل', payment.transferDate),
                   if (payment.customMethodNotes.isNotEmpty) _row('تفاصيل الوسيلة', payment.customMethodNotes),
-                  if (payment.notes.isNotEmpty) _row('البيان', payment.notes),
+                  // بيانٌ يكرّر البند لا يُعرض مرتين
+                  if (payment.notes.isNotEmpty && payment.notes != payment.purpose) _row('البيان', payment.notes),
                   const SizedBox(height: 6),
                   _ledger(payment),
                   const SizedBox(height: 8),
@@ -226,7 +227,7 @@ class _ReceiptSheet extends StatelessWidget {
       children: [
         cell('المبلغ المسدد', money(p.amount), color: AppColors.success),
         const SizedBox(width: 4),
-        cell('المتبقي بذمة الطالب', p.remainingAfter <= 0 ? '0 ₪' : money(p.remainingAfter),
+        cell('المتبقي المستحق', p.remainingAfter <= 0 ? '0 ₪' : money(p.remainingAfter),
             color: p.remainingAfter <= 0 ? AppColors.success : AppColors.danger),
         const SizedBox(width: 4),
         cell('الحالة', p.cancelled ? 'ملغى' : 'معتمد', color: p.cancelled ? AppColors.danger : AppColors.success),
@@ -258,7 +259,7 @@ class _ReceiptSheet extends StatelessWidget {
       if (payment.senderName.isNotEmpty) ['اسم المحول منه', payment.senderName],
       if (payment.reference.isNotEmpty) ['الرقم المرجعي', payment.reference],
       if (payment.channel.isNotEmpty) ['جهة التحويل', payment.channel],
-      if (payment.notes.isNotEmpty) ['البيان', payment.notes],
+      if (payment.notes.isNotEmpty && payment.notes != payment.purpose) ['البيان', payment.notes],
     ];
 
     final bytes = await PdfKit.build(
@@ -270,7 +271,7 @@ class _ReceiptSheet extends StatelessWidget {
         PdfKit.table(headers: const ['البيان', 'التفاصيل'], rows: rows, flex: [3, 8]),
         pw.SizedBox(height: 12),
         PdfKit.table(
-          headers: const ['المبلغ المسدد', 'المتبقي بذمة الطالب', 'الحالة'],
+          headers: const ['المبلغ المسدد', 'المتبقي المستحق', 'الحالة'],
           rows: [
             [
               money(payment.amount),

@@ -379,6 +379,13 @@ class _FinanceScreenState extends State<FinanceScreen> {
                     color: AppColors.danger,
                     caption: '${dues.length} بند',
                   ),
+                  // للإدارة وحدها: متوقع لا يُطالَب به قبل موعده
+                  StatCard(
+                    label: 'باقي السنة',
+                    value: money(store.projectRemainingYear()),
+                    color: AppColors.heading,
+                    caption: 'متوقع',
+                  ),
                   StatCard(
                     label: 'طلاب عليهم مستحقات',
                     value: '$debtors',

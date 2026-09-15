@@ -967,6 +967,42 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return (created: created, missingFee: missingFee);
   }
 
+  /// أشهر الدراسة الباقية بعد [month] — `remainingStudyMonths`.
+  int remainingStudyMonths(int month) {
+    final months = studyMonths;
+    if (months == null) return 0;
+    // السنة الدراسية تبدأ في أيلول: كانون الثاني بعد كانون الأول لا قبله
+    int offset(int m) => (m - 9 + 12) % 12;
+    return months.where((m) => offset(m) > offset(month)).length;
+  }
+
+  /// المتوقع على الطلاب النشطين لباقي السنة — `projectRemainingYear`.
+  ///
+  /// الأشهر القادمة والأقساط التي لم يحن موعدها، ناقصاً ما دفعه كل طالب مقدماً.
+  /// رقمٌ للإدارة وحدها: لا يُطالَب به قبل موعده، ولذلك لا يدخل في «المستحق».
+  double projectRemainingYear({DateTime? today}) {
+    final day = today ?? DateTime.now();
+    final upcoming = remainingStudyMonths(day.month);
+    final fees = feeByGrade();
+    var total = 0.0;
+
+    for (final student in students.where((s) => s.status == 'active')) {
+      final own = installments.where((i) => i.studentId == student.id).toList();
+      // خطة أقساط يدوية تحلّ محل الرسم الشهري، فلا يُحتسب الشهري فوقها
+      final hasPlan = own.any((i) =>
+          !i.id.startsWith(dueIdPrefix) && !i.id.startsWith(feeIdPrefix) && i.title != seatInstallmentTitle);
+      final monthly = hasPlan ? 0.0 : math.max(0.0, resolveMonthlyFee(student, fees) ?? 0);
+      var scheduled = 0.0;
+      for (final i in own) {
+        if (!isInstallmentDue(i, day)) scheduled += math.max(0.0, i.remaining);
+      }
+      final credit = student.balance > 0 ? student.balance : 0.0;
+      final projected = monthly * upcoming + scheduled - credit;
+      if (projected > 0) total += projected;
+    }
+    return total;
+  }
+
   /// نقل طلاب إلى شعبة — المقابل لـ `StudentsService.assignSection`.
   ///
   /// الطالب في شعبة واحدة، فمن كان في غيرها يُنقل منها. يعيد عدد من نُقل.
