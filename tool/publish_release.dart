@@ -82,6 +82,13 @@ PubVersion? parsePubspecVersion(String pubspec) {
 String writePubspecVersion(String pubspec, PubVersion version) =>
     pubspec.replaceFirstMapped(_versionLine, (m) => '${m[1]}$version');
 
+/// ثابتٌ في الكود يحمل رقم الإصدار — تُكتب قيمته مع كل نشر.
+///
+/// هذه الثوابت تُعنون النسخ الاحتياطية وشاشة المطوّر، ولا مصدر لها غير اليد:
+/// لا يُنسى تحديثها إن كتبها الناشر نفسه.
+String writeVersionConstant(String source, String name, String value) =>
+    source.replaceFirstMapped(RegExp("(const $name = ')[^']*(')"), (m) => '${m[1]}$value${m[2]}');
+
 /// رقم البناء يزيد مع كل نشر أياً كان الجزء المرفوع من الاسم: أندرويد يرفض
 /// تثبيت رقم بناء لا يزيد عن المثبَّت.
 PubVersion bumpVersion(PubVersion v, String part) => switch (part) {
@@ -398,7 +405,17 @@ Future<void> main(List<String> arguments) async {
   }
 
   pubspecFile.writeAsStringSync(writePubspecVersion(pubspec, next));
-  await _run('git', ['commit', '--only', 'pubspec.yaml', '-m', 'Release ${next.name}'], allowFailure: true);
+  const constants = {'lib/models/models.dart': 'appVersion', 'lib/data/backup.dart': 'appVersionLabel'};
+  for (final entry in constants.entries) {
+    final file = File(entry.key);
+    if (!file.existsSync()) continue;
+    file.writeAsStringSync(writeVersionConstant(file.readAsStringSync(), entry.value, next.name));
+  }
+  await _run(
+    'git',
+    ['commit', '--only', 'pubspec.yaml', ...constants.keys, '-m', 'Release ${next.name}'],
+    allowFailure: true,
+  );
 
   _step('Published ${next.name}');
   _info('Direct download for a first install:\n    ${apkUrlFor(next)}');

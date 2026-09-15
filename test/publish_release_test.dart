@@ -196,6 +196,14 @@ void main() {
     expect(publish.signerDigest('DOES NOT VERIFY'), isNull);
   });
 
+  test('ثابت الإصدار في الكود يُكتب مع النشر', () {
+    const source = "/// ترويسة\nconst appVersion = '1.2.7';\nconst other = 'x';\n";
+
+    expect(publish.writeVersionConstant(source, 'appVersion', '1.4'), contains("const appVersion = '1.4';"));
+    expect(publish.writeVersionConstant(source, 'appVersion', '1.4'), contains("const other = 'x';"));
+    expect(publish.writeVersionConstant(source, 'missing', '1.4'), source, reason: 'ما لا وجود له لا يُكتب');
+  });
+
   test('ترقيم الحزمة يُقرأ من مخرجات aapt2', () {
     const output = "package: name='com.noon.center' versionCode='2' versionName='1.3.0' "
         "compileSdkVersion='35'\nsdkVersion:'23'\n";
