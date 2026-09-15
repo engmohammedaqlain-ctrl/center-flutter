@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/store.dart';
+import '../data/teacher_salary.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
@@ -481,6 +482,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
     return _list(
       header: [
+        _SalariesDueCard(store: store),
+        const SizedBox(height: 8),
         StatRow(
           children: [
             StatCard(
@@ -811,6 +814,86 @@ class _SpendCard extends StatelessWidget {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// رواتب المعلمين المستحقة عن الشهر الجاري — المقابل لقائمة «رواتب مستحقة».
+///
+/// الصرف يُنسب لشهر الراتب لا ليوم صرفه، فراتب أيلول المصروف في تشرين يبقى لأيلول.
+class _SalariesDueCard extends StatelessWidget {
+  const _SalariesDueCard({required this.store});
+
+  final AppStore store;
+
+  @override
+  Widget build(BuildContext context) {
+    final month = monthKeyOf(DateTime.now());
+    final due = [
+      for (final t in store.teachers)
+        (teacher: t, salary: teacherSalaryDue(t, store.teacherPayouts, month)),
+    ].where((row) => row.salary.remaining > 0).toList();
+    if (due.isEmpty) return const SizedBox.shrink();
+
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'رواتب مستحقة — ${monthLabel(month)}',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
+          ),
+          for (final row in due)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          row.teacher.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.text),
+                        ),
+                        Text(
+                          'الراتب ${money(row.salary.rate)}  ·  صُرف ${money(row.salary.paid)}',
+                          style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    money(row.salary.remaining),
+                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: AppColors.danger),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: () async {
+                      final saved = await showExpenseSheet(
+                        context,
+                        store,
+                        payoutTeacherId: row.teacher.id,
+                        payoutAmount: row.salary.remaining,
+                        salaryMonth: month,
+                      );
+                      if (saved && context.mounted) showAppSnack(context, 'تم صرف الراتب');
+                    },
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.amber,
+                      textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5),
+                    ),
+                    child: const Text('صرف'),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );

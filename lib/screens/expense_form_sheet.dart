@@ -12,19 +12,41 @@ import '../widgets/widgets.dart';
 ///
 /// سندٌ عام أو صرف أجر معلم، بنفس النموذج كما في النسخة المكتبية.
 /// تُعيد `true` إن حُفظ السند.
-Future<bool> showExpenseSheet(BuildContext context, AppStore store) async {
+Future<bool> showExpenseSheet(
+  BuildContext context,
+  AppStore store, {
+  String payoutTeacherId = '',
+  double? payoutAmount,
+  String salaryMonth = '',
+}) async {
   final result = await showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.white,
-    builder: (_) => _ExpenseSheet(store: store),
+    builder: (_) => _ExpenseSheet(
+      store: store,
+      payoutTeacherId: payoutTeacherId,
+      payoutAmount: payoutAmount,
+      salaryMonth: salaryMonth,
+    ),
   );
   return result == true;
 }
 
 class _ExpenseSheet extends StatefulWidget {
-  const _ExpenseSheet({required this.store});
+  const _ExpenseSheet({
+    required this.store,
+    this.payoutTeacherId = '',
+    this.payoutAmount,
+    this.salaryMonth = '',
+  });
+
   final AppStore store;
+
+  /// صرف راتب معلم بعينه: النموذج يُفتح مهيّأً بالباقي من راتب شهره.
+  final String payoutTeacherId;
+  final double? payoutAmount;
+  final String salaryMonth;
 
   @override
   State<_ExpenseSheet> createState() => _ExpenseSheetState();
@@ -32,12 +54,14 @@ class _ExpenseSheet extends StatefulWidget {
 
 class _ExpenseSheetState extends State<_ExpenseSheet> {
   /// `expense` سند مصروف عام، و`payout` صرف أجر معلم.
-  String entryType = 'expense';
+  late String entryType = widget.payoutTeacherId.isEmpty ? 'expense' : 'payout';
   String category = expenseCategories.first;
-  String teacherId = '';
+  late String teacherId = widget.payoutTeacherId;
   late String method = _defaultMethod();
   final description = TextEditingController();
-  final amount = TextEditingController();
+  late final amount = TextEditingController(
+    text: widget.payoutAmount == null ? '' : trimNum(widget.payoutAmount!),
+  );
   final notes = TextEditingController();
   late String date = isoDate(DateTime.now());
 
@@ -103,6 +127,8 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
           teacherId: teacherId,
           amount: value,
           paymentDate: date,
+          // الصرف يُنسب لشهر الراتب لا ليوم صرفه
+          periodStart: widget.salaryMonth.isEmpty ? '' : '${widget.salaryMonth}-01',
           method: method,
           notes: notes.text,
         );

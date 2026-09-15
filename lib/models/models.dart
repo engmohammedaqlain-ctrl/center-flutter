@@ -691,6 +691,22 @@ class Classroom {
       );
 }
 
+/// تغيير راتب يسري من شهر — عنصر في `salary_history`.
+class SalaryChange {
+  const SalaryChange({required this.from, required this.amount});
+
+  /// أول شهر يسري فيه، بصيغة `YYYY-MM`.
+  final String from;
+  final double amount;
+
+  Map<String, dynamic> toMap() => {'from': from, 'amount': amount};
+
+  factory SalaryChange.fromMap(Map<String, dynamic> m) => SalaryChange(
+        from: '${m['from'] ?? ''}',
+        amount: (m['amount'] as num?)?.toDouble() ?? 0,
+      );
+}
+
 class Teacher {
   Teacher({
     required this.id,
@@ -699,7 +715,8 @@ class Teacher {
     required this.subject,
     this.rate = 70,
     this.email = '',
-    this.paymentType = 'percentage',
+    this.paymentType = 'fixed_monthly',
+    List<SalaryChange>? salaryHistory,
     this.notes = '',
     this.nationalId = '',
     this.portalCode = '',
@@ -707,7 +724,7 @@ class Teacher {
     this.syncStatus = 'synced',
     this.createdAt,
     this.updatedAt,
-  });
+  }) : salaryHistory = salaryHistory ?? <SalaryChange>[];
 
   final String id;
   String name;
@@ -716,6 +733,9 @@ class Teacher {
   double rate;
   String email;
   String paymentType;
+
+  /// تغييرات الراتب بترتيب شهورها — راتب شهر مضى يبقى كما كان وقته.
+  List<SalaryChange> salaryHistory;
   String notes;
 
   /// رقم هوية المعلم — اسم المستخدم في بوابة المعلم.
@@ -736,6 +756,7 @@ class Teacher {
         'subject_ids': subjectIds,
         'payment_type': paymentType,
         'payment_rate': rate,
+        'salary_history': [for (final c in salaryHistory) c.toMap()],
         'national_id': nationalId.isEmpty ? null : nationalId,
         'portal_code': portalCode.isEmpty ? null : portalCode,
         'notes': notes,
@@ -758,7 +779,12 @@ class Teacher {
       subject: '${m['subject'] ?? ''}',
       rate: (m['payment_rate'] as num?)?.toDouble() ?? 0,
       email: '${m['email'] ?? ''}',
-      paymentType: '${m['payment_type'] ?? 'percentage'}',
+      paymentType: '${m['payment_type'] ?? 'fixed_monthly'}',
+      salaryHistory: [
+        if (m['salary_history'] is List)
+          for (final c in m['salary_history'] as List)
+            if (c is Map) SalaryChange.fromMap(Map<String, dynamic>.from(c)),
+      ],
       notes: '${m['notes'] ?? ''}',
       nationalId: '${m['national_id'] ?? ''}',
       portalCode: '${m['portal_code'] ?? ''}',

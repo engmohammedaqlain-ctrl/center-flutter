@@ -26,7 +26,7 @@ const tableAllowedColumns = <String, List<String>>{
     'notes', 'tenant_id', 'created_at', 'updated_at',
   ],
   'teachers': [
-    'id', 'name', 'phone', 'email', 'subject_ids', 'payment_type', 'payment_rate',
+    'id', 'name', 'phone', 'email', 'subject_ids', 'payment_type', 'payment_rate', 'salary_history',
     'national_id', 'portal_code',
     'notes', 'tenant_id', 'created_at', 'updated_at',
   ],
@@ -154,7 +154,7 @@ const nonTextColumns = <String, List<String>>{
     'amount', 'created_at', 'payment_date', 'period_end', 'period_start',
     'tenant_id', 'updated_at',
   ],
-  'teachers': ['created_at', 'payment_rate', 'subject_ids', 'tenant_id', 'updated_at'],
+  'teachers': ['created_at', 'payment_rate', 'salary_history', 'subject_ids', 'tenant_id', 'updated_at'],
   'tenants': ['created_at', 'expires_at', 'id', 'updated_at'],
   'users': ['capabilities', 'created_at', 'is_active', 'tenant_id', 'updated_at'],
   'class_announcements': ['created_at', 'id', 'tenant_id'],
