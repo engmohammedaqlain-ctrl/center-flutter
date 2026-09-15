@@ -52,7 +52,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _Tab('payment_methods', Icons.credit_card_outlined, 'وسائل الدفع'),
     _Tab('teachers', Icons.school_outlined, 'المعلمون'),
     _Tab('subjects', Icons.menu_book_outlined, 'المواد'),
-    _Tab('grading', Icons.workspace_premium_outlined, 'مخطط العلامات'),
+    _Tab('grading', Icons.workspace_premium_outlined, 'نظام العلامات'),
     _Tab('users', Icons.manage_accounts_outlined, 'المستخدمون', section: 'settings.users'),
     _Tab('backup', Icons.storage_outlined, 'البيانات والنسخ', section: 'settings.backup'),
   ];

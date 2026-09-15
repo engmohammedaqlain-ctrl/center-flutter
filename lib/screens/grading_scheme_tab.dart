@@ -52,7 +52,7 @@ class _GradingSchemeTabState extends State<GradingSchemeTab> {
       await store.saveGradingScheme(scheme);
       if (!mounted) return;
       setState(() => dirty = false);
-      showAppSnack(context, 'تم حفظ مخطط العلامات');
+      showAppSnack(context, 'تم حفظ نظام العلامات');
     } on StoreException catch (e) {
       if (mounted) showAppSnack(context, e.message, error: true);
     }
@@ -110,8 +110,8 @@ class _GradingSchemeTabState extends State<GradingSchemeTab> {
               const SizedBox(height: 6),
               Text(
                 complete
-                    ? 'المجموع مئة بالمئة: معدل الفصل يُحسب بهذه الأوزان'
-                    : 'المجموع يجب أن يكون 100% ليكون معدل الفصل صحيحاً',
+                    ? 'معدل الفصل يُحسب بهذه الأوزان'
+                    : 'المجموع يجب أن يكون 100%',
                 style: TextStyle(
                   fontSize: 10.5,
                   fontWeight: FontWeight.w600,
@@ -129,16 +129,9 @@ class _GradingSchemeTabState extends State<GradingSchemeTab> {
             child: Column(
               children: [
                 const Text(
-                  'لا مكوّنات لهذا الفصل بعد.\nالرصد يبقى تقييماً حرّاً بمتوسط بسيط حتى تُعرّفها.',
+                  'لا مكوّنات — الرصد تقييم حرّ بمتوسط بسيط.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: AppColors.muted, fontSize: 12, height: 1.6),
-                ),
-                const SizedBox(height: 12),
-                PrimaryButton(
-                  label: 'ابدأ بالمخطط النموذجي',
-                  icon: Icons.auto_awesome_outlined,
-                  color: AppColors.navy,
-                  onPressed: () => _update(defaultTermComponents(store.newId)),
                 ),
               ],
             ),
@@ -168,11 +161,26 @@ class _GradingSchemeTabState extends State<GradingSchemeTab> {
           ]),
         ),
         const SizedBox(height: 10),
-        PrimaryButton(
-          label: dirty ? 'حفظ المخطط' : 'المخطط محفوظ',
-          icon: Icons.save_outlined,
-          color: AppColors.navy,
-          onPressed: dirty ? _save : null,
+        Row(
+          children: [
+            Expanded(
+              child: GhostButton(
+                label: 'الافتراضي',
+                icon: Icons.refresh,
+                onPressed: () => _update(defaultTermComponents(store.newId)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 2,
+              child: PrimaryButton(
+                label: dirty ? 'حفظ' : 'محفوظ',
+                icon: Icons.save_outlined,
+                color: AppColors.navy,
+                onPressed: dirty ? _save : null,
+              ),
+            ),
+          ],
         ),
       ],
     );
