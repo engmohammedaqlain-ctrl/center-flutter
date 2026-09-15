@@ -912,3 +912,63 @@ class _MessageCirclePainter extends CustomPainter {
   @override
   bool shouldRepaint(_MessageCirclePainter old) => old.color != color;
 }
+
+/// صندوق صورة إشعار التحويل — فارغ يدعو للاختيار، وممتلئ يعرضها مصغّرة.
+class NoticeBox extends StatelessWidget {
+  const NoticeBox({super.key, required this.image, required this.onPick, required this.onClear});
+
+  final String image;
+  final VoidCallback onPick;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    if (image.isEmpty) {
+      return InkWell(
+        onTap: onPick,
+        child: Container(
+          height: 64,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(Corner.box),
+            border: Border.all(color: AppColors.line),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.add_photo_alternate_outlined, size: 18, color: AppColors.faint),
+              SizedBox(width: 8),
+              Text('إرفاق صورة الإشعار', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final bytes = base64Decode(image.split(',').last);
+    return Row(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(Corner.box),
+          child: Image.memory(bytes, width: 64, height: 64, fit: BoxFit.cover),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            'الإشعار مرفق',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.heading),
+          ),
+        ),
+        TextButton(
+          onPressed: onPick,
+          style: TextButton.styleFrom(foregroundColor: AppColors.amber),
+          child: const Text('تغيير', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+        ),
+        IconButton(
+          onPressed: onClear,
+          icon: const Icon(Icons.close, size: 18, color: AppColors.danger),
+        ),
+      ],
+    );
+  }
+}

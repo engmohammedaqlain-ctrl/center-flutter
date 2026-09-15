@@ -118,4 +118,22 @@ void main() {
     expect(tableAllowedColumns['finance_attachments'], contains('storage_path'));
     expect(tableAllowedColumns['finance_attachments'], isNot(contains('image')));
   });
+  test('الإشعار يُرفق بسند الصرف وبسند أجر المعلم كما بسند القبض', () async {
+    final s = _store();
+    final tenantId = s.currentTenant!.id;
+    final seen = <http.BaseRequest>[];
+
+    await http.runWithClient(() async {
+      await s.saveFinanceAttachment('exp-1', 'expense', _png);
+      await s.saveFinanceAttachment('pay-out-1', 'payout', _png);
+    }, () => _cloud(seen));
+
+    expect(s.financeAttachment('exp-1')!['record_type'], 'expense');
+    expect(s.financeAttachment('pay-out-1')!['record_type'], 'payout');
+    expect(
+      seen.where((r) => r.url.path.startsWith('/storage/v1/object/finance-notices/$tenantId/')),
+      hasLength(2),
+    );
+    await s.flush();
+  });
 }

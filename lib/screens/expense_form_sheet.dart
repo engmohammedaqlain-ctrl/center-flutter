@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../data/payment_methods.dart';
 import '../data/store.dart';
@@ -65,6 +69,9 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
   final notes = TextEditingController();
   late String date = isoDate(DateTime.now());
 
+  /// صورة إشعار التحويل: تُرفق بسند الصرف وبسند أجر المعلم كما تُرفق بسند القبض.
+  String notice = '';
+
   bool submitting = false;
   String? error;
   final errors = FieldErrors();
@@ -73,6 +80,23 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
 
   /// وسائل الدفع المعرّفة في المنشأة — الصرف يتبعها كالقبض، لا قائمة ثابتة.
   List<PaymentMethodItem> get methods => widget.store.activePaymentMethods;
+
+  /// اختيار صورة الإشعار وضغطها — الحدّ ٢ ميجابايت كما في حاوية الإشعارات.
+  Future<void> _pickNotice() async {
+    try {
+      final file = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 70, maxWidth: 1600);
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      if (bytes.length > 2 * 1024 * 1024) {
+        if (mounted) showAppSnack(context, 'الصورة أكبر من 2 ميجابايت', error: true);
+        return;
+      }
+      if (!mounted) return;
+      setState(() => notice = 'data:${file.mimeType ?? 'image/jpeg'};base64,${base64Encode(bytes)}');
+    } catch (_) {
+      if (mounted) showAppSnack(context, 'تعذّر اختيار الصورة', error: true);
+    }
+  }
 
   String _defaultMethod() {
     final active = widget.store.activePaymentMethods;
@@ -122,8 +146,9 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
 
     setState(() => submitting = true);
     try {
+      final String recordId;
       if (isPayout) {
-        widget.store.addTeacherPayout(
+        recordId = widget.store.addTeacherPayout(
           teacherId: teacherId,
           amount: value,
           paymentDate: date,
@@ -131,17 +156,23 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
           periodStart: widget.salaryMonth.isEmpty ? '' : '${widget.salaryMonth}-01',
           method: method,
           notes: notes.text,
-        );
+        ).id;
       } else {
-        widget.store.addExpense(
+        recordId = widget.store.addExpense(
           category: category,
           description: description.text,
           amount: value,
           expenseDate: date,
           method: method,
           notes: notes.text,
-        );
+        ).id;
       }
+      // الإشعار يلحق بالسند: يُحفظ على الجهاز ويُرفع بأول اتصال
+      unawaited(widget.store.saveFinanceAttachment(
+        recordId,
+        isPayout ? 'payout' : 'expense',
+        notice.isEmpty ? null : notice,
+      ));
       if (mounted) Navigator.pop(context, true);
     } on StoreException catch (e) {
       if (mounted) setState(() => error = e.message);
@@ -296,6 +327,15 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
               controller: notes,
               decoration: const InputDecoration(hintText: 'أي تفاصيل أو ملاحظات إضافية...'),
             ),
+            if (method != 'cash') ...[
+              const SizedBox(height: 10),
+              const FieldLabel('إشعار التحويل'),
+              NoticeBox(
+                image: notice,
+                onPick: _pickNotice,
+                onClear: () => setState(() => notice = ''),
+              ),
+            ],
 
             if (error != null)
               Padding(

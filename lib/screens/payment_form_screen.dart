@@ -8,7 +8,6 @@ import '../data/balance.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
-import '../theme/app_theme.dart';
 import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
 import 'receipt_screen.dart';
@@ -400,7 +399,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                 if (electronic) ...[
                   const FormSection(icon: Icons.account_balance_outlined, title: 'تفاصيل التحويل'),
                   const FieldLabel('إشعار التحويل'),
-                  _NoticeBox(
+                  NoticeBox(
                     image: notice,
                     onPick: _pickNotice,
                     onClear: () => setState(() => notice = ''),
@@ -574,66 +573,6 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// صندوق صورة إشعار التحويل — فارغ يدعو للاختيار، وممتلئ يعرضها مصغّرة.
-class _NoticeBox extends StatelessWidget {
-  const _NoticeBox({required this.image, required this.onPick, required this.onClear});
-
-  final String image;
-  final VoidCallback onPick;
-  final VoidCallback onClear;
-
-  @override
-  Widget build(BuildContext context) {
-    if (image.isEmpty) {
-      return InkWell(
-        onTap: onPick,
-        child: Container(
-          height: 64,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(Corner.box),
-            border: Border.all(color: AppColors.line),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.add_photo_alternate_outlined, size: 18, color: AppColors.faint),
-              SizedBox(width: 8),
-              Text('إرفاق صورة الإشعار', style: TextStyle(color: AppColors.muted, fontSize: 12)),
-            ],
-          ),
-        ),
-      );
-    }
-
-    final bytes = base64Decode(image.split(',').last);
-    return Row(
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(Corner.box),
-          child: Image.memory(bytes, width: 64, height: 64, fit: BoxFit.cover),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            'الإشعار مرفق',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.heading),
-          ),
-        ),
-        TextButton(
-          onPressed: onPick,
-          style: TextButton.styleFrom(foregroundColor: AppColors.amber),
-          child: const Text('تغيير', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
-        ),
-        IconButton(
-          onPressed: onClear,
-          icon: const Icon(Icons.close, size: 18, color: AppColors.danger),
-        ),
-      ],
     );
   }
 }
