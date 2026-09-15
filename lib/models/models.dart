@@ -520,37 +520,80 @@ class Student {
   }
 }
 
+/// مرفقا الطالب: صورة الهوية وشهادة الميلاد.
+///
+/// الملفان في حاوية `student-docs` الخاصة، والصف السحابي لا يحمل إلا مساريهما.
+/// كانا base64 داخل القاعدة — نحو 400 كيلوبايت لكل طالب — فتمتلئ بهما مساحتها
+/// كلها عند ألف طالب ونيّف. النسخة المحلية تحتفظ بالصورة نفسها كي تُعرض بلا شبكة.
 class StudentAttachments {
   StudentAttachments({
     required this.id,
     this.studentIdPhoto = '',
     this.birthCertificate = '',
+    this.studentIdPhotoPath = '',
+    this.birthCertificatePath = '',
     this.syncStatus = 'synced',
     this.createdAt,
     this.updatedAt,
   });
 
   final String id;
+
+  /// الصورة نفسها بصيغة `data:` — محلية للعرض، لا تُرفع في الصف.
   String studentIdPhoto;
   String birthCertificate;
+
+  /// مسار الملف داخل الحاوية: `<المنشأة>/<الطالب>/<النوع>.<امتداد>`.
+  String studentIdPhotoPath;
+  String birthCertificatePath;
   String syncStatus;
   String? createdAt;
   String? updatedAt;
 
-  bool get isEmpty => studentIdPhoto.isEmpty && birthCertificate.isEmpty;
+  bool get isEmpty => !hasData && studentIdPhotoPath.isEmpty && birthCertificatePath.isEmpty;
 
+  /// هل الصورتان (أو إحداهما) حاضرتان على الجهاز؟
+  bool get hasData => studentIdPhoto.isNotEmpty || birthCertificate.isNotEmpty;
+
+  List<String> get paths => [
+        if (studentIdPhotoPath.isNotEmpty) studentIdPhotoPath,
+        if (birthCertificatePath.isNotEmpty) birthCertificatePath,
+      ];
+
+  String dataOf(String kind) => kind == 'student_id_photo' ? studentIdPhoto : birthCertificate;
+
+  String pathOf(String kind) => kind == 'student_id_photo' ? studentIdPhotoPath : birthCertificatePath;
+
+  void setPath(String kind, String path) {
+    if (kind == 'student_id_photo') {
+      studentIdPhotoPath = path;
+    } else {
+      birthCertificatePath = path;
+    }
+  }
+
+  /// الصف كما يُرفع: المساران وحدهما — العمودان القديمان حُذفا من القاعدة.
   Map<String, dynamic> toCloud() => {
         'id': id,
-        'student_id_photo': studentIdPhoto,
-        'birth_certificate': birthCertificate,
+        'student_id_photo_path': studentIdPhotoPath.isEmpty ? null : studentIdPhotoPath,
+        'birth_certificate_path': birthCertificatePath.isEmpty ? null : birthCertificatePath,
         'created_at': createdAt,
         'updated_at': updatedAt,
+      };
+
+  /// الصف كما يُحفظ على الجهاز: ومعه الصورتان كي تُعرضا بلا شبكة.
+  Map<String, dynamic> toLocal() => {
+        ...toCloud(),
+        'student_id_photo': studentIdPhoto,
+        'birth_certificate': birthCertificate,
       };
 
   factory StudentAttachments.fromCloud(Map<String, dynamic> m) => StudentAttachments(
         id: '${m['id']}',
         studentIdPhoto: '${m['student_id_photo'] ?? ''}',
         birthCertificate: '${m['birth_certificate'] ?? ''}',
+        studentIdPhotoPath: '${m['student_id_photo_path'] ?? ''}',
+        birthCertificatePath: '${m['birth_certificate_path'] ?? ''}',
         syncStatus: '${m['sync_status'] ?? 'synced'}',
         createdAt: m['created_at']?.toString(),
         updatedAt: m['updated_at']?.toString(),

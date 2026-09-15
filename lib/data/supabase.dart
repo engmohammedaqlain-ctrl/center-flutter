@@ -437,8 +437,50 @@ Future<String?> storageSignedUrl(String bucket, String path, {int expiresIn = 36
   }
 }
 
+/// امتداد الملف من نوعه — مطابق لـ `extensionForMime`.
+String storageExtensionForMime(String mime) => switch (mime.trim().toLowerCase()) {
+      'image/png' => 'png',
+      'image/webp' => 'webp',
+      'application/pdf' => 'pdf',
+      _ => 'jpg',
+    };
+
+/// فكّ `data:<نوع>;base64,<بيانات>` إلى بايتات ونوع، أو `null` لغير ذلك.
+({List<int> bytes, String mime})? decodeDataUrl(String value) {
+  if (!value.startsWith('data:')) return null;
+  final comma = value.indexOf(',');
+  if (comma < 0) return null;
+  final header = value.substring(5, comma);
+  if (!header.contains('base64')) return null;
+  final mime = header.split(';').first.trim();
+  try {
+    return (bytes: base64Decode(value.substring(comma + 1)), mime: mime.isEmpty ? 'image/jpeg' : mime);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// تنزيل ملف من حاوية خاصة — `storage.download`. يُعيد `null` عند التعذّر.
+Future<({List<int> bytes, String mime})?> storageDownload(String bucket, String path) async {
+  await SupabaseAuth.ensureFresh();
+  try {
+    final uri = Uri.parse('${SupabaseConfig.url}/storage/v1/object/$bucket/$path');
+    final res = await http.get(uri, headers: SupabaseConfig.headers);
+    if (res.statusCode >= 400) return null;
+    return (bytes: res.bodyBytes, mime: res.headers['content-type'] ?? 'image/jpeg');
+  } catch (_) {
+    return null;
+  }
+}
+
 /// رفع ملف إلى حاوية. يُعيد الرابط العام، ويرمي عند الرفض.
-Future<String> storageUpload(String bucket, String path, List<int> bytes, String contentType) async {
+Future<String> storageUpload(
+  String bucket,
+  String path,
+  List<int> bytes,
+  String contentType, {
+  bool upsert = false,
+}) async {
   // الحاويات صارت خاصة وسياسات الكتابة فيها `TO authenticated`: المفتاح المنشور
   // وحده يُرفض، فيمرّ الرفع بتوكن صاحب الجلسة
   await SupabaseAuth.ensureFresh();
@@ -451,7 +493,8 @@ Future<String> storageUpload(String bucket, String path, List<int> bytes, String
       'Content-Type': contentType,
       // سنة كاملة: الملف لا يتغيّر بعد رفعه، اسمه فريد بالوقت
       'cache-control': 'max-age=31536000',
-      'x-upsert': 'false',
+      // ملف الطالب يُستبدل بنسخته الجديدة، وملف المادة اسمه فريد فلا يُدهس
+      'x-upsert': '$upsert',
     },
     body: bytes,
   );

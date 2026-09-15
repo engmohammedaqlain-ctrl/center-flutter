@@ -56,7 +56,7 @@ const tableAllowedColumns = <String, List<String>>{
     'notes', 'tenant_id', 'created_at', 'updated_at',
   ],
   'student_attachments': [
-    'id', 'student_id_photo', 'birth_certificate',
+    'id', 'student_id_photo_path', 'birth_certificate_path',
     'tenant_id', 'created_at', 'updated_at',
   ],
   'institution_settings': [

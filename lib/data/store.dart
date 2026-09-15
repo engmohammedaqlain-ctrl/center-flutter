@@ -1423,6 +1423,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     // الاستماع أولاً: لا يتوقف على نجاح خطوات الشبكة التي تليه
     await startRealtime();
     await primeReceiptCounter();
+    // مرفقٌ تعثّر رفعه على جهاز بلا اتصال يُعاد الآن، وإلا بقي على الجهاز وحده
+    unawaited(retryPendingAttachments());
     // الدخول يرفع ما تراكم دون اتصال ويسحب ما فات، بلا فحصٍ كامل يسبقهما
     startAutoSync();
     notifyListeners();
@@ -1464,6 +1466,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       _pushFailures = 0;
       if (pendingSyncs.any((a) => a.retryCount < maxSyncRetries)) scheduleAutoPush(Duration.zero);
       scheduleAutoPull(Duration.zero);
+      unawaited(retryPendingAttachments());
       return;
     }
     _joinCheck?.cancel();
@@ -1811,12 +1814,22 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   StudentAttachments? attachmentsOf(String studentId) => attachmentsByStudent[studentId];
 
-  /// جلب مرفقات الطالب عند الطلب — المقابل لـ `getAttachments` بعد تحويلها إلى
-  /// On-Demand. صور Base64 ثقيلة: سحبها مع كل مزامنة يستهلك الباندويث ويُبطئ كل
-  /// شيء، فتُجلب عند فتح ملف الطالب وحده وتبقى مخبّأة بعدها.
+  /// حاوية مرفقات الطلاب — خاصة، ولا يقرؤها إلا حساب المنشأة.
+  static const studentDocsBucket = 'student-docs';
+
+  static const studentDocKinds = ['student_id_photo', 'birth_certificate'];
+
+  /// مسار الملف: مجلد لكل منشأة ثم لكل طالب — سياسة الحاوية تقرأ المنشأة منه.
+  static String studentDocPath(String tenantId, String studentId, String kind, String mime) =>
+      '$tenantId/$studentId/$kind.${storageExtensionForMime(mime)}';
+
+  /// جلب مرفقات الطالب عند الطلب — المقابل لـ `getAttachments`.
+  ///
+  /// الملفان في المخزن والصف يحمل مساريهما، فيُنزَّلان عند فتح ملف الطالب وحده
+  /// ويبقيان على الجهاز بعدها.
   Future<StudentAttachments?> loadAttachments(String studentId) async {
     final local = attachmentsByStudent[studentId];
-    if (local != null && !local.isEmpty) return local;
+    if (local != null && local.hasData) return local;
     if (!networkEnabled || tenantId == null) return local;
 
     try {
@@ -1827,7 +1840,21 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       );
       if (rows == null || rows.isEmpty) return local;
       final fetched = StudentAttachments.fromCloud(rows.first);
+
+      for (final kind in studentDocKinds) {
+        final path = fetched.pathOf(kind);
+        if (path.isEmpty) continue;
+        final file = await storageDownload(studentDocsBucket, path);
+        if (file == null) continue;
+        final data = 'data:${file.mime};base64,${base64Encode(file.bytes)}';
+        if (kind == 'student_id_photo') {
+          fetched.studentIdPhoto = data;
+        } else {
+          fetched.birthCertificate = data;
+        }
+      }
       if (fetched.isEmpty) return local;
+
       attachmentsByStudent[studentId] = fetched;
       markDirty('student_attachments');
       notifyListeners();
@@ -1837,23 +1864,63 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
   }
 
-  /// رفع المرفق مباشرةً لا عبر طابور المزامنة: صورة واحدة تزن أضعاف الطابور
-  /// كله، فتُبطئ كل رفع وتُعاد مع كل محاولة فاشلة.
-  Future<void> _pushAttachments(String studentId, StudentAttachments a) async {
+  /// رفع المرفقات: الملفات إلى الحاوية ثم الصف بمساريهما.
+  ///
+  /// خارج طابور المزامنة: صورة واحدة تزن أضعاف الطابور كله. ما تعذّر رفعه يبقى
+  /// على الجهاز موسوماً `pending`، ويُعاد عند الإقلاع وعند عودة الاتصال.
+  Future<void> _pushAttachments(String studentId, StudentAttachments a, {StudentAttachments? previous}) async {
     final tid = tenantId;
     if (!networkEnabled || tid == null) return;
     try {
+      for (final kind in studentDocKinds) {
+        final data = a.dataOf(kind);
+        if (data.isEmpty) {
+          a.setPath(kind, '');
+          continue;
+        }
+        // صورة لم تتغيّر: مسارها المرفوع يكفي بلا رفعٍ ثانٍ لنفس البايتات
+        final samePath = previous?.pathOf(kind) ?? '';
+        if (previous != null && previous.dataOf(kind) == data && samePath.isNotEmpty) {
+          a.setPath(kind, samePath);
+          continue;
+        }
+        final file = decodeDataUrl(data);
+        if (file == null) continue;
+        final path = studentDocPath(tid, studentId, kind, file.mime);
+        await storageUpload(studentDocsBucket, path, file.bytes, file.mime, upsert: true);
+        a.setPath(kind, path);
+      }
+
       await supabaseUpsert('student_attachments', [
         {...a.toCloud(), 'id': studentId, 'tenant_id': tid},
       ]);
+      a.syncStatus = 'synced';
     } catch (_) {
-      // تعذّر الرفع الآن: النسخة المحلية باقية، ويعيد الحفظ التالي المحاولة
+      // تعذّر الرفع الآن: النسخة المحلية باقية، وتُعاد المحاولة لاحقاً
+      a.syncStatus = 'pending';
     }
+    markDirty('student_attachments');
   }
 
-  Future<void> _removeCloudAttachments(String studentId) async {
+  /// إعادة رفع المرفقات المتعثرة — عند الإقلاع وعند عودة الاتصال.
+  Future<int> retryPendingAttachments() async {
+    if (!networkEnabled || tenantId == null) return 0;
+    final stuck = attachmentsByStudent.entries.where((e) => e.value.syncStatus == 'pending').toList();
+    var done = 0;
+    for (final entry in stuck) {
+      await _pushAttachments(entry.key, entry.value);
+      if (entry.value.syncStatus == 'synced') done++;
+    }
+    if (stuck.isNotEmpty) notifyListeners();
+    return done;
+  }
+
+  /// [paths] تُمرَّر لأن الصف المحلي يُحذف قبل هذا النداء.
+  Future<void> _removeCloudAttachments(String studentId, List<String> paths) async {
     if (!networkEnabled || tenantId == null) return;
     try {
+      // الملفات أولاً: صف محذوف بلا ملفاته يترك صور هويات في المخزن بلا صاحب
+      if (paths.isNotEmpty) await storageRemove(studentDocsBucket, paths);
       await supabaseDelete('student_attachments', {'id': 'eq.$studentId'});
     } catch (_) {
       // الحذف المحلي تم، والسحابي يُعاد عند الحذف التالي
@@ -2216,16 +2283,17 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       final hasAny = !attachments.isEmpty;
       if (!hasAny) {
         if (existed) {
-          attachmentsByStudent.remove(incoming.id);
+          final gone = attachmentsByStudent.remove(incoming.id);
           markDirty('student_attachments');
-          unawaited(_removeCloudAttachments(incoming.id));
+          unawaited(_removeCloudAttachments(incoming.id, gone?.paths ?? const []));
         }
       } else {
+        final previous = attachmentsByStudent[incoming.id];
         attachments.updatedAt = _nowIso();
-        attachments.syncStatus = 'synced';
+        attachments.syncStatus = 'pending';
         attachmentsByStudent[incoming.id] = attachments;
         markDirty('student_attachments');
-        unawaited(_pushAttachments(incoming.id, attachments));
+        unawaited(_pushAttachments(incoming.id, attachments, previous: previous));
       }
     }
     markDirty('students');
@@ -2272,8 +2340,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     installments.removeWhere((i) => i.studentId == id);
     attendance.removeWhere((a) => a.studentId == id);
     enrollments.removeWhere((e) => e.studentId == id);
-    if (attachmentsByStudent.remove(id) != null) {
-      unawaited(_removeCloudAttachments(id));
+    final removedDocs = attachmentsByStudent.remove(id);
+    if (removedDocs != null) {
+      unawaited(_removeCloudAttachments(id, removedDocs.paths));
     }
     _queue('students', id, 'DELETE', null);
     markDirty('students');
@@ -3803,7 +3872,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         return e == null ? null : _row(e.toCloud(), e.syncStatus);
       case 'student_attachments':
         final e = attachmentsByStudent[id];
-        return e == null ? null : _row(e.toCloud(), e.syncStatus);
+        return e == null ? null : _row(e.toLocal(), e.syncStatus);
       case 'teachers':
         final e = teacherById(id);
         return e == null ? null : _row(e.toCloud(), e.syncStatus);
@@ -3850,7 +3919,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       case 'students':
         return _rows(students, (e) => e.toCloud(), (e) => e.syncStatus);
       case 'student_attachments':
-        return _rows(attachmentsByStudent.values, (e) => e.toCloud(), (e) => e.syncStatus);
+        return _rows(attachmentsByStudent.values, (e) => e.toLocal(), (e) => e.syncStatus);
       case 'teachers':
         return _rows(teachers, (e) => e.toCloud(), (e) => e.syncStatus);
       case 'subjects':
