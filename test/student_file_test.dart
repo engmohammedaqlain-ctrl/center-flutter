@@ -103,7 +103,7 @@ void main() {
     await s.flush();
   });
 
-  testWidgets('أقسام الملف مطوية إلا الأقساط، وتُفتح بالضغط', (tester) async {
+  testWidgets('كل أقسام الملف مطوية عند الفتح، وتُفتح بالضغط', (tester) async {
     final s = await _store();
     final student = s.students.firstWhere((x) => s.installmentsOf(x.id).isNotEmpty);
 
@@ -117,6 +117,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('كلمة مرور الطالب'), findsOneWidget);
     expect(find.text('كلمة مرور ولي الأمر'), findsOneWidget);
+
+    // وبيانات الطالب كذلك: كانت وحدها مفتوحة فتدفع بقية الملف إلى أسفل الشاشة
+    expect(find.text('بيانات الطالب والتواصل'), findsOneWidget);
+    expect(find.text(student.nationalId), findsNothing);
+
+    await tester.tap(find.text('بيانات الطالب والتواصل'));
+    await tester.pumpAndSettle();
+    expect(find.text(student.nationalId), findsWidgets);
 
     await s.flush();
   });

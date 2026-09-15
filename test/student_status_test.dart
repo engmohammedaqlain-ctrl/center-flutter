@@ -59,6 +59,10 @@ void main() {
 
       await _pump(tester, s, StudentDetailScreen(studentId: student.id));
       expect(find.byType(StudentStatusChip), findsOneWidget, reason: 'شارة في ترويسة الملف');
+
+      // الحالة ضمن بيانات الطالب، وأقسام الملف كلها مطوية حتى تُفتح
+      await tester.tap(find.text('بيانات الطالب والتواصل'));
+      await tester.pumpAndSettle();
       expect(find.text('حالة الطالب'), findsOneWidget);
       expect(find.text('منسحب'), findsWidgets);
 

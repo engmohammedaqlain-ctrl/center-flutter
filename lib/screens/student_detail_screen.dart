@@ -192,9 +192,8 @@ class StudentDetailScreen extends StatelessWidget {
                 ],
               ),
 
-              // ── بيانات الطالب والتواصل: القسم الوحيد المفتوح، ويُطوى إن شاء ──
+              // ── بيانات الطالب والتواصل ──
               _Card(
-                initiallyOpen: true,
                 title: 'بيانات الطالب والتواصل',
                 children: [
                   // الرقمان متجاوران: عنوان صغير فوق رقم بارز، وأيقونتا الاتصال تحته
@@ -446,14 +445,13 @@ class _ActionBar extends StatelessWidget {
 /// بطاقة قسم في ملف الطالب، تُطوى بالضغط على عنوانها — المقابل لـ
 /// `CollapsibleSection` في StudentDetail.tsx.
 ///
-/// الملف طويل: الوضع المالي والأقساط مفتوحان لأنهما سبب فتحه غالباً، وما عداهما
-/// مطويٌّ حتى يُطلب فلا تضيع الصفحة في التمرير. البطاقة بلا عنوان لا تُطوى.
+/// الملف طويل: كل أقسامه مطويّة عند الفتح ويُفتح منها ما يُطلب، فيظهر الملف
+/// كله في شاشة واحدة بدل تمرير طويل. البطاقة بلا عنوان لا تُطوى.
 class _Card extends StatefulWidget {
-  const _Card({this.title, this.trailing, this.initiallyOpen = false, required this.children});
+  const _Card({this.title, this.trailing, required this.children});
 
   final String? title;
   final Widget? trailing;
-  final bool initiallyOpen;
   final List<Widget> children;
 
   @override
@@ -461,7 +459,7 @@ class _Card extends StatefulWidget {
 }
 
 class _CardState extends State<_Card> {
-  late bool open = widget.initiallyOpen;
+  bool open = false;
 
   @override
   Widget build(BuildContext context) {
