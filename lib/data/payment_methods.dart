@@ -75,13 +75,14 @@ class PaymentMethodItem {
 }
 
 /// الوسائل الأساسية — مطابقة لـ `DEFAULT_PAYMENT_METHODS` معرّفاً واسماً وترتيباً.
+// وسائل محددة الاسم وحدها: «تحويل بنكي» و«أخرى» كانتا بلا جهة معروفة، فتُسجَّل
+// السندات بوسيلة لا تقول من أي بنك أو محفظة ورد المبلغ. أسماؤهما تبقى معروفة في
+// `paymentMethodNames` لسندات قديمة سُجّلت بهما.
 const defaultPaymentMethods = <PaymentMethodItem>[
   PaymentMethodItem(id: 'cash', name: 'نقداً', type: 'cash', isDefault: true),
   PaymentMethodItem(id: 'bop', name: 'بنك فلسطين', type: 'bank', isDefault: true),
   PaymentMethodItem(id: 'palpay', name: 'محفظة بال بي', type: 'wallet', isDefault: true),
   PaymentMethodItem(id: 'jawwal_pay', name: 'محفظة جوال بي', type: 'wallet', isDefault: true),
-  PaymentMethodItem(id: 'bank_transfer', name: 'تحويل بنكي', type: 'bank', isDefault: true),
-  PaymentMethodItem(id: 'other', name: 'أخرى', type: 'other', isDefault: true),
 ];
 
 List<PaymentMethodItem> decodePaymentMethods(Object? raw) {

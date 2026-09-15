@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:center_mobile/data/institution.dart';
 import 'package:center_mobile/data/payment_methods.dart';
+import 'package:center_mobile/models/models.dart';
 import 'package:center_mobile/data/store.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -19,11 +20,15 @@ void main() {
       expect(customPaymentMethodsKey, 'custom_payment_methods');
       expect(discountRulesKey, 'school_discount_rules');
       expect(customPaymentMethodsColorKey, '__custom_payment_methods');
+      // «تحويل بنكي» و«أخرى» أُزيلتا: وسيلة بلا جهة معروفة لا تقول من أين ورد المبلغ
       expect(
         defaultPaymentMethods.map((m) => m.id).toList(),
-        ['cash', 'bop', 'palpay', 'jawwal_pay', 'bank_transfer', 'other'],
+        ['cash', 'bop', 'palpay', 'jawwal_pay'],
       );
       expect(defaultPaymentMethods.every((m) => m.isDefault && m.enabled), isTrue);
+      // وأسماؤهما تبقى معروفة لسندات قديمة سُجّلت بهما
+      expect(paymentMethodNames['bank_transfer'], 'تحويل بنكي');
+      expect(paymentMethodNames['other'], 'أخرى');
     });
 
     test('بلا ضبط: الوسائل الأساسية', () async {
