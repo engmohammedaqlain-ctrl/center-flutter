@@ -1883,11 +1883,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     // الإعدادات تُمحى بمالكها المكتوب معها لا بمؤشر البيانات: جهازٌ فقد المؤشر
     // (نسخة أقدم، أو إغلاقٌ قبل الحفظ) كان يُدخل رسم حجز مدرسة وأشهرها ورسومها
     // الإضافية على مدرسة جديدة لم تعتمد منها شيئاً.
+    // مدرسة حُذفت وأُعيد إنشاؤها باسم المستخدم نفسه تحمل معرّفاً جديداً، فالاسم
+    // لا يصلح دليلاً. وجهازٌ بلا مالكٍ مكتوب لا تبقى إعداداته إلا إذا كانت
+    // بيانات المدرسة نفسها عليه.
     final owner = _settingsTenant;
-    final foreign = owner == null
-        ? (previous != null && previous != tenant.id) ||
-            (_tenantUser.isNotEmpty && _tenantUser.trim().toLowerCase() != tenant.username.trim().toLowerCase())
-        : owner != tenant.id;
+    final foreign = owner == null ? previous != tenant.id : owner != tenant.id;
     if (foreign) await _clearTenantScopedSettings();
 
     await db.setSetting(_kDbTenant, tenant.id);

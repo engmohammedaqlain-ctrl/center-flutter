@@ -99,4 +99,38 @@ void main() {
     second.stopAutoSync();
     await second.flush();
   });
+  test('مدرسة حُذفت وأُعيد إنشاؤها بنفس الاسم لا ترث إعدادات سابقتها', () async {
+    final disk = FakeDisk();
+    final s = AppStore.forTesting();
+    await s.bootstrap(disk);
+    injectDemoData(s);
+    expect(await s.login('amal', 'amal2026'), isNull);
+    await s.setSeatReservationFee(500);
+    await s.saveStudyMonths([9, 10]);
+    s.stopAutoSync();
+    await s.flush();
+
+    // جهاز من نسخة أقدم: لا مالك مكتوب مع الإعدادات
+    await s.db.setSetting('settings_tenant_id', null);
+
+    // المدرسة أُعيد إنشاؤها: الاسم نفسه، والمعرّف جديد تولّده القاعدة
+    final old = s.tenants.firstWhere((t) => t.username == 'amal');
+    final recreated = Tenant(
+      id: '${old.id}-new',
+      name: old.name,
+      code: old.code,
+      username: old.username,
+      password: old.password,
+      expiresAt: old.expiresAt,
+    );
+    s.tenants.add(recreated);
+
+    expect(await s.login('dev-tester', 'dev-tester-pass'), isNull);
+    expect(await s.enterTenantAsDeveloper(recreated), isNull);
+
+    expect(s.seatReservationFee, 0, reason: 'مدرسة أخرى وإن تطابق اسمها');
+    expect(s.studyMonths, isNull);
+    s.stopAutoSync();
+    await s.flush();
+  });
 }
