@@ -469,6 +469,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// منشأة البيانات المحفوظة على هذا الجهاز.
   static const _kDbTenant = 'db_tenant_id';
 
+  /// المنشأة التي تخصها الإعدادات المحفوظة — تُكتب مع كل دخول.
+  static const _kSettingsTenant = 'settings_tenant_id';
+
+  String? get _settingsTenant => db.settings[_kSettingsTenant];
+
   String get lastUsername => db.settings[_kLastUsername] ?? '';
 
   void _restoreSession() {
@@ -1873,11 +1878,20 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     // جهاز انتقل من منشأة إلى أخرى: بيانات الأولى وإعداداتها لا تبقى تحت
     // الثانية. السحب يُعيد بناء المحلي من سحابة المنشأة الجديدة.
     final previous = dbTenantId;
-    if (previous != null && previous != tenant.id) {
-      await wipeAllData();
-      await _clearTenantScopedSettings();
-    }
+    if (previous != null && previous != tenant.id) await wipeAllData();
+
+    // الإعدادات تُمحى بمالكها المكتوب معها لا بمؤشر البيانات: جهازٌ فقد المؤشر
+    // (نسخة أقدم، أو إغلاقٌ قبل الحفظ) كان يُدخل رسم حجز مدرسة وأشهرها ورسومها
+    // الإضافية على مدرسة جديدة لم تعتمد منها شيئاً.
+    final owner = _settingsTenant;
+    final foreign = owner == null
+        ? (previous != null && previous != tenant.id) ||
+            (_tenantUser.isNotEmpty && _tenantUser.trim().toLowerCase() != tenant.username.trim().toLowerCase())
+        : owner != tenant.id;
+    if (foreign) await _clearTenantScopedSettings();
+
     await db.setSetting(_kDbTenant, tenant.id);
+    await db.setSetting(_kSettingsTenant, tenant.id);
 
     // المنشأة تُحفظ على القرص: الجلسة تُستعاد منها عند الإقلاع التالي، فلا يُطالَب
     // المستخدم بتسجيل دخول جديد كلما أغلق التطبيق — والتطبيق يعمل بلا إنترنت
