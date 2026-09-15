@@ -560,6 +560,17 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   String get institutionLogo => db.settings[institutionLogoKey] ?? '';
 
+  /// الختم الرسمي: يُحفظ في سجل الهوية المتزامن فيصل كل أجهزة المدرسة، لا على
+  /// جهاز من رفعه وحده.
+  String get institutionStamp => db.settings[institutionStampKey] ?? '';
+
+  Future<void> saveInstitutionStamp(String stamp) async {
+    requireSection('settings');
+    await db.setSetting(institutionStampKey, stamp.isEmpty ? null : stamp);
+    await _syncInstitutionSetting('__official_stamp', stamp.isEmpty ? null : stamp);
+    notifyListeners();
+  }
+
   /// طبع ألوان المنشأة على الواجهة. تُستدعى بعد كل ما قد يغيّرها.
   void applyBrandColors() => AppColors.apply(institutionColors);
 
@@ -1344,6 +1355,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       final fees = synced['__fee_items'];
       if (fees is List) await db.setSetting(feeItemsKey, jsonEncode(fees));
 
+      if (synced.containsKey('__official_stamp')) {
+        final stamp = synced['__official_stamp'];
+        await db.setSetting(institutionStampKey, stamp is String && stamp.isNotEmpty ? stamp : null);
+      }
+
       final seatFee = synced[seatFeeColorKey];
       if (seatFee is num) await db.setSetting(seatReservationFeeKey, '${seatFee < 0 ? 0 : seatFee}');
 
@@ -1822,6 +1838,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     institutionNameKey,
     institutionLogoKey,
     institutionColorsKey,
+    institutionStampKey,
     seatReservationFeeKey,
     feeItemsKey,
     systemFeaturesKey,

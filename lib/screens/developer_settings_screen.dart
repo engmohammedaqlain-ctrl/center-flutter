@@ -36,6 +36,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
 
   late TextEditingController name;
   late String logo;
+  late String stamp;
   late InstitutionColors colors;
   late TextEditingController seatFee;
   late TextEditingController supabaseUrlCtrl;
@@ -50,6 +51,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
     final store = AppStore.instance;
     name = TextEditingController(text: store.institutionName);
     logo = store.institutionLogo;
+    stamp = store.institutionStamp;
     colors = store.institutionColors;
     seatFee = TextEditingController(text: trimNum(store.seatReservationFee));
     supabaseUrlCtrl = TextEditingController(text: store.db.settings[SupabaseConfig.urlSettingKey] ?? '');
@@ -185,6 +187,36 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
         const FormSection(icon: Icons.badge_outlined, title: 'اسم المنشأة وشعارها'),
         const FieldLabel('اسم المنشأة والترويسة الرسمية'),
         TextField(controller: name, decoration: const InputDecoration(hintText: 'مثال: مدرسة الأمل الخاصة')),
+        const SizedBox(height: 12),
+        const FieldLabel('الختم الرسمي'),
+        Row(
+          children: [
+            if (stamp.isNotEmpty)
+              Image.memory(base64Decode(stamp.split(',').last), height: 44, fit: BoxFit.contain)
+            else
+              const Text('بلا ختم', style: TextStyle(color: AppColors.muted, fontSize: 11.5)),
+            const SizedBox(width: 12),
+            TileButton(
+              label: stamp.isEmpty ? 'رفع الختم' : 'تغيير',
+              icon: const Icon(Icons.upload_outlined, size: 13),
+              color: AppColors.heading,
+              background: Colors.white,
+              border: AppColors.lineStrong,
+              onTap: _pickStamp,
+            ),
+            if (stamp.isNotEmpty) ...[
+              const SizedBox(width: 6),
+              TileButton(
+                label: 'إزالة',
+                icon: const Icon(Icons.delete_outline, size: 13),
+                color: AppColors.danger,
+                background: Colors.white,
+                border: AppColors.dangerBorder,
+                onTap: () => setState(() => stamp = ''),
+              ),
+            ],
+          ],
+        ),
         const SizedBox(height: 12),
         const FieldLabel('شعار المنشأة'),
         Row(
@@ -567,6 +599,15 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
 
   // ── الإجراءات ────────────────────────────────────────────────────────────
 
+  /// الختم يُطبع على السندات، فيكفيه عرض 512 كالشعار.
+  Future<void> _pickStamp() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 512, imageQuality: 85);
+    if (picked == null) return;
+    final Uint8List bytes = await picked.readAsBytes();
+    if (!mounted) return;
+    setState(() => stamp = 'data:image/png;base64,${base64Encode(bytes)}');
+  }
+
   Future<void> _pickLogo() async {
     final picked = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 512, imageQuality: 85);
     if (picked == null) return;
@@ -623,6 +664,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
 
     setState(() => busy = true);
     await store.saveInstitution(name: name.text, logo: logo, colors: colors);
+    await store.saveInstitutionStamp(stamp);
     await store.setSeatReservationFee(feeValue ?? 0);
     await store.db.setSetting(SupabaseConfig.urlSettingKey, url.isEmpty ? null : url);
     await store.db.setSetting(

@@ -136,8 +136,18 @@ class _ReceiptSheet extends StatelessWidget {
                         child: Text('المستلم: ${_receiverName(payment, store)}',
                             style: const TextStyle(fontSize: 11, color: AppColors.muted)),
                       ),
-                      const Text('التوقيع: ....................',
-                          style: TextStyle(fontSize: 11, color: AppColors.muted)),
+                      if (store.institutionStamp.isNotEmpty)
+                        // ختمٌ عريض كان يطفح عن السطر: يُحصر بعرضه وارتفاعه
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 120, maxHeight: 46),
+                          child: Image.memory(
+                            base64Decode(store.institutionStamp.split(',').last),
+                            fit: BoxFit.contain,
+                          ),
+                        )
+                      else
+                        const Text('التوقيع: ....................',
+                            style: TextStyle(fontSize: 11, color: AppColors.muted)),
                     ],
                   ),
                   if (payment.cancelled)

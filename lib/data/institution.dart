@@ -10,6 +10,9 @@ import 'dart:ui' as ui;
 const institutionNameKey = 'institution_name';
 const institutionLogoKey = 'institution_logo';
 const institutionColorsKey = 'institution_colors';
+
+/// الختم الرسمي — صورة تُطبع على السندات مكان مربع الختم.
+const institutionStampKey = 'institution_stamp';
 const seatReservationFeeKey = 'seat_reservation_fee';
 
 /// الرسوم الإضافية التي تحددها الإدارة — مطابق لـ `FEE_ITEMS_KEY`.
