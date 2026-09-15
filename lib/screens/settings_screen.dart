@@ -271,11 +271,20 @@ class _FeesTab extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        _SeatFeeCard(store: store),
+        // أقسام مطوية: التبويب كان يفتح على أربع بطاقات فوق قائمة المراحل
+        _Collapsible(
+          title: 'الحجز وأشهر الدراسة',
+          children: [
+            _SeatFeeCard(store: store),
+            const SizedBox(height: 8),
+            _StudyMonthsCard(store: store),
+          ],
+        ),
         const SizedBox(height: 8),
-        _FeeItemsCard(store: store),
-        const SizedBox(height: 8),
-        _StudyMonthsCard(store: store),
+        _Collapsible(
+          title: 'رسوم إضافية',
+          children: [_FeeItemsCard(store: store)],
+        ),
         if (missing > 0) ...[
           const SizedBox(height: 8),
           // من لا رسم لمرحلته لا يُولَّد له مستحق، فيبقى بلا مطالبة بصمت
@@ -293,10 +302,15 @@ class _FeesTab extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 8),
-        GhostButton(
-          label: 'ترقية الطلاب',
-          icon: Icons.moving_outlined,
-          onPressed: () => showStudentPromotionSheet(context, store),
+        _Collapsible(
+          title: 'الترقية',
+          children: [
+            GhostButton(
+              label: 'ترقية الطلاب',
+              icon: Icons.moving_outlined,
+              onPressed: () => showStudentPromotionSheet(context, store),
+            ),
+          ],
         ),
       ],
       count: fees.length,
@@ -1782,5 +1796,48 @@ Future<void> _restore(BuildContext context, AppStore store) async {
   } catch (e) {
     if (!context.mounted) return;
     showAppSnack(context, 'فشل الاسترجاع: $e', error: true);
+  }
+}
+
+/// قسم يُطوى بعنوانه — لتبويبٍ تكدّست بطاقاته فوق قائمته.
+class _Collapsible extends StatefulWidget {
+  const _Collapsible({required this.title, required this.children});
+
+  final String title;
+  final List<Widget> children;
+
+  @override
+  State<_Collapsible> createState() => _CollapsibleState();
+}
+
+class _CollapsibleState extends State<_Collapsible> {
+  bool open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: () => setState(() => open = !open),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
+                  ),
+                ),
+                Icon(open ? Icons.expand_less : Icons.expand_more, size: 20, color: AppColors.faint),
+              ],
+            ),
+          ),
+        ),
+        if (open) ...widget.children,
+        Container(height: 1, color: AppColors.line),
+      ],
+    );
   }
 }

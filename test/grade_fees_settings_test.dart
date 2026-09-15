@@ -197,11 +197,16 @@ void main() {
       await tester.tap(find.text('المراحل والرسوم'));
       await tester.pumpAndSettle();
 
+      // أقسام التبويب مطوية: تُفتح بعناوينها
+      await tester.tap(find.text('الحجز وأشهر الدراسة'));
+      await tester.pumpAndSettle();
       expect(find.text('رسم حجز المقعد'), findsOneWidget);
       expect(find.text('يُدفع مرة واحدة ويُخصم من أول مستحق'), findsOneWidget);
       expect(find.text('أشهر الدراسة'), findsOneWidget);
       expect(find.text('الرسوم الشهرية متوقفة'), findsOneWidget);
       expect(find.text('سبتمبر'), findsOneWidget);
+      await tester.tap(find.text('الترقية'));
+      await tester.pumpAndSettle();
       expect(find.text('ترقية الطلاب'), findsOneWidget);
 
       await s.flush();
@@ -215,6 +220,8 @@ void main() {
       await tester.tap(find.text('المراحل والرسوم'));
       await tester.pumpAndSettle();
 
+      await tester.tap(find.text('الحجز وأشهر الدراسة'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text(gregorianMonths[DateTime.now().month - 1]));
       await tester.pump();
       await tester.tap(find.text('حفظ أشهر الدراسة'));
