@@ -29,23 +29,23 @@ const latestManifestUrl = 'https://github.com/$releasesRepo/releases/latest/down
 const expectedCertSha256 = 'd7a0b1d7c5bcfea9346ab61db35c8e96fd2d042c270a06dc8e23e3a1e5302ac8';
 
 const _usage = '''
-نشر إصدار جديد من تطبيق الجوال
+Publish a new mobile release
 
-  dart run tool/publish_release.dart --notes "ما الجديد"
+  dart run tool/publish_release.dart --notes "what changed"
 
-  --notes "..."               ما الجديد، يظهر للمستخدم في ورقة التحديث
-  --notes-file <ملف>          بديل --notes لنصٍّ من عدة أسطر
-  --version <رقم>             رقم الإصدار بنفسك. عدد أجزائه يحدد النوع:
-                                2.18     جزءان = بناء APK جديد يثبّته المستخدم
-                                2.18.3   ثلاثة أجزاء = تحديث صامت (Shorebird) مهما كبر رقمه
-  --patch                     تحديث صامت على آخر إصدار منشور، برقمه التالي تلقائياً
-  --bump minor|major          بلا --version: الجزء الذي يزيد في البناء (minor افتراضياً)
-  --min-supported <رقم>|current
-                              أقدم رقم بناء يبقى يعمل؛ ما دونه يُلزَم بالتحديث.
-                              بلا هذا الخيار يبقى كما في الإصدار السابق
-  --mandatory                 إلزام كل من لم يحدّث بهذا الإصدار
-  --dry-run                   يبني ويجهّز الملفات في build/release بلا رفع
-  --allow-dirty               النشر مع تعديلات لم تُحفظ بكوميت
+  --notes "..."               what changed; shown to users in the update sheet
+  --notes-file <file>         use instead of --notes for multi-line text
+  --version <number>          set the version yourself. Its parts decide the kind:
+                                2.18     two parts  = APK build the user installs
+                                2.18.3   three parts = silent update (Shorebird)
+  --patch                     silent update on the published release, next number
+  --bump minor|major          without --version: which part grows (minor by default)
+  --min-supported <n>|current
+                              oldest build number still allowed to run; older ones
+                              must update. Left out, it stays as the last release
+  --mandatory                 force everyone on an older build to update
+  --dry-run                   build and stage files in build/release without uploading
+  --allow-dirty               publish with uncommitted changes
 ''';
 
 /// رقم إصدار بصيغة pubspec: `الاسم+رقم البناء`.
@@ -86,7 +86,7 @@ String writePubspecVersion(String pubspec, PubVersion version) =>
 PubVersion bumpVersion(PubVersion v, String part) => switch (part) {
       'major' => PubVersion(v.major + 1, 0, 0, v.build + 1),
       'minor' => PubVersion(v.major, v.minor + 1, 0, v.build + 1),
-      _ => throw ArgumentError('--bump يقبل minor أو major، لا "$part"'),
+      _ => throw ArgumentError('--bump takes minor or major, not "$part"'),
     };
 
 /// أقدم رقم بناء يبقى يعمل.
@@ -99,9 +99,9 @@ int resolveMinSupported(String? value, {required int previous, required int curr
       ? previous
       : raw == 'current'
           ? current
-          : int.tryParse(raw) ?? (throw ArgumentError('--min-supported يقبل رقماً أو current، لا "$raw"'));
+          : int.tryParse(raw) ?? (throw ArgumentError('--min-supported takes a number or current, not "$raw"'));
   if (min < 0 || min > current) {
-    throw ArgumentError('--min-supported يجب أن يكون بين 0 و$current (رقم بناء هذا الإصدار)');
+    throw ArgumentError('--min-supported must be between 0 and $current (this release build number)');
   }
   return min;
 }
@@ -179,12 +179,13 @@ RequestedVersion parseRequestedVersion(String raw) {
   final value = raw.trim();
   final m = RegExp(r'^(\d+\.\d+)(?:\.(\d+))?$').firstMatch(value);
   if (m == null) {
-    throw ArgumentError('رقم الإصدار: 2.18 للبناء، أو 2.18.1 للتحديث الصامت — لا "$value"');
+    throw ArgumentError('Version: 2.18 for a build, or 2.18.1 for a silent update - not "$value"');
   }
   final patch = m[2] == null ? null : int.parse(m[2]!);
   // صفرٌ ثالث ليس بناءً ولا تحديثاً: Shorebird يرقّم تحديثاته من 1
   if (patch != null && patch < 1) {
-    throw ArgumentError('لا تحديث صامت رقمه $patch — اكتب ${m[1]} للبناء، أو ${m[1]}.1 لأول تحديث صامت عليه');
+    throw ArgumentError(
+        'No silent update numbered $patch - write ${m[1]} for the build, or ${m[1]}.1 for its first silent update');
   }
   return (kind: patch == null ? PublishKind.build : PublishKind.patch, base: m[1]!, patchNumber: patch);
 }
@@ -238,9 +239,9 @@ int nextPatchNumber(String listOutput) {
 /// لا يطابق التالي كان سيظهر على الأجهزة بغير ما نشره الناشر.
 String? patchProblem({required String base, required int number, required String published, required int next}) {
   if (base != published) {
-    return 'التحديث الصامت يكون على آخر إصدار منشور ($published) — اكتب $published.$next';
+    return 'A silent update lands on the published release ($published) - write $published.$next';
   }
-  if (number != next) return 'التحديث التالي لـ $published رقمه $next — اكتب $published.$next لا $base.$number';
+  if (number != next) return 'Next update for $published is number $next - write $published.$next, not $base.$number';
   return null;
 }
 
@@ -256,22 +257,24 @@ Future<void> main(List<String> arguments) async {
   final pubspecFile = File('pubspec.yaml');
   if (!pubspecFile.existsSync() ||
       !RegExp(r'^name:\s*center_mobile\b', multiLine: true).hasMatch(pubspecFile.readAsStringSync())) {
-    _fail('شغّل الأمر من داخل مجلد center-mobile-app');
+    _fail('Run this from inside the center-mobile-app folder');
   }
 
   if (!args.allowDirty) {
     final status = await _capture('git', ['status', '--porcelain', '--untracked-files=no']);
     if (status.trim().isNotEmpty) {
-      _fail('في تعديلات لم تُحفظ بكوميت — الإصدار المنشور لازم يقابل كوميتاً معروفاً.\n'
-          '  احفظها أولاً، أو أضف --allow-dirty');
+      _fail('Uncommitted changes - a published release must match a known commit.\n'
+          '  Commit them first, or add --allow-dirty');
     }
   }
 
-  _step('قراءة آخر إصدار منشور');
+  _step('Reading the published release');
   final previous = await _fetchJson(latestManifestUrl);
   final previousCode = (previous?['versionCode'] as num?)?.toInt() ?? 0;
   final previousMin = (previous?['minSupported'] as num?)?.toInt() ?? 0;
-  _info(previous == null ? 'لا يوجد إصدار منشور بعد — هذا أول نشر' : 'المنشور: ${previous['version']} (بناء $previousCode)');
+  _info(previous == null
+      ? 'Nothing published yet - this is the first release'
+      : 'Published: ${previous['version']} (build $previousCode)');
 
   final published = '${previous?['version'] ?? ''}'.trim();
   final requested = args.version == null ? null : _orFail(() => parseRequestedVersion(args.version!));
@@ -281,12 +284,12 @@ Future<void> main(List<String> arguments) async {
     await _publishPatch(args, requested, published, previousCode);
     return;
   }
-  if (args.notes.trim().isEmpty) _fail('اكتب ما الجديد في هذا الإصدار: --notes "..."');
+  if (args.notes.trim().isEmpty) _fail('Say what changed in this release: --notes "..."');
 
   final pubspec = pubspecFile.readAsStringSync();
-  final current = parsePubspecVersion(pubspec) ?? _fail('لم أجد سطر version: x.y.z+n في pubspec.yaml');
+  final current = parsePubspecVersion(pubspec) ?? _fail('No "version: x.y.z+n" line found in pubspec.yaml');
   if (requested != null && published.isNotEmpty && compareVersionNames(requested.base, published) <= 0) {
-    _fail('الإصدار ${requested.base} ليس أحدث من المنشور $published — البناء الجديد رقمه أكبر');
+    _fail('Version ${requested.base} is not newer than the published $published');
   }
   var next = requested == null
       ? _orFail(() => bumpVersion(current, args.bump))
@@ -296,30 +299,30 @@ Future<void> main(List<String> arguments) async {
   final minSupported = _orFail(
     () => resolveMinSupported(args.minSupported, previous: previousMin, current: next.build),
   );
-  _info('الجديد: $next · أقدم بناء مدعوم: $minSupported${args.mandatory ? ' · إلزامي' : ''}');
+  _info('New: ${next.name} ($next) - oldest supported build: $minSupported${args.mandatory ? ' - mandatory' : ''}');
 
   // Shorebird مُهيّأ: الإصدار يُبنى به كي تستقبل أجهزته الـ patches. التجربة بلا رفع
   // تبني بـ Flutter وحدها، فلا يُسجَّل عند Shorebird إصدارٌ لم يُنشر
   final useShorebird = File('shorebird.yaml').existsSync() && !args.dryRun;
   final flutterVersion =
       useShorebird ? flutterVersionOf(await _capture('flutter', ['--version'], shell: true)) : null;
-  if (useShorebird && flutterVersion == null) _fail('تعذّرت قراءة إصدار Flutter للمشروع');
+  if (useShorebird && flutterVersion == null) _fail("Could not read the project's Flutter version");
   final build = buildCommand(next, shorebird: useShorebird, flutterVersion: flutterVersion);
-  _step(useShorebird ? 'بناء الحزمة وتسجيل الإصدار في Shorebird (Flutter $flutterVersion)' : 'بناء الحزمة');
+  _step(useShorebird ? 'Building and registering the release with Shorebird (Flutter $flutterVersion)' : 'Building the APK');
   await _run(build.exe, build.args, shell: true);
   final built = File('build/app/outputs/flutter-apk/app-release.apk');
-  if (!built.existsSync()) _fail('لم أجد الحزمة المبنية في ${built.path}');
+  if (!built.existsSync()) _fail('Built APK not found at ${built.path}');
 
-  _step('التحقق من التوقيع');
-  final apksigner = _findApksigner() ?? _fail('لم أجد apksigner — ثبّت Android SDK Build-Tools');
+  _step('Checking the signature');
+  final apksigner = _findApksigner() ?? _fail('apksigner not found - install Android SDK Build-Tools');
   final digest = signerDigest(await _capture(apksigner, ['verify', '--print-certs', built.path], shell: true));
   if (digest != expectedCertSha256) {
-    _fail('الحزمة ليست موقّعة بمفتاح التطبيق (${digest ?? 'لا توقيع'}).\n'
-        '  تحقّق من android/key.properties — أجهزة المستخدمين سترفض تثبيتها');
+    _fail('APK is not signed with the app key (${digest ?? 'unsigned'}).\n'
+        '  Check android/key.properties - user devices would refuse to install it');
   }
-  _info('موقّعة بمفتاح التطبيق ✓');
+  _info('Signed with the app key');
 
-  _step('تجهيز ملفات النشر');
+  _step('Staging release files');
   final outDir = Directory('build/release')..createSync(recursive: true);
   final apk = built.copySync('${outDir.path}/${apkNameFor(next)}');
   final size = apk.lengthSync();
@@ -341,32 +344,32 @@ Future<void> main(List<String> arguments) async {
   _info('sha256 $sha');
 
   if (args.dryRun) {
-    _step('تجربة بلا رفع — الملفات في ${outDir.path}');
+    _step('Dry run - files are in ${outDir.path}');
     return;
   }
 
-  _step('الرفع إلى GitHub');
+  _step('Uploading to GitHub');
   await _ensureRepoHasCommit();
   await _run('gh', [
     'release', 'create', tagFor(next), apk.path, manifestFile.path, //
     '--repo', releasesRepo, '--title', next.name, '--notes-file', notesFile.path, '--latest',
   ]);
 
-  _step('التأكد من أن الأجهزة ترى الإصدار');
+  _step('Verifying devices can see the release');
   final live = await _fetchJson(latestManifestUrl);
   if ((live?['versionCode'] as num?)?.toInt() == next.build) {
-    _info('الأجهزة ستجد التحديث عند فحصها التالي ✓');
+    _info('Devices will find the update on their next check');
   } else {
-    _warn('الرابط الثابت لم يُرجع الإصدار الجديد بعد. افتحه بعد دقيقة للتأكد:\n    $latestManifestUrl');
+    _warn('The fixed link does not serve the new release yet. Open it in a minute to confirm:\n    $latestManifestUrl');
   }
 
   pubspecFile.writeAsStringSync(writePubspecVersion(pubspec, next));
   await _run('git', ['commit', '--only', 'pubspec.yaml', '-m', 'Release ${next.name}'], allowFailure: true);
 
-  _step('تم نشر ${next.name}');
-  _info('رابط التنزيل المباشر للتثبيت الأول:\n    ${apkUrlFor(next)}');
+  _step('Published ${next.name}');
+  _info('Direct download for a first install:\n    ${apkUrlFor(next)}');
   if (useShorebird) {
-    _info('تصليحات كود Dart لهذا الإصدار تصل الأجهزة بصمت:\n    shorebird patch android --release-version=$next');
+    _info('Dart-only fixes reach these devices silently:\n    dart run tool/publish_release.dart --version ${next.name}.1');
   }
 }
 
@@ -385,7 +388,7 @@ class _Args {
     final queue = List.of(raw);
     while (queue.isNotEmpty) {
       final flag = queue.removeAt(0);
-      String value() => queue.isEmpty ? _fail('$flag يحتاج قيمة') : queue.removeAt(0);
+      String value() => queue.isEmpty ? _fail('$flag needs a value') : queue.removeAt(0);
       switch (flag) {
         case '--notes':
           args.notes = value();
@@ -410,7 +413,7 @@ class _Args {
           exit(0);
         default:
           stderr.write(_usage);
-          _fail('خيار غير معروف: $flag');
+          _fail('Unknown option: $flag');
       }
     }
     return args;
@@ -422,13 +425,13 @@ class _Args {
 /// لا يمسّ GitHub ولا `pubspec.yaml`: الحزمة المثبَّتة نفسها تستقبله، ورقمه
 /// الرابع يرقّمه Shorebird ويقرؤه التطبيق منه.
 Future<void> _publishPatch(_Args args, RequestedVersion? requested, String published, int publishedCode) async {
-  if (!File('shorebird.yaml').existsSync()) _fail('التحديث الصامت يحتاج Shorebird: شغّل shorebird init');
+  if (!File('shorebird.yaml').existsSync()) _fail('Silent updates need Shorebird: run shorebird init');
   if (published.isEmpty || publishedCode <= 0) {
-    _fail('لا يوجد إصدار منشور بعد — انشر بناءً أولاً برقم من جزأين');
+    _fail('Nothing published yet - publish a build first, with a two-part version');
   }
   final releaseVersion = shorebirdReleaseVersion(published, publishedCode);
 
-  _step('قراءة التحديثات الصامتة لـ $published');
+  _step('Reading silent updates for $published');
   final listed = await _capture(
     'shorebird',
     ['patches', 'list', '--release-version', releaseVersion, '--json'],
@@ -438,9 +441,9 @@ Future<void> _publishPatch(_Args args, RequestedVersion? requested, String publi
   final number = requested?.patchNumber ?? next;
   final problem = patchProblem(base: requested?.base ?? published, number: number, published: published, next: next);
   if (problem != null) _fail(problem);
-  _info('التحديث: $published.$number');
+  _info('Update: $published.$number');
 
-  _step('بناء التحديث ورفعه إلى Shorebird');
+  _step('Building the update and sending it to Shorebird');
   await _run(
     'shorebird',
     ['patch', 'android', '--release-version', releaseVersion, if (args.dryRun) '--dry-run'],
@@ -448,20 +451,20 @@ Future<void> _publishPatch(_Args args, RequestedVersion? requested, String publi
   );
 
   if (args.dryRun) {
-    _step('تجربة بلا رفع — لم يُنشر شيء');
+    _step('Dry run - nothing was published');
     return;
   }
-  _step('تم نشر $published.$number');
-  _info('يصل الأجهزة بصمت: يُنزَّل عند فتح التطبيق ويُطبَّق عند فتحه التالي');
+  _step('Published $published.$number');
+  _info('It reaches devices silently: downloaded on open, applied on the next open');
 }
 
 /// GitHub لا ينشئ إصداراً في مستودع بلا كوميت: الوسم يحتاج كوميتاً يشير إليه.
 Future<void> _ensureRepoHasCommit() async {
   final empty = await _capture('gh', ['repo', 'view', releasesRepo, '--json', 'isEmpty', '--jq', '.isEmpty']);
   if (empty.trim() != 'true') return;
-  _info('المستودع فارغ — إنشاء README أولاً');
+  _info('Repository is empty - creating a README first');
   const readme = '# Center Mobile Releases\n\n'
-      'حزم تطبيق الجوال، و`mobile-latest.json` الذي تقرؤه الأجهزة لتعرف أن تحديثاً صدر.\n';
+      'Mobile app packages, and `mobile-latest.json` that devices read to learn an update was published.\n';
   await _capture('gh', [
     'api', '-X', 'PUT', 'repos/$releasesRepo/contents/README.md', //
     '-f', 'message=Initial commit', '-f', 'content=${base64Encode(utf8.encode(readme))}',
@@ -517,7 +520,7 @@ Future<void> _run(String exe, List<String> args, {bool shell = false, bool allow
     runInShell: shell && Platform.isWindows,
   );
   final code = await process.exitCode;
-  if (code != 0 && !allowFailure) _fail('$exe ${args.first} فشل (رمز الخروج $code)');
+  if (code != 0 && !allowFailure) _fail('$exe ${args.first} failed (exit code $code)');
 }
 
 Future<String> _capture(String exe, List<String> args, {bool shell = false}) async {
@@ -528,7 +531,7 @@ Future<String> _capture(String exe, List<String> args, {bool shell = false}) asy
     stdoutEncoding: utf8,
     stderrEncoding: utf8,
   );
-  if (result.exitCode != 0) _fail('$exe ${args.first} فشل:\n${result.stderr}${result.stdout}');
+  if (result.exitCode != 0) _fail('$exe ${args.first} failed:\n${result.stderr}${result.stdout}');
   return '${result.stdout}';
 }
 

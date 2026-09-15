@@ -107,7 +107,8 @@ void main() {
     test('الجزء الثالث صفراً لا يُخمَّن: الرسالة تقول ماذا يُكتب', () {
       expect(
         () => publish.parseRequestedVersion('2.18.0'),
-        throwsA(isA<ArgumentError>().having((e) => '${e.message}', 'الرسالة', contains('اكتب 2.18 للبناء'))),
+        throwsA(isA<ArgumentError>()
+            .having((e) => '${e.message}', 'الرسالة', contains('write 2.18 for the build'))),
         reason: 'لا تحديث صامت رقمه صفر، ولا يُفترض أنه بناء',
       );
     });
