@@ -918,8 +918,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       final existing = installments.where((i) => i.studentId == student.id).toList();
       if (existing.any((i) => i.id == dueId)) continue;
 
-      // خطة أقساط يدوية تغطي رسومه أصلاً
-      final manual = existing.any((i) => !i.id.startsWith(dueIdPrefix) && i.title != seatInstallmentTitle);
+      // خطة أقساط يدوية تغطي رسومه أصلاً. الرسم الإضافي ليس خطةً: يُقيَّد فوق
+      // الرسم الشهري، فوجوده لا يوقف توليد المستحق
+      final manual = existing.any((i) =>
+          !i.id.startsWith(dueIdPrefix) && !i.id.startsWith(feeIdPrefix) && i.title != seatInstallmentTitle);
       if (manual) continue;
 
       final fee = resolveMonthlyFee(student, fees);
@@ -1126,6 +1128,101 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   TermGrade termGradeOf(String studentId, String term) =>
       computeTermGrade(evaluationsOfStudent(studentId), gradingScheme, term);
 
+  /// بادئة معرّف قسط الرسم الإضافي — `FEE_ID_PREFIX`.
+  static const feeIdPrefix = 'fee_';
+
+  /// معرّف حتمي: الرسم لا يُقيَّد على الطالب مرتين مهما تكرر التطبيق.
+  static String feeInstallmentId(String itemId, String studentId) => '$feeIdPrefix${itemId}_$studentId';
+
+  /// الرسوم الإضافية المعتمدة — `getFeeItems`.
+  List<FeeItem> get feeItems {
+    final raw = db.settings[feeItemsKey];
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final list = jsonDecode(raw);
+      if (list is! List) return const [];
+      return [
+        for (final e in list)
+          if (e is Map) FeeItem.fromMap(Map<String, dynamic>.from(e)),
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> saveFeeItems(List<FeeItem> items) async {
+    requireSection('settings');
+    final encoded = [for (final i in items) i.toMap()];
+    await db.setSetting(feeItemsKey, jsonEncode(encoded));
+    // ومعها نسخة في كائن المنشأة كي تصل بقية الأجهزة
+    await _syncInstitutionSetting('__fee_items', encoded);
+    notifyListeners();
+  }
+
+  /// تقييد الرسم على الطلاب المستهدفين ممن لم يُقيَّد عليهم — `applyFeeItem`.
+  /// يعيد عدد من قُيّد عليهم.
+  int applyFeeItem(FeeItem item) {
+    requireSection('settings');
+    final now = _nowIso();
+    final due = parseIsoDate(item.dueDate) ?? DateTime.now();
+    var created = 0;
+
+    for (final student in students.where((s) => s.status == 'active')) {
+      if (item.gradeLevel.isNotEmpty && !isSameGrade(student.gradeLevel, item.gradeLevel)) continue;
+      final id = feeInstallmentId(item.id, student.id);
+      if (installments.any((i) => i.id == id)) continue;
+
+      final inst = Installment(
+        id: id,
+        studentId: student.id,
+        title: item.name,
+        amount: item.amount,
+        dueDate: due,
+        syncStatus: 'pending',
+        createdAt: now,
+        updatedAt: now,
+      );
+      installments.add(inst);
+      _queue('installments', inst.id, 'INSERT', inst.toCloud());
+      _persistStudentLedger(student);
+      created++;
+    }
+
+    if (created > 0) {
+      markDirty('installments');
+      notifyListeners();
+    }
+    return created;
+  }
+
+  /// إزالة الرسم عن الطلاب، إلا من عليه سند مربوط به — `removeFeeItem`.
+  /// يعيد عدد من بقي الرسم عليهم.
+  int removeFeeItem(String itemId) {
+    requireSection('settings');
+    final prefix = '$feeIdPrefix${itemId}_';
+    final rows = installments.where((i) => i.id.startsWith(prefix)).toList();
+    var kept = 0;
+
+    for (final row in rows) {
+      // سندٌ مربوط بالقسط: حذفه يترك سنداً يشير إلى لا شيء
+      final linked = payments.any((p) => !p.cancelled && p.installmentId == row.id);
+      if (linked) {
+        kept++;
+        continue;
+      }
+      installments.remove(row);
+      _queue('installments', row.id, 'DELETE', null);
+      final student = studentById(row.studentId);
+      if (student != null) _persistStudentLedger(student);
+    }
+
+    if (rows.length > kept) {
+      markDirty('installments');
+      notifyListeners();
+    }
+    return kept;
+  }
+
   SchoolDiscountRules get discountRules => SchoolDiscountRules.decode(db.settings[discountRulesKey]);
 
   Future<void> saveDiscountRules(SchoolDiscountRules rules) async {
@@ -1206,6 +1303,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
       final rules = synced['__discount_rules'];
       if (rules is Map) await db.setSetting(discountRulesKey, jsonEncode(rules));
+
+      final fees = synced['__fee_items'];
+      if (fees is List) await db.setSetting(feeItemsKey, jsonEncode(fees));
 
       final seatFee = synced[seatFeeColorKey];
       if (seatFee is num) await db.setSetting(seatReservationFeeKey, '${seatFee < 0 ? 0 : seatFee}');
@@ -1684,6 +1784,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     institutionLogoKey,
     institutionColorsKey,
     seatReservationFeeKey,
+    feeItemsKey,
     systemFeaturesKey,
     customPaymentMethodsKey,
     discountRulesKey,

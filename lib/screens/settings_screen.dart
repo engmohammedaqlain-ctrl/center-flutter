@@ -273,6 +273,8 @@ class _FeesTab extends StatelessWidget {
         const SizedBox(height: 10),
         _SeatFeeCard(store: store),
         const SizedBox(height: 8),
+        _FeeItemsCard(store: store),
+        const SizedBox(height: 8),
         _StudyMonthsCard(store: store),
         if (missing > 0) ...[
           const SizedBox(height: 8),
@@ -300,6 +302,227 @@ class _FeesTab extends StatelessWidget {
       count: fees.length,
       empty: const EmptyState(message: 'لا توجد مراحل دراسية مسجلة.'),
       item: (context, i) => _GradeFeeCard(fee: fees[i]),
+    );
+  }
+}
+
+/// رسوم إضافية تحددها الإدارة — المقابل لـ `FeeItemsSettings.tsx`.
+///
+/// زيّ أو كتب أو رحلة: تُقيَّد أقساطاً على طلاب مرحلة أو على الجميع، فتظهر في
+/// بند الدفعة وبيان السند وتدخل في المستحق. «تطبيق» تقيّدها على من أُضيف بعدها.
+class _FeeItemsCard extends StatefulWidget {
+  const _FeeItemsCard({required this.store});
+
+  final AppStore store;
+
+  @override
+  State<_FeeItemsCard> createState() => _FeeItemsCardState();
+}
+
+class _FeeItemsCardState extends State<_FeeItemsCard> {
+  final name = TextEditingController();
+  final amount = TextEditingController();
+  String grade = '';
+  DateTime due = DateTime.now();
+  bool adding = false;
+
+  @override
+  void dispose() {
+    name.dispose();
+    amount.dispose();
+    super.dispose();
+  }
+
+  Future<void> _add() async {
+    final store = widget.store;
+    final value = double.tryParse(amount.text.trim()) ?? 0;
+    if (name.text.trim().isEmpty || value <= 0) {
+      showAppSnack(context, 'اكتب البند والمبلغ', error: true);
+      return;
+    }
+    final item = FeeItem(
+      id: store.newId(),
+      name: name.text.trim(),
+      amount: value,
+      dueDate: isoDate(due),
+      gradeLevel: grade,
+    );
+    try {
+      await store.saveFeeItems([...store.feeItems, item]);
+      final count = store.applyFeeItem(item);
+      if (!mounted) return;
+      setState(() {
+        name.clear();
+        amount.clear();
+        adding = false;
+      });
+      showAppSnack(context, 'قُيّد على $count طالباً');
+    } on StoreException catch (e) {
+      if (mounted) showAppSnack(context, e.message, error: true);
+    }
+  }
+
+  Future<void> _apply(FeeItem item) async {
+    try {
+      final count = widget.store.applyFeeItem(item);
+      if (!mounted) return;
+      showAppSnack(context, count == 0 ? 'لا طلاب جدد' : 'قُيّد على $count طالباً');
+    } on StoreException catch (e) {
+      if (mounted) showAppSnack(context, e.message, error: true);
+    }
+  }
+
+  Future<void> _remove(FeeItem item) async {
+    final store = widget.store;
+    final ok = await confirmSheet(
+      context,
+      title: 'حذف «${item.name}»',
+      message: 'يُزال عن الطلاب، ويبقى على من له سند مربوط به.',
+      confirmLabel: 'حذف',
+    );
+    if (!ok || !mounted) return;
+    try {
+      final kept = store.removeFeeItem(item.id);
+      await store.saveFeeItems(store.feeItems.where((i) => i.id != item.id).toList());
+      if (!mounted) return;
+      showAppSnack(context, kept == 0 ? 'حُذف' : 'حُذف، وبقي على $kept طالباً لهم سندات');
+    } on StoreException catch (e) {
+      if (mounted) showAppSnack(context, e.message, error: true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = widget.store;
+    final items = store.feeItems;
+    final grades = store.gradeOptions;
+
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'رسوم إضافية',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => setState(() => adding = !adding),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.amber,
+                  textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                ),
+                icon: Icon(adding ? Icons.close : Icons.add, size: 16),
+                label: Text(adding ? 'إلغاء' : 'رسم جديد'),
+              ),
+            ],
+          ),
+          if (adding) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: TextField(controller: name, decoration: const InputDecoration(hintText: 'الزي المدرسي')),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: TextField(
+                    controller: amount,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    style: const TextStyle(fontFamily: 'monospace'),
+                    decoration: InputDecoration(hintText: '0 $currency'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: AppDropdown<String>(
+                    value: grade.isEmpty ? '' : grade,
+                    items: [
+                      const DropdownMenuItem(value: '', child: Text('كل الطلاب')),
+                      for (final g in grades)
+                        DropdownMenuItem(value: g, child: Text(g, overflow: TextOverflow.ellipsis)),
+                    ],
+                    onChanged: (v) => setState(() => grade = v ?? ''),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SelectField(
+                    text: isoDate(due),
+                    icon: Icons.calendar_today_outlined,
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: due,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime.now().add(const Duration(days: 730)),
+                      );
+                      if (picked != null) setState(() => due = picked);
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            PrimaryButton(label: 'إضافة وتقييد', color: AppColors.navy, onPressed: _add),
+          ],
+          if (items.isEmpty && !adding)
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text('لا رسوم إضافية', style: TextStyle(color: AppColors.muted, fontSize: 11.5)),
+            ),
+          for (final item in items)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          item.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.text),
+                        ),
+                        Text(
+                          '${money(item.amount)}  ·  ${item.gradeLevel.isEmpty ? 'كل الطلاب' : item.gradeLevel}  ·  ${item.dueDate}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => _apply(item),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.amber,
+                      textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5),
+                    ),
+                    child: const Text('تطبيق'),
+                  ),
+                  IconButton(
+                    onPressed: () => _remove(item),
+                    icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.danger),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

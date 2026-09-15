@@ -525,6 +525,46 @@ class Student {
 /// الملفان في حاوية `student-docs` الخاصة، والصف السحابي لا يحمل إلا مساريهما.
 /// كانا base64 داخل القاعدة — نحو 400 كيلوبايت لكل طالب — فتمتلئ بهما مساحتها
 /// كلها عند ألف طالب ونيّف. النسخة المحلية تحتفظ بالصورة نفسها كي تُعرض بلا شبكة.
+/// رسم تحدده الإدارة خارج الرسم الشهري (زي، كتب، رحلة) — `FeeItem`.
+///
+/// يُقيَّد قسطاً على طلاب مرحلة أو على الجميع، فيظهر في بند الدفعة وبيان السند
+/// ويدخل في المستحق كبقية الأقساط.
+class FeeItem {
+  const FeeItem({
+    required this.id,
+    required this.name,
+    required this.amount,
+    required this.dueDate,
+    this.gradeLevel = '',
+  });
+
+  final String id;
+  final String name;
+  final double amount;
+
+  /// تاريخ الاستحقاق بصيغة `YYYY-MM-DD`.
+  final String dueDate;
+
+  /// المرحلة المستهدفة، والفارغ يعني كل الطلاب النشطين.
+  final String gradeLevel;
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'name': name,
+        'amount': amount,
+        'due_date': dueDate,
+        'grade_level': gradeLevel.isEmpty ? null : gradeLevel,
+      };
+
+  factory FeeItem.fromMap(Map<String, dynamic> m) => FeeItem(
+        id: '${m['id'] ?? ''}',
+        name: '${m['name'] ?? ''}',
+        amount: (m['amount'] as num?)?.toDouble() ?? 0,
+        dueDate: '${m['due_date'] ?? ''}',
+        gradeLevel: '${m['grade_level'] ?? ''}',
+      );
+}
+
 class StudentAttachments {
   StudentAttachments({
     required this.id,
