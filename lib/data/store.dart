@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import 'academic_matching.dart';
+import 'app_settings.dart';
 import 'balance.dart';
 import 'grading.dart';
 import 'institution.dart';
@@ -815,22 +816,47 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     notifyListeners();
   }
 
+  // ── إعدادات المنشأة المشتركة (المقابل لـ lib/appSettings.ts) ──────────────
+
+  /// إعدادات المدرسة كما وصلت في عمود `settings`.
+  ///
+  /// المفاتيح القديمة داخل `colors` تبقى مقروءةً: أجهزةٌ لم تُحدَّث بعد ما زالت
+  /// تكتب فيها، وسجلٌّ حُفظ قبل العمود الجديد لا يفقد رسمه ولا رسومه الإضافية.
+  AppSettings get settings {
+    final stored = AppSettings.fromMap(_storedSettingsMap);
+    if (_storedSettingsMap.isNotEmpty) return stored;
+    return stored.copyWith(seatFee: _legacySeatFee, feeItems: _legacyFeeItems);
+  }
+
+  Map<String, dynamic> get _storedSettingsMap => _decodeMap(db.settings[institutionSettingsKey]);
+
+  /// كتابة ما تغيّر وحده؛ ما لا تعرفه هذه النسخة يبقى كما وصل.
+  Future<void> _writeSettings(AppSettings next) async {
+    await db.setSetting(institutionSettingsKey, jsonEncode(next.toMap()));
+    _persistInstitutionRow();
+    notifyListeners();
+  }
+
   /// رسم حجز المقعد. قيمته الافتراضية 0 حتى تعتمد الإدارة رقماً صراحةً —
   /// تثبيته بـ 50 في الكود قاعدة عمل مخترعة.
-  double get seatReservationFee {
+  double get seatReservationFee => settings.seatFee;
+
+  /// هل يُقتطع رسم الحجز من أول الأقساط، أم يبقى مطالبةً مستقلة فوقها؟
+  bool get deductsSeatFee => settings.deductsSeatFee;
+
+  double get _legacySeatFee {
     final local = db.settings[seatReservationFeeKey];
-    // إعداد المنشأة المتزامن هو الطريق الذي يصل به ضبط سطح المكتب إلى الجوال
     final raw = local == null || local.isEmpty ? '${_storedColorsMap[seatFeeColorKey] ?? ''}' : local;
     final n = double.tryParse(raw);
     return n == null || n < 0 ? 0 : n;
   }
 
-  Future<void> setSeatReservationFee(double value) async {
+  Future<void> setSeatReservationFee(double value, {bool? deduct}) async {
     final fee = value < 0 ? 0.0 : value;
-    await db.setSetting(seatReservationFeeKey, '$fee');
-    // ومعه نسخة في كائن المنشأة كي تصل بقية الأجهزة، كما يفعل `setSeatReservationFee`
-    await _syncInstitutionSetting(seatFeeColorKey, fee);
-    notifyListeners();
+    await _writeSettings(settings.copyWith(
+      seatFee: fee,
+      seatFeeMode: deduct == null ? null : (deduct ? seatFeeModeDeduct : seatFeeModeSeparate),
+    ));
   }
 
   /// مفاتيح إعدادات المنشأة داخل كائن الألوان المتزامن — مطابقة للنسخة المكتبية.
@@ -1108,8 +1134,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// كائن الألوان كما حُفظ بكل مفاتيحه، ومنها ما لا تعرفه هذه النسخة —
   /// `__custom_payment_methods` مثلاً. الكتابة فوقه بالألوان الخمسة وحدها
   /// كانت تمسح من السحابة إعدادات حفظتها نسخة أخرى في العمود نفسه.
-  Map<String, dynamic> get _storedColorsMap {
-    final raw = db.settings[institutionColorsKey];
+  Map<String, dynamic> get _storedColorsMap => _decodeMap(db.settings[institutionColorsKey]);
+
+  static Map<String, dynamic> _decodeMap(String? raw) {
     if (raw == null || raw.isEmpty) return {};
     try {
       final data = jsonDecode(raw);
@@ -1188,28 +1215,20 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   static String feeInstallmentId(String itemId, String studentId) => '$feeIdPrefix${itemId}_$studentId';
 
   /// الرسوم الإضافية المعتمدة — `getFeeItems`.
-  List<FeeItem> get feeItems {
+  List<FeeItem> get feeItems => settings.feeItems;
+
+  List<FeeItem> get _legacyFeeItems {
     final raw = db.settings[feeItemsKey];
-    if (raw == null || raw.isEmpty) return const [];
-    try {
-      final list = jsonDecode(raw);
-      if (list is! List) return const [];
-      return [
-        for (final e in list)
-          if (e is Map) FeeItem.fromMap(Map<String, dynamic>.from(e)),
-      ];
-    } catch (_) {
-      return const [];
-    }
+    final list = raw == null || raw.isEmpty ? _storedColorsMap['__fee_items'] : _tryDecodeList(raw);
+    return [
+      for (final e in (list is List ? list : const []))
+        if (e is Map) FeeItem.fromMap(Map<String, dynamic>.from(e)),
+    ];
   }
 
   Future<void> saveFeeItems(List<FeeItem> items) async {
     requireSection('settings');
-    final encoded = [for (final i in items) i.toMap()];
-    await db.setSetting(feeItemsKey, jsonEncode(encoded));
-    // ومعها نسخة في كائن المنشأة كي تصل بقية الأجهزة
-    await _syncInstitutionSetting('__fee_items', encoded);
-    notifyListeners();
+    await _writeSettings(settings.copyWith(feeItems: items));
   }
 
   /// تقييد الرسم على الطلاب المستهدفين ممن لم يُقيَّد عليهم — `applyFeeItem`.
@@ -1316,6 +1335,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       'institution_name': institutionName,
       'logo': institutionLogo.isEmpty ? null : institutionLogo,
       'colors': {..._storedColorsMap, ...institutionColors.toMap()},
+      'settings': settings.toMap(),
       'updated_at': _nowIso(),
     };
     final bucket = extraCloud.putIfAbsent('institution_settings', () => []);
@@ -1344,6 +1364,14 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       await db.setSetting(institutionNameKey, name);
     }
     if (logo is String && logo.isNotEmpty) await db.setSetting(institutionLogoKey, logo);
+
+    // إعدادات المدرسة من عمودها. سجلٌّ لم يكتبه العمود بعد يُترك للمفاتيح
+    // القديمة داخل `colors` أدناه، فلا يُصفَّر رسمٌ مضبوط بإعدادات فارغة
+    final shared = row['settings'];
+    if (shared is Map && shared.isNotEmpty) {
+      await db.setSetting(institutionSettingsKey, jsonEncode(Map<String, dynamic>.from(shared)));
+    }
+
     if (colors is Map) {
       final synced = Map<String, dynamic>.from(colors);
       await db.setSetting(institutionColorsKey, jsonEncode(synced));
@@ -1843,6 +1871,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     institutionNameKey,
     institutionLogoKey,
     institutionColorsKey,
+    institutionSettingsKey,
     institutionStampKey,
     seatReservationFeeKey,
     feeItemsKey,

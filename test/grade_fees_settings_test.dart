@@ -201,7 +201,7 @@ void main() {
       await tester.tap(find.text('الحجز وأشهر الدراسة'));
       await tester.pumpAndSettle();
       expect(find.text('رسم حجز المقعد'), findsOneWidget);
-      expect(find.text('يُدفع مرة واحدة ويُخصم من أول مستحق'), findsOneWidget);
+      expect(find.text('يُدفع مرة واحدة ويُخصم من أول الأقساط'), findsOneWidget);
       expect(find.text('أشهر الدراسة'), findsOneWidget);
       expect(find.text('الرسوم الشهرية متوقفة'), findsOneWidget);
       expect(find.text('سبتمبر'), findsOneWidget);

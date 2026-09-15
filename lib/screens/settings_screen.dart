@@ -557,6 +557,7 @@ class _SeatFeeCard extends StatefulWidget {
 class _SeatFeeCardState extends State<_SeatFeeCard> {
   late final TextEditingController amount;
   late bool enabled;
+  late bool deduct;
   bool saved = false;
 
   /// المستخدم بدأ يعدّل: ما يصل من جهاز آخر لا يُبدّل ما تحت يده.
@@ -571,6 +572,7 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
 
   void _readStore() {
     enabled = widget.store.seatReservationFee > 0;
+    deduct = widget.store.deductsSeatFee;
   }
 
   @override
@@ -593,7 +595,7 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
   Future<void> _save() async {
     final store = widget.store;
     final value = enabled ? (double.tryParse(amount.text.trim()) ?? 0) : 0.0;
-    await store.setSeatReservationFee(value < 0 ? 0 : value);
+    await store.setSeatReservationFee(value < 0 ? 0 : value, deduct: deduct);
     if (!mounted) return;
     setState(() {
       saved = true;
@@ -654,6 +656,24 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
                 PrimaryButton(label: 'حفظ', color: AppColors.navy, onPressed: _save),
               ],
             ),
+            const SizedBox(height: 8),
+            // الاقتطاع يجعله سلفةً على الخطة، والاستقلال يجعله رسماً فوقها
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final option in const [(true, 'يُخصم من الأقساط'), (false, 'رسم مستقل فوقها')])
+                  _MonthChip(
+                    label: option.$2,
+                    on: deduct == option.$1,
+                    onTap: () => setState(() {
+                      deduct = option.$1;
+                      editing = true;
+                      saved = false;
+                    }),
+                  ),
+              ],
+            ),
           ] else
             Padding(
               padding: const EdgeInsets.only(top: 4),
@@ -670,9 +690,11 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
               ),
             ),
           const SizedBox(height: 6),
-          const Text(
-            'يُدفع مرة واحدة ويُخصم من أول مستحق',
-            style: TextStyle(fontSize: 10.5, color: AppColors.faint, fontWeight: FontWeight.w600),
+          Text(
+            enabled && !deduct
+                ? 'يُدفع مرة واحدة، ويبقى مطالبةً مستقلة فوق أقساط الطالب'
+                : 'يُدفع مرة واحدة ويُخصم من أول الأقساط',
+            style: const TextStyle(fontSize: 10.5, color: AppColors.faint, fontWeight: FontWeight.w600),
           ),
         ],
       ),

@@ -15,7 +15,7 @@ AppStore _store() {
 }
 
 /// صف `institution_settings` كما يكتبه سطح المكتب في السحابة.
-void _cloudRow(AppStore s, Map<String, dynamic> colors) {
+void _cloudRow(AppStore s, Map<String, dynamic> colors, {Map<String, dynamic>? settings}) {
   s.extraCloud['institution_settings'] = [
     {
       'id': s.tenantId,
@@ -23,6 +23,7 @@ void _cloudRow(AppStore s, Map<String, dynamic> colors) {
       'institution_name': 'مدرسة الأمل النموذجية',
       'logo': null,
       'colors': colors,
+      if (settings != null) 'settings': settings,
       'updated_at': '2026-09-13T10:00:00.000Z',
     },
   ];
@@ -30,14 +31,23 @@ void _cloudRow(AppStore s, Map<String, dynamic> colors) {
 
 void main() {
   group('إعدادات المنشأة تصل من سطح المكتب إلى الجوال', () {
-    test('رسم حجز المقعد يُستعاد من الجدول المتزامن', () async {
+    test('رسم حجز المقعد يُستعاد من عمود الإعدادات', () async {
       final s = _store();
       expect(s.seatReservationFee, 0);
 
-      _cloudRow(s, {AppStore.seatFeeColorKey: 50});
+      _cloudRow(s, {}, settings: {'seat_fee': 50, 'seat_fee_mode': 'separate'});
       await s.hydrateInstitution();
 
       expect(s.seatReservationFee, 50, reason: 'كان يبقى محلياً على الجهاز الذي ضبطه');
+      expect(s.deductsSeatFee, isFalse, reason: 'مطالبة مستقلة فوق الأقساط');
+    });
+
+    test('سجلٌّ قديم بلا عمود إعدادات يُقرأ من مفاتيح الألوان', () async {
+      final s = _store();
+      _cloudRow(s, {AppStore.seatFeeColorKey: 50});
+      await s.hydrateInstitution();
+
+      expect(s.seatReservationFee, 50, reason: 'جهازٌ لم يُحدَّث بعد ما زال يكتب هناك');
       expect(s.db.settings[seatReservationFeeKey], '50');
     });
 
@@ -73,19 +83,21 @@ void main() {
   });
 
   group('ما يُضبط على الجوال يصل بقية الأجهزة', () {
-    Map<String, dynamic> colorsOf(AppStore s) {
-      final row = s.extraCloud['institution_settings']!.firstWhere((e) => e['id'] == s.tenantId);
-      return Map<String, dynamic>.from(row['colors'] as Map);
-    }
+    Map<String, dynamic> _rowOf(AppStore s) =>
+        s.extraCloud['institution_settings']!.firstWhere((e) => e['id'] == s.tenantId);
 
-    test('رسم الحجز وأشهر الدراسة يُكتبان في صف المنشأة', () async {
+    Map<String, dynamic> colorsOf(AppStore s) => Map<String, dynamic>.from(_rowOf(s)['colors'] as Map);
+
+    Map<String, dynamic> settingsOf(AppStore s) => Map<String, dynamic>.from(_rowOf(s)['settings'] as Map);
+
+    test('رسم الحجز يُكتب في عمود الإعدادات، وأشهر الدراسة في الألوان', () async {
       final s = _store();
-      await s.setSeatReservationFee(75);
+      await s.setSeatReservationFee(75, deduct: false);
       await s.saveStudyMonths([9, 10]);
 
-      final colors = colorsOf(s);
-      expect(colors[AppStore.seatFeeColorKey], 75.0);
-      expect(colors[AppStore.studyMonthsColorKey], [9, 10]);
+      expect(settingsOf(s)['seat_fee'], 75.0);
+      expect(settingsOf(s)['seat_fee_mode'], 'separate');
+      expect(colorsOf(s)[AppStore.studyMonthsColorKey], [9, 10]);
     });
 
     test('الميزات وقواعد الخصم كذلك', () async {
@@ -101,12 +113,14 @@ void main() {
     test('الكتابة لا تمسح إعدادات كتبتها نسخة أخرى في العمود نفسه', () async {
       final s = _store();
       await s.db.setSetting(institutionColorsKey, jsonEncode({'__unknown_setting': 'يبقى'}));
+      // نظام الرصد تكتبه النسخة المكتبية في العمود نفسه ولا تقرؤه هذه
+      await s.db.setSetting(institutionSettingsKey, jsonEncode({'grading': {'mode': 'monthly'}}));
 
       await s.setSeatReservationFee(20);
 
-      final colors = colorsOf(s);
-      expect(colors['__unknown_setting'], 'يبقى');
-      expect(colors[AppStore.seatFeeColorKey], 20.0);
+      expect(colorsOf(s)['__unknown_setting'], 'يبقى');
+      expect(settingsOf(s)['seat_fee'], 20.0);
+      expect((settingsOf(s)['grading'] as Map)['mode'], 'monthly');
     });
   });
 }

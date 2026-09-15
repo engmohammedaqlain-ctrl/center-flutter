@@ -11,6 +11,10 @@ const institutionNameKey = 'institution_name';
 const institutionLogoKey = 'institution_logo';
 const institutionColorsKey = 'institution_colors';
 
+/// إعدادات المدرسة المشتركة — عمود `settings` في السجل نفسه. انظر
+/// `app_settings.dart`: قواعد العمل لا تسكن كائن الألوان.
+const institutionSettingsKey = 'institution_settings_json';
+
 /// الختم الرسمي — صورة تُطبع على السندات مكان مربع الختم.
 const institutionStampKey = 'institution_stamp';
 const seatReservationFeeKey = 'seat_reservation_fee';

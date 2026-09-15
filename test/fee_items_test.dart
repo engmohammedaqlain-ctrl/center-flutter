@@ -83,7 +83,8 @@ void main() {
     await s.saveFeeItems([_item(s)]);
 
     expect(s.feeItems.single.name, 'الزي المدرسي');
-    expect(s.db.settings[feeItemsKey], contains('الزي المدرسي'));
+    // عمود `settings` لا كائن الألوان: قواعد العمل تصل بقية الأجهزة من مكانها
+    expect(s.db.settings[institutionSettingsKey], contains('الزي المدرسي'));
     await s.flush();
   });
 

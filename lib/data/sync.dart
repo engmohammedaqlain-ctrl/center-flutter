@@ -64,7 +64,7 @@ const tableAllowedColumns = <String, List<String>>{
     'tenant_id', 'created_at', 'updated_at',
   ],
   'institution_settings': [
-    'id', 'institution_type', 'institution_name', 'logo', 'colors',
+    'id', 'institution_type', 'institution_name', 'logo', 'colors', 'settings',
     'tenant_id', 'created_at', 'updated_at',
   ],
   'enrollments': [
@@ -134,7 +134,7 @@ const nonTextColumns = <String, List<String>>{
     'amount', 'created_at', 'due_date', 'paid_amount',
     'tenant_id', 'updated_at',
   ],
-  'institution_settings': ['colors', 'created_at', 'tenant_id', 'updated_at'],
+  'institution_settings': ['colors', 'created_at', 'settings', 'tenant_id', 'updated_at'],
   'payments': [
     'amount', 'created_at', 'discount_amount', 'is_cancelled', 'original_amount', 'payment_date',
     'remaining_balance_after', 'tenant_id', 'total_due_at_payment', 'transfer_date', 'updated_at',
