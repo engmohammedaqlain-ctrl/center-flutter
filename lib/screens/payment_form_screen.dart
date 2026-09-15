@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/balance.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -27,7 +28,11 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
   late String? studentId;
   late final TextEditingController amount;
   String method = 'cash';
-  late String purpose;
+
+  /// البند: `inst:<معرّف>` لقسط مفتوح، أو `general` أو `monthly_fee` أو
+  /// `seat_reservation` أو `other`. كان حقلين — «غرض الدفع» و«القسط المجدول» —
+  /// يتناقضان: غرضٌ شهري مع قسطٍ مربوط، ولا يدري المستخدم أيهما يحكم السند.
+  String item = '';
   DateTime date = DateTime.now();
   final notes = TextEditingController();
   final reference = TextEditingController();
@@ -38,7 +43,6 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
   final channelCtl = TextEditingController();
   String channel = '';
   DateTime? transferDate;
-  String? installmentId;
   bool busy = false;
   final errors = FieldErrors();
 
@@ -51,9 +55,67 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
   void initState() {
     super.initState();
     studentId = widget.studentId;
-    installmentId = widget.installmentId;
-    purpose = widget.installmentId != null ? 'installment' : 'monthly_fee';
+    item = widget.installmentId == null ? '' : 'inst:${widget.installmentId}';
     amount = TextEditingController(text: widget.amount == null ? '' : widget.amount!.toStringAsFixed(0));
+    // البند الافتراضي يحتاج أقساط الطالب، وهي في المخزن لا في الوسائط
+    if (studentId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _applyDefaults(StoreScope.of(context)));
+      });
+    }
+  }
+
+  /// الأقساط المفتوحة مرتّبة بالأقدم استحقاقاً — ترتيب السداد نفسه.
+  List<Installment> _openOf(List<Installment> insts) {
+    final open = insts.where((i) => i.remaining > 0.005).toList();
+    open.sort((a, b) => a.dueDate.compareTo(b.dueDate));
+    return open;
+  }
+
+  /// ما حلّ موعده وحده. القسط القادم ليس ديناً اليوم فلا يُطالَب به ولا يظهر في السند.
+  double _dueNow(Student student, List<Installment> insts) {
+    if (insts.isEmpty) return student.balance < 0 ? -student.balance : 0;
+    var total = 0.0;
+    for (final i in _openOf(insts)) {
+      if (isInstallmentDue(i)) total += i.remaining;
+    }
+    return total;
+  }
+
+  /// البند الافتراضي: أقدم قسط حلّ موعده، وإلا «دفعة عامة»، وإلا الرسوم الشهرية.
+  /// ولا يُقترح قسط لم يحن موعده: الدفع المقدم يختاره صاحبه.
+  void _applyDefaults(AppStore store) {
+    final student = studentId == null ? null : store.studentById(studentId!);
+    if (student == null) return;
+    final open = _openOf(store.installments.where((i) => i.studentId == student.id).toList());
+    final chosen = open.where((i) => 'inst:${i.id}' == item).firstOrNull ?? open.where(isInstallmentDue).firstOrNull;
+    if (chosen != null) {
+      item = 'inst:${chosen.id}';
+      if (amount.text.trim().isEmpty) amount.text = trimNum(chosen.remaining);
+      return;
+    }
+    if (item.isEmpty) item = open.isNotEmpty ? 'general' : 'monthly_fee';
+  }
+
+  /// ما تغطيه الدفعة: القسط المختار أولاً ثم الأقدم استحقاقاً، كما يوزّعها
+  /// الرصيد نفسه. هو بيان السند.
+  String _covers(List<Installment> open, double typed) {
+    final selectedId = item.startsWith('inst:') ? item.substring(5) : '';
+    if (selectedId.isEmpty && item != 'general') return '';
+    var credit = typed;
+    final ordered = [
+      ...open.where((i) => i.id == selectedId),
+      ...open.where((i) => i.id != selectedId),
+    ];
+    final parts = <String>[];
+    for (final inst in ordered) {
+      if (credit <= 0.005) break;
+      final due = inst.remaining;
+      parts.add(credit + 0.005 < due ? '${inst.title} (جزء)' : inst.title);
+      credit -= due;
+    }
+    if (credit > 0.005) parts.add('دفعة مقدمة');
+    return parts.join('، ');
   }
 
   @override
@@ -76,24 +138,29 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
         ..reset()
         ..check('student', selected == null, 'يرجى اختيار الطالب أولاً')
         ..check('amount', n <= 0, 'يرجى إدخال مبلغ صحيح أكبر من صفر')
-        ..check('customPurpose', purpose == 'other' && customPurpose.text.trim().isEmpty, 'يرجى كتابة غرض الدفع');
+        ..check('customPurpose', item == 'other' && customPurpose.text.trim().isEmpty, 'اكتب بند الدفعة');
     });
     if (errors.report(context) || selected == null) return;
     setState(() => busy = true);
+    final open = _openOf(store.installments.where((i) => i.studentId == selected.id).toList());
+    final covered = _covers(open, n);
     try {
       final p = store.addPayment(
         studentId: selected.id,
         amount: n,
         method: method,
         date: date,
-        purpose: purpose == 'other' && customPurpose.text.trim().isNotEmpty ? customPurpose.text.trim() : purpose,
+        // بيان السند هو ما غطّته الدفعة فعلاً، لا اسم البند المختار
+        purpose: item == 'other'
+            ? customPurpose.text.trim()
+            : (covered.isNotEmpty ? covered : (item == 'general' ? 'دفعة عامة' : item)),
         notes: notes.text.trim(),
         reference: reference.text.trim(),
         senderName: sender.text.trim(),
         channel: channelCtl.text.trim().isEmpty ? (method == 'cash' ? '' : channel) : channelCtl.text.trim(),
         transferDate: transferDate == null ? '' : isoDate(transferDate!),
         customMethodNotes: customMethod.text.trim(),
-        installmentId: installmentId,
+        installmentId: item.startsWith('inst:') ? item.substring(5) : null,
       );
       if (!mounted) return;
       Navigator.pop(context);
@@ -114,15 +181,20 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
     );
   }
 
-  void _onPurpose(String? v) {
+  void _onItem(AppStore store, List<Installment> open, String? v) {
     setState(() {
-      purpose = v ?? purpose;
-      if (purpose == 'seat_reservation') {
-        amount.text = '50';
-        notes.text = 'سداد رسم حجز مقعد (تُخصم من رسوم الشهر الأول)';
-        installmentId = null;
-      } else if (purpose == 'monthly_fee') {
-        installmentId = null;
+      item = v ?? item;
+      if (item.startsWith('inst:')) {
+        final chosen = open.where((i) => i.id == item.substring(5)).firstOrNull;
+        if (chosen != null) amount.text = trimNum(chosen.remaining);
+      } else if (item == 'seat_reservation') {
+        // الرسم من إعدادات المنشأة لا رقم مثبّت في الكود
+        final seat = store.seatReservationFee;
+        if (seat > 0) amount.text = trimNum(seat);
+      } else if (item == 'monthly_fee') {
+        final student = studentId == null ? null : store.studentById(studentId!);
+        final fee = student == null ? null : store.resolveMonthlyFee(student);
+        if (fee != null && fee > 0) amount.text = trimNum(fee);
       }
     });
   }
@@ -138,17 +210,6 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
         channelCtl.text = 'جوال بي';
       } else if (method == 'cash') {
         channelCtl.text = '';
-      }
-    });
-  }
-
-  void _onInstallment(List<Installment> insts, String? v) {
-    setState(() {
-      installmentId = (v == null || v.isEmpty) ? null : v;
-      if (installmentId != null) {
-        final inst = insts.firstWhere((i) => i.id == installmentId);
-        amount.text = inst.remaining.toStringAsFixed(0);
-        purpose = 'installment';
       }
     });
   }
@@ -169,13 +230,18 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
 
         final q = search.text.trim();
         final unpaid = store.students.where((s) {
+          // البحث يشمل الجميع: الدفع المقدَّم يقبضه من لا ذمة عليه
+          if (q.isNotEmpty) {
+            return s.fullName.contains(q) || s.phone.contains(q) || s.parentPhone.contains(q) || s.gradeLevel.contains(q);
+          }
           final isUnpaid = s.balance < 0 || s.paymentStatus == 'unpaid' || s.paymentStatus == 'in_progress';
-          if (!isUnpaid && widget.studentId != s.id) return false;
-          if (q.isEmpty) return true;
-          return s.fullName.contains(q) || s.phone.contains(q) || s.parentPhone.contains(q) || s.gradeLevel.contains(q);
+          return isUnpaid || widget.studentId == s.id;
         }).toList();
         final selected = studentId == null ? null : store.studentById(studentId!);
         final insts = selected == null ? <Installment>[] : store.installments.where((i) => i.studentId == selected.id).toList();
+        final open = _openOf(insts);
+        final typed = double.tryParse(amount.text.trim()) ?? 0;
+        final covered = _covers(open, typed);
         final electronic = method != 'cash';
 
         return Scaffold(
@@ -207,9 +273,8 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                       controller: amount,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: AppColors.amber),
-                      onChanged: (_) {
-                        if (errors.clear('amount')) setState(() {});
-                      },
+                      // سطر «يغطي» يتبع المبلغ المكتوب، فيُعاد البناء مع كل رقم
+                      onChanged: (_) => setState(() => errors.clear('amount')),
                       decoration: InputDecoration(hintText: '0', errorText: errors['amount']),
                     ),
                   ],
@@ -228,14 +293,38 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                 _gap,
                 FieldPair(
                   start: [
-                    const FieldLabel('غرض الدفع', requiredField: true),
+                    const FieldLabel('البند', requiredField: true),
                     AppDropdown<String>(
-                      value: purpose,
-                      items: paymentPurposeNames.entries
-                          .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value, overflow: TextOverflow.ellipsis)))
-                          .toList(),
-                      onChanged: _onPurpose,
+                      value: item.isEmpty ? null : item,
+                      hint: 'اختر البند',
+                      items: [
+                        if (open.isNotEmpty) ...[
+                          for (final i in open)
+                            DropdownMenuItem(
+                              value: 'inst:${i.id}',
+                              child: Text(
+                                '${i.title} — ${money(i.remaining)}${isInstallmentDue(i) ? '' : ' (قادم)'}',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          const DropdownMenuItem(value: 'general', child: Text('دفعة عامة')),
+                        ] else ...[
+                          const DropdownMenuItem(value: 'monthly_fee', child: Text('رسوم شهرية')),
+                          if (store.seatReservationFee > 0 && selected != null && !selected.seatReservationPaid)
+                            const DropdownMenuItem(value: 'seat_reservation', child: Text('حجز مقعد')),
+                        ],
+                        const DropdownMenuItem(value: 'other', child: Text('أخرى')),
+                      ],
+                      onChanged: (v) => _onItem(store, open, v),
                     ),
+                    if (covered.isNotEmpty && (item == 'general' || covered.contains('،')))
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          'يغطي: $covered',
+                          style: const TextStyle(color: AppColors.muted, fontSize: 11),
+                        ),
+                      ),
                   ],
                   end: [
                     const FieldLabel('طريقة الدفع', requiredField: true),
@@ -255,15 +344,15 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                     ),
                   ],
                 ),
-                if (purpose == 'other') ...[
+                if (item == 'other') ...[
                   _gap,
-                  FieldLabel('الغرض المخصص', key: errors.key('customPurpose'), requiredField: true),
+                  FieldLabel('البند المخصص', key: errors.key('customPurpose'), requiredField: true),
                   TextField(
                     controller: customPurpose,
                     onChanged: (_) {
                       if (errors.clear('customPurpose')) setState(() {});
                     },
-                    decoration: InputDecoration(hintText: 'اكتب سبب الدفع...', errorText: errors['customPurpose']),
+                    decoration: InputDecoration(hintText: 'اكتب البند...', errorText: errors['customPurpose']),
                   ),
                 ],
                 if (method == 'other') ...[
@@ -320,9 +409,9 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
     );
   }
 
-  /// الطالب المختار في سطر: الاسم ومرحلته ورصيده بلونه، وزر تغييره.
+  /// الطالب المختار في سطر: الاسم ومرحلته والمستحق عليه الآن، وزر تغييره.
   List<Widget> _selectedStudent(Student s, List<Installment> insts) {
-    final owes = s.balance < 0;
+    final due = _dueNow(s, insts);
     return [
       Row(
         children: [
@@ -342,13 +431,17 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                     children: [
                       if (s.gradeLevel.trim().isNotEmpty) TextSpan(text: '${s.gradeLevel.trim()}  ·  '),
                       TextSpan(
-                        text: owes
-                            ? 'عليه ${money(s.balance)}'
-                            : s.balance > 0
-                                ? 'له ${money(s.balance)}'
-                                : 'مسدد بالكامل',
-                        style: TextStyle(fontWeight: FontWeight.w800, color: owes ? AppColors.danger : AppColors.success),
+                        text: 'المستحق: ${money(due)}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: due > 0 ? AppColors.danger : AppColors.success,
+                        ),
                       ),
+                      if (s.balance > 0)
+                        TextSpan(
+                          text: '  ·  له ${money(s.balance)}',
+                          style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.amber),
+                        ),
                     ],
                   ),
                   maxLines: 1,
@@ -362,7 +455,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
             TextButton.icon(
               onPressed: () => setState(() {
                 studentId = null;
-                installmentId = null;
+                item = '';
               }),
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.amber,
@@ -373,26 +466,6 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
             ),
         ],
       ),
-      if (insts.isNotEmpty) ...[
-        _gap,
-        FieldLabel('القسط المجدول (${insts.length})'),
-        AppDropdown<String>(
-          value: installmentId ?? '',
-          items: [
-            const DropdownMenuItem(value: '', child: Text('دفعة رسوم عامة بدون ربط بقسط', overflow: TextOverflow.ellipsis)),
-            ...insts.map(
-              (i) => DropdownMenuItem(
-                value: i.id,
-                child: Text(
-                  '${i.title} — المتبقي: ${money(i.remaining)}${i.isPaid ? ' ✓' : ''}',
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
-          ],
-          onChanged: (v) => _onInstallment(insts, v),
-        ),
-      ],
     ];
   }
 
@@ -400,7 +473,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
   List<Widget> _studentPicker(List<Student> matches) {
     final shown = matches.take(_pickerLimit).toList();
     return [
-      FieldLabel('ابحث عن الطالب (غير المسددين والمطلوبين مالياً)', key: errors.key('student'), requiredField: true),
+      FieldLabel('الطالب', key: errors.key('student'), requiredField: true),
       SearchField(
         controller: search,
         hint: 'الاسم، رقم الهاتف، أو المرحلة...',
@@ -412,7 +485,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 16),
           child: Text(
-            'لا يوجد طلاب غير مسددين مطابقين للبحث',
+            'لا طلاب مطابقون',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppColors.muted, fontSize: 12),
           ),
