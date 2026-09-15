@@ -56,6 +56,11 @@ void main() {
 
     expect(find.textContaining('التوقيع'), findsNothing, reason: 'الختم يحلّ محله');
     expect(tester.takeException(), isNull, reason: 'لا طفح في سطر السند');
+
+    // إغلاق السند بزر واحد: «إلغاء السند» مكانه سجل المقبوضات
+    expect(find.text('تم'), findsOneWidget);
+    expect(find.text('إغلاق'), findsNothing);
+    expect(find.text('إلغاء السند'), findsNothing);
     await s.flush();
   });
 }

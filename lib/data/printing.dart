@@ -67,6 +67,9 @@ class PdfKit {
     return doc.save();
   }
 
+  /// صورة من `data:` للطباعة — الشعار والختم كلاهما يمرّ بها.
+  static pw.MemoryImage? decodeImage(String? base64Src) => _decodeLogo(base64Src);
+
   static pw.MemoryImage? _decodeLogo(String? base64Src) {
     if (base64Src == null || base64Src.isEmpty) return null;
     try {

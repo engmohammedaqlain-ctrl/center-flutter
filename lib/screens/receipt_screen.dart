@@ -194,33 +194,9 @@ class _ReceiptSheet extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(child: GhostButton(label: 'إغلاق', onPressed: () => Navigator.pop(context))),
-                if (!payment.cancelled && store.can('finance')) ...[
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: PrimaryButton(
-                      label: 'إلغاء السند',
-                      color: AppColors.danger,
-                      onPressed: () async {
-                        final ok = await confirmSheet(
-                          context,
-                          title: 'تأكيد إلغاء الدفعة',
-                          message:
-                              'هل أنت متأكد من إلغاء الدفعة رقم ${payment.receiptNumber} بمبلغ ${money(payment.amount)}؟',
-                          confirmLabel: 'إلغاء السند',
-                        );
-                        if (ok && context.mounted) {
-                          store.cancelPayment(payment);
-                          Navigator.pop(context);
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ],
-            ),
+            // إلغاء السند من سجل المقبوضات وحده: زرٌّ أحمر بجانب «تم» في نافذة
+            // السند كان دعوةً للخطأ بعد قبض ناجح
+            PrimaryButton(label: 'تم', onPressed: () => Navigator.pop(context)),
           ],
         ),
       ),
@@ -286,6 +262,7 @@ class _ReceiptSheet extends StatelessWidget {
       if (payment.notes.isNotEmpty && payment.notes != payment.purpose) ['البيان', payment.notes],
     ];
 
+    final stamp = PdfKit.decodeImage(store.institutionStamp);
     final bytes = await PdfKit.build(
       title: 'سند قبض رسمي رقم ${payment.receiptNumber}',
       institutionName: store.institutionName.isEmpty ? appName : store.institutionName,
@@ -326,7 +303,11 @@ class _ReceiptSheet extends StatelessWidget {
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
             pw.Text('المستلم: ${_receiverName(payment, store)}', style: const pw.TextStyle(fontSize: 9)),
-            pw.Text('التوقيع: ....................', style: const pw.TextStyle(fontSize: 9)),
+            // الختم المطبوع كما يظهر على الشاشة، وإلا فسطر التوقيع
+            if (stamp != null)
+              pw.SizedBox(width: 90, height: 42, child: pw.Image(stamp, fit: pw.BoxFit.contain))
+            else
+              pw.Text('التوقيع: ....................', style: const pw.TextStyle(fontSize: 9)),
           ],
         ),
       ],
