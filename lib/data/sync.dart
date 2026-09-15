@@ -59,6 +59,10 @@ const tableAllowedColumns = <String, List<String>>{
     'id', 'student_id_photo_path', 'birth_certificate_path',
     'tenant_id', 'created_at', 'updated_at',
   ],
+  'finance_attachments': [
+    'id', 'record_type', 'storage_path',
+    'tenant_id', 'created_at', 'updated_at',
+  ],
   'institution_settings': [
     'id', 'institution_type', 'institution_name', 'logo', 'colors',
     'tenant_id', 'created_at', 'updated_at',
@@ -138,6 +142,7 @@ const nonTextColumns = <String, List<String>>{
   'rooms': ['capacity', 'created_at', 'tenant_id', 'updated_at'],
   'sessions': ['created_at', 'end_time', 'session_date', 'start_time', 'tenant_id', 'updated_at'],
   'student_attachments': ['created_at', 'tenant_id', 'updated_at'],
+  'finance_attachments': ['created_at', 'tenant_id', 'updated_at'],
   'students': [
     'academic_discount_applied', 'academic_discount_rate', 'balance', 'birth_date',
     'created_at', 'custom_monthly_fee', 'enrollment_date', 'guardian_declaration',
@@ -167,6 +172,7 @@ const tableLabelsAr = <String, String>{
   'groups': 'المجموعات',
   'students': 'الطلاب',
   'student_attachments': 'مرفقات الطلاب',
+  'finance_attachments': 'إشعارات التحويل',
   'institution_settings': 'هوية المنشأة',
   'enrollments': 'التسجيلات',
   'installments': 'الأقساط',
@@ -199,6 +205,7 @@ const syncedTables = [
   'enrollments',
   'installments',
   'payments',
+  'finance_attachments',
   'sessions',
   'attendance',
   'teacher_payouts',
@@ -1151,8 +1158,8 @@ class SyncService {
     await _resetCursorsIfColumnsChanged(tenantId);
 
     // الجلب شبكيٌّ فيُطلب للجداول معاً، والتطبيق محليٌّ فيسير بترتيب الجداول بعده
-    // مرفقات الطلاب لا تُسحب دورياً: صور Base64 تُجلب عند فتح ملف الطالب وحده
-    final tables = syncedTables.where((t) => t != 'student_attachments').toList();
+    // المرفقات لا تُسحب دورياً: صورها تُجلب عند فتح السجل الذي تخصه وحده
+    final tables = syncedTables.where((t) => t != 'student_attachments' && t != 'finance_attachments').toList();
     final fetched = await mapPooled(tables, pullConcurrency, (cloud) => _fetchTableChanges(cloud, tenantId));
 
     for (final f in fetched) {

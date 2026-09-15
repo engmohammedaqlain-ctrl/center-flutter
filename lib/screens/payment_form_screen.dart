@@ -1,9 +1,14 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../data/balance.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
 import 'receipt_screen.dart';
@@ -43,6 +48,9 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
   final channelCtl = TextEditingController();
   String channel = '';
   DateTime? transferDate;
+
+  /// صورة إشعار التحويل بصيغة `data:` — تُرفع إلى حاوية الإشعارات بعد الحفظ.
+  String notice = '';
   bool busy = false;
   final errors = FieldErrors();
 
@@ -162,6 +170,8 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
         customMethodNotes: customMethod.text.trim(),
         installmentId: item.startsWith('inst:') ? item.substring(5) : null,
       );
+      // الإشعار يلحق بالسند: يُحفظ على الجهاز الآن ويُرفع بأول اتصال
+      unawaited(store.saveFinanceAttachment(p.id, 'payment', notice.isEmpty ? null : notice));
       if (!mounted) return;
       Navigator.pop(context);
       await ReceiptScreen.open(context, p);
@@ -169,6 +179,23 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
       if (mounted) showAppSnack(context, e.message, error: true);
     } finally {
       if (mounted) setState(() => busy = false);
+    }
+  }
+
+  /// اختيار صورة الإشعار وضغطها — الحدّ ٢ ميجابايت كما في حاوية الإشعارات.
+  Future<void> _pickNotice() async {
+    try {
+      final file = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 70, maxWidth: 1600);
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      if (bytes.length > 2 * 1024 * 1024) {
+        if (mounted) showAppSnack(context, 'الصورة أكبر من 2 ميجابايت', error: true);
+        return;
+      }
+      if (!mounted) return;
+      setState(() => notice = 'data:${file.mimeType ?? 'image/jpeg'};base64,${base64Encode(bytes)}');
+    } catch (_) {
+      if (mounted) showAppSnack(context, 'تعذّر اختيار الصورة', error: true);
     }
   }
 
@@ -372,6 +399,13 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                 // ── ٣. تفاصيل التحويل (للدفع غير النقدي) ──────────────────────
                 if (electronic) ...[
                   const FormSection(icon: Icons.account_balance_outlined, title: 'تفاصيل التحويل'),
+                  const FieldLabel('إشعار التحويل'),
+                  _NoticeBox(
+                    image: notice,
+                    onPick: _pickNotice,
+                    onClear: () => setState(() => notice = ''),
+                  ),
+                  _gap,
                   FieldPair(
                     start: [
                       const FieldLabel('جهة التحويل'),
@@ -540,6 +574,66 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// صندوق صورة إشعار التحويل — فارغ يدعو للاختيار، وممتلئ يعرضها مصغّرة.
+class _NoticeBox extends StatelessWidget {
+  const _NoticeBox({required this.image, required this.onPick, required this.onClear});
+
+  final String image;
+  final VoidCallback onPick;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    if (image.isEmpty) {
+      return InkWell(
+        onTap: onPick,
+        child: Container(
+          height: 64,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(Corner.box),
+            border: Border.all(color: AppColors.line),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.add_photo_alternate_outlined, size: 18, color: AppColors.faint),
+              SizedBox(width: 8),
+              Text('إرفاق صورة الإشعار', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final bytes = base64Decode(image.split(',').last);
+    return Row(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(Corner.box),
+          child: Image.memory(bytes, width: 64, height: 64, fit: BoxFit.cover),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            'الإشعار مرفق',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.heading),
+          ),
+        ),
+        TextButton(
+          onPressed: onPick,
+          style: TextButton.styleFrom(foregroundColor: AppColors.amber),
+          child: const Text('تغيير', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+        ),
+        IconButton(
+          onPressed: onClear,
+          icon: const Icon(Icons.close, size: 18, color: AppColors.danger),
+        ),
+      ],
     );
   }
 }

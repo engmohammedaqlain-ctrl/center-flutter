@@ -64,6 +64,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     'institution_settings': [],
     'student_evaluations': [],
     'class_announcements': [],
+    'finance_attachments': [],
   };
   final attachmentsByStudent = <String, StudentAttachments>{};
 
@@ -1570,6 +1571,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     await primeReceiptCounter();
     // مرفقٌ تعثّر رفعه على جهاز بلا اتصال يُعاد الآن، وإلا بقي على الجهاز وحده
     unawaited(retryPendingAttachments());
+    unawaited(flushPendingNotices());
     // الدخول يرفع ما تراكم دون اتصال ويسحب ما فات، بلا فحصٍ كامل يسبقهما
     startAutoSync();
     notifyListeners();
@@ -1612,6 +1614,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       if (pendingSyncs.any((a) => a.retryCount < maxSyncRetries)) scheduleAutoPush(Duration.zero);
       scheduleAutoPull(Duration.zero);
       unawaited(retryPendingAttachments());
+      unawaited(flushPendingNotices());
       return;
     }
     _joinCheck?.cancel();
@@ -2070,6 +2073,135 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       await supabaseDelete('student_attachments', {'id': 'eq.$studentId'});
     } catch (_) {
       // الحذف المحلي تم، والسحابي يُعاد عند الحذف التالي
+    }
+  }
+
+  // ── إشعارات التحويل (مرفقات السندات) ───────────────────────────────────────
+
+  /// حاوية صور الإشعارات — خاصة، وروابطها تُوقَّع عند الطلب.
+  static const noticeBucket = 'finance-notices';
+
+  List<Map<String, dynamic>> get _notices => extraCloud.putIfAbsent('finance_attachments', () => []);
+
+  Map<String, dynamic>? financeAttachment(String recordId) =>
+      _notices.where((r) => '${r['id']}' == recordId).firstOrNull;
+
+  /// مسار الملف: مجلد لكل منشأة، فلا تقرأ مدرسة إشعارات غيرها.
+  static String noticePath(String tenantId, String recordId, String mime) =>
+      '$tenantId/$recordId.${storageExtensionForMime(mime)}';
+
+  /// حفظ إشعار تحويل لسند — مطابق لـ `saveFinanceAttachment`.
+  ///
+  /// الصورة في حاوية خاصة والصف لا يحمل إلا مسارها: عددها ينمو بعدد الدفعات،
+  /// وتخزينها في القاعدة يزاحم بيانات المدرسة على مساحتها. الحفظ لا ينتظر الرفع:
+  /// السند يُسجَّل بلا إنترنت، والصورة تلحق بأول اتصال.
+  Future<void> saveFinanceAttachment(String recordId, String recordType, String? image) async {
+    if (recordId.isEmpty) return;
+    final now = _nowIso();
+    final existing = financeAttachment(recordId);
+
+    if (image == null || image.isEmpty) {
+      if (existing == null) return;
+      final path = '${existing['storage_path'] ?? ''}';
+      _notices.removeWhere((r) => '${r['id']}' == recordId);
+      // الملف قبل الصف: صفٌّ حُذف وملفه باقٍ يترك صورة إشعار بلا صاحب
+      if (path.isNotEmpty) await storageRemove(noticeBucket, [path]);
+      _queue('finance_attachments', recordId, 'DELETE', null);
+      markDirty('finance_attachments');
+      notifyListeners();
+      return;
+    }
+
+    final row = {
+      'id': recordId,
+      'record_type': recordType,
+      'storage_path': existing?['storage_path'],
+      'image': image,
+      'created_at': existing?['created_at'] ?? now,
+      'updated_at': now,
+      'sync_status': 'pending',
+    };
+    _notices
+      ..removeWhere((r) => '${r['id']}' == recordId)
+      ..add(row);
+    markDirty('finance_attachments');
+    notifyListeners();
+
+    await _uploadNotice(row);
+  }
+
+  /// رفع صورة إشعار ثم تسجيل مسارها في الصف المتزامن. يفشل بصمت بلا اتصال:
+  /// النسخة المحلية تبقى ويعيد `flushPendingNotices` المحاولة.
+  Future<bool> _uploadNotice(Map<String, dynamic> row) async {
+    final tid = tenantId;
+    final image = '${row['image'] ?? ''}';
+    if (!networkEnabled || tid == null || image.isEmpty) return false;
+    final file = decodeDataUrl(image);
+    if (file == null) return false;
+
+    try {
+      final path = '${row['storage_path'] ?? ''}'.isNotEmpty
+          ? '${row['storage_path']}'
+          : noticePath(tid, '${row['id']}', file.mime);
+      await storageUpload(noticeBucket, path, file.bytes, file.mime, upsert: true);
+
+      final isNew = '${row['storage_path'] ?? ''}'.isEmpty;
+      row['storage_path'] = path;
+      row['updated_at'] = _nowIso();
+      row['sync_status'] = 'synced';
+      _queue('finance_attachments', '${row['id']}', isNew ? 'INSERT' : 'UPDATE', {
+        'id': row['id'],
+        'record_type': row['record_type'],
+        'storage_path': path,
+        'created_at': row['created_at'],
+        'updated_at': row['updated_at'],
+      });
+      markDirty('finance_attachments');
+      notifyListeners();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// إعادة رفع الإشعارات التي سُجّلت بلا اتصال — عند الإقلاع وعودة الاتصال.
+  Future<int> flushPendingNotices() async {
+    if (!networkEnabled || tenantId == null) return 0;
+    final stuck = _notices.where((r) => '${r['storage_path'] ?? ''}'.isEmpty && '${r['image'] ?? ''}'.isNotEmpty).toList();
+    var done = 0;
+    for (final row in stuck) {
+      if (await _uploadNotice(row)) done++;
+    }
+    return done;
+  }
+
+  /// صورة الإشعار: من الجهاز إن كانت، وإلا تُنزَّل من مسارها عند فتح السند.
+  Future<String?> loadNoticeImage(String recordId) async {
+    final local = financeAttachment(recordId);
+    final image = '${local?['image'] ?? ''}';
+    if (image.isNotEmpty) return image;
+    if (!networkEnabled || tenantId == null) return null;
+
+    try {
+      var path = '${local?['storage_path'] ?? ''}';
+      if (path.isEmpty) {
+        final rows = await supabaseSelect('finance_attachments', filters: {'id': 'eq.$recordId'}, limit: 1);
+        if (rows == null || rows.isEmpty) return null;
+        path = '${rows.first['storage_path'] ?? ''}';
+        if (path.isEmpty) return null;
+        _notices
+          ..removeWhere((r) => '${r['id']}' == recordId)
+          ..add({...rows.first, 'sync_status': 'synced'});
+      }
+
+      final file = await storageDownload(noticeBucket, path);
+      if (file == null) return null;
+      final data = 'data:${file.mime};base64,${base64Encode(file.bytes)}';
+      financeAttachment(recordId)?['image'] = data;
+      markDirty('finance_attachments');
+      return data;
+    } catch (_) {
+      return null;
     }
   }
 

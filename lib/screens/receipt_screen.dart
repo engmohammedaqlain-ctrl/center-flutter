@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -122,6 +124,7 @@ class _ReceiptSheet extends StatelessWidget {
                   if (payment.channel.isNotEmpty) _row('جهة التحويل', payment.channel),
                   if (payment.transferDate.isNotEmpty) _row('تاريخ التحويل', payment.transferDate),
                   if (payment.customMethodNotes.isNotEmpty) _row('تفاصيل الوسيلة', payment.customMethodNotes),
+                  _NoticeRow(payment: payment),
                   // بيانٌ يكرّر البند لا يُعرض مرتين
                   if (payment.notes.isNotEmpty && payment.notes != payment.purpose) _row('البيان', payment.notes),
                   const SizedBox(height: 6),
@@ -339,4 +342,39 @@ String _payerName(Payment payment, Student? student) {
 String _receiverName(Payment payment, AppStore store) {
   final frozen = payment.receivedByName.trim();
   return frozen.isEmpty ? store.receiptReceiver : frozen;
+}
+
+/// صورة إشعار التحويل داخل السند — تُنزَّل من الحاوية عند فتحه، لا مع كل مزامنة.
+class _NoticeRow extends StatelessWidget {
+  const _NoticeRow({required this.payment});
+
+  final Payment payment;
+
+  @override
+  Widget build(BuildContext context) {
+    final store = StoreScope.of(context);
+    if (payment.method == 'cash') return const SizedBox.shrink();
+
+    return FutureBuilder<String?>(
+      future: store.loadNoticeImage(payment.id),
+      builder: (context, snapshot) {
+        final image = snapshot.data ?? '';
+        if (image.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('إشعار التحويل', style: TextStyle(fontSize: 11.5, color: AppColors.muted)),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(Corner.box),
+                child: Image.memory(base64Decode(image.split(',').last), height: 160, fit: BoxFit.cover),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
