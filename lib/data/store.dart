@@ -1845,6 +1845,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     customPaymentMethodsKey,
     discountRulesKey,
     gradingSchemeKey,
+    _kStudyMonths,
     receiptMigrationKey,
     attendanceIdMigrationKey,
     paymentSnapshotKey,
