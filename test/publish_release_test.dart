@@ -11,10 +11,9 @@ void main() {
     test('رقم البناء يزيد مع أي جزء يُرفع', () {
       const v = publish.PubVersion(1, 0, 3, 7);
 
-      expect('${publish.bumpVersion(v, 'patch')}', '1.0.4+8');
       expect('${publish.bumpVersion(v, 'minor')}', '1.1.0+8');
       expect('${publish.bumpVersion(v, 'major')}', '2.0.0+8');
-      expect(() => publish.bumpVersion(v, 'none'), throwsArgumentError, reason: 'وسمٌ مكرر لا يُنشر');
+      expect(() => publish.bumpVersion(v, 'patch'), throwsArgumentError, reason: 'الترقيم جزءان');
     });
 
     test('يُقرأ ويُكتب في pubspec ولا يمسّ بقية الملف', () {
@@ -22,8 +21,8 @@ void main() {
       final v = publish.parsePubspecVersion(pubspec)!;
       expect('$v', '1.0.0+1');
 
-      final written = publish.writePubspecVersion(pubspec, publish.bumpVersion(v, 'patch'));
-      expect(written, pubspec.replaceFirst('1.0.0+1', '1.0.1+2'), reason: 'نهايات الأسطر كما كُتبت');
+      final written = publish.writePubspecVersion(pubspec, publish.bumpVersion(v, 'minor'));
+      expect(written, pubspec.replaceFirst('1.0.0+1', '1.1.0+2'), reason: 'نهايات الأسطر كما كُتبت');
     });
 
     test('سطرٌ بلا رقم بناء لا يُقرأ، وملف المشروع يُقرأ', () {
@@ -52,7 +51,7 @@ void main() {
 
   group('ملف الوصف', () {
     test('ما ينشره السكربت يقرؤه التطبيق بالحقول نفسها', () {
-      const next = publish.PubVersion(1, 0, 1, 2);
+      const next = publish.PubVersion(2, 18, 0, 2);
       final manifest = publish.buildManifest(
         version: next,
         sha256: 'AB' * 32,
@@ -65,7 +64,7 @@ void main() {
 
       // عبر JSON كما يصل الأجهزة فعلاً
       final release = AppRelease.fromJson(jsonDecode(jsonEncode(manifest)))!;
-      expect(release.versionName, '1.0.1');
+      expect(release.versionName, '2.18');
       expect(release.versionCode, 2);
       expect(release.apkUrl, publish.apkUrlFor(next));
       expect(release.sha256, 'ab' * 32);
@@ -80,36 +79,45 @@ void main() {
     test('التطبيق يقرأ من الرابط الذي ينشر عليه السكربت', () {
       expect(releaseManifestUrl, publish.latestManifestUrl);
       expect(
-        publish.apkUrlFor(const publish.PubVersion(1, 0, 1, 2)),
-        'https://github.com/engmohammedaqlain-ctrl/center-mobile-releases/releases/download/v1.0.1/center-1.0.1.apk',
+        publish.apkUrlFor(const publish.PubVersion(2, 18, 0, 2)),
+        'https://github.com/engmohammedaqlain-ctrl/center-mobile-releases/releases/download/v2.18/center-2.18.apk',
       );
     });
   });
 
   group('رقم الإصدار المكتوب', () {
-    test('ثلاثة أجزاء بناء، وأربعة تحديث صامت مهما كبر رقمه', () {
-      final build = publish.parseRequestedVersion('1.2.8');
+    test('جزءان بناء، وثلاثة تحديث صامت مهما كبر رقمه', () {
+      final build = publish.parseRequestedVersion('2.18');
       expect(build.kind, publish.PublishKind.build);
-      expect(build.base, '1.2.8');
+      expect(build.base, '2.18');
       expect(build.patchNumber, isNull);
 
-      final tenth = publish.parseRequestedVersion('1.2.7.10');
+      final tenth = publish.parseRequestedVersion('2.18.10');
       expect(tenth.kind, publish.PublishKind.patch, reason: 'التحديث العاشر لا يصير بناءً');
-      expect(tenth.base, '1.2.7');
+      expect(tenth.base, '2.18');
       expect(tenth.patchNumber, 10);
     });
 
-    test('ما ليس ثلاثة أجزاء أو أربعة يُرفض', () {
-      for (final bad in ['1.2', '1.2.7.0', 'v1.2.7', '1.2.7.1.2', '1.2.x']) {
+    test('ما ليس جزأين أو ثلاثة يُرفض', () {
+      for (final bad in ['2', '2.18.0', 'v2.18', '2.18.1.2', '2.x']) {
         expect(() => publish.parseRequestedVersion(bad), throwsArgumentError, reason: bad);
       }
     });
 
     test('المقارنة جزءاً جزءاً لا نصياً', () {
-      expect(publish.compareVersionNames('1.2.10', '1.2.9'), greaterThan(0));
-      expect(publish.compareVersionNames('1.3.0', '1.2.99'), greaterThan(0));
-      expect(publish.compareVersionNames('1.2.7', '1.2.7'), 0);
-      expect('${publish.versionFromName('1.2.8', build: 5)}', '1.2.8+5');
+      expect(publish.compareVersionNames('2.18', '2.9'), greaterThan(0));
+      expect(publish.compareVersionNames('3.0', '2.99'), greaterThan(0));
+      expect(publish.compareVersionNames('2.18', '2.18'), 0);
+      // الأسماء المنشورة قبل تغيير الترقيم تبقى مقارنتها صحيحة
+      expect(publish.compareVersionNames('2.0', '1.2.7'), greaterThan(0));
+    });
+
+    test('اسم العرض جزءان، وpubspec ثلاثة والثالث صفر', () {
+      final v = publish.versionFromName('2.18', build: 5);
+      expect(v.name, '2.18', reason: 'ما يراه المستخدم ويُنشر به');
+      expect('$v', '2.18.0+5', reason: 'صيغة pubspec وأندرويد');
+      expect(publish.shorebirdReleaseVersion('2.18', 5), '2.18.0+5');
+      expect(publish.shorebirdReleaseVersion('1.2.7', 4), '1.2.7+4', reason: 'إصدار قديم كما نُشر');
     });
 
     test('رقم التحديث التالي يُقرأ من مخرجات Shorebird بصيغتيها', () {

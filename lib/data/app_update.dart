@@ -701,10 +701,18 @@ class AppUpdater extends ChangeNotifier {
 
 Future<InstalledVersion> _packageVersion() async {
   final info = await PackageInfo.fromPlatform();
-  // التحديث الصامت جزءٌ رابع كما يُكتب عند النشر: 1.2.7.3. رقم البناء لا يتغيّر
+  // التحديث الصامت جزءٌ ثالث كما يُكتب عند النشر: 2.18.3. رقم البناء لا يتغيّر
   // به، فالمقارنة مع الإصدارات المنشورة تبقى على رقم البناء وحده
   final patch = await _currentPatchNumber();
-  return (code: int.tryParse(info.buildNumber) ?? 0, name: patch > 0 ? '${info.version}.$patch' : info.version);
+  final name = displayVersion(info.version);
+  return (code: int.tryParse(info.buildNumber) ?? 0, name: patch > 0 ? '$name.$patch' : name);
+}
+
+/// اسم الإصدار كما يُعرض: جزءان. pubspec وأندرويد يكتبانه بثلاثة والثالث صفر.
+String displayVersion(String pubspecName) {
+  final parts = pubspecName.split('.');
+  if (parts.length == 3 && parts[2] == '0') return '${parts[0]}.${parts[1]}';
+  return pubspecName;
 }
 
 /// رقم التحديث الصامت المثبَّت، أو 0: نسخة بُنيت بغير Shorebird لا تحمل محرّكه.

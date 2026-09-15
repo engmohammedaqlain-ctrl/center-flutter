@@ -7,6 +7,8 @@
 /// تحديثاً صدر. رقم الإصدار في `pubspec.yaml` لا يُكتب إلا بعد نجاح الرفع، فنشرٌ
 /// فشل في منتصفه لا يترك رقماً محجوزاً بلا حزمة.
 ///
+/// رقم الإصدار جزءان (`2.18`) للبناء، وثلاثة (`2.18.3`) للتحديث الصامت.
+///
 /// مع `shorebird.yaml` يُبنى الإصدار بـ `shorebird release`، فتستقبل أجهزته بعد
 /// ذلك تصليحات كود Dart بصمت: `shorebird patch android --release-version=<الإصدار>`.
 library;
@@ -34,10 +36,10 @@ const _usage = '''
   --notes "..."               ما الجديد، يظهر للمستخدم في ورقة التحديث
   --notes-file <ملف>          بديل --notes لنصٍّ من عدة أسطر
   --version <رقم>             رقم الإصدار بنفسك. عدد أجزائه يحدد النوع:
-                                1.2.8     ثلاثة أجزاء = بناء APK جديد يثبّته المستخدم
-                                1.2.7.3   أربعة أجزاء = تحديث صامت (Shorebird) مهما كبر رقمه
+                                2.18     جزءان = بناء APK جديد يثبّته المستخدم
+                                2.18.3   ثلاثة أجزاء = تحديث صامت (Shorebird) مهما كبر رقمه
   --patch                     تحديث صامت على آخر إصدار منشور، برقمه التالي تلقائياً
-  --bump patch|minor|major    بلا --version: الجزء الذي يزيد في البناء (patch افتراضياً)
+  --bump minor|major          بلا --version: الجزء الذي يزيد في البناء (minor افتراضياً)
   --min-supported <رقم>|current
                               أقدم رقم بناء يبقى يعمل؛ ما دونه يُلزَم بالتحديث.
                               بلا هذا الخيار يبقى كما في الإصدار السابق
@@ -57,10 +59,14 @@ class PubVersion {
   /// `versionCode` في أندرويد — به وحده تقارن الأجهزة.
   final int build;
 
-  String get name => '$major.$minor.$patch';
+  /// الاسم كما يراه المستخدم ويُنشر به: جزءان.
+  String get name => '$major.$minor';
+
+  /// صيغة pubspec وأندرويد: ثلاثة أجزاء دائماً، والثالث صفرٌ للبناء.
+  String get semver => '$major.$minor.$patch';
 
   @override
-  String toString() => '$name+$build';
+  String toString() => '$semver+$build';
 }
 
 /// السطر وحده دون ما بعده: نهاية السطر تبقى كما كُتبت.
@@ -80,8 +86,7 @@ String writePubspecVersion(String pubspec, PubVersion version) =>
 PubVersion bumpVersion(PubVersion v, String part) => switch (part) {
       'major' => PubVersion(v.major + 1, 0, 0, v.build + 1),
       'minor' => PubVersion(v.major, v.minor + 1, 0, v.build + 1),
-      'patch' => PubVersion(v.major, v.minor, v.patch + 1, v.build + 1),
-      _ => throw ArgumentError('--bump يقبل patch أو minor أو major، لا "$part"'),
+      _ => throw ArgumentError('--bump يقبل minor أو major، لا "$part"'),
     };
 
 /// أقدم رقم بناء يبقى يعمل.
@@ -136,7 +141,8 @@ Map<String, dynamic> buildManifest({
 /// Flutter يُثبَّت على إصدار المشروع — Shorebird يبني بأحدث إصدار ما لم يُحدَّد،
 /// فتخرج الحزمة بمحرّكٍ لم تُختبر عليه.
 ({String exe, List<String> args}) buildCommand(PubVersion v, {required bool shorebird, String? flutterVersion}) {
-  final version = ['--build-name', v.name, '--build-number', '${v.build}'];
+  // أندرويد يشترط اسماً من ثلاثة أجزاء، واسم العرض جزءان: يُبنى بالصيغة الكاملة
+  final version = ['--build-name', v.semver, '--build-number', '${v.build}'];
   if (!shorebird) {
     return (exe: 'flutter', args: ['build', 'apk', '--release', '--target-platform', 'android-arm64', ...version]);
   }
@@ -165,22 +171,25 @@ enum PublishKind {
 /// رقم إصدار كتبه الناشر.
 typedef RequestedVersion = ({PublishKind kind, String base, int? patchNumber});
 
-/// النوع من عدد أجزاء الرقم لا من قيمته: ثلاثة أجزاء بناء، وأربعة تحديث صامت.
+/// النوع من عدد أجزاء الرقم لا من قيمته: جزءان بناء، وثلاثة تحديث صامت.
 ///
 /// لو كان النوع من القيمة — عشري تحديث وصحيح بناء — لصار التحديث العاشر بعد
-/// `2.9` بناءً بالخطأ. `1.2.7.10` يبقى تحديثاً صامتاً مهما كبر رقمه الرابع.
+/// `2.9` بناءً بالخطأ. `2.18.10` يبقى تحديثاً صامتاً مهما كبر رقمه الثالث.
 RequestedVersion parseRequestedVersion(String raw) {
   final value = raw.trim();
-  final m = RegExp(r'^(\d+\.\d+\.\d+)(?:\.(\d+))?$').firstMatch(value);
+  final m = RegExp(r'^(\d+\.\d+)(?:\.(\d+))?$').firstMatch(value);
   if (m == null) {
-    throw ArgumentError('رقم الإصدار: 1.2.8 للبناء، أو 1.2.7.1 للتحديث الصامت — لا "$value"');
+    throw ArgumentError('رقم الإصدار: 2.18 للبناء، أو 2.18.1 للتحديث الصامت — لا "$value"');
   }
   final patch = m[2] == null ? null : int.parse(m[2]!);
   if (patch != null && patch < 1) throw ArgumentError('رقم التحديث الصامت يبدأ من 1');
   return (kind: patch == null ? PublishKind.build : PublishKind.patch, base: m[1]!, patchNumber: patch);
 }
 
-/// مقارنة اسمي إصدار جزءاً جزءاً: `1.2.10` أحدث من `1.2.9` وإن سبقه نصياً.
+/// مقارنة اسمي إصدار جزءاً جزءاً: `2.18` أحدث من `2.9` وإن سبقه نصياً.
+///
+/// تقبل اسماً قديماً من ثلاثة أجزاء (`1.2.7`) كي تبقى المقارنة مع ما نُشر قبل
+/// تغيير الترقيم صحيحة.
 int compareVersionNames(String a, String b) {
   List<int> parts(String s) => s.split('.').map((p) => int.tryParse(p) ?? 0).toList();
   final pa = parts(a);
@@ -193,9 +202,18 @@ int compareVersionNames(String a, String b) {
   return 0;
 }
 
+/// `2.18` ← الإصدار الذي يُكتب في pubspec: `2.18.0+<بناء>`.
 PubVersion versionFromName(String name, {required int build}) {
   final p = name.split('.').map(int.parse).toList();
-  return PubVersion(p[0], p[1], p[2], build);
+  return PubVersion(p[0], p[1], p.length > 2 ? p[2] : 0, build);
+}
+
+/// نسخة الإصدار كما يعرفها Shorebird: صيغة pubspec كاملة.
+///
+/// الأسماء المنشورة قبل تغيير الترقيم من ثلاثة أجزاء، فتُستعمل كما هي.
+String shorebirdReleaseVersion(String publishedName, int code) {
+  final parts = publishedName.split('.').length;
+  return '$publishedName${parts < 3 ? '.0' : ''}+$code';
 }
 
 /// رقم التحديث الصامت التالي من مخرجات `shorebird patches list`.
@@ -351,7 +369,7 @@ Future<void> main(List<String> arguments) async {
 
 class _Args {
   String notes = '';
-  String bump = 'patch';
+  String bump = 'minor';
   String? version;
   bool patch = false;
   String? minSupported;
@@ -403,9 +421,9 @@ class _Args {
 Future<void> _publishPatch(_Args args, RequestedVersion? requested, String published, int publishedCode) async {
   if (!File('shorebird.yaml').existsSync()) _fail('التحديث الصامت يحتاج Shorebird: شغّل shorebird init');
   if (published.isEmpty || publishedCode <= 0) {
-    _fail('لا يوجد إصدار منشور بعد — انشر بناءً أولاً برقم من ثلاثة أجزاء');
+    _fail('لا يوجد إصدار منشور بعد — انشر بناءً أولاً برقم من جزأين');
   }
-  final releaseVersion = '$published+$publishedCode';
+  final releaseVersion = shorebirdReleaseVersion(published, publishedCode);
 
   _step('قراءة التحديثات الصامتة لـ $published');
   final listed = await _capture(
