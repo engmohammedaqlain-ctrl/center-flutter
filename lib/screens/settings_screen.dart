@@ -318,8 +318,9 @@ class _FeesTab extends StatelessWidget {
 
 /// رسوم إضافية تحددها الإدارة — المقابل لـ `FeeItemsSettings.tsx`.
 ///
-/// زيّ أو كتب أو رحلة: تُقيَّد أقساطاً على طلاب مرحلة أو على الجميع، فتظهر في
-/// بند الدفعة وبيان السند وتدخل في المستحق. «تطبيق» تقيّدها على من أُضيف بعدها.
+/// زيّ أو كتب أو رحلة: تُقيَّد أقساطاً على طلاب مرحلة، أو على الجميع، أو على طلاب
+/// بأسمائهم — فالرحلة لا يشترك فيها كل الصف. تظهر في بند الدفعة وبيان السند
+/// وتدخل في المستحق، و«تطبيق» تجعلها مقيّدة على المستهدفين بها بالضبط.
 class _FeeItemsCard extends StatefulWidget {
   const _FeeItemsCard({required this.store});
 
@@ -328,6 +329,9 @@ class _FeeItemsCard extends StatefulWidget {
   @override
   State<_FeeItemsCard> createState() => _FeeItemsCardState();
 }
+
+/// قيمة «طلاب بعينهم» في قائمة الاستهداف — لا مرحلة تحمل هذا الاسم.
+const _pickStudents = '__pick__';
 
 class _FeeItemsCardState extends State<_FeeItemsCard> {
   final name = TextEditingController();
@@ -350,33 +354,61 @@ class _FeeItemsCardState extends State<_FeeItemsCard> {
       showAppSnack(context, 'اكتب البند والمبلغ', error: true);
       return;
     }
+    // «طلاب بعينهم» يبدأ بقائمة فارغة، ثم تُختار أسماؤهم من زر «الطلاب»
+    final picking = grade == _pickStudents;
     final item = FeeItem(
       id: store.newId(),
       name: name.text.trim(),
       amount: value,
       dueDate: isoDate(due),
-      gradeLevel: grade,
+      gradeLevel: picking ? '' : grade,
+      studentIds: picking ? const [] : null,
     );
     try {
       await store.saveFeeItems([...store.feeItems, item]);
-      final count = store.applyFeeItem(item);
+      final result = store.applyFeeItem(item);
       if (!mounted) return;
       setState(() {
         name.clear();
         amount.clear();
         adding = false;
       });
-      showAppSnack(context, 'قُيّد على $count طالباً');
+      showAppSnack(context, picking ? 'أُضيف — اختر طلابه' : 'قُيّد على ${result.added} طالباً');
     } on StoreException catch (e) {
       if (mounted) showAppSnack(context, e.message, error: true);
     }
   }
 
+  String _describe(({int added, int removed}) result) {
+    if (result.added == 0 && result.removed == 0) return 'لا تغيير';
+    if (result.removed == 0) return 'قُيّد على ${result.added} طالباً';
+    if (result.added == 0) return 'رُفع عن ${result.removed} طالباً';
+    return 'قُيّد على ${result.added} ورُفع عن ${result.removed}';
+  }
+
   Future<void> _apply(FeeItem item) async {
     try {
-      final count = widget.store.applyFeeItem(item);
+      final result = widget.store.applyFeeItem(item);
       if (!mounted) return;
-      showAppSnack(context, count == 0 ? 'لا طلاب جدد' : 'قُيّد على $count طالباً');
+      showAppSnack(context, _describe(result));
+    } on StoreException catch (e) {
+      if (mounted) showAppSnack(context, e.message, error: true);
+    }
+  }
+
+  /// اختيار طلاب الرسم بأسمائهم، ثم تقييده عليهم بالضبط.
+  Future<void> _pick(FeeItem item) async {
+    final store = widget.store;
+    final chosen = await showFeeStudentsSheet(context, store, selected: item.studentIds ?? const []);
+    if (chosen == null || !mounted) return;
+    final updated = item.copyWith(studentIds: chosen, gradeLevel: '');
+    try {
+      await store.saveFeeItems([
+        for (final i in store.feeItems) i.id == item.id ? updated : i,
+      ]);
+      final result = store.applyFeeItem(updated);
+      if (!mounted) return;
+      showAppSnack(context, _describe(result));
     } on StoreException catch (e) {
       if (mounted) showAppSnack(context, e.message, error: true);
     }
@@ -459,6 +491,7 @@ class _FeeItemsCardState extends State<_FeeItemsCard> {
                     value: grade.isEmpty ? '' : grade,
                     items: [
                       const DropdownMenuItem(value: '', child: Text('كل الطلاب')),
+                      const DropdownMenuItem(value: _pickStudents, child: Text('طلاب بعينهم')),
                       for (final g in grades)
                         DropdownMenuItem(value: g, child: Text(g, overflow: TextOverflow.ellipsis)),
                     ],
@@ -508,7 +541,7 @@ class _FeeItemsCardState extends State<_FeeItemsCard> {
                           style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.text),
                         ),
                         Text(
-                          '${money(item.amount)}  ·  ${item.gradeLevel.isEmpty ? 'كل الطلاب' : item.gradeLevel}  ·  ${item.dueDate}',
+                          '${money(item.amount)}  ·  ${_targetLabel(item)}  ·  ${item.dueDate}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
@@ -517,12 +550,12 @@ class _FeeItemsCardState extends State<_FeeItemsCard> {
                     ),
                   ),
                   TextButton(
-                    onPressed: () => _apply(item),
+                    onPressed: () => item.studentIds == null ? _apply(item) : _pick(item),
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.amber,
                       textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5),
                     ),
-                    child: const Text('تطبيق'),
+                    child: Text(item.studentIds == null ? 'تطبيق' : 'الطلاب'),
                   ),
                   IconButton(
                     onPressed: () => _remove(item),
@@ -535,6 +568,107 @@ class _FeeItemsCardState extends State<_FeeItemsCard> {
       ),
     );
   }
+}
+
+String _targetLabel(FeeItem item) {
+  final ids = item.studentIds;
+  if (ids != null) return '${ids.length} طالباً';
+  return item.gradeLevel.isEmpty ? 'كل الطلاب' : item.gradeLevel;
+}
+
+/// اختيار طلاب الرسم بأسمائهم — المقابل لـ `FeeStudentsModal.tsx`.
+///
+/// يعيد المعرّفات المختارة، أو `null` إن أُغلقت بلا حفظ.
+Future<List<String>?> showFeeStudentsSheet(
+  BuildContext context,
+  AppStore store, {
+  required List<String> selected,
+}) {
+  final chosen = {...selected};
+  final search = TextEditingController();
+
+  return showModalBottomSheet<List<String>>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setSt) {
+        final q = search.text.trim().toLowerCase();
+        final all = store.students.where((s) => s.status == 'active').toList();
+        // بالاسم أو الهوية كما تفلتر شاشة الطلاب
+        final shown = q.isEmpty
+            ? all
+            : all.where((s) => s.fullName.toLowerCase().contains(q) || s.nationalId.contains(q)).toList();
+
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 14, 16, 12 + MediaQuery.viewInsetsOf(ctx).bottom),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('طلاب الرسم', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading)),
+                const SizedBox(height: 4),
+                Text(
+                  '${chosen.length} من ${all.length} طالباً نشطاً',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 11),
+                ),
+                const SizedBox(height: 10),
+                SearchField(controller: search, hint: 'ابحث بالاسم أو الهوية', onChanged: (_) => setSt(() {})),
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.4),
+                  child: shown.isEmpty
+                      ? const EmptyState(message: 'لا طلاب مطابقون للبحث')
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: shown.length,
+                          itemBuilder: (_, i) {
+                            final s = shown[i];
+                            final on = chosen.contains(s.id);
+                            return CheckboxListTile(
+                              dense: true,
+                              value: on,
+                              activeColor: AppColors.amber,
+                              controlAffinity: ListTileControlAffinity.leading,
+                              title: Text(
+                                s.fullName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                              ),
+                              subtitle: Text(
+                                '${s.gradeLevel}${s.section.isEmpty ? '' : ' · ${s.section}'}',
+                                style: const TextStyle(fontSize: 10.5, color: AppColors.muted),
+                              ),
+                              onChanged: (_) => setSt(() => on ? chosen.remove(s.id) : chosen.add(s.id)),
+                            );
+                          },
+                        ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx))),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 2,
+                      child: PrimaryButton(
+                        label: 'حفظ',
+                        color: AppColors.navy,
+                        onPressed: () => Navigator.pop(ctx, chosen.toList()),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  ).whenComplete(search.dispose);
 }
 
 /// رسم حجز المقعد — المقابل لبطاقته في GradeFeesSettings.tsx.

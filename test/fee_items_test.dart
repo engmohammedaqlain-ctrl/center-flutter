@@ -4,7 +4,7 @@ import 'package:center_mobile/data/store.dart';
 import 'package:center_mobile/models/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// رسوم تحددها الإدارة خارج الرسم الشهري، تُقيَّد أقساطاً على طلاب مرحلة أو الجميع.
+/// رسوم تحددها الإدارة خارج أقساط الخطة، تُقيَّد على مرحلة أو الجميع أو طلاب بعينهم.
 
 AppStore _seeded() {
   final s = AppStore.forTesting();
@@ -27,10 +27,10 @@ void main() {
     expect(active, greaterThan(0));
 
     final created = s.applyFeeItem(_item(s));
-    expect(created, active);
+    expect(created.added, active);
     expect(s.installments.where((i) => i.title == 'الزي المدرسي').length, active);
 
-    expect(s.applyFeeItem(_item(s)), 0, reason: 'المعرّف حتمي');
+    expect(s.applyFeeItem(_item(s)).added, 0, reason: 'المعرّف حتمي');
     await s.flush();
   });
 
@@ -39,10 +39,68 @@ void main() {
     final grade = s.students.first.gradeLevel;
     final expected = s.students.where((x) => x.status == 'active' && x.gradeLevel == grade).length;
 
-    expect(s.applyFeeItem(_item(s, grade: grade)), expected);
+    expect(s.applyFeeItem(_item(s, grade: grade)).added, expected);
     final charged = s.installments.where((i) => i.title == 'الزي المدرسي').map((i) => i.studentId);
     expect(charged.every((id) => s.studentById(id)!.gradeLevel == grade), isTrue);
     await s.flush();
+  });
+
+  group('طلاب بعينهم', () {
+    test('يُقيَّد على المختارين وحدهم', () async {
+      final s = _seeded();
+      final active = s.students.where((x) => x.status == 'active').toList();
+      final two = active.take(2).map((x) => x.id).toList();
+
+      final result = s.applyFeeItem(_item(s).copyWith(studentIds: two));
+
+      expect(result.added, 2);
+      expect(s.installments.where((i) => i.title == 'الزي المدرسي').map((i) => i.studentId).toSet(), two.toSet());
+      await s.flush();
+    });
+
+    test('من خرج من القائمة يُرفع عنه، ومن دخلها يُضاف', () async {
+      final s = _seeded();
+      final active = s.students.where((x) => x.status == 'active').toList();
+      final a = active[0].id;
+      final b = active[1].id;
+      final c = active[2].id;
+
+      expect(s.applyFeeItem(_item(s).copyWith(studentIds: [a, b])).added, 2);
+
+      // b خرج و c دخل: لا يُطالَب من رُفع عنه ولا يُترك من أُضيف
+      final result = s.applyFeeItem(_item(s).copyWith(studentIds: [a, c]));
+      expect(result, (added: 1, removed: 1));
+
+      final charged = s.installments.where((i) => i.title == 'الزي المدرسي').map((i) => i.studentId).toSet();
+      expect(charged, {a, c});
+      await s.flush();
+    });
+
+    test('من دفع منه شيئاً لا يُرفع عنه: السجل المالي لا يُمحى', () async {
+      final s = _seeded();
+      final student = s.students.firstWhere((x) => x.status == 'active');
+      s.applyFeeItem(_item(s).copyWith(studentIds: [student.id]));
+      s.addPayment(
+        studentId: student.id,
+        amount: 60,
+        method: 'cash',
+        date: DateTime(2026, 9, 21),
+        installmentId: AppStore.feeInstallmentId('fee-uniform', student.id),
+      );
+
+      final result = s.applyFeeItem(_item(s).copyWith(studentIds: const []));
+
+      expect(result.removed, 0);
+      expect(s.installments.any((i) => i.title == 'الزي المدرسي'), isTrue);
+      await s.flush();
+    });
+
+    test('قائمة فارغة لا تُقيَّد على أحد', () async {
+      final s = _seeded();
+      expect(s.applyFeeItem(_item(s).copyWith(studentIds: const [])), (added: 0, removed: 0));
+      expect(s.installments.any((i) => i.title == 'الزي المدرسي'), isFalse);
+      await s.flush();
+    });
   });
 
   test('الرسم يدخل في مستحق الطالب', () async {

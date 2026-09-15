@@ -536,6 +536,7 @@ class FeeItem {
     required this.amount,
     required this.dueDate,
     this.gradeLevel = '',
+    this.studentIds,
   });
 
   final String id;
@@ -548,21 +549,39 @@ class FeeItem {
   /// المرحلة المستهدفة، والفارغ يعني كل الطلاب النشطين.
   final String gradeLevel;
 
+  /// طلابٌ بعينهم حين لا يشترك الصف كله — رحلة، أو كتابٌ لا يشتريه الجميع.
+  /// `null` يعني: كل طلاب المرحلة المحددة، أو كل الطلاب.
+  final List<String>? studentIds;
+
+  FeeItem copyWith({List<String>? studentIds, String? gradeLevel}) => FeeItem(
+        id: id,
+        name: name,
+        amount: amount,
+        dueDate: dueDate,
+        gradeLevel: gradeLevel ?? this.gradeLevel,
+        studentIds: studentIds ?? this.studentIds,
+      );
+
   Map<String, dynamic> toMap() => {
         'id': id,
         'name': name,
         'amount': amount,
         'due_date': dueDate,
         'grade_level': gradeLevel.isEmpty ? null : gradeLevel,
+        'student_ids': studentIds,
       };
 
-  factory FeeItem.fromMap(Map<String, dynamic> m) => FeeItem(
-        id: '${m['id'] ?? ''}',
-        name: '${m['name'] ?? ''}',
-        amount: (m['amount'] as num?)?.toDouble() ?? 0,
-        dueDate: '${m['due_date'] ?? ''}',
-        gradeLevel: '${m['grade_level'] ?? ''}',
-      );
+  factory FeeItem.fromMap(Map<String, dynamic> m) {
+    final ids = m['student_ids'];
+    return FeeItem(
+      id: '${m['id'] ?? ''}',
+      name: '${m['name'] ?? ''}',
+      amount: (m['amount'] as num?)?.toDouble() ?? 0,
+      dueDate: '${m['due_date'] ?? ''}',
+      gradeLevel: '${m['grade_level'] ?? ''}',
+      studentIds: ids is List ? [for (final e in ids) '$e'] : null,
+    );
+  }
 }
 
 class StudentAttachments {

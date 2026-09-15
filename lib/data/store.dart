@@ -1162,16 +1162,27 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     await _writeSettings(settings.copyWith(feeItems: items));
   }
 
-  /// تقييد الرسم على الطلاب المستهدفين ممن لم يُقيَّد عليهم — `applyFeeItem`.
-  /// يعيد عدد من قُيّد عليهم.
-  int applyFeeItem(FeeItem item) {
+  /// يجعل الرسم مقيّداً على المستهدفين به بالضبط — `applyFeeItem`.
+  ///
+  /// الرحلة لا يشترك فيها كل الصف، والكتاب لا يشتريه الجميع: الاستهداف إما طلاب
+  /// بأسمائهم ([FeeItem.studentIds]) أو مرحلة كاملة أو الجميع. يُضاف لمن نقصه
+  /// ويُرفع عمّن خرج من القائمة — إلا قسطاً دُفع منه شيء أو عليه سند، فالسجل
+  /// المالي لا يُمحى.
+  ({int added, int removed}) applyFeeItem(FeeItem item) {
     requireSection('settings');
     final now = _nowIso();
     final due = parseIsoDate(item.dueDate) ?? DateTime.now();
-    var created = 0;
+    final chosen = item.studentIds;
+    var added = 0;
+    var removed = 0;
 
-    for (final student in students.where((s) => s.status == 'active')) {
-      if (item.gradeLevel.isNotEmpty && !isSameGrade(student.gradeLevel, item.gradeLevel)) continue;
+    final targets = students.where((s) {
+      if (s.status != 'active') return false;
+      if (chosen != null) return chosen.contains(s.id);
+      return item.gradeLevel.isEmpty || isSameGrade(s.gradeLevel, item.gradeLevel);
+    }).toList();
+
+    for (final student in targets) {
       final id = feeInstallmentId(item.id, student.id);
       if (installments.any((i) => i.id == id)) continue;
 
@@ -1188,14 +1199,33 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       installments.add(inst);
       _queue('installments', inst.id, 'INSERT', inst.toCloud());
       _persistStudentLedger(student);
-      created++;
+      added++;
     }
 
-    if (created > 0) {
+    // من رُفع عن القائمة: يُحذف قسطه ما لم يكن قد دفع منه شيئاً
+    final targetIds = targets.map((s) => s.id).toSet();
+    final prefix = '$feeIdPrefix${item.id}_';
+    for (final row in installments.where((i) => i.id.startsWith(prefix)).toList()) {
+      if (targetIds.contains(row.studentId) || row.paidAmount > 0) continue;
+      if (_dropFeeInstallment(row)) removed++;
+    }
+
+    if (added + removed > 0) {
       markDirty('installments');
       notifyListeners();
     }
-    return created;
+    return (added: added, removed: removed);
+  }
+
+  /// يحذف قسط رسم إن لم يكن عليه سند قبض فعّال؛ يعيد هل حُذف.
+  bool _dropFeeInstallment(Installment row) {
+    // سندٌ مربوط بالقسط: حذفه يترك سنداً يشير إلى لا شيء
+    if (payments.any((p) => !p.cancelled && p.installmentId == row.id)) return false;
+    installments.remove(row);
+    _queue('installments', row.id, 'DELETE', null);
+    final student = studentById(row.studentId);
+    if (student != null) _persistStudentLedger(student);
+    return true;
   }
 
   /// إزالة الرسم عن الطلاب، إلا من عليه سند مربوط به — `removeFeeItem`.
@@ -1207,16 +1237,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     var kept = 0;
 
     for (final row in rows) {
-      // سندٌ مربوط بالقسط: حذفه يترك سنداً يشير إلى لا شيء
-      final linked = payments.any((p) => !p.cancelled && p.installmentId == row.id);
-      if (linked) {
-        kept++;
-        continue;
-      }
-      installments.remove(row);
-      _queue('installments', row.id, 'DELETE', null);
-      final student = studentById(row.studentId);
-      if (student != null) _persistStudentLedger(student);
+      if (!_dropFeeInstallment(row)) kept++;
     }
 
     if (rows.length > kept) {
