@@ -26,12 +26,22 @@ class SupabaseConfig {
 
   static bool get isCustom => url != defaultUrl || key != defaultKey;
 
-  static Map<String, String> get headers => {
+  /// ترويسات الهوية وحدها — لدوال السيرفر وللمخزن.
+  ///
+  /// بلا `Prefer`: هي ترويسة PostgREST لا معنى لها هناك، وبوابة الدوال تسمح
+  /// بـ `authorization, x-client-info, apikey, content-type` فقط. إرسالها كان
+  /// يجعل المتصفح يمنع الطلب في الفحص المسبق فيبدو انقطاعَ إنترنت.
+  static Map<String, String> get authHeaders => {
         'apikey': key,
         // توكن الجلسة إن وُجد: هو ما تقرأ منه سياسات RLS دورَ صاحبه ومنشأته.
         // المفتاح المنشور وحده يعني زائراً بلا صلاحيات على القاعدة المحمية.
         'Authorization': 'Bearer ${SupabaseAuth.accessToken ?? key}',
         'Content-Type': 'application/json',
+      };
+
+  /// ترويسات قراءة وكتابة الجداول — `Prefer` تختصر رد PostgREST.
+  static Map<String, String> get headers => {
+        ...authHeaders,
         'Prefer': 'return=minimal',
       };
 }
@@ -234,7 +244,7 @@ Future<Map<String, dynamic>> supabaseInvoke(
               'Authorization': 'Bearer ${SupabaseConfig.key}',
               'Content-Type': 'application/json',
             }
-          : SupabaseConfig.headers,
+          : SupabaseConfig.authHeaders,
       body: jsonEncode(body),
     );
     final decoded = res.body.isEmpty ? null : _tryJson(res.body);
@@ -425,7 +435,7 @@ Future<String?> storageSignedUrl(String bucket, String path, {int expiresIn = 36
   await SupabaseAuth.ensureFresh();
   try {
     final uri = Uri.parse('${SupabaseConfig.url}/storage/v1/object/sign/$bucket/$path');
-    final res = await http.post(uri, headers: SupabaseConfig.headers, body: jsonEncode({'expiresIn': expiresIn}));
+    final res = await http.post(uri, headers: SupabaseConfig.authHeaders, body: jsonEncode({'expiresIn': expiresIn}));
     if (res.statusCode >= 400) return null;
     final data = _tryJson(res.body);
     final signed = data is Map ? '${data['signedURL'] ?? data['signedUrl'] ?? ''}' : '';
@@ -465,7 +475,7 @@ Future<({List<int> bytes, String mime})?> storageDownload(String bucket, String 
   await SupabaseAuth.ensureFresh();
   try {
     final uri = Uri.parse('${SupabaseConfig.url}/storage/v1/object/$bucket/$path');
-    final res = await http.get(uri, headers: SupabaseConfig.headers);
+    final res = await http.get(uri, headers: SupabaseConfig.authHeaders);
     if (res.statusCode >= 400) return null;
     return (bytes: res.bodyBytes, mime: res.headers['content-type'] ?? 'image/jpeg');
   } catch (_) {
@@ -509,7 +519,7 @@ Future<void> storageRemove(String bucket, List<String> paths) async {
   if (paths.isEmpty) return;
   try {
     final uri = Uri.parse('${SupabaseConfig.url}/storage/v1/object/$bucket');
-    await http.delete(uri, headers: SupabaseConfig.headers, body: jsonEncode({'prefixes': paths}));
+    await http.delete(uri, headers: SupabaseConfig.authHeaders, body: jsonEncode({'prefixes': paths}));
   } catch (_) {
     // ملف يتيم في التخزين أهون من سجل لا يُحذف
   }
