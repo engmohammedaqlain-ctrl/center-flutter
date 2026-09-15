@@ -145,6 +145,32 @@ void main() {
       expect(publish.patchProblem(base: '1.2.6', number: 1, published: '1.2.7', next: 3), contains('1.2.7.3'));
       expect(publish.patchProblem(base: '1.2.7', number: 5, published: '1.2.7', next: 3), contains('1.2.7.3'));
     });
+
+    test('ظهور رقم الـ patch في مخرجات Shorebird يُثبت النشر', () {
+      expect(publish.patchIsPublished('{"patches":[{"number":1}]}', 1), isTrue);
+      expect(publish.patchIsPublished('  42  #1  track: stable\n', 1), isTrue);
+      expect(publish.patchIsPublished('{"patches":[]}', 1), isFalse);
+      expect(publish.patchIsPublished('Git warning\n{"number": 2}', 1), isFalse);
+    });
+
+    test('وسم ووصف التحديث الصامت على GitHub بلا لمس latest', () {
+      expect(publish.silentTagFor('1.3', 1), 'v1.3.1');
+      expect(publish.silentLabelFor('1.3', 1), '1.3.1');
+      final silent = publish.buildSilentManifest(
+        base: '1.3',
+        number: 1,
+        baseBuild: 3,
+        notes: '  سطر التحديث\n',
+        publishedAt: DateTime.utc(2026, 9, 15, 19),
+      );
+      expect(silent['kind'], 'silent');
+      expect(silent['version'], '1.3.1');
+      expect(silent['baseVersion'], '1.3');
+      expect(silent['baseVersionCode'], 3);
+      expect(silent['patchNumber'], 1);
+      expect(silent['notes'], 'سطر التحديث');
+      expect(silent.containsKey('apkUrl'), isFalse, reason: 'الصامت ليس بناءً');
+    });
   });
 
   group('أمر البناء', () {

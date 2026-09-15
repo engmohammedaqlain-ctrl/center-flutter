@@ -8,6 +8,9 @@
 /// فشل في منتصفه لا يترك رقماً محجوزاً بلا حزمة.
 ///
 /// رقم الإصدار جزءان (`2.18`) للبناء، وثلاثة (`2.18.3`) للتحديث الصامت.
+/// كلاهما يُسجَّل على GitHub بالترتيب (`v2.18` ثم `v2.18.1` ثم `v2.18.2`…):
+/// البناء يرفع APK ويحدّث `latest`، والصامت يرفع وصفاً فقط بلا لمس `latest`
+/// كي تبقى الأجهزة تقرأ آخر بناء. التطبيق يميّز وحده: جزءان = تثبيت، ثلاثة = Shorebird.
 ///
 /// مع `shorebird.yaml` يُبنى الإصدار بـ `shorebird release`، فتستقبل أجهزته بعد
 /// ذلك تصليحات كود Dart بصمت: `shorebird patch android --release-version=<الإصدار>`.
@@ -21,7 +24,10 @@ import 'package:crypto/crypto.dart' as crypto;
 const releasesRepo = 'engmohammedaqlain-ctrl/center-mobile-releases';
 const manifestName = 'mobile-latest.json';
 
-/// الرابط الثابت الذي تقرؤه الأجهزة — `latest` يحيل دائماً إلى آخر إصدار.
+/// وصف التحديث الصامت على GitHub — للسجل البشري، لا تقرؤه الأجهزة للتثبيت.
+const silentManifestName = 'mobile-silent.json';
+
+/// الرابط الثابت الذي تقرؤه الأجهزة — `latest` يحيل دائماً إلى آخر بناء (جزآن).
 const latestManifestUrl = 'https://github.com/$releasesRepo/releases/latest/download/$manifestName';
 
 /// بصمة شهادة مفتاح التوقيع. حزمةٌ موقّعة بغيره يرفض أندرويد تثبيتها فوق
@@ -116,6 +122,11 @@ int resolveMinSupported(String? value, {required int previous, required int curr
 
 String tagFor(PubVersion v) => 'v${v.name}';
 
+/// وسم GitHub للتحديث الصامت: `v2.18.3` — يُدرج بعد البناء في قائمة الإصدارات.
+String silentTagFor(String base, int number) => 'v$base.$number';
+
+String silentLabelFor(String base, int number) => '$base.$number';
+
 String apkNameFor(PubVersion v) => 'center-${v.name}.apk';
 
 String apkUrlFor(PubVersion v) => 'https://github.com/$releasesRepo/releases/download/${tagFor(v)}/${apkNameFor(v)}';
@@ -141,6 +152,37 @@ Map<String, dynamic> buildManifest({
       'sizeBytes': sizeBytes,
       'publishedAt': publishedAt.toUtc().toIso8601String(),
     };
+
+/// وصف التحديث الصامت كما يُرفع بجانب البناء على GitHub.
+///
+/// `kind: silent` يميّزه عن `mobile-latest.json`؛ التطبيق لا يثبّت منه APK.
+Map<String, dynamic> buildSilentManifest({
+  required String base,
+  required int number,
+  required int baseBuild,
+  required String notes,
+  required DateTime publishedAt,
+}) =>
+    {
+      'kind': 'silent',
+      'version': silentLabelFor(base, number),
+      'baseVersion': base,
+      'baseVersionCode': baseBuild,
+      'patchNumber': number,
+      'notes': notes.trim(),
+      'publishedAt': publishedAt.toUtc().toIso8601String(),
+    };
+
+/// هل ظهر رقم التحديث في مخرجات `shorebird patches list`؟
+///
+/// على ويندوز قد يخرج الأمر برمز نجاحٍ وإن أُلغي الرفع؛ فلا يُعلَن النشر
+/// قبل أن يُرى الرقم في القائمة.
+bool patchIsPublished(String listOutput, int number) {
+  for (final m in RegExp(r'"number"\s*:\s*(\d+)|#(\d+)').allMatches(listOutput)) {
+    if (int.parse(m[1] ?? m[2]!) == number) return true;
+  }
+  return false;
+}
 
 /// أمر بناء الحزمة.
 ///
@@ -508,15 +550,16 @@ class _Args {
   }
 }
 
-/// تحديث صامت: patch على آخر إصدار منشور عبر Shorebird.
+/// تحديث صامت: patch على آخر بناء عبر Shorebird، ثم سجلّه على GitHub بالترتيب.
 ///
-/// لا يمسّ GitHub ولا `pubspec.yaml`: الحزمة المثبَّتة نفسها تستقبله، ورقمه
-/// الرابع يرقّمه Shorebird ويقرؤه التطبيق منه.
+/// لا يلمس `mobile-latest.json` ولا شارة `latest`: الأجهزة تبقى على آخر بناء.
+/// ولا يُكتب `pubspec.yaml`: الحزمة المثبَّتة نفسها تستقبل الـ patch.
 Future<void> _publishPatch(_Args args, RequestedVersion? requested, String published, int publishedCode) async {
   if (!File('shorebird.yaml').existsSync()) _fail('Silent updates need Shorebird: run shorebird init');
   if (published.isEmpty || publishedCode <= 0) {
     _fail('Nothing published yet - publish a build first, with a two-part version');
   }
+  final notes = args.notes.trim().isEmpty ? 'تحديث صامت' : args.notes.trim();
   final releaseVersion = shorebirdReleaseVersion(published, publishedCode);
 
   final launcher = shorebirdPowerShellScript();
@@ -530,7 +573,8 @@ Future<void> _publishPatch(_Args args, RequestedVersion? requested, String publi
   final number = requested?.patchNumber ?? next;
   final problem = patchProblem(base: requested?.base ?? published, number: number, published: published, next: next);
   if (problem != null) _fail(problem);
-  _info('Update: $published.$number');
+  final label = silentLabelFor(published, number);
+  _info('Update: $label');
 
   _step('Building the update and sending it to Shorebird');
   final patch = shorebirdCommand(
@@ -543,8 +587,44 @@ Future<void> _publishPatch(_Args args, RequestedVersion? requested, String publi
     _step('Dry run - nothing was published');
     return;
   }
-  _step('Published $published.$number');
-  _info('It reaches devices silently: downloaded on open, applied on the next open');
+
+  // ويندوز قد يُرجع نجاحاً بعد إلغاء التحذير: لا نُعلن النشر قبل ظهور الرقم
+  _step('Verifying Shorebird received the update');
+  final after = await _capture(list.exe, list.args, shell: list.shell);
+  if (!patchIsPublished(after, number)) {
+    _fail('Shorebird did not publish patch $number for $published.\n'
+        '  If you answered No to an asset warning, re-run and answer Yes');
+  }
+  _info('Shorebird patch $number is live');
+
+  _step('Recording $label on GitHub (history only — devices keep the last build)');
+  final outDir = Directory('build/release')..createSync(recursive: true);
+  final manifest = buildSilentManifest(
+    base: published,
+    number: number,
+    baseBuild: publishedCode,
+    notes: notes,
+    publishedAt: DateTime.now(),
+  );
+  final manifestFile = File('${outDir.path}/$silentManifestName')
+    ..writeAsStringSync('${const JsonEncoder.withIndent('  ').convert(manifest)}\n');
+  final notesFile = File('${outDir.path}/notes.md')..writeAsStringSync('$notes\n');
+  await _ensureRepoHasCommit();
+  // --latest=false إلزامي: بدونها GitHub يجعل أحدث وسم Latest فيكسر رابط الأجهزة
+  await _run('gh', [
+    'release', 'create', silentTagFor(published, number), manifestFile.path, //
+    '--repo', releasesRepo, '--title', label, '--notes-file', notesFile.path, '--latest=false',
+  ]);
+  // شبكة أمان إن تجاهل gh العلم مع رفع الملفات
+  await _run('gh', [
+    'release', 'edit', tagFor(versionFromName(published, build: publishedCode)), //
+    '--repo', releasesRepo, '--latest',
+  ]);
+
+  _step('Published $label');
+  _info('Devices get it silently: downloaded on open, applied on the next open');
+  _info('GitHub history: https://github.com/$releasesRepo/releases/tag/${silentTagFor(published, number)}');
+  _info('APK latest stays on build $published');
 }
 
 /// GitHub لا ينشئ إصداراً في مستودع بلا كوميت: الوسم يحتاج كوميتاً يشير إليه.
