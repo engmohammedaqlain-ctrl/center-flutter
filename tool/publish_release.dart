@@ -148,23 +148,51 @@ Map<String, dynamic> buildManifest({
 /// Flutter وحدها لا تقبل أي patch، فتبقى أجهزتها خارج التحديث الصامت. وإصدار
 /// Flutter يُثبَّت على إصدار المشروع — Shorebird يبني بأحدث إصدار ما لم يُحدَّد،
 /// فتخرج الحزمة بمحرّكٍ لم تُختبر عليه.
-({String exe, List<String> args}) buildCommand(PubVersion v, {required bool shorebird, String? flutterVersion}) {
+({String exe, List<String> args, bool shell}) buildCommand(
+  PubVersion v, {
+  required bool shorebird,
+  String? flutterVersion,
+  String? powerShellScript,
+}) {
   // أندرويد يشترط اسماً من ثلاثة أجزاء، واسم العرض جزءان: يُبنى بالصيغة الكاملة
-  final version = ['--build-name=${v.semver}', '--build-number=${v.build}'];
+  final version = ['--build-name', v.semver, '--build-number', '${v.build}'];
   if (!shorebird) {
-    return (exe: 'flutter', args: ['build', 'apk', '--release', '--target-platform=android-arm64', ...version]);
+    return (
+      exe: 'flutter',
+      args: ['build', 'apk', '--release', '--target-platform', 'android-arm64', ...version],
+      shell: true,
+    );
   }
-  // `--flag=value` لا `--flag value`: مشغّل shorebird على ويندوز ملف .bat يمرّر
-  // تسعة معاملات فقط (`%1..%9`) وما زاد يسقط صامتاً، فيصل الخيار بلا قيمته.
-  // ودمج القيمة مع خيارها يبقي العدد سبعة مهما طالت القيم.
+  return shorebirdCommand([
+    'release', 'android', '--artifact', 'apk', '--target-platform', 'android-arm64', //
+    if (flutterVersion != null && flutterVersion.isNotEmpty) ...['--flutter-version', flutterVersion],
+    ...version,
+  ], powerShellScript: powerShellScript);
+}
+
+/// نداء shorebird كما يصل معاملاته كاملةً.
+///
+/// مشغّله على ويندوز ملف `.bat` يحشر المعاملات في نصّ `-Command` لـ PowerShell،
+/// فيقع عليها ضرران: يقصّها الـ bat عند التاسع (`%1..%9`)، ويشطر PowerShell كل
+/// `--خيار=قيمة` إلى اثنين فيبلغ الحدَّ أسرع. فيصل خيارٌ بلا قيمته ويفشل الأمر
+/// — وقد فشل مرةً فنُشرت حزمةُ الأمس باسم إصدار اليوم. نداء `shorebird.ps1`
+/// بـ `-File` يمرّر المعاملات كما هي مهما كثرت.
+({String exe, List<String> args, bool shell}) shorebirdCommand(List<String> args, {String? powerShellScript}) {
+  if (powerShellScript == null) return (exe: 'shorebird', args: args, shell: true);
   return (
-    exe: 'shorebird',
-    args: [
-      'release', 'android', '--artifact=apk', '--target-platform=android-arm64', //
-      if (flutterVersion != null && flutterVersion.isNotEmpty) '--flutter-version=$flutterVersion',
-      ...version,
-    ],
+    exe: 'powershell',
+    args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', powerShellScript, ...args],
+    shell: false,
   );
+}
+
+/// مشغّل shorebird لـ PowerShell في مكانه المعتاد — `null` على غير ويندوز.
+String? shorebirdPowerShellScript() {
+  if (!Platform.isWindows) return null;
+  final home = Platform.environment['USERPROFILE'];
+  if (home == null) return null;
+  final script = File('$home\\.shorebird\\bin\\shorebird.ps1');
+  return script.existsSync() ? script.path : null;
 }
 
 /// إصدار Flutter من مخرجات `flutter --version`.
@@ -331,13 +359,18 @@ Future<void> main(List<String> arguments) async {
   final flutterVersion =
       useShorebird ? flutterVersionOf(await _capture('flutter', ['--version'], shell: true)) : null;
   if (useShorebird && flutterVersion == null) _fail("Could not read the project's Flutter version");
-  final build = buildCommand(next, shorebird: useShorebird, flutterVersion: flutterVersion);
+  final build = buildCommand(
+    next,
+    shorebird: useShorebird,
+    flutterVersion: flutterVersion,
+    powerShellScript: shorebirdPowerShellScript(),
+  );
   final built = File('build/app/outputs/flutter-apk/app-release.apk');
   // حزمة البناء السابق تُمحى قبل البناء: مشغّل shorebird على ويندوز يخرج برمز
   // نجاحٍ وإن فشل الأمر، فبقاؤها تعني رفع بناءٍ قديم باسم الإصدار الجديد.
   if (built.existsSync()) built.deleteSync();
   _step(useShorebird ? 'Building and registering the release with Shorebird (Flutter $flutterVersion)' : 'Building the APK');
-  await _run(build.exe, build.args, shell: true);
+  await _run(build.exe, build.args, shell: build.shell);
   if (!built.existsSync()) _fail('The build produced no APK - read the build output above');
 
   _step('Checking the built version');
@@ -486,12 +519,13 @@ Future<void> _publishPatch(_Args args, RequestedVersion? requested, String publi
   }
   final releaseVersion = shorebirdReleaseVersion(published, publishedCode);
 
+  final launcher = shorebirdPowerShellScript();
   _step('Reading silent updates for $published');
-  final listed = await _capture(
-    'shorebird',
+  final list = shorebirdCommand(
     ['patches', 'list', '--release-version', releaseVersion, '--json'],
-    shell: true,
+    powerShellScript: launcher,
   );
+  final listed = await _capture(list.exe, list.args, shell: list.shell);
   final next = nextPatchNumber(listed);
   final number = requested?.patchNumber ?? next;
   final problem = patchProblem(base: requested?.base ?? published, number: number, published: published, next: next);
@@ -499,11 +533,11 @@ Future<void> _publishPatch(_Args args, RequestedVersion? requested, String publi
   _info('Update: $published.$number');
 
   _step('Building the update and sending it to Shorebird');
-  await _run(
-    'shorebird',
+  final patch = shorebirdCommand(
     ['patch', 'android', '--release-version', releaseVersion, if (args.dryRun) '--dry-run'],
-    shell: true,
+    powerShellScript: launcher,
   );
+  await _run(patch.exe, patch.args, shell: patch.shell);
 
   if (args.dryRun) {
     _step('Dry run - nothing was published');

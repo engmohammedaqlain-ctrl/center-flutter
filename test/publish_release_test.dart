@@ -153,21 +153,41 @@ void main() {
 
       expect(cmd.exe, 'shorebird');
       expect(cmd.args.take(2), ['release', 'android']);
-      expect(cmd.args, contains('--artifact=apk'));
-      expect(cmd.args, contains('--flutter-version=3.41.6'), reason: 'لا يُبنى بأحدث Flutter لم يُختبر عليه');
-      expect(cmd.args, contains('--build-name=1.2.7'));
-      expect(cmd.args, contains('--build-number=2'));
-      expect(cmd.args, contains('--target-platform=android-arm64'));
+      expect(cmd.args.join(' '), contains('--artifact apk'));
+      expect(cmd.args.join(' '), contains('--flutter-version 3.41.6'), reason: 'لا يُبنى بأحدث Flutter لم يُختبر عليه');
+      expect(cmd.args.join(' '), contains('--build-name 1.2.7 --build-number 2'));
+      expect(cmd.args.join(' '), contains('--target-platform android-arm64'));
     });
 
-    test('أمر Shorebird لا يتجاوز تسعة معاملات', () {
-      // مشغّله على ويندوز ملف .bat يمرّر %1..%9 وحدها، وما زاد يسقط بلا خطأ:
-      // فيصل «--build-name» بلا قيمته ويُبنى الإصدار برقم pubspec القديم.
-      final cmd = publish.buildCommand(const publish.PubVersion(12, 34, 0, 567), shorebird: true, flutterVersion: '3.41.6');
+    test('على ويندوز يُنادى shorebird.ps1 بـ -File لا عبر الـ bat', () {
+      // الـ bat يحشر المعاملات في نصّ `-Command`: يقصّها عند التاسع ويشطر كل
+      // `--خيار=قيمة`، فوصل «--build-name» بلا قيمته ونُشرت حزمةُ الأمس.
+      final cmd = publish.buildCommand(
+        const publish.PubVersion(1, 2, 7, 2),
+        shorebird: true,
+        flutterVersion: '3.41.6',
+        powerShellScript: r'C:\Users\x\.shorebird\bin\shorebird.ps1',
+      );
 
-      expect(cmd.args.length, lessThanOrEqualTo(9));
-      expect(cmd.args.where((a) => a.startsWith('--') && !a.contains('=')), isEmpty,
-          reason: 'كل خيار يحمل قيمته معه');
+      expect(cmd.exe, 'powershell');
+      expect(cmd.args.take(5), ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', r'C:\Users\x\.shorebird\bin\shorebird.ps1']);
+      expect(cmd.args.skip(5).take(2), ['release', 'android'], reason: 'ثم معاملات shorebird كما هي');
+      expect(cmd.shell, isFalse, reason: 'powershell.exe لا يحتاج cmd يلتف حوله');
+      expect(cmd.args.where((a) => a.startsWith('--') && a.contains('=')), isEmpty,
+          reason: 'PowerShell يشطر --خيار=قيمة إلى اثنين');
+    });
+
+    test('كل نداءات shorebird تمرّ بالمشغّل نفسه', () {
+      final patch = publish.shorebirdCommand(
+        ['patch', 'android', '--release-version', '1.2.7+2'],
+        powerShellScript: r'C:\ps\shorebird.ps1',
+      );
+      expect(patch.exe, 'powershell');
+      expect(patch.args.last, '1.2.7+2');
+
+      final plain = publish.shorebirdCommand(['patches', 'list']);
+      expect(plain.exe, 'shorebird', reason: 'غير ويندوز: المشغّل سليم');
+      expect(plain.shell, isTrue);
     });
 
     test('بلا Shorebird بناء Flutter العادي', () {
@@ -175,8 +195,7 @@ void main() {
 
       expect(cmd.exe, 'flutter');
       expect(cmd.args.take(3), ['build', 'apk', '--release']);
-      expect(cmd.args, contains('--build-name=1.2.7'));
-      expect(cmd.args, contains('--build-number=2'));
+      expect(cmd.args.join(' '), contains('--build-name 1.2.7 --build-number 2'));
     });
 
     test('إصدار Flutter يُقرأ من مخرجات flutter --version', () {
