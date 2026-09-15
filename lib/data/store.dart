@@ -868,8 +868,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// بادئة معرّف المستحق الشهري — معرّف حتمي فلا يتكرر بين الأجهزة.
   static const dueIdPrefix = 'due_';
 
-  /// عنوان قسط رسم الحجز — مطابق لـ `SEAT_INSTALLMENT_TITLE`.
-  static const seatInstallmentTitle = 'رسم حجز مقعد';
+  /// عنوان قسط رسم الحجز — معرّف في `balance.dart` مع ترتيب السداد الذي يقدّمه.
+  static const seatInstallmentTitle = seatTitle;
 
   String monthlyDueId(String studentId, String monthKey) => '$dueIdPrefix${studentId}_$monthKey';
 
@@ -947,6 +947,15 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       );
       installments.add(inst);
       _queue('installments', inst.id, 'INSERT', inst.toCloud());
+
+      // خُصم من مستحق الشهر أقل من رسم الحجز: لا يُطالَب الطالب بفرقٍ لم يُخصم له
+      if (seat != null && deduction > fee) {
+        seat.amount = fee;
+        seat.updatedAt = _nowIso();
+        seat.syncStatus = 'pending';
+        _queue('installments', seat.id, 'UPDATE', seat.toCloud());
+      }
+
       markDirty('installments');
       _persistStudentLedger(student);
       created++;

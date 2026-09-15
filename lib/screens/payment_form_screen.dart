@@ -68,7 +68,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
   /// الأقساط المفتوحة مرتّبة بالأقدم استحقاقاً — ترتيب السداد نفسه.
   List<Installment> _openOf(List<Installment> insts) {
     final open = insts.where((i) => i.remaining > 0.005).toList();
-    open.sort((a, b) => a.dueDate.compareTo(b.dueDate));
+    open.sort(compareInstallments);
     return open;
   }
 

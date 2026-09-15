@@ -48,6 +48,20 @@ Map<String, double> overdueByStudent(Iterable<Installment> installments, [DateTi
   return due;
 }
 
+/// عنوان قسط رسم الحجز — مطابق لـ `SEAT_INSTALLMENT_TITLE`.
+const seatTitle = 'رسم حجز مقعد';
+
+/// ترتيب السداد: رسم الحجز أولاً ثم الأقدم استحقاقاً — `compareInstallments`.
+///
+/// تاريخ الحجز هو يوم التسجيل، فبالتاريخ وحده يأتي بعد مستحق الشهر (أوله)،
+/// فتذهب الدفعة العامة إلى الشهر ويبقى الحجز معلّقاً على الطالب.
+int compareInstallments(Installment a, Installment b) {
+  final seatFirst = (b.title == seatTitle ? 1 : 0) - (a.title == seatTitle ? 1 : 0);
+  if (seatFirst != 0) return seatFirst;
+  final byDate = isoDate(a.dueDate).compareTo(isoDate(b.dueDate));
+  return byDate != 0 ? byDate : a.id.compareTo(b.id);
+}
+
 /// توزيع ما دفعه الطالب على أقساطه — مطابق لـ `allocatePaymentsToInstallments`.
 ///
 /// السند المربوط بقسط يُسدِّد قسطه أولاً، وما يزيد يُضاف إلى غير المربوط، ثم
@@ -57,10 +71,7 @@ Map<String, double> allocatePaymentsToInstallments(
   Iterable<Installment> installments,
   Iterable<Payment> payments,
 ) {
-  final ordered = [...installments]..sort((a, b) {
-      final byDate = isoDate(a.dueDate).compareTo(isoDate(b.dueDate));
-      return byDate != 0 ? byDate : a.id.compareTo(b.id);
-    });
+  final ordered = [...installments]..sort(compareInstallments);
   final remaining = {for (final i in ordered) i.id: math.max(0.0, i.amount)};
   final paid = {for (final i in ordered) i.id: 0.0};
 
