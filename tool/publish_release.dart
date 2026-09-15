@@ -182,7 +182,10 @@ RequestedVersion parseRequestedVersion(String raw) {
     throw ArgumentError('رقم الإصدار: 2.18 للبناء، أو 2.18.1 للتحديث الصامت — لا "$value"');
   }
   final patch = m[2] == null ? null : int.parse(m[2]!);
-  if (patch != null && patch < 1) throw ArgumentError('رقم التحديث الصامت يبدأ من 1');
+  // صفرٌ ثالث ليس بناءً ولا تحديثاً: Shorebird يرقّم تحديثاته من 1
+  if (patch != null && patch < 1) {
+    throw ArgumentError('لا تحديث صامت رقمه $patch — اكتب ${m[1]} للبناء، أو ${m[1]}.1 لأول تحديث صامت عليه');
+  }
   return (kind: patch == null ? PublishKind.build : PublishKind.patch, base: m[1]!, patchNumber: patch);
 }
 

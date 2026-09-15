@@ -99,9 +99,17 @@ void main() {
     });
 
     test('ما ليس جزأين أو ثلاثة يُرفض', () {
-      for (final bad in ['2', '2.18.0', 'v2.18', '2.18.1.2', '2.x']) {
+      for (final bad in ['2', 'v2.18', '2.18.1.2', '2.x']) {
         expect(() => publish.parseRequestedVersion(bad), throwsArgumentError, reason: bad);
       }
+    });
+
+    test('الجزء الثالث صفراً لا يُخمَّن: الرسالة تقول ماذا يُكتب', () {
+      expect(
+        () => publish.parseRequestedVersion('2.18.0'),
+        throwsA(isA<ArgumentError>().having((e) => '${e.message}', 'الرسالة', contains('اكتب 2.18 للبناء'))),
+        reason: 'لا تحديث صامت رقمه صفر، ولا يُفترض أنه بناء',
+      );
     });
 
     test('المقارنة جزءاً جزءاً لا نصياً', () {
