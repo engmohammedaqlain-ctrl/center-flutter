@@ -117,6 +117,16 @@ class _ReceiptSheet extends StatelessWidget {
                   _row('المبلغ المقبوض', money(payment.amount)),
                   // «وقدره كتابةً» — بند رسمي في السند لا يجوز إسقاطه
                   _row('وقدره كتابةً', amountInArabicWords(payment.amount)),
+                  if (payment.discountAmount > 0) ...[
+                    _row(
+                      'الأصلي',
+                      money(payment.originalAmount ?? (payment.amount + payment.discountAmount)),
+                    ),
+                    _row(
+                      'الخصم',
+                      '-${money(payment.discountAmount)}${payment.discountReason.isEmpty ? '' : ' (${payment.discountReason})'}',
+                    ),
+                  ],
                   _row('طريقة السداد', store.paymentMethodLabel(payment.method)),
                   _row('وذلك عن', paymentPurposeNames[payment.purpose] ?? payment.purpose),
                   if (payment.senderName.isNotEmpty) _row('اسم المحول منه', payment.senderName),
@@ -254,6 +264,13 @@ class _ReceiptSheet extends StatelessWidget {
       if (student != null) ['المرحلة الدراسية', student.gradeLevel],
       ['المبلغ المقبوض', money(payment.amount)],
       ['وقدره كتابةً', amountInArabicWords(payment.amount)],
+      if (payment.discountAmount > 0) ...[
+        ['الأصلي', money(payment.originalAmount ?? (payment.amount + payment.discountAmount))],
+        [
+          'الخصم',
+          '-${money(payment.discountAmount)}${payment.discountReason.isEmpty ? '' : ' (${payment.discountReason})'}',
+        ],
+      ],
       ['طريقة السداد', store.paymentMethodLabel(payment.method)],
       ['وذلك عن', paymentPurposeNames[payment.purpose] ?? payment.purpose],
       if (payment.senderName.isNotEmpty) ['اسم المحول منه', payment.senderName],

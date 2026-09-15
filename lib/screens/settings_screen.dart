@@ -14,6 +14,7 @@ import '../widgets/panels.dart';
 import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import 'developer_settings_screen.dart';
+import 'grade_plan_screen.dart';
 import 'payment_methods_tab.dart';
 import 'settings_forms.dart';
 import 'grading_scheme_tab.dart';
@@ -66,6 +67,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return NoAccess(section: 'settings', roleName: store.roleName);
         }
         final tabs = _allTabs.where((t) {
+          if (t.id == 'grading' && !store.features.enableEvaluations) return false;
           if (t.section != null && !store.can(t.section!)) return false;
           return true;
         }).toList();
@@ -958,46 +960,35 @@ class _GradeFeeCard extends StatelessWidget {
   }
 }
 
-/// خطة أقساط المرحلة: عددها ومجموعها، وتطبيقها على من لا أقساط له.
-///
-/// الخطة تُضبط من سطح المكتب؛ الجوال يعرضها ويطبّقها على من سُجّل قبل ضبطها.
-/// من له أقساط تُترك كما هي: تعديل الخطة لا يُعيد ضبط أقساط من سُجّل على سابقتها.
+/// خطة أقساط المرحلة: ملخصها وزر فتح المحرر — التطبيق وإعادة التسعير داخل المحرر.
 class _GradePlanRow extends StatelessWidget {
   const _GradePlanRow({required this.fee});
 
   final GradeFee fee;
 
-  Future<void> _apply(BuildContext context) async {
-    final store = StoreScope.of(context);
-    final ok = await confirmSheet(
-      context,
-      title: 'تطبيق خطة «${fee.gradeName}»',
-      message: 'تُقيَّد أقساط الخطة على طلاب المرحلة النشطين ممن لا أقساط لهم بعد.',
-      confirmLabel: 'تطبيق',
-      confirmColor: AppColors.navy,
-    );
-    if (!ok || !context.mounted) return;
-    try {
-      final result = store.applyGradePlan(fee.gradeName);
-      if (!context.mounted) return;
-      showAppSnack(
-        context,
-        result.applied == 0
-            ? 'لا طالب بلا أقساط في هذه المرحلة'
-            : 'قُيّدت الخطة على ${result.applied} طالباً، وتُرك ${result.skipped} لهم أقساط',
-      );
-    } on StoreException catch (e) {
-      if (context.mounted) showAppSnack(context, e.message, error: true);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final items = fee.planItems;
     if (items.isEmpty) {
-      return const Text(
-        'لا خطة أقساط لهذه المرحلة — من يُسجَّل فيها لا تُقيَّد عليه أقساط',
-        style: TextStyle(fontSize: 11, color: AppColors.danger, fontWeight: FontWeight.w700),
+      return Row(
+        children: [
+          const Expanded(
+            child: Text(
+              'لا خطة أقساط لهذه المرحلة — من يُسجَّل فيها لا تُقيَّد عليه أقساط',
+              style: TextStyle(fontSize: 11, color: AppColors.danger, fontWeight: FontWeight.w700),
+            ),
+          ),
+          TileButton(
+            label: 'ضبط الخطة',
+            icon: const Icon(Icons.edit_calendar_outlined, size: 13),
+            color: AppColors.heading,
+            background: Colors.white,
+            border: AppColors.lineStrong,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => GradePlanScreen(fee: fee)),
+            ),
+          ),
+        ],
       );
     }
     var total = 0.0;
@@ -1013,12 +1004,14 @@ class _GradePlanRow extends StatelessWidget {
           ),
         ),
         TileButton(
-          label: 'تطبيق الخطة',
-          icon: const Icon(Icons.playlist_add_check, size: 13),
+          label: 'تعديل الخطة',
+          icon: const Icon(Icons.edit_calendar_outlined, size: 13),
           color: AppColors.heading,
           background: Colors.white,
           border: AppColors.lineStrong,
-          onTap: () => _apply(context),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => GradePlanScreen(fee: fee)),
+          ),
         ),
       ],
     );

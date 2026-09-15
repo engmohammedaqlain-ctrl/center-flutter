@@ -1002,7 +1002,7 @@ class Payment {
   /// النسخة المكتبية — لا عمود لها في السحابة فتُصفّى عند الرفع.
   String studentName;
   String receivedByName;
-  final String? installmentId;
+  String? installmentId;
   final String? groupId;
   final String? enrollmentId;
 

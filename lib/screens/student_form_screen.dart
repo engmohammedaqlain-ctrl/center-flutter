@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../data/academic_matching.dart';
 import '../data/phone.dart';
+import '../data/fee_plan.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -390,6 +391,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     final id = existing?.id ?? store.newId();
 
     try {
+      final gradeFee = _gradeFeeOf(context);
       store.upsertStudent(
         Student(
           id: id,
@@ -438,9 +440,11 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           academicDiscountRate: hasDiscount && discountType == 'percentage' ? _discountRateValue : 0,
           hasException: existing?.hasException ?? false,
           exceptionReason: hasDiscount ? discountReason.text.trim() : (existing?.exceptionReason ?? ''),
-          customMonthlyFee: hasDiscount ? _netMonthlyFee(_gradeFeeOf(context)) : null,
+          customMonthlyFee: hasDiscount ? _netMonthlyFee(gradeFee) : null,
         ),
         isNew: existing == null,
+        // خصم التسجيل يُوزَّع على أقساط الخطة عند الإنشاء فقط — مثل StudentForm.tsx
+        discount: existing == null ? _planDiscountOf(gradeFee) : null,
         attachments: attachmentsLoaded
             ? StudentAttachments(
                 id: id,
@@ -1142,6 +1146,29 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
         final custom = double.tryParse(customMonthlyFee.text.trim()) ?? gradeFee;
         final diff = gradeFee - custom;
         return diff < 0 ? 0 : diff;
+    }
+  }
+
+  /// خصم خطة الأقساط عند التسجيل — مطابق لما يمرّره `StudentForm` إلى `buildStudentPlan`.
+  PlanDiscount? _planDiscountOf(double gradeFee) {
+    if (!hasDiscount) return null;
+    final reason = discountReason.text.trim();
+    switch (discountType) {
+      case 'percentage':
+        final rate = _discountRateValue;
+        return rate > 0 ? PlanDiscount.percent(rate, reason: reason) : null;
+      case 'fixed':
+        final fixed = double.tryParse(discountFixed.text.trim()) ?? 0;
+        return fixed > 0 ? PlanDiscount.fixed(fixed, reason: reason) : null;
+      case 'custom_fee':
+        // رسم محدد = نسبة من رسم المرحلة تُطبَّق على مجموع الخطة، كما في الويب
+        // عندما لا يكون النوع «مقطوع».
+        if (gradeFee <= 0) return null;
+        final cut = _discountAmount(gradeFee);
+        if (cut <= 0) return null;
+        return PlanDiscount.percent((cut / gradeFee) * 100, reason: reason);
+      default:
+        return null;
     }
   }
 

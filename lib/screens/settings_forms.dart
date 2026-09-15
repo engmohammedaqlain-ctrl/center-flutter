@@ -567,6 +567,13 @@ class _GradeFeeFormScreenState extends State<GradeFeeFormScreen> {
             tier: tier,
             orderIndex: f.orderIndex,
             isCustom: f.isCustom,
+            // لا تُمسّ خطة الأقساط وتواريخ الفصلين من نموذج الاسم/الرسم
+            term1Start: f.term1Start,
+            term1End: f.term1End,
+            term2Start: f.term2Start,
+            term2End: f.term2End,
+            planItems: f.planItems,
+            createdAt: f.createdAt,
           ),
         );
       }

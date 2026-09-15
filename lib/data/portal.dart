@@ -2,6 +2,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/models.dart';
 import 'academic_matching.dart';
+import 'grading.dart';
 import 'institution.dart';
 import 'payment_methods.dart';
 import 'supabase.dart';
@@ -110,12 +111,16 @@ class PortalBranding {
     this.logo = '',
     this.colors = InstitutionColors.defaults,
     this.paymentMethods = defaultPaymentMethods,
+    this.gradingScheme = GradingScheme.empty,
   });
 
   final String name;
   final String logo;
   final InstitutionColors colors;
   final List<PaymentMethodItem> paymentMethods;
+
+  /// مخطط العلامات من `colors.__grading_scheme` — كما في بوابة الويب.
+  final GradingScheme gradingScheme;
 
   /// مطابق لـ `getPaymentMethodLabel`.
   String methodLabel(String key) {
@@ -165,6 +170,8 @@ class StudentEvaluation {
     this.evaluationDate = '',
     this.type = 'quiz',
     this.notes = '',
+    this.term = '',
+    this.componentId = '',
     this.createdAt = '',
     this.updatedAt = '',
     this.subjectName = '',
@@ -187,6 +194,10 @@ class StudentEvaluation {
   final String evaluationDate;
   final String type;
   final String notes;
+
+  /// ربط بمخطط علامات المدرسة: `term_1` / `term_2` ومعرّف المكوّن.
+  final String term;
+  final String componentId;
   final String createdAt;
   final String updatedAt;
 
@@ -218,10 +229,29 @@ class StudentEvaluation {
         evaluationDate: evaluationDate,
         type: type,
         notes: notes,
+        term: term,
+        componentId: componentId,
         createdAt: createdAt,
         updatedAt: updatedAt,
         subjectName: subjectName,
         teacherName: teacherName,
+      );
+
+  /// تحويل للشكل الذي يقرأه `computeTermGrade` / `subjectGradeSummaries`.
+  Evaluation toEvaluation() => Evaluation(
+        id: id,
+        studentId: studentId,
+        title: title,
+        score: score ?? 0,
+        groupId: groupId,
+        subjectId: subjectId,
+        teacherId: teacherId,
+        maxScore: maxScore,
+        evaluationDate: evaluationDate,
+        type: type,
+        notes: notes,
+        term: term,
+        componentId: componentId,
       );
 
   Map<String, dynamic> toCloud() => {
@@ -236,6 +266,8 @@ class StudentEvaluation {
         'evaluation_date': evaluationDate.isEmpty ? null : evaluationDate,
         'type': type,
         'notes': notes.isEmpty ? null : notes,
+        'term': term.isEmpty ? null : term,
+        'component_id': componentId.isEmpty ? null : componentId,
         'created_at': createdAt.isEmpty ? null : createdAt,
         'updated_at': updatedAt.isEmpty ? null : updatedAt,
       };
@@ -252,6 +284,8 @@ class StudentEvaluation {
         evaluationDate: '${m['evaluation_date'] ?? ''}'.split('T').first,
         type: '${m['type'] ?? 'quiz'}',
         notes: '${m['notes'] ?? ''}',
+        term: '${m['term'] ?? ''}',
+        componentId: '${m['component_id'] ?? ''}',
         createdAt: '${m['created_at'] ?? ''}',
         updatedAt: '${m['updated_at'] ?? ''}',
       );
@@ -740,6 +774,11 @@ class PortalService {
       logo: '${row['logo'] ?? ''}',
       colors: colors is Map ? InstitutionColors.fromMap(colorMap) : InstitutionColors.defaults,
       paymentMethods: decodePaymentMethods(colorMap[customPaymentMethodsColorKey]),
+      gradingScheme: GradingScheme.fromMap(
+        colorMap['__grading_scheme'] is Map
+            ? Map<String, dynamic>.from(colorMap['__grading_scheme'] as Map)
+            : const {},
+      ),
     );
   }
 

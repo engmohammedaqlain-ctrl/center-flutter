@@ -111,9 +111,10 @@ Map<String, double> allocatePaymentsToInstallments(
   return paid;
 }
 
-/// الرصيد من السجلات — مطابق لـ `balanceFrom`.
+/// الرصيد من السجلات — مطابق لـ `balanceFrom` في الويب.
 ///
-/// الأقساط المستحقة حتى [today] وحدها تدخل الرصيد.
+/// في المدرسة تدخل **كل** الأقساط (المستحق والمجدول) في الرصيد، كما في
+/// `balanceUtils.ts`. «المستحق الآن» شيء آخر يحسبه [overdueByStudent].
 double balanceFrom({
   required Iterable<StudentEnrollment> enrollments,
   required Iterable<Installment> installments,
@@ -126,11 +127,9 @@ double balanceFrom({
     enrollmentFees += e.appliedPrice ?? e.customPrice ?? 0;
   }
 
+  // كل الأقساط — مطابق للويب حين المؤسسة مدرسة (لا مركز)
   var installmentFees = 0.0;
-  final day = today ?? startOfToday();
   for (final i in installments) {
-    // القسط القادم ليس ديناً بعد؛ يصير كذلك يوم استحقاقه
-    if (!isInstallmentDue(i, day)) continue;
     installmentFees += i.amount;
   }
 

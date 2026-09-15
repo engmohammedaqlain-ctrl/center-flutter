@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
+import '../data/grading.dart';
 import '../data/institution.dart';
 import '../data/portal.dart';
 import '../data/printing.dart';
@@ -3179,32 +3180,84 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
 
   List<Widget> _evaluationsTab(_Brand brand) {
     final list = data!.evaluations;
-    final pcts = [for (final e in list) e.maxScore > 0 && e.score != null ? e.score! / e.maxScore * 100 : 0.0];
-    final average = pcts.isEmpty ? 0 : (pcts.reduce((a, b) => a + b) / pcts.length).round();
-    final best = pcts.isEmpty ? 0 : pcts.reduce((a, b) => a > b ? a : b).round();
+    final scheme = data!.branding.gradingScheme;
+    final summaries = subjectGradeSummaries(
+      [for (final e in list) e.toEvaluation()],
+      scheme,
+      (id) {
+        for (final e in list) {
+          if (e.subjectId == id && e.subjectName.isNotEmpty) return e.subjectName;
+        }
+        return 'مادة';
+      },
+    );
 
-    Widget summary(String label, String value, Color color) => Expanded(
-          child: Column(
+    Widget termLine(String label, TermGrade term) {
+      final avg = term.components.isEmpty || term.currentAverage == null
+          ? '—'
+          : term.isComplete
+              ? '${term.total.round()}%'
+              : '${term.currentAverage!.round()}% (حالي)';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
             children: [
-              Text(label, style: const TextStyle(color: _C.muted, fontSize: 10.5, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 3),
-              Text(value, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w900, fontFamily: _mono)),
+              Expanded(child: Text(label, style: const TextStyle(color: _C.slate700, fontSize: 11.5, fontWeight: FontWeight.w800))),
+              Text(avg, style: TextStyle(color: term.isComplete ? _C.emerald600 : _C.amber600, fontSize: 11.5, fontWeight: FontWeight.w900, fontFamily: _mono)),
             ],
           ),
-        );
+          for (final c in term.components)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${c.component.name} (${trimNum(c.component.weight)}%)',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: _C.muted, fontSize: 10.5),
+                    ),
+                  ),
+                  Text(
+                    c.achievedPercent == null ? '—' : '${c.achievedPercent!.round()}%',
+                    style: const TextStyle(color: _C.muted, fontSize: 10.5, fontFamily: _mono),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      );
+    }
 
     return [
-      if (list.isNotEmpty) ...[
-        _Card(
-          child: Row(
-            children: [
-              summary('الاختبارات', '${list.length}', _C.navy),
-              summary('المعدل', '$average%', _C.emerald600),
-              summary('أعلى علامة', '$best%', _C.amber600),
-            ],
+      if (summaries.isNotEmpty) ...[
+        for (final s in summaries)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _Card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(s.subjectName, style: TextStyle(color: brand.primary, fontSize: 13, fontWeight: FontWeight.w900)),
+                      ),
+                      if (s.yearAverage != null)
+                        Text('السنة: ${s.yearAverage!.round()}%', style: const TextStyle(color: _C.emerald600, fontSize: 11.5, fontWeight: FontWeight.w900)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (scheme.isConfigured('term_1')) termLine('الفصل الأول', s.term1),
+                  if (scheme.isConfigured('term_1') && scheme.isConfigured('term_2')) const SizedBox(height: 8),
+                  if (scheme.isConfigured('term_2')) termLine('الفصل الثاني', s.term2),
+                ],
+              ),
+            ),
           ),
-        ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 6),
       ],
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),

@@ -950,6 +950,84 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return (applied: applied, skipped: skipped);
   }
 
+  /// تحديث أقساط طلاب المرحلة على أسعار خطتها الجديدة — `repriceGradePlan`.
+  ///
+  /// لرفع الأسعار على من هم في المدرسة أصلاً. القيود ثلاثة:
+  /// 1. لا يمسّ إلا قسطاً لم يحن موعده ولم يُدفع منه شيء.
+  /// 2. لا يمسّ إلا أقساط الخطة (لا الرسوم الإضافية ولا رسم الحجز).
+  /// 3. خصم الطالب يبقى بنسبته عبر `original_amount`.
+  ///
+  /// تواريخ الاستحقاق لا تُمسّ. `apply=false` يعيد الحصيلة دون كتابة.
+  ({int students, int installments, double difference}) repriceGradePlan(
+    String gradeName, {
+    bool apply = false,
+  }) {
+    requireSection('settings');
+    final result = (students: 0, installments: 0, difference: 0.0);
+    var touchedStudents = 0;
+    var touchedInstallments = 0;
+    var difference = 0.0;
+
+    final items = planItemsOf(gradePlans()[gradeName.trim().toLowerCase()]);
+    if (items.isEmpty) return result;
+
+    final now = _nowIso();
+    for (final student in students
+        .where((s) => s.status == 'active' && isSameGrade(s.gradeLevel, gradeName))
+        .toList()) {
+      final own = {
+        for (final i in installments.where((i) => i.studentId == student.id)) i.id: i,
+      };
+      final changes = <({String id, double amount, double? originalAmount})>[];
+
+      for (final item in items) {
+        final inst = own[planInstallmentId(item.id, student.id)];
+        if (inst == null || inst.paidAmount > 0 || isInstallmentDue(inst)) continue;
+
+        final base = inst.originalAmount ?? 0;
+        final ratio = base > 0 ? inst.amount / base : 1.0;
+        final planAmount = item.amount;
+        final amount = ((planAmount * ratio) * 100).round() / 100;
+        if ((amount - inst.amount).abs() < 0.005) continue;
+
+        changes.add((
+          id: inst.id,
+          amount: amount,
+          originalAmount: ratio == 1 ? null : planAmount,
+        ));
+        difference += amount - inst.amount;
+      }
+
+      if (changes.isEmpty) continue;
+      touchedStudents++;
+      touchedInstallments += changes.length;
+      if (!apply) continue;
+
+      for (final change in changes) {
+        final inst = own[change.id];
+        if (inst == null) continue;
+        inst.amount = change.amount;
+        inst.originalAmount = change.originalAmount;
+        inst.updatedAt = now;
+        inst.syncStatus = 'pending';
+        inst.status = installmentStatusFor(inst.amount, inst.paidAmount);
+        _queue('installments', inst.id, 'UPDATE', inst.toCloud());
+      }
+      _persistStudentLedger(student);
+    }
+
+    if (apply && touchedInstallments > 0) {
+      markDirty('installments');
+      notifyListeners();
+    }
+
+    return (
+      students: touchedStudents,
+      installments: touchedInstallments,
+      difference: (difference * 100).round() / 100,
+    );
+  }
+
   /// المتوقع على الطلاب النشطين لباقي السنة — `projectRemainingYear`.
   ///
   /// أقساطهم التي لم يحن موعدها، ناقصاً ما دفعوه مقدماً. رقمٌ للإدارة وحدها:
@@ -1137,9 +1215,21 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     notifyListeners();
   }
 
-  /// معدل الطالب في فصل وفق المخطط — يشمل تقييماته كلها في كل المواد.
-  TermGrade termGradeOf(String studentId, String term) =>
-      computeTermGrade(evaluationsOfStudent(studentId), gradingScheme, term);
+  /// معدل الطالب في فصل لمادة واحدة — لا يخلط مواداً مختلفة.
+  TermGrade termGradeOf(String studentId, String term, {String? subjectId}) {
+    final evals = evaluationsOfStudent(studentId).where((e) {
+      if (subjectId == null) return true;
+      return e.subjectId == subjectId;
+    });
+    return computeTermGrade(evals, gradingScheme, term);
+  }
+
+  /// ملخص علامات لكل مادة — مطابق لـ StudentDetail / StudentPortal على الويب.
+  List<SubjectGradeSummary> subjectGradesOf(String studentId) => subjectGradeSummaries(
+        evaluationsOfStudent(studentId),
+        gradingScheme,
+        subjectName,
+      );
 
   /// بادئة معرّف قسط الرسم الإضافي — `FEE_ID_PREFIX`.
   static const feeIdPrefix = 'fee_';
@@ -2541,12 +2631,16 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       final placementChanged = before.section != incoming.section ||
           before.gradeLevel != incoming.gradeLevel ||
           before.status != incoming.status;
+      final leftActive = (incoming.status == 'withdrawn' || incoming.status == 'archived') &&
+          before.status != incoming.status;
       incoming.balance = before.balance;
       incoming.createdAt = before.createdAt ?? incoming.createdAt;
       students[i] = incoming;
       _queue('students', incoming.id, 'UPDATE', incoming.toCloud());
       // تغيّر الشعبة أو المرحلة أو الحالة يعيد تشكيل عضويته في مواد شعبته
       if (placementChanged) syncStudentRoomEnrollments([incoming.id]);
+      // منسحب/مؤرشف: إسقاط الأقساط المستقبلية كويب — وإلا يبقى ديناً وهمياً على الأجهزة
+      if (leftActive) cancelFutureInstallments(incoming.id);
     } else {
       incoming.createdAt ??= _nowIso();
       // من دفع رسم الحجز لا يُقيَّد عليه قسطٌ به: دفعه يزيد رصيده المقدَّم
@@ -2571,6 +2665,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         markDirty('installments');
         _persistStudentLedger(incoming);
       }
+      // دفعة حجز سابقة بلا قسط: تُربط بأول قسط بعد إنشاء الخطة
+      applySeatCreditToFirstInstallment(incoming.id);
     }
 
     if (attachments != null) {
@@ -2601,19 +2697,63 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       overdueByStudent(installments.where((i) => i.studentId == studentId))[studentId] ?? 0;
 
   /// هل سدّد الطالب كل ما استُحق عليه حتى اليوم؟
-  bool isSettledToDate(String studentId) => outstandingDue(studentId) <= cent && !(studentById(studentId)?.isDebtor ?? false);
-
-  /// حذف طالب مع كل ما يتبعه.
   ///
-  /// يُحذف من سدّد ما استُحق عليه حتى اليوم؛ أما من عليه متأخرات فلا، كي لا
-  /// يختفي الدَّين بحذف صاحبه. الأقساط القادمة لا تمنع: لم تُستحق بعد.
+  /// يعتمد على المستحق الحالّ لا على الرصيد الكامل (الذي يشمل الأقساط المجدولة).
+  bool isSettledToDate(String studentId) => outstandingDue(studentId) <= cent;
+
+  /// عدد سندات القبض غير الملغاة — يمنع الحذف كما في StudentsService.delete.
+  int countActivePayments(String studentId) =>
+      payments.where((p) => p.studentId == studentId && !p.cancelled).length;
+
+  /// إسقاط أقساط لم تحن ولم يُدفع منها شيء — `StudentsService.cancelFutureInstallments`.
+  ///
+  /// عند الانسحاب/الأرشفة: المستحق والمدفوع يبقيان؛ المجدول يُحذف حتى لا يظهر ديناً.
+  int cancelFutureInstallments(String studentId) {
+    final victims = installments
+        .where((i) =>
+            i.studentId == studentId &&
+            !isInstallmentDue(i) &&
+            i.paidAmount <= cent)
+        .toList();
+    if (victims.isEmpty) return 0;
+
+    var removed = 0;
+    for (final row in victims) {
+      final linked = payments.where((p) => !p.cancelled && p.installmentId == row.id).length;
+      if (linked > 0) continue;
+      queuePendingSync(pendingSyncs, tableName: 'installments', recordId: row.id, action: 'DELETE', payload: null);
+      installments.removeWhere((i) => i.id == row.id);
+      removed++;
+    }
+    if (removed > 0) {
+      markDirty('installments');
+      markDirty(_pendingTable);
+      final stu = studentById(studentId);
+      if (stu != null) _persistStudentLedger(stu);
+    }
+    return removed;
+  }
+
+  /// أرشفة طالب بدل الحذف — يُسقط الأقساط المستقبلية ويحتفظ بالسجل المالي.
+  void archiveStudent(String id) {
+    requireSection('students');
+    final stu = studentById(id);
+    if (stu == null) throw StoreException('الطالب غير موجود.');
+    if (stu.status == 'archived') return;
+    // كائن جديد حتى يقرأ upsert الفرق عن الحالة السابقة (لا تعديل بالرجوع)
+    upsertStudent(Student.fromCloud({...stu.toCloud(), 'status': 'archived'}));
+  }
+
+  /// حذف طالب مع كل ما يتبعه — مطابق لـ `StudentsService.delete`.
+  ///
+  /// وجود سند قبض غير ملغى يمنع الحذف: السجل المالي لا يُمحى بحذف صاحبه.
   void deleteStudent(String id) {
     requireSection('students');
-    final due = outstandingDue(id);
-    if (due > cent) {
+    final activePays = countActivePayments(id);
+    if (activePays > 0) {
       throw StoreException(
-        'لا يمكن حذف هذا الطالب لأن عليه ${money(due)} مستحقة حتى اليوم. '
-        'حصّلها أو غيّر حالته إلى «منسحب» للاحتفاظ بسجله.',
+        'لا يمكن حذف هذا الطالب لأن عليه $activePays سند قبض مسجَّل. '
+        'يمكنك تغيير حالته إلى «منسحب» للاحتفاظ بالسجل المالي، أو إلغاء السندات أولاً.',
       );
     }
 
@@ -2646,6 +2786,31 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     markDirty('attendance');
     markDirty('student_attachments');
     markDirty('enrollments');
+  }
+
+  /// رسم حجز دُفع قبل وجود أقساط: يُربط بأول قسط مفتوح — `applySeatCreditToFirstInstallment`.
+  void applySeatCreditToFirstInstallment(String studentId) {
+    final seat = payments
+        .where((p) =>
+            p.studentId == studentId &&
+            !p.cancelled &&
+            p.purpose == 'seat_reservation' &&
+            (p.installmentId == null || p.installmentId!.isEmpty))
+        .firstOrNull;
+    if (seat == null) return;
+
+    final open = installments.where((i) => i.studentId == studentId && i.remaining > cent).toList()
+      ..sort(compareInstallments);
+    if (open.isEmpty) return;
+
+    final inst = open.first;
+    seat.installmentId = inst.id;
+    seat.updatedAt = _nowIso();
+    seat.syncStatus = 'pending';
+    _queue('payments', seat.id, 'UPDATE', seat.toCloud());
+    final stu = studentById(studentId);
+    if (stu != null) _persistStudentLedger(stu);
+    markDirty('payments');
   }
 
   /// أعلى رقم تسلسلي مستخدم لسنة معينة ضمن قائمة أرقام سندات.
@@ -2851,22 +3016,50 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     String? installmentId,
     String? groupId,
     String? enrollmentId,
+    double discountAmount = 0,
+    String discountReason = '',
+    double? originalAmount,
+    double? totalDueAtPayment,
   }) {
     requireSection('finance');
-    if (amount <= 0) throw StoreException('يرجى إدخال مبلغ صحيح');
+    final disc = discountAmount < 0 ? 0.0 : discountAmount;
+    // amount = النقد المقبوض؛ original_amount = ما سُدِّد من الذمة قبل الخصم
+    final cashReceived = amount < 0 ? 0.0 : amount;
+    final totalSettled = originalAmount ?? (cashReceived + disc);
+    if (totalSettled <= 0) throw StoreException('يرجى إدخال مبلغ صحيح');
+    if (disc > totalSettled + cent) throw StoreException('الخصم أكبر من المبلغ');
+
     final stu = studentById(studentId);
     if (stu == null) throw StoreException('يرجى اختيار الطالب أولاً');
 
-    final totalDue = stu.balance < 0 ? stu.balance.abs() : 0.0;
+    // المستحق وقت الدفع = ما حلّ موعده فقط — مطابق لـ PaymentForm `dueNow`
+    final dueNow = totalDueAtPayment ??
+        (() {
+          final own = installments.where((i) => i.studentId == studentId).toList();
+          if (own.isEmpty) return stu.balance < 0 ? stu.balance.abs() : 0.0;
+          var total = 0.0;
+          for (final i in own) {
+            if (isInstallmentDue(i)) total += math.max(0.0, i.remaining);
+          }
+          return total;
+        })();
+
+    // سند الحجز يُربط بقسط الحجز (أو أول قسط مفتوح) — كما في finance.service.ts
+    var linkedInstallmentId = installmentId;
+    if ((linkedInstallmentId == null || linkedInstallmentId.isEmpty) && purpose == 'seat_reservation') {
+      final open = installments.where((i) => i.studentId == studentId && i.remaining > cent).toList()
+        ..sort(compareInstallments);
+      linkedInstallmentId =
+          open.where((i) => i.title == seatTitle).map((i) => i.id).firstOrNull ?? open.firstOrNull?.id;
+    }
 
     final p = Payment(
       id: newId(),
       receiptNumber: _nextReceipt(),
-      // لقطة وقت الإصدار: اسم الطالب والمستلم لا يتغيّران بأثر رجعي
       studentName: stu.fullName,
       receivedByName: receiptReceiver,
       studentId: studentId,
-      amount: amount,
+      amount: cashReceived,
       method: method,
       date: date,
       purpose: purpose,
@@ -2876,19 +3069,21 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       channel: channel,
       transferDate: transferDate,
       customMethodNotes: customMethodNotes,
-      installmentId: installmentId,
+      discountAmount: disc,
+      discountReason: disc > 0 ? discountReason : '',
+      originalAmount: disc > 0 ? totalSettled : null,
+      installmentId: linkedInstallmentId,
       groupId: groupId,
       enrollmentId: enrollmentId,
       receivedByUserId: currentUserId,
-      remainingAfter: 0,
-      totalDueAtPayment: totalDue,
+      remainingAfter: math.max(0.0, dueNow - totalSettled),
+      totalDueAtPayment: dueNow,
       syncStatus: 'pending',
       createdAt: _nowIso(),
       updatedAt: _nowIso(),
     );
     payments.insert(0, p);
-    // الرصيد وسداد الأقساط من السجلات بعد إضافة السند — لا جمع تراكمي يتضارب
-    // بين الأجهزة، والسند الذي يغطي أكثر من قسط يُسدِّدها بالترتيب
+    // المتبقي بعد الحفظ = دين الرصيد الكامل السالب — كما في createPayment على الويب
     final after = _persistStudentLedger(stu);
     p.remainingAfter = after < 0 ? after.abs() : 0;
     queuePendingSync(pendingSyncs, tableName: 'payments', recordId: p.id, action: 'INSERT', payload: p.toCloud());

@@ -10,11 +10,11 @@ AppStore _seeded() {
   return s;
 }
 
-/// طالب بلا أقساط ولا سندات ولا تسجيلات — لوحة نظيفة لاختبار قاعدة الاستحقاق.
+/// طالب بلا أقساط ولا سندات ولا تسجيلات — لوحة نظيفة لاختبار قاعدة الرصيد.
 Student _cleanStudent(AppStore s) {
   final student = Student(
     id: s.newId(),
-    fullName: 'طالب قاعدة الاستحقاق',
+    fullName: 'طالب قاعدة الرصيد',
     gradeLevel: 'عاشر',
     section: 'بلا شعبة',
     phone: '0599000111',
@@ -44,47 +44,41 @@ double _overdue(AppStore s, Student student) =>
     overdueByStudent(s.installments.where((i) => i.studentId == student.id))[student.id] ?? 0;
 
 void main() {
-  group('الرصيد يتبع المستحق حتى اليوم', () {
-    test('القسط المجدول ليس ديناً: لم يدرس شهره بعد', () {
+  group('الرصيد يشمل كل الأقساط كما في الويب', () {
+    test('القسط المجدول يدخل الرصيد؛ والمستحق شيء آخر', () {
       final s = _seeded();
       final student = _cleanStudent(s);
       _installment(s, student, daysFromNow: 2);
 
-      expect(s.computeStudentBalance(student.id), 0, reason: 'لا يُطالَب بما لم يحن موعده');
-      expect(_overdue(s, student), 0);
+      expect(s.computeStudentBalance(student.id), closeTo(-200, 0.01), reason: 'كل الأقساط في الرصيد');
+      expect(_overdue(s, student), 0, reason: 'لم يحن موعده فليس مستحقاً اليوم');
     });
 
-    test('من سدّد ما استُحق عليه رصيده صفر رغم قسط قادم', () {
+    test('من سدّد قسطاً مستحقاً يبقى مديناً بقسط قادم في الرصيد', () {
       final s = _seeded();
       final student = _cleanStudent(s);
       _installment(s, student, daysFromNow: -10);
       _installment(s, student, daysFromNow: 20);
 
       s.addPayment(studentId: student.id, amount: 200, method: 'cash', date: DateTime.now());
-      expect(s.computeStudentBalance(student.id), closeTo(0, 0.01), reason: 'خالص حتى اليوم');
-      expect(student.isDebtor, isFalse);
-      expect(_overdue(s, student), 0);
+      expect(s.computeStudentBalance(student.id), closeTo(-200, 0.01), reason: 'القادم ما زال في الرصيد');
+      expect(_overdue(s, student), 0, reason: 'خالص حتى اليوم');
+      expect(s.isSettledToDate(student.id), isTrue);
     });
 
-    test('الدفع فوق المستحق يظهر «له»، ويُخصم من القسط القادم حين يحلّ', () {
+    test('الدفع فوق مجموع الأقساط يظهر «له»', () {
       final s = _seeded();
       final student = _cleanStudent(s);
       _installment(s, student, daysFromNow: -10);
       final next = _installment(s, student, daysFromNow: 20);
 
-      // قسطان قيمتهما 400 والمستحق اليوم 200: دفع 400 يعني 200 له
       s.addPayment(studentId: student.id, amount: 400, method: 'cash', date: DateTime.now());
-      expect(s.computeStudentBalance(student.id), closeTo(200, 0.01), reason: 'الفائض رصيد له');
+      expect(s.computeStudentBalance(student.id), closeTo(0, 0.01));
       expect(next.paidAmount, closeTo(200, 0.01), reason: 'الفائض نزل على القسط القادم');
       expect(next.status, 'paid');
-
-      // حلّ موعد القادم: صار مستحقاً، والرصيد يعود صفراً بلا دفعة جديدة
-      next.dueDate = DateTime.now().subtract(const Duration(days: 1));
-      expect(s.computeStudentBalance(student.id), closeTo(0, 0.01));
-      expect(_overdue(s, student), 0, reason: 'مسدَّد سلفاً');
     });
 
-    test('المستحق اليوم والمتأخر كلاهما دين', () {
+    test('المستحق اليوم والمتأخر كلاهما دين في الرصيد والمستحق', () {
       final s = _seeded();
       final student = _cleanStudent(s);
       _installment(s, student, daysFromNow: 0);
@@ -94,14 +88,14 @@ void main() {
       expect(_overdue(s, student), closeTo(400, 0.01));
     });
 
-    test('حلول موعد القسط يزيد الدين', () {
+    test('حلول موعد القسط لا يغيّر الرصيد (كان محسوباً مسبقاً) ويزيد المستحق', () {
       final s = _seeded();
       final student = _cleanStudent(s);
       _installment(s, student, daysFromNow: -60);
       _installment(s, student, daysFromNow: -30);
       final future = _installment(s, student, daysFromNow: 15);
 
-      expect(s.computeStudentBalance(student.id), closeTo(-400, 0.01), reason: 'المستحق قسطان');
+      expect(s.computeStudentBalance(student.id), closeTo(-600, 0.01), reason: 'ثلاثة أقساط');
       expect(_overdue(s, student), closeTo(400, 0.01));
 
       future.dueDate = DateTime.now().subtract(const Duration(days: 1));
@@ -117,9 +111,10 @@ void main() {
       student.balance = -999;
 
       s.recalculateAllBalances();
-      expect(student.balance, closeTo(-200, 0.01), reason: 'المستحق قسط واحد');
+      expect(student.balance, closeTo(-400, 0.01), reason: 'قسطان كاملان');
       expect(student.balance, closeTo(s.computeStudentBalance(student.id), 0.01));
-    });  });
+    });
+  });
 
   group('توزيع السندات على الأقساط', () {
     test('السند المربوط يُسدِّد قسطه، والفائض ينزل على الأقدم استحقاقاً', () {
@@ -128,7 +123,6 @@ void main() {
       final first = _installment(s, student, daysFromNow: -30);
       final second = _installment(s, student, daysFromNow: -1);
 
-      // سند بمبلغ قسطين مربوط بالثاني: يسدّده ثم يفيض على الأول
       s.payments.add(Payment(
         id: s.newId(),
         receiptNumber: '2026/1900',

@@ -146,7 +146,7 @@ void main() {
         createdAt: today.toIso8601String(),
       ));
     }
-    // رقم من القاعدة القديمة: الأقساط المستحقة وحدها ورسم الحجز يعود للرصيد
+    // رقم من القاعدة القديمة: الأقساط المستحقة وحدها كانت صفراً بعد دفعتين
     student.balance = 198;
     first.markAllDirty();
     await first.flush();
@@ -154,7 +154,8 @@ void main() {
     final second = AppStore.forTesting();
     await second.bootstrap(disk);
     final reloaded = second.studentById(student.id)!;
-    expect(reloaded.balance, closeTo(0, 0.01), reason: 'سدّد ما استُحق عليه، والثالث لم يحن');
+    // القاعدة الحالية كويب: ثلاثة أقساط − دفعتين = −162
+    expect(reloaded.balance, closeTo(-162, 0.01), reason: 'القسط الثالث يدخل الرصيد وإن لم يحن');
     expect(reloaded.balance, closeTo(second.computeStudentBalance(student.id), 0.01));
   });
 

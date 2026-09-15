@@ -109,15 +109,13 @@ void main() {
       expect(_queued(s, 'rooms', room.id, 'DELETE'), isTrue);
     });
 
-    test('حذف الطالب يحذف معه أقساطه وحضوره وتسجيلاته', () {
+    test('حذف الطالب يحذف معه أقساطه وحضوره وتسجيلاته إن لم يكن عليه سند', () {
       final s = _seeded();
       final student = s.students.first;
-      // مسدَّدٌ حتى اليوم: ما استُحق عليه حُصِّل، والقادم لم يحن بعد
-      for (final inst in s.installments.where((i) => i.studentId == student.id)) {
-        inst.dueDate = DateTime.now().add(const Duration(days: 30));
+      // بلا سندات فعّالة — شرط الحذف كويب
+      for (final p in s.payments.where((p) => p.studentId == student.id).toList()) {
+        p.cancelled = true;
       }
-      s.recalculateAllBalances();
-      expect(s.isSettledToDate(student.id), isTrue);
       final instIds = s.installments.where((i) => i.studentId == student.id).map((i) => i.id).toList();
 
       s.deleteStudent(student.id);
@@ -132,33 +130,24 @@ void main() {
       expect(_queued(s, 'students', student.id, 'DELETE'), isTrue);
     });
 
-    test('الطالب الذي عليه مستحقات حتى اليوم لا يُحذف', () {
+    test('الطالب الذي عليه سند قبض فعّال لا يُحذف', () {
       final s = _seeded();
       final student = s.students.first;
-      s.installments.add(Installment(
-        id: s.newId(),
-        studentId: student.id,
-        title: 'قسط متأخر',
-        amount: 200,
-        dueDate: DateTime.now().subtract(const Duration(days: 10)),
-      ));
-      s.recalculateAllBalances();
+      // أزل الأقساط المتأخرة إن وُجدت؛ المهم وجود سند نشط
+      if (!s.payments.any((p) => p.studentId == student.id && !p.cancelled)) {
+        s.payments.add(Payment(
+          id: s.newId(),
+          receiptNumber: '2026/9999',
+          studentId: student.id,
+          amount: 50,
+          method: 'cash',
+          date: DateTime.now(),
+          createdAt: DateTime.now().toIso8601String(),
+        ));
+      }
 
       expect(() => s.deleteStudent(student.id), throwsA(isA<StoreException>()));
       expect(s.students.any((x) => x.id == student.id), isTrue);
-
-      // القسط القادم وحده لا يمنع: لم يُستحق بعد
-      s.installments.removeWhere((i) => i.studentId == student.id);
-      s.installments.add(Installment(
-        id: s.newId(),
-        studentId: student.id,
-        title: 'قسط قادم',
-        amount: 200,
-        dueDate: DateTime.now().add(const Duration(days: 20)),
-      ));
-      s.recalculateAllBalances();
-      s.deleteStudent(student.id);
-      expect(s.students.any((x) => x.id == student.id), isFalse);
     });
 
     test('المجموعة ذات السجلات تُؤرشف ولا تُحذف', () {

@@ -154,16 +154,33 @@ void main() {
     expect(s.studentById(student.id), isNotNull);
   });
 
-  test('deleting a student is allowed once nothing is due', () {
+  test('deleting a student is allowed once receipts are cancelled', () {
     final s = seeded();
     final student = s.students.firstWhere((e) => e.balance < 0);
-    // ما استُحق عليه حتى اليوم حُصِّل: يبقى القادم وحده فلا يمنع الحذف
-    s.installments.removeWhere((i) => i.studentId == student.id);
-    s.recalculateAllBalances();
+    // شرط الحذف كويب: بلا سندات فعّالة — الأقساط وحدها لا تمنع
+    for (final p in s.payments.where((p) => p.studentId == student.id).toList()) {
+      p.cancelled = true;
+    }
     s.deleteStudent(student.id);
     expect(s.studentById(student.id), isNull);
     expect(s.installmentsOf(student.id), isEmpty);
     expect(s.attendanceOf(student.id, isoDate(DateTime.now())), isNull);
+  });
+
+  test('archiving drops unpaid future installments', () {
+    final s = seeded();
+    final student = s.students.first;
+    s.installments.add(Installment(
+      id: s.newId(),
+      studentId: student.id,
+      title: 'قسط قادم',
+      amount: 200,
+      dueDate: DateTime.now().add(const Duration(days: 40)),
+    ));
+    final futureId = s.installments.last.id;
+    s.archiveStudent(student.id);
+    expect(s.studentById(student.id)?.status, 'archived');
+    expect(s.installments.any((i) => i.id == futureId), isFalse);
   });
 
   test('due items exclude paid installments', () {

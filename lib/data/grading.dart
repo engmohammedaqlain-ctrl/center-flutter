@@ -175,3 +175,50 @@ double? computeYearAverage(TermGrade term1, TermGrade term2) {
   if (!term1.isComplete || !term2.isComplete) return null;
   return (term1.total + term2.total) / 2;
 }
+
+/// ملخص علامات طالب في مادة واحدة — مطابق لـ `subjectGradeSummaries` في الويب.
+class SubjectGradeSummary {
+  const SubjectGradeSummary({
+    required this.subjectId,
+    required this.subjectName,
+    required this.term1,
+    required this.term2,
+    required this.yearAverage,
+  });
+
+  final String subjectId;
+  final String subjectName;
+  final TermGrade term1;
+  final TermGrade term2;
+  final double? yearAverage;
+}
+
+/// معدل موزون لكل مادة من التقييمات المرتبطة بمخطط العلامات.
+///
+/// التقييمات بلا فصل أو مكوّن تبقى في القائمة فقط ولا تدخل الملخص.
+List<SubjectGradeSummary> subjectGradeSummaries(
+  Iterable<Evaluation> evaluations,
+  GradingScheme scheme,
+  String Function(String subjectId) subjectNameOf,
+) {
+  final bySubject = <String, List<Evaluation>>{};
+  for (final ev in evaluations) {
+    if (ev.term.isEmpty || ev.componentId.isEmpty) continue;
+    (bySubject[ev.subjectId] ??= []).add(ev);
+  }
+
+  return [
+    for (final entry in bySubject.entries)
+      () {
+        final term1 = computeTermGrade(entry.value, scheme, 'term_1');
+        final term2 = computeTermGrade(entry.value, scheme, 'term_2');
+        return SubjectGradeSummary(
+          subjectId: entry.key,
+          subjectName: subjectNameOf(entry.key),
+          term1: term1,
+          term2: term2,
+          yearAverage: computeYearAverage(term1, term2),
+        );
+      }(),
+  ].where((s) => s.term1.components.isNotEmpty || s.term2.components.isNotEmpty).toList();
+}

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/balance.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -20,6 +21,9 @@ class _StudentsScreenState extends State<StudentsScreen> {
   final search = TextEditingController();
   String grade = '';
 
+  /// فارغ = إخفاء المؤرشفين (افتراضي الويب)؛ قيمة حالة = فلتر بها.
+  String statusFilter = '';
+
   @override
   void dispose() {
     search.dispose();
@@ -36,7 +40,14 @@ class _StudentsScreenState extends State<StudentsScreen> {
           return NoAccess(section: 'students', roleName: store.roleName);
         }
         final q = search.text.trim().toLowerCase();
+        final dueMap = overdueByStudent(store.installments);
         final list = store.students.where((s) {
+          // المؤرشف مخفي افتراضياً — مطابق لـ Students.tsx
+          if (statusFilter.isEmpty) {
+            if (s.status == 'archived') return false;
+          } else if (s.status != statusFilter) {
+            return false;
+          }
           if (grade.isNotEmpty && s.gradeLevel.trim() != grade) return false;
           if (q.isEmpty) return true;
           return s.fullName.toLowerCase().contains(q) ||
@@ -54,14 +65,20 @@ class _StudentsScreenState extends State<StudentsScreen> {
                   label: 'طالب جديد',
                   icon: Icons.person_add_alt_1,
                   onPressed: () {
+                    if (store.gradeOptions.isEmpty) {
+                      showAppSnack(
+                        context,
+                        'لا توجد مراحل دراسية معرّفة. أضفها أولاً من الإعدادات ← المراحل والرسوم.',
+                        error: true,
+                      );
+                      return;
+                    }
                     Navigator.of(context).push(MaterialPageRoute(builder: (_) => const StudentFormScreen()));
                   },
                 )
               : null,
           child: Column(
             children: [
-              // البحث والتصفية والعدد في سطر واحد: البحث يأخذ ما يتبقّى، والعدد
-              // في طرف حقله، والمرحلة زر مدمج بدل قائمة بعرض الشاشة.
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
                 child: Row(
@@ -92,6 +109,18 @@ class _StudentsScreenState extends State<StudentsScreen> {
                       options: {'': 'كل المراحل', for (final g in store.gradeOptions) g: g},
                       onSelected: (v) => setState(() => grade = v),
                     ),
+                    const SizedBox(width: 6),
+                    FilterButton(
+                      value: statusFilter,
+                      options: const {
+                        '': 'غير المؤرشفين',
+                        'active': 'نشط',
+                        'pending': 'معلق',
+                        'withdrawn': 'منسحب',
+                        'archived': 'مؤرشف',
+                      },
+                      onSelected: (v) => setState(() => statusFilter = v),
+                    ),
                   ],
                 ),
               ),
@@ -104,10 +133,32 @@ class _StudentsScreenState extends State<StudentsScreen> {
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(12, 0, 12, thumbActionClearance),
                         itemCount: list.length,
-                        itemBuilder: (_, i) => Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: _StudentCard(student: list[i]),
-                        ),
+                        itemBuilder: (_, i) {
+                          final student = list[i];
+                          final hasPlan = store.installments.any((inst) => inst.studentId == student.id);
+                          final due = dueMap[student.id] ?? 0;
+                          // من له خطة: المستحق الحالّ؛ بلا خطة: الرصيد — StudentTable.tsx
+                          final shown = hasPlan ? -due : student.balance;
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _StudentCard(
+                              student: student,
+                              shownBalance: shown,
+                              onConfirmPending: store.can('students') && student.status == 'pending'
+                                  ? () {
+                                      try {
+                                        store.upsertStudent(
+                                          Student.fromCloud({...student.toCloud(), 'status': 'active'}),
+                                        );
+                                        showAppSnack(context, 'تم تأكيد تسجيل الطالب');
+                                      } on StoreException catch (e) {
+                                        showAppSnack(context, e.message, error: true);
+                                      }
+                                    }
+                                  : null,
+                            ),
+                          );
+                        },
                       ),
               ),
             ],
@@ -119,17 +170,18 @@ class _StudentsScreenState extends State<StudentsScreen> {
 }
 
 /// بطاقة الطالب — بعناصر `StudentMobileCard.tsx` في صفّ واحد.
-///
-/// الاسم والمرحلة ووليّ الأمر، ثم الرصيد وتحته زرّا التواصل. نسخة
-/// Center بصفّين كانت تُفرد سطراً كاملاً لثلاثة أزرار صغيرة وتترك جانبه فارغاً،
-/// فتطول البطاقة إلى ضعف ما يلزم. البطاقة كلها تفتح ملف الطالب، وسهم خافت في طرفها يدلّ على ذلك.
 class _StudentCard extends StatelessWidget {
-  const _StudentCard({required this.student});
+  const _StudentCard({
+    required this.student,
+    required this.shownBalance,
+    this.onConfirmPending,
+  });
   final Student student;
+  final double shownBalance;
+  final VoidCallback? onConfirmPending;
 
   @override
   Widget build(BuildContext context) {
-    // هاتف الطالب أو وليّ أمره — مطابق لـ `rawPhone` في StudentMobileCard
     final phone = student.phone.trim().isNotEmpty ? student.phone.trim() : student.parentPhone.trim();
     final grade = student.gradeLevel.trim().isEmpty ? 'غير محدد' : student.gradeLevel.trim();
     final meta = student.section.trim().isEmpty ? grade : '$grade  ·  شعبة ${student.section.trim()}';
@@ -156,7 +208,6 @@ class _StudentCard extends StatelessWidget {
                         style: AppText.cardTitle.copyWith(fontSize: 14),
                       ),
                     ),
-                    // المنسحب والمؤرشف يُعرفان من القائمة بلا فتح الملف
                     if (!student.isActiveStudent) ...[
                       const SizedBox(width: 6),
                       StudentStatusChip(status: student.status, compact: true),
@@ -179,16 +230,31 @@ class _StudentCard extends StatelessWidget {
                     style: const TextStyle(color: AppColors.faint, fontSize: 11),
                   ),
                 ],
+                if (onConfirmPending != null) ...[
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: TextButton(
+                      onPressed: onConfirmPending,
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.amber,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                        minimumSize: const Size(0, 28),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text('تأكيد', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
           const SizedBox(width: 8),
-          // الرصيد أعلى الطرف، وتحته التواصل — عمود واحد بارتفاع الاسم
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (StoreScope.of(context).can('finance')) _BalanceText(balance: student.balance),
+              if (StoreScope.of(context).can('finance')) _BalanceText(balance: shownBalance),
               if (phone.isNotEmpty) ...[
                 const SizedBox(height: 2),
                 Row(
@@ -210,8 +276,6 @@ class _StudentCard extends StatelessWidget {
             ],
           ),
           const SizedBox(width: 2),
-          // إشارة هادئة بأن البطاقة تفتح صفحة الطالب — «<» باتجاه التقدّم في العربية.
-          // أيقونات الأسهم تنعكس مع اتجاه النص: «التالي» (chevron_right) يُرسم يساراً
           const Icon(Icons.chevron_right, size: 20, color: AppColors.faint),
         ],
       ),
@@ -226,7 +290,6 @@ class _BalanceText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // من لا دين عليه «مسدد»: رصيدٌ لصالحه تفصيلٌ يخصّ ملفه لا قائمة الطلاب
     final (text, color) = balance < 0
         ? ('عليه ${money(balance)}', AppColors.danger)
         : ('مسدد', AppColors.success);

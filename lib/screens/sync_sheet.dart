@@ -14,6 +14,7 @@ import '../widgets/animated_count.dart';
 import '../widgets/widgets.dart';
 import 'app_update_sheet.dart';
 import 'evaluations_screen.dart';
+import 'moodle_admin_screen.dart';
 
 const _sheetBg = Colors.white;
 const _sheetPanel = Colors.white;
@@ -134,6 +135,21 @@ Future<void> showActionSheet(BuildContext context, AppStore store) {
                     Navigator.pop(ctx);
                     Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const EvaluationsScreen()),
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+              if (store.can('moodle')) ...[
+                _menuTile(
+                  icon: Icons.menu_book_outlined,
+                  iconColor: AppColors.amber,
+                  label: 'المودل',
+                  trailing: 'فتح',
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const MoodleAdminScreen()),
                     );
                   },
                 ),

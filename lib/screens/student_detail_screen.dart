@@ -72,7 +72,10 @@ class StudentDetailScreen extends StatelessWidget {
         final excused = marks.where((m) => m.status == 'excused').length;
         // الالتزام يحتسب الحاضر وحده — مطابق لـ attendanceStats في StudentDetail.tsx
         final rate = marks.isEmpty ? 100 : ((present / marks.length) * 100).round();
-        final settled = !student.isDebtor && insts.every((i) => i.isPaid);
+        final settled = store.isSettledToDate(student.id) &&
+            insts.every((i) => i.isPaid) &&
+            student.balance >= -cent;
+        final dueNow = store.outstandingDue(student.id);
         // الأرصدة والدفعات تخصّ من يملك عرض المالية، والقبض من يملك القبض
         final canFinance = store.can('finance');
         final canCollect = store.can('finance');
@@ -90,10 +93,17 @@ class StudentDetailScreen extends StatelessWidget {
         final parentPhone = student.parentPhone.trim();
 
         void pay() {
-          final next = insts.where((i) => !i.isPaid).firstOrNull;
+          // أول قسط مستحق غير مسدَّد — مطابق لـ openPaymentForm في StudentDetail.tsx
+          final next = insts
+              .where((i) => !i.isPaid && i.remaining > cent && isInstallmentDue(i))
+              .firstOrNull;
           Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (_) => PaymentFormScreen(studentId: student.id, installmentId: next?.id, amount: next?.remaining),
+              builder: (_) => PaymentFormScreen(
+                studentId: student.id,
+                installmentId: next?.id,
+                amount: next?.remaining,
+              ),
             ),
           );
         }
@@ -154,9 +164,14 @@ class StudentDetailScreen extends StatelessWidget {
                       Expanded(
                         child: StatCard(
                           label: 'الرصيد المالي الحالي',
-                          // الفائض يظهر في سطر التفصيل تحتها، والبطاقة تقول الخلاصة
-                          value: student.isDebtor ? 'عليه ${money(student.balance)}' : 'مسدد',
-                          color: student.isDebtor ? AppColors.danger : AppColors.success,
+                          // المستحق الحالّ في البطاقة — مطابق لـ remainingDebt في StudentDetail.tsx
+                          // والرصيد الموجب «له»؛ والدين الكامل يظهر في التفصيل تحته
+                          value: dueNow > 0
+                              ? 'عليه ${money(dueNow)}'
+                              : (student.balance > 0 ? 'له ${money(student.balance)}' : 'مسدد'),
+                          color: dueNow > 0
+                              ? AppColors.danger
+                              : (student.balance > 0 ? AppColors.amber : AppColors.success),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -348,7 +363,7 @@ class StudentDetailScreen extends StatelessWidget {
 
               // ── الدرجات والتقييمات ─────────────────────────────────────────
               if (store.features.enableEvaluations && store.can('evaluations'))
-                _EvaluationsCard(evaluations: store.evaluationsOfStudent(student.id)),
+                _EvaluationsCard(studentId: student.id, evaluations: store.evaluationsOfStudent(student.id)),
 
               _AttachmentsCard(studentId: student.id),
 
@@ -370,6 +385,25 @@ class StudentDetailScreen extends StatelessWidget {
                       icon: const Icon(Icons.delete_outline, size: 18),
                       label: const Text('حذف الطالب', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
                       onPressed: () async {
+                        final blocked = store.countActivePayments(student.id);
+                        if (blocked > 0) {
+                          // كويب: أرشفة بدل الحذف عند وجود سندات
+                          final archive = await confirmSheet(
+                            context,
+                            title: 'لا يمكن حذف الطالب',
+                            message: 'عليه $blocked سند قبض. يمكن أرشفته بدل الحذف (تُسقط الأقساط المستقبلية ويُحتفظ بالسجل المالي).',
+                            confirmLabel: 'أرشفة',
+                            confirmColor: AppColors.heading,
+                          );
+                          if (!archive || !context.mounted) return;
+                          try {
+                            store.archiveStudent(student.id);
+                            showAppSnack(context, 'تمت أرشفة الطالب');
+                          } on StoreException catch (e) {
+                            showAppSnack(context, e.message, error: true);
+                          }
+                          return;
+                        }
                         final ok = await confirmSheet(
                           context,
                           title: 'تأكيد حذف الطالب',
@@ -508,54 +542,6 @@ class _CardState extends State<_Card> {
                 ),
             ],
             if (title == null || open) ...widget.children,
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// معدل فصل بأوزان المخطط: المتجدّد بارز، ومجموع ما رُصد بجانبه.
-class _TermGradeRow extends StatelessWidget {
-  const _TermGradeRow({required this.label, required this.grade});
-
-  final String label;
-  final TermGrade grade;
-
-  @override
-  Widget build(BuildContext context) {
-    final average = grade.currentAverage;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: _cellBox(),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.text),
-              ),
-            ),
-            if (average == null)
-              const Text('لم يُرصد بعد', style: TextStyle(fontSize: 11, color: AppColors.muted, fontWeight: FontWeight.w600))
-            else ...[
-              Text(
-                '${average.round()}%',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontFamily: 'monospace',
-                  fontWeight: FontWeight.w900,
-                  color: average >= 50 ? AppColors.success : AppColors.danger,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                grade.isComplete ? 'مكتمل' : 'من ${trimNum(grade.gradedWeight)}% مرصودة',
-                style: const TextStyle(fontSize: 10, color: AppColors.muted, fontWeight: FontWeight.w600),
-              ),
-            ],
           ],
         ),
       ),
@@ -1227,29 +1213,117 @@ class _PaymentTile extends StatelessWidget {
   }
 }
 
-/// الدرجات والتقييمات — مطابق لبطاقة «الدرجات والتقييمات (Mobile)» في StudentDetail.tsx.
+/// الدرجات والتقييمات — مطابق لبطاقة «الدرجات والتقييمات» في StudentDetail.tsx.
+///
+/// المعدل موزون لكل مادة على حدة وفق مخطط المدرسة، لا خلط بين المواد.
 class _EvaluationsCard extends StatelessWidget {
-  const _EvaluationsCard({required this.evaluations});
+  const _EvaluationsCard({required this.studentId, required this.evaluations});
+  final String studentId;
   final List<Evaluation> evaluations;
 
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final scheme = store.gradingScheme;
+    final summaries = store.subjectGradesOf(studentId);
+
+    Widget termLine(String label, TermGrade term) {
+      final avg = term.components.isEmpty || term.currentAverage == null
+          ? '—'
+          : term.isComplete
+              ? '${term.total.round()}%'
+              : '${term.currentAverage!.round()}% (حالي)';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(label, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: AppColors.text)),
+              ),
+              Text(
+                avg,
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 11.5,
+                  fontFamily: 'monospace',
+                  color: term.isComplete ? AppColors.success : AppColors.amber,
+                ),
+              ),
+            ],
+          ),
+          for (final c in term.components)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${c.component.name} (${trimNum(c.component.weight)}%)',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 10.5, color: AppColors.muted),
+                    ),
+                  ),
+                  Text(
+                    c.achievedPercent == null ? '—' : '${c.achievedPercent!.round()}%',
+                    style: const TextStyle(fontSize: 10.5, fontFamily: 'monospace', color: AppColors.muted),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      );
+    }
+
     return _Card(
       title: 'الدرجات والتقييمات (${evaluations.length})',
       children: [
-        // معدل كل فصل بأوزان مخطط المدرسة، والمتجدّد منه لما رُصد حتى الآن
-        if (!scheme.isEmpty) ...[
-          for (final term in gradingTermLabels.entries)
-            if (scheme.isConfigured(term.key)) _TermGradeRow(label: term.value, grade: computeTermGrade(evaluations, scheme, term.key)),
+        if (!scheme.isEmpty && summaries.isNotEmpty) ...[
+          for (final s in summaries)
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.amberSoft,
+                borderRadius: BorderRadius.circular(Corner.box),
+                border: Border.all(color: const Color(0xFFFED7AA)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          s.subjectName,
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
+                        ),
+                      ),
+                      if (s.yearAverage != null)
+                        Text(
+                          'السنة: ${s.yearAverage!.round()}%',
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11, color: AppColors.success),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  if (scheme.isConfigured('term_1')) termLine('الفصل الأول', s.term1),
+                  if (scheme.isConfigured('term_1') && scheme.isConfigured('term_2')) const SizedBox(height: 6),
+                  if (scheme.isConfigured('term_2')) termLine('الفصل الثاني', s.term2),
+                ],
+              ),
+            ),
           const _Rule(),
         ],
         if (evaluations.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 14),
-            child: Text('لا توجد نتائج مسجلة حتى الآن',
-                textAlign: TextAlign.center, style: TextStyle(color: AppColors.faint, fontSize: 12)),
+            child: Text(
+              'لا توجد نتائج مسجلة حتى الآن',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.faint, fontSize: 12),
+            ),
           )
         else
           for (final e in evaluations)
@@ -1263,7 +1337,10 @@ class _EvaluationsCard extends StatelessWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(e.title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.text)),
+                        child: Text(
+                          e.title,
+                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.text),
+                        ),
                       ),
                       e.passed
                           ? StatusChip.success('${trimNum(e.score)} / ${trimNum(e.maxScore)} (${e.percent}%)')
