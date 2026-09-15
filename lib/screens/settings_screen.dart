@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../data/academic_matching.dart';
@@ -558,12 +559,29 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
   late bool enabled;
   bool saved = false;
 
+  /// المستخدم بدأ يعدّل: ما يصل من جهاز آخر لا يُبدّل ما تحت يده.
+  bool editing = false;
+
   @override
   void initState() {
     super.initState();
+    _readStore();
+    amount = TextEditingController(text: widget.store.seatReservationFee > 0 ? trimNum(widget.store.seatReservationFee) : '');
+  }
+
+  void _readStore() {
+    enabled = widget.store.seatReservationFee > 0;
+  }
+
+  @override
+  void didUpdateWidget(covariant _SeatFeeCard old) {
+    super.didUpdateWidget(old);
+    // ضبطٌ غُيّر على جهاز آخر يصل بالسحب: كان لا يظهر حتى تُغلق الصفحة وتُفتح
+    if (editing) return;
     final fee = widget.store.seatReservationFee;
-    enabled = fee > 0;
-    amount = TextEditingController(text: fee > 0 ? trimNum(fee) : '');
+    final shown = fee > 0 ? trimNum(fee) : '';
+    if (amount.text != shown) amount.text = shown;
+    _readStore();
   }
 
   @override
@@ -579,6 +597,7 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
     if (!mounted) return;
     setState(() {
       saved = true;
+      editing = false;
       amount.text = value > 0 ? trimNum(value) : '';
     });
     showAppSnack(context, 'تم حفظ رسم حجز المقعد');
@@ -609,6 +628,7 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
                 activeThumbColor: AppColors.amber,
                 onChanged: (v) => setState(() {
                   enabled = v;
+                  editing = true;
                   saved = false;
                 }),
               ),
@@ -623,7 +643,10 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
                     controller: amount,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     style: const TextStyle(fontFamily: 'monospace'),
-                    onChanged: (_) => setState(() => saved = false),
+                    onChanged: (_) => setState(() {
+                      editing = true;
+                      saved = false;
+                    }),
                     decoration: InputDecoration(hintText: '0 $currency'),
                   ),
                 ),
@@ -670,8 +693,20 @@ class _StudyMonthsCard extends StatefulWidget {
 class _StudyMonthsCardState extends State<_StudyMonthsCard> {
   late Set<int> selected = {...?widget.store.studyMonths};
 
+  /// المستخدم بدأ يختار: ما يصل من جهاز آخر لا يُبدّل اختياره قبل حفظه.
+  bool editing = false;
+
+  @override
+  void didUpdateWidget(covariant _StudyMonthsCard old) {
+    super.didUpdateWidget(old);
+    if (editing) return;
+    final incoming = {...?widget.store.studyMonths};
+    if (!setEquals(incoming, selected)) selected = incoming;
+  }
+
   Future<void> _save() async {
     final store = widget.store;
+    editing = false;
     await store.saveStudyMonths(selected.toList());
     // المستحق يُولَّد فور اعتماد الأشهر، كما تفعل النسخة المكتبية عند الحفظ
     final result = store.generateMonthlyDues();
@@ -714,7 +749,10 @@ class _StudyMonthsCardState extends State<_StudyMonthsCard> {
                 _MonthChip(
                   label: gregorianMonths[m - 1],
                   on: selected.contains(m),
-                  onTap: () => setState(() => selected.contains(m) ? selected.remove(m) : selected.add(m)),
+                  onTap: () => setState(() {
+                    editing = true;
+                    selected.contains(m) ? selected.remove(m) : selected.add(m);
+                  }),
                 ),
             ],
           ),
