@@ -62,8 +62,6 @@ class _AppShellState extends State<AppShell> {
           body: Column(
             children: [
               _Header(title: sections[index].title),
-              // تنزيل التحديث وتحديثه الصامت يُتابَعان من أي قسم دون فتح القائمة
-              const UpdateStatusStrip(),
               Expanded(
                 child: IndexedStack(
                   index: index,
@@ -75,11 +73,18 @@ class _AppShellState extends State<AppShell> {
               ),
             ],
           ),
-          bottomNavigationBar: _BottomNav(
-            sections: sections,
-            index: index,
-            onSelect: (i) => setState(() => current = sections[i].id),
-            dueCount: store.can('finance') ? store.dueItems().length : 0,
+          // سطر التحديث فوق شريط الأقسام: ظاهر دائماً بلا تغطية ولا توست يختفي
+          bottomNavigationBar: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const UpdateStatusStrip(),
+              _BottomNav(
+                sections: sections,
+                index: index,
+                onSelect: (i) => setState(() => current = sections[i].id),
+                dueCount: store.can('finance') ? store.dueItems().length : 0,
+              ),
+            ],
           ),
         );
       },

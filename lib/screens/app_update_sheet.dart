@@ -95,7 +95,9 @@ class UpdatePanel extends StatelessWidget {
                     ? 'تحديث في الخلفية'
                     : checking
                         ? 'جارِ البحث عن تحديث...'
-                        : 'التطبيق محدَّث';
+                        : u.checkedWithNoUpdate
+                            ? 'لا يوجد تحديث'
+                            : 'التطبيق محدَّث';
         final tone = action == UpdateAction.mandatory
             ? AppColors.danger
             : available || u.patchPhase != PatchPhase.none
@@ -270,7 +272,12 @@ class UpdatePanel extends StatelessWidget {
   static String _versionLine(AppUpdater u, bool available) {
     final installed = u.installedName.isEmpty ? '' : 'المثبَّت ${u.installedName}';
     final release = u.release;
-    if (!available || release == null) return installed.isEmpty ? 'تطبيق الجوال' : installed;
+    if (!available || release == null) {
+      if (u.checkedWithNoUpdate) {
+        return installed.isEmpty ? 'فحصتَ الآن — لا جديد' : '$installed — لا جديد بعد الفحص';
+      }
+      return installed.isEmpty ? 'تطبيق الجوال' : installed;
+    }
     final next = 'الجديد ${release.versionName}';
     return installed.isEmpty ? next : '$installed ← $next';
   }
@@ -415,11 +422,11 @@ String patchMessage(PatchPhase phase) => phase == PatchPhase.downloading
     ? 'جارِ تحميل التحديث في الخلفية...'
     : 'التحديث جاهز — يُطبَّق عند فتح التطبيق مرة ثانية';
 
-/// شريطٌ رفيع فوق محتوى التطبيق يقول ما يجري للتحديث في الخلفية.
+/// شريطٌ رفيع فوق شريط الأقسام يقول ما يجري للتحديث في الخلفية.
 ///
 /// يظهر حين تُخفى ورقة التحديث والتنزيل مستمر أو متوقف، وحين يُنزَّل تحديثٌ
 /// صامت: فلا يبدو التطبيق ساكناً وهو يعمل، ولا يُفاجأ المستخدم بتغيّره بعد
-/// إعادة الفتح. لمسُه يفتح الورقة.
+/// إعادة الفتح. لمسُه يفتح الورقة (إلا التحديث الصامت: لا يطلب فعلاً من المستخدم).
 class UpdateStatusStrip extends StatelessWidget {
   const UpdateStatusStrip({super.key, this.updater});
 

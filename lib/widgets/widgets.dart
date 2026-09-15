@@ -715,9 +715,11 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
   Widget build(BuildContext context) {
     final shape = BorderRadius.circular(Corner.card);
     final accent = widget.error ? AppColors.danger : AppColors.success;
-    // أسفل الشاشة قرب الإبهام: الأعلى بعيدٌ عن موضع العمل ويزاحم شريط العنوان.
-    // يرتفع فوق لوحة المفاتيح إن كانت مفتوحة فلا يختفي خلفها.
-    final bottom = MediaQuery.viewInsetsOf(context).bottom + MediaQuery.paddingOf(context).bottom + 16;
+    // فوق شريط الأقسام لا فوقه: التوست كان يغطي الأيقونات فيبدو الشريط مكسوراً.
+    // مع لوحة المفاتيح يرتفع معها؛ بلاها يترك مسافة شريط التنقّل (~54) والحافة الآمنة.
+    final mq = MediaQuery.of(context);
+    final keyboard = mq.viewInsets.bottom;
+    final bottom = keyboard > 0 ? keyboard + 12 : mq.padding.bottom + 54 + 12;
     return Positioned(
       bottom: bottom,
       left: 14,
