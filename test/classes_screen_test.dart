@@ -78,7 +78,7 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'الشعبة (ب)');
     await tester.tap(find.text('إضافة الصف'));
     await tester.pump();
-    expect(find.text('يرجى تحديد المرحلة الدراسية التابعة لها هذه الشعبة'), findsOneWidget);
+    expect(find.text('يرجى تحديد المرحلة الدراسية التابعة لها هذه الشعبة'), findsNWidgets(2), reason: 'تحت الحقل وفي التنبيه');
     expect(s.rooms.length, before);
 
     await s.flush();

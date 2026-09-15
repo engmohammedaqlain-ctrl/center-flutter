@@ -82,7 +82,7 @@ void main() {
     await tester.tap(find.text('إضافة المدرس'));
     await tester.pump();
 
-    expect(find.text('يرجى إدخال اسم المدرس'), findsOneWidget);
+    expect(find.text('يرجى إدخال اسم المدرس'), findsNWidgets(2), reason: 'تحت الحقل وفي التنبيه');
     expect(find.text('يرجى إدخال رقم هاتف المدرس'), findsOneWidget);
     expect(s.teachers.length, before);
     await s.flush();

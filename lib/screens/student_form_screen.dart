@@ -89,6 +89,9 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
 
   static const _gap = SizedBox(height: 12);
 
+  /// حقول تحت «بيانات إضافية» المطويّة.
+  static const _extraFieldKeys = {'parentPhone', 'parentCode'};
+
   @override
   void initState() {
     super.initState();
@@ -343,20 +346,20 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     setState(() {
       errors
         ..reset()
-        ..check('name', trimmedFullName.isEmpty, 'يرجى إدخال اسم الطالب الرباعي')
+        ..check('name', trimmedFullName.isEmpty, 'اسم الطالب مطلوب')
         ..check(
           'grade',
           grade.trim().isEmpty,
-          _gradeOptions(StoreScope.of(context)).isEmpty ? 'أضف المراحل أولاً من الإعدادات' : 'اختر المرحلة',
+          _gradeOptions(store).isEmpty ? 'أضف المراحل أولاً من «الإعدادات ← المراحل والرسوم»' : 'المرحلة مطلوبة',
         )
-        ..check('nationalId', cleanNatId.isEmpty, 'يرجى إدخال رقم هوية الطالب (9 أرقام)')
+        ..check('nationalId', cleanNatId.isEmpty, 'رقم الهوية مطلوب (9 أرقام)')
         ..check(
           'nationalId',
           !isValidNationalId(cleanNatId),
           'رقم الهوية غير صالح: يجب أن يتكون من 9 أرقام (المُدخل: ${cleanNatId.length})',
         )
         ..check('nationalId', idDuplicateError != null, idDuplicateError ?? '')
-        ..check('phone', phoneNumber.trim().isEmpty, 'يرجى إدخال رقم جوال وواتساب الطالب')
+        ..check('phone', phoneNumber.trim().isEmpty, 'جوال الطالب مطلوب')
         ..check(
           'phone',
           !isPhoneComplete(phoneNumber, phonePrefix),
@@ -369,7 +372,12 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           'الرقم غير مكتمل: يجب إدخال ${phoneTargetLength(parentPhonePrefix)} أرقام بعد المقدمة ($parentPhonePrefix)',
         );
     });
-    if (errors.report(context)) return;
+    // حقل ناقص تحت «بيانات إضافية» يُفتح قسمه قبل التمرير إليه
+    if (errors.report(context, reveal: (field) {
+      if (_extraFieldKeys.contains(field)) setState(() => extra = true);
+    })) {
+      return;
+    }
 
     final parts = trimmedFullName.split(RegExp(r'\s+'));
     final firstName = parts.isEmpty ? '' : parts.first;

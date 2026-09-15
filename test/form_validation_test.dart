@@ -6,8 +6,6 @@ import 'package:center_mobile/screens/student_form_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-const _alert = 'يرجى استكمال الحقول المحددة باللون الأحمر';
-
 Future<AppStore> _pump(WidgetTester tester, Widget Function(AppStore store) home) async {
   tester.view.physicalSize = const Size(360, 740);
   tester.view.devicePixelRatio = 1;
@@ -48,15 +46,14 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    // كل حقل ناقص برسالته تحته
-    expect(find.text('البيان / المستفيد مطلوب'), findsOneWidget);
+    // كل حقل ناقص برسالته تحته، والتنبيه يحمل رسالة أول ناقص لا جملة عامة
+    expect(find.text('البيان / المستفيد مطلوب'), findsNWidgets(2));
     expect(find.text('المبلغ يجب أن يكون أكبر من صفر'), findsOneWidget);
 
-    // والتنبيه فوق الورقة يُلمس ويُغلق
-    expect(find.text(_alert), findsOneWidget);
-    await tester.tap(find.text(_alert));
+    // والتنبيه فوق الورقة يُلمس ويُغلق، فتبقى رسالة الحقل وحدها
+    await tester.tap(find.text('البيان / المستفيد مطلوب').last);
     await tester.pump();
-    expect(find.text(_alert), findsNothing);
+    expect(find.text('البيان / المستفيد مطلوب'), findsOneWidget);
 
     expect(s.expenses.length, before, reason: 'لا يُحفظ سند ناقص');
     await s.flush();
@@ -70,8 +67,7 @@ void main() {
     await tester.pump();
 
     // التمرير يذهب إلى أول ناقص — اختيار الطالب — والمبلغ تحت قائمة الطلاب
-    expect(find.text('يرجى اختيار الطالب أولاً'), findsOneWidget);
-    expect(find.text(_alert), findsOneWidget);
+    expect(find.text('يرجى اختيار الطالب أولاً'), findsNWidgets(2), reason: 'تحت الحقل وفي التنبيه');
     await tester.scrollUntilVisible(
       find.text('يرجى إدخال مبلغ صحيح أكبر من صفر'),
       200,
@@ -90,16 +86,19 @@ void main() {
     await tester.tap(find.text('تسجيل الطالب'));
     await tester.pump();
 
-    expect(find.text('يرجى إدخال اسم الطالب الرباعي'), findsOneWidget);
-    expect(find.text('يرجى إدخال رقم هوية الطالب (9 أرقام)'), findsOneWidget);
-    expect(find.text('يرجى إدخال رقم جوال وواتساب الطالب'), findsOneWidget);
+    // التنبيه يسمّي أول ناقص، فتظهر رسالته مرتين: تحت حقله وفوق الشاشة
+    expect(find.text('اسم الطالب مطلوب'), findsNWidgets(2));
+    expect(find.text('رقم الهوية مطلوب (9 أرقام)'), findsOneWidget);
+    expect(find.text('جوال الطالب مطلوب'), findsOneWidget);
     expect(s.students.length, before);
 
     // الكتابة في الحقل تُسقط خطأه وحده
     await tester.enterText(find.byType(TextField).first, 'محمد أحمد النجار');
     await tester.pump();
-    expect(find.text('يرجى إدخال اسم الطالب الرباعي'), findsNothing);
-    expect(find.text('يرجى إدخال رقم جوال وواتساب الطالب'), findsOneWidget);
+    // التنبيه يبقى لحظات بعد تصحيح الحقل، ثم لا يبقى للرسالة أثر
+    await tester.pump(const Duration(seconds: 6));
+    expect(find.text('اسم الطالب مطلوب'), findsNothing);
+    expect(find.text('جوال الطالب مطلوب'), findsOneWidget);
 
     await s.flush();
   });

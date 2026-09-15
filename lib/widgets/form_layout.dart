@@ -170,23 +170,41 @@ class FieldErrors {
   /// يُسقط خطأ الحقل حين يبدأ المستخدم تصحيحه. يعيد `true` إن كان فيه خطأ.
   bool clear(String field) => _messages.remove(field) != null;
 
-  /// إن وُجدت أخطاء: يمرّر إلى أول حقل ناقص وينبّه أعلى الشاشة، ويعيد `true`.
-  bool report(BuildContext context) {
-    if (_messages.isEmpty) return false;
-    for (final field in _messages.keys) {
-      final target = _keys[field]?.currentContext;
-      if (target != null) {
+  /// اسم أول حقل ناقص — ترتيب `check` هو ترتيب الحقول على الشاشة.
+  String? get firstField => _messages.keys.firstOrNull;
+
+  /// إن وُجدت أخطاء: يمرّر إلى أول حقل ناقص وينبّه باسمه، ويعيد `true`.
+  ///
+  /// [reveal] لنموذج يطوي بعض حقوله: يُفتح قسم الحقل قبل التمرير إليه، وإلا
+  /// بقيت الرسالة تشير إلى حقل لا يراه المستخدم.
+  bool report(BuildContext context, {void Function(String field)? reveal}) {
+    final field = firstField;
+    if (field == null) return false;
+    reveal?.call(field);
+
+    void scrollToFirst() {
+      for (final f in _messages.keys) {
+        final target = _keys[f]?.currentContext;
+        if (target == null) continue;
         Scrollable.ensureVisible(
           target,
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeOut,
           alignment: 0.1,
         );
-        break;
+        return;
       }
     }
-    // التنبيه عام، والتفصيل تحت كل حقل — لا تُكرَّر رسالة الحقل مرتين على الشاشة
-    showAppSnack(context, 'يرجى استكمال الحقول المحددة باللون الأحمر', error: true);
+
+    // الحقل المطويّ لا يوجد في الشجرة قبل أن يُبنى قسمه
+    if (reveal == null) {
+      scrollToFirst();
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => scrollToFirst());
+    }
+
+    // الرسالة تسمّي الحقل: «يرجى استكمال الحقول» كانت تترك المستخدم يبحث عنه
+    showAppSnack(context, _messages[field]!, error: true);
     return true;
   }
 }
