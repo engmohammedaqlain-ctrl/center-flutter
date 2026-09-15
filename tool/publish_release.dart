@@ -142,15 +142,18 @@ Map<String, dynamic> buildManifest({
 /// فتخرج الحزمة بمحرّكٍ لم تُختبر عليه.
 ({String exe, List<String> args}) buildCommand(PubVersion v, {required bool shorebird, String? flutterVersion}) {
   // أندرويد يشترط اسماً من ثلاثة أجزاء، واسم العرض جزءان: يُبنى بالصيغة الكاملة
-  final version = ['--build-name', v.semver, '--build-number', '${v.build}'];
+  final version = ['--build-name=${v.semver}', '--build-number=${v.build}'];
   if (!shorebird) {
-    return (exe: 'flutter', args: ['build', 'apk', '--release', '--target-platform', 'android-arm64', ...version]);
+    return (exe: 'flutter', args: ['build', 'apk', '--release', '--target-platform=android-arm64', ...version]);
   }
+  // `--flag=value` لا `--flag value`: مشغّل shorebird على ويندوز ملف .bat يمرّر
+  // تسعة معاملات فقط (`%1..%9`) وما زاد يسقط صامتاً، فيصل الخيار بلا قيمته.
+  // ودمج القيمة مع خيارها يبقي العدد سبعة مهما طالت القيم.
   return (
     exe: 'shorebird',
     args: [
-      'release', 'android', '--artifact', 'apk', '--target-platform', 'android-arm64', //
-      if (flutterVersion != null && flutterVersion.isNotEmpty) ...['--flutter-version', flutterVersion],
+      'release', 'android', '--artifact=apk', '--target-platform=android-arm64', //
+      if (flutterVersion != null && flutterVersion.isNotEmpty) '--flutter-version=$flutterVersion',
       ...version,
     ],
   );
@@ -245,6 +248,16 @@ String? patchProblem({required String base, required int number, required String
   return null;
 }
 
+/// رقما الإصدار من داخل الحزمة المبنية — مخرجات `aapt2 dump badging`.
+///
+/// ما طُلب في سطر الأوامر لا يثبت ما وصل: وسيطٌ يسقط في الطريق يترك الحزمة
+/// على رقم pubspec القديم، وترقيمها هو ما تقرأه أجهزة المستخدمين.
+({String name, int code})? apkBadging(String output) {
+  final name = RegExp(r"versionName='([^']*)'").firstMatch(output)?.group(1);
+  final code = int.tryParse(RegExp(r"versionCode='(\d+)'").firstMatch(output)?.group(1) ?? '');
+  return name == null || code == null ? null : (name: name, code: code);
+}
+
 /// بصمة شهادة الموقِّع الأول من مخرجات `apksigner verify --print-certs`.
 String? signerDigest(String apksignerOutput) => RegExp(r'Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F]+)')
     .firstMatch(apksignerOutput)
@@ -308,10 +321,27 @@ Future<void> main(List<String> arguments) async {
       useShorebird ? flutterVersionOf(await _capture('flutter', ['--version'], shell: true)) : null;
   if (useShorebird && flutterVersion == null) _fail("Could not read the project's Flutter version");
   final build = buildCommand(next, shorebird: useShorebird, flutterVersion: flutterVersion);
+  final built = File('build/app/outputs/flutter-apk/app-release.apk');
+  // حزمة البناء السابق تُمحى قبل البناء: مشغّل shorebird على ويندوز يخرج برمز
+  // نجاحٍ وإن فشل الأمر، فبقاؤها تعني رفع بناءٍ قديم باسم الإصدار الجديد.
+  if (built.existsSync()) built.deleteSync();
   _step(useShorebird ? 'Building and registering the release with Shorebird (Flutter $flutterVersion)' : 'Building the APK');
   await _run(build.exe, build.args, shell: true);
-  final built = File('build/app/outputs/flutter-apk/app-release.apk');
-  if (!built.existsSync()) _fail('Built APK not found at ${built.path}');
+  if (!built.existsSync()) _fail('The build produced no APK - read the build output above');
+
+  _step('Checking the built version');
+  final aapt = _findBuildTool('aapt2', windowsExtension: '.exe');
+  if (aapt == null) {
+    _warn('aapt2 not found - could not confirm the APK carries $next');
+  } else {
+    final badging = apkBadging(await _capture(aapt, ['dump', 'badging', built.path]));
+    if (badging == null) _fail('Could not read the version out of the built APK');
+    if (badging.name != next.semver || badging.code != next.build) {
+      _fail('The APK carries ${badging.name}+${badging.code}, not $next.\n'
+          '  The build ignored the version arguments - nothing was published');
+    }
+    _info('Carries $next');
+  }
 
   _step('Checking the signature');
   final apksigner = _findApksigner() ?? _fail('apksigner not found - install Android SDK Build-Tools');
@@ -471,7 +501,9 @@ Future<void> _ensureRepoHasCommit() async {
   ]);
 }
 
-String? _findApksigner() {
+String? _findApksigner() => _findBuildTool('apksigner');
+
+String? _findBuildTool(String name, {String windowsExtension = '.bat'}) {
   final env = Platform.environment;
   final local = env['LOCALAPPDATA'];
   final sdk = env['ANDROID_HOME'] ?? env['ANDROID_SDK_ROOT'] ?? (local == null ? null : '$local\\Android\\Sdk');
@@ -490,7 +522,7 @@ String? _findApksigner() {
       return pb.length.compareTo(pa.length);
     });
   for (final dir in dirs) {
-    final exe = File('${dir.path}${Platform.pathSeparator}${Platform.isWindows ? 'apksigner.bat' : 'apksigner'}');
+    final exe = File('${dir.path}${Platform.pathSeparator}$name${Platform.isWindows ? windowsExtension : ''}');
     if (exe.existsSync()) return exe.path;
   }
   return null;

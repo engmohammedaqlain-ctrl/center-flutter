@@ -153,10 +153,21 @@ void main() {
 
       expect(cmd.exe, 'shorebird');
       expect(cmd.args.take(2), ['release', 'android']);
-      expect(cmd.args.join(' '), contains('--artifact apk'));
-      expect(cmd.args.join(' '), contains('--flutter-version 3.41.6'), reason: 'لا يُبنى بأحدث Flutter لم يُختبر عليه');
-      expect(cmd.args.join(' '), contains('--build-name 1.2.7 --build-number 2'));
-      expect(cmd.args.join(' '), contains('--target-platform android-arm64'));
+      expect(cmd.args, contains('--artifact=apk'));
+      expect(cmd.args, contains('--flutter-version=3.41.6'), reason: 'لا يُبنى بأحدث Flutter لم يُختبر عليه');
+      expect(cmd.args, contains('--build-name=1.2.7'));
+      expect(cmd.args, contains('--build-number=2'));
+      expect(cmd.args, contains('--target-platform=android-arm64'));
+    });
+
+    test('أمر Shorebird لا يتجاوز تسعة معاملات', () {
+      // مشغّله على ويندوز ملف .bat يمرّر %1..%9 وحدها، وما زاد يسقط بلا خطأ:
+      // فيصل «--build-name» بلا قيمته ويُبنى الإصدار برقم pubspec القديم.
+      final cmd = publish.buildCommand(const publish.PubVersion(12, 34, 0, 567), shorebird: true, flutterVersion: '3.41.6');
+
+      expect(cmd.args.length, lessThanOrEqualTo(9));
+      expect(cmd.args.where((a) => a.startsWith('--') && !a.contains('=')), isEmpty,
+          reason: 'كل خيار يحمل قيمته معه');
     });
 
     test('بلا Shorebird بناء Flutter العادي', () {
@@ -164,7 +175,8 @@ void main() {
 
       expect(cmd.exe, 'flutter');
       expect(cmd.args.take(3), ['build', 'apk', '--release']);
-      expect(cmd.args.join(' '), contains('--build-name 1.2.7 --build-number 2'));
+      expect(cmd.args, contains('--build-name=1.2.7'));
+      expect(cmd.args, contains('--build-number=2'));
     });
 
     test('إصدار Flutter يُقرأ من مخرجات flutter --version', () {
@@ -182,5 +194,15 @@ void main() {
 
     expect(publish.signerDigest(output), publish.expectedCertSha256);
     expect(publish.signerDigest('DOES NOT VERIFY'), isNull);
+  });
+
+  test('ترقيم الحزمة يُقرأ من مخرجات aapt2', () {
+    const output = "package: name='com.noon.center' versionCode='2' versionName='1.3.0' "
+        "compileSdkVersion='35'\nsdkVersion:'23'\n";
+
+    final badging = publish.apkBadging(output);
+    expect(badging?.name, '1.3.0');
+    expect(badging?.code, 2);
+    expect(publish.apkBadging('ERROR: dump failed'), isNull);
   });
 }
