@@ -683,7 +683,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   phoneDuplicateError!,
-                  style: const TextStyle(color: AppColors.amber, fontSize: 11.5, fontWeight: FontWeight.w600),
+                  style: TextStyle(color: AppColors.amber, fontSize: 11.5, fontWeight: FontWeight.w600),
                 ),
               )
             else
