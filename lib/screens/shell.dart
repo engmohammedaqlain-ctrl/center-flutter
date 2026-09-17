@@ -22,7 +22,14 @@ class AppShell extends StatefulWidget {
 
 /// قسم في شريط التنقّل — مطابق لـ `MobileBottomNav` مع حراسة الصلاحيات.
 class Section {
-  const Section(this.id, this.title, this.label, this.icon, this.activeIcon, this.screen);
+  const Section(
+    this.id,
+    this.title,
+    this.label,
+    this.icon,
+    this.activeIcon,
+    this.screen,
+  );
   final String id;
   final String title;
   final String label;
@@ -37,11 +44,46 @@ class _AppShellState extends State<AppShell> {
   /// الأقسام المتاحة لهذا المستخدم على هذا الجهاز.
   List<Section> _sections(AppStore store) {
     final all = [
-      const Section('students', 'الطلاب', 'الطلاب', Icons.groups_outlined, Icons.groups, StudentsScreen()),
-      const Section('attendance', 'الحضور', 'الحضور', Icons.fact_check_outlined, Icons.fact_check, AttendanceScreen()),
-      const Section('finance', 'المالية', 'المالية', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet, FinanceScreen()),
-      const Section('classes', 'الصفوف', 'الصفوف', Icons.apartment_outlined, Icons.apartment, ClassesScreen()),
-      const Section('settings', 'الإعدادات', 'الإعدادات', Icons.settings_outlined, Icons.settings, SettingsScreen()),
+      const Section(
+        'students',
+        'الطلاب',
+        'الطلاب',
+        Icons.groups_outlined,
+        Icons.groups,
+        StudentsScreen(),
+      ),
+      const Section(
+        'attendance',
+        'الحضور',
+        'الحضور',
+        Icons.fact_check_outlined,
+        Icons.fact_check,
+        AttendanceScreen(),
+      ),
+      const Section(
+        'finance',
+        'المالية',
+        'المالية',
+        Icons.account_balance_wallet_outlined,
+        Icons.account_balance_wallet,
+        FinanceScreen(),
+      ),
+      const Section(
+        'classes',
+        'الصفوف',
+        'الصفوف',
+        Icons.apartment_outlined,
+        Icons.apartment,
+        ClassesScreen(),
+      ),
+      const Section(
+        'settings',
+        'الإعدادات',
+        'الإعدادات',
+        Icons.settings_outlined,
+        Icons.settings,
+        SettingsScreen(),
+      ),
     ];
     final allowed = all.where((s) => store.canOpenSection(s.id)).toList();
     return allowed.isEmpty ? [all.first] : allowed;
@@ -67,7 +109,10 @@ class _AppShellState extends State<AppShell> {
                   index: index,
                   children: [
                     for (var i = 0; i < sections.length; i++)
-                      _FrozenWhenHidden(visible: i == index, child: sections[i].screen),
+                      _FrozenWhenHidden(
+                        visible: i == index,
+                        child: sections[i].screen,
+                      ),
                   ],
                 ),
               ),
@@ -108,7 +153,13 @@ class _Header extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.navy,
         border: Border(bottom: BorderSide(color: AppColors.navyMid)),
-        boxShadow: [BoxShadow(color: Color(0x14000000), blurRadius: 8, offset: Offset(0, 2))],
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -132,7 +183,9 @@ class _Header extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  store.institutionName.isEmpty ? 'إدارة المدارس' : store.institutionName,
+                  store.institutionName.isEmpty
+                      ? 'إدارة المدارس'
+                      : store.institutionName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -146,6 +199,8 @@ class _Header extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
+          _YearChip(store: store),
+          const SizedBox(width: 6),
           _SyncPill(store: store),
           const SizedBox(width: 8),
           PressableScale(
@@ -166,6 +221,108 @@ class _Header extends StatelessWidget {
       ),
     );
   }
+}
+
+/// العام المعروض: تغييره يبدّل نطاق القوائم دون تغيير عام التشغيل.
+class _YearChip extends StatelessWidget {
+  const _YearChip({required this.store});
+
+  final AppStore store;
+
+  @override
+  Widget build(BuildContext context) {
+    final year = store.viewedAcademicYear;
+    return PressableScale(
+      onTap: store.academicYears.isEmpty
+          ? null
+          : () => _showYearPicker(context, store),
+      child: Container(
+        height: 28,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(Corner.box),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.calendar_month_outlined,
+              size: 13,
+              color: AppColors.headerMuted,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              year?.label.replaceAll(' ', '') ?? 'العام',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 9.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _showYearPicker(BuildContext context, AppStore store) {
+  final years = [...store.academicYears]
+    ..sort((a, b) => b.startsOn.compareTo(a.startsOn));
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.white,
+    builder: (ctx) => SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'عرض عام دراسي',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 14,
+                color: AppColors.heading,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final year in years)
+              RadioListTile<String>(
+                dense: true,
+                value: year.id,
+                groupValue: store.viewedAcademicYearId,
+                activeColor: AppColors.amber,
+                title: Text(
+                  year.label,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12.5,
+                  ),
+                ),
+                subtitle: Text(
+                  year.isCurrent
+                      ? 'عام التشغيل الحالي'
+                      : (year.status == 'closed' ? 'مغلق' : 'مفتوح'),
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 10.5,
+                  ),
+                ),
+                onChanged: (id) {
+                  if (id != null) store.viewedAcademicYearId = id;
+                  Navigator.pop(ctx);
+                },
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 /// حبّة المزامنة الذكية: حالة واحدة فقط بحسب الأولوية — رفع معلّق، ثم سحب
@@ -221,7 +378,9 @@ class _SyncPill extends StatelessWidget {
             Icon(
               known ? Icons.check_circle : Icons.cloud_sync_outlined,
               size: 13,
-              color: known ? const Color(0xFF34D399) : Colors.white.withValues(alpha: 0.7),
+              color: known
+                  ? const Color(0xFF34D399)
+                  : Colors.white.withValues(alpha: 0.7),
             ),
             const SizedBox(width: 5),
             Text(
@@ -258,7 +417,11 @@ class _SyncPill extends StatelessWidget {
             color: color,
             borderRadius: BorderRadius.circular(Corner.box),
             boxShadow: [
-              BoxShadow(color: color.withValues(alpha: 0.35), blurRadius: 8, offset: const Offset(0, 2)),
+              BoxShadow(
+                color: color.withValues(alpha: 0.35),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
             ],
           ),
           child: Row(
@@ -268,16 +431,30 @@ class _SyncPill extends StatelessWidget {
                 const SizedBox(
                   width: 12,
                   height: 12,
-                  child: CircularProgressIndicator(strokeWidth: 1.8, color: Colors.white),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.8,
+                    color: Colors.white,
+                  ),
                 )
               else
                 Icon(icon, size: 13, color: Colors.white),
               const SizedBox(width: 5),
-              Text(label, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
               const SizedBox(width: 4),
               AnimatedCount(
                 count,
-                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ],
           ),
@@ -310,7 +487,13 @@ class _BottomNav extends StatelessWidget {
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: AppColors.line)),
-        boxShadow: [BoxShadow(color: Color(0x0A000000), blurRadius: 16, offset: Offset(0, -4))],
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 16,
+            offset: Offset(0, -4),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -374,7 +557,9 @@ class _NavItem extends StatelessWidget {
                       height: 27,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: active ? AppColors.amberSoft : Colors.transparent,
+                        color: active
+                            ? AppColors.amberSoft
+                            : Colors.transparent,
                         borderRadius: BorderRadius.circular(Corner.box),
                       ),
                       child: Icon(
@@ -390,17 +575,27 @@ class _NavItem extends StatelessWidget {
                         child: PulsingBadge(
                           trigger: badge,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 1,
+                            ),
                             constraints: const BoxConstraints(minWidth: 15),
                             decoration: BoxDecoration(
                               color: AppColors.danger,
                               borderRadius: BorderRadius.circular(Corner.box),
-                              border: Border.all(color: Colors.white, width: 1.2),
+                              border: Border.all(
+                                color: Colors.white,
+                                width: 1.2,
+                              ),
                             ),
                             child: Text(
                               '$badge',
                               textAlign: TextAlign.center,
-                              style: const TextStyle(color: Colors.white, fontSize: 8.5, fontWeight: FontWeight.w900),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 8.5,
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
                           ),
                         ),

@@ -9,161 +9,567 @@ import 'supabase.dart';
 /// مطابق لـ TABLE_ALLOWED_COLUMNS في sync.ts
 const tableAllowedColumns = <String, List<String>>{
   'tenants': [
-    'id', 'code', 'name', 'plan_type', 'status', 'expires_at',
-    'owner_name', 'owner_phone', 'app_username', 'app_password', 'notes',
-    'created_at', 'updated_at',
+    'id',
+    'code',
+    'name',
+    'plan_type',
+    'status',
+    'expires_at',
+    'owner_name',
+    'owner_phone',
+    'app_username',
+    'app_password',
+    'notes',
+    'created_at',
+    'updated_at',
   ],
   'users': [
-    'id', 'name', 'email', 'role', 'is_active', 'capabilities', 'tenant_id',
-    'created_at', 'updated_at',
+    'id',
+    'name',
+    'email',
+    'role',
+    'is_active',
+    'capabilities',
+    'tenant_id',
+    'created_at',
+    'updated_at',
   ],
   'subjects': [
-    'id', 'name', 'code', 'grade_level', 'description', 'tenant_id',
-    'created_at', 'updated_at',
+    'id',
+    'name',
+    'code',
+    'grade_level',
+    'description',
+    'academic_year_id',
+    'tenant_id',
+    'created_at',
+    'updated_at',
   ],
   'rooms': [
-    'id', 'name', 'capacity', 'grade_level', 'stage_tier', 'homeroom_teacher_id',
-    'notes', 'tenant_id', 'created_at', 'updated_at',
+    'id',
+    'name',
+    'capacity',
+    'grade_level',
+    'stage_tier',
+    'homeroom_teacher_id',
+    'notes',
+    'academic_year_id',
+    'tenant_id',
+    'created_at',
+    'updated_at',
   ],
   'teachers': [
-    'id', 'name', 'phone', 'email', 'subject_ids', 'payment_rate',
-    'national_id', 'portal_code',
-    'notes', 'tenant_id', 'created_at', 'updated_at',
+    'id',
+    'name',
+    'phone',
+    'email',
+    'subject_ids',
+    'payment_rate',
+    'national_id',
+    'portal_code',
+    'notes',
+    'academic_year_id',
+    'tenant_id',
+    'created_at',
+    'updated_at',
   ],
   'groups': [
-    'id', 'name', 'subject_id', 'teacher_id', 'room_id', 'room_ids', 'grade_level',
-    'price_per_month', 'max_students', 'days', 'start_time', 'end_time',
-    'status', 'tenant_id', 'created_at', 'updated_at',
+    'id',
+    'name',
+    'subject_id',
+    'teacher_id',
+    'room_id',
+    'room_ids',
+    'grade_level',
+    'price_per_month',
+    'max_students',
+    'days',
+    'start_time',
+    'end_time',
+    'status',
+    'academic_year_id',
+    'tenant_id',
+    'created_at',
+    'updated_at',
   ],
   'grade_fees': [
-    'id', 'grade_name', 'monthly_fee', 'order_index', 'is_custom', 'stage_tier',
-    'term_1_start', 'term_1_end', 'term_2_start', 'term_2_end', 'plan_items',
-    'tenant_id', 'created_at', 'updated_at',
+    'id',
+    'grade_name',
+    'monthly_fee',
+    'order_index',
+    'is_custom',
+    'stage_tier',
+    'term_1_start',
+    'term_1_end',
+    'term_2_start',
+    'term_2_end',
+    'plan_items',
+    'academic_year_id',
+    'tenant_id',
+    'created_at',
+    'updated_at',
   ],
   'students': [
-    'id', 'first_name', 'last_name', 'full_name', 'phone', 'phone_prefix',
-    'parent_name', 'guardian_relationship', 'parent_phone', 'parent_phone_prefix',
-    'national_id', 'grade_level', 'gender', 'status', 'balance',
-    'neighborhood', 'detailed_address', 'referral_source', 'section',
-    'school_name', 'enrollment_date', 'birth_date', 'birth_place',
-    'nationality', 'previous_school', 'gpa', 'housing_status', 'original_area',
-    'health_status', 'medical_condition', 'parent_job', 'parent_secondary_phone',
-    'email', 'guardian_declaration', 'initial_rating',
-    'seat_reservation_paid', 'seat_reservation_discounted',
-    'payment_plan', 'payment_status',
-    'academic_discount_applied', 'academic_discount_rate',
-    'exception_reason', 'custom_monthly_fee',
-    'portal_code', 'parent_portal_code',
-    'notes', 'tenant_id', 'created_at', 'updated_at',
+    'id',
+    'first_name',
+    'last_name',
+    'full_name',
+    'phone',
+    'phone_prefix',
+    'parent_name',
+    'guardian_relationship',
+    'parent_phone',
+    'parent_phone_prefix',
+    'national_id',
+    'grade_level',
+    'gender',
+    'status',
+    'balance',
+    'neighborhood',
+    'detailed_address',
+    'referral_source',
+    'section',
+    'school_name',
+    'enrollment_date',
+    'birth_date',
+    'birth_place',
+    'nationality',
+    'previous_school',
+    'gpa',
+    'housing_status',
+    'original_area',
+    'health_status',
+    'medical_condition',
+    'parent_job',
+    'parent_secondary_phone',
+    'email',
+    'guardian_declaration',
+    'initial_rating',
+    'seat_reservation_paid',
+    'seat_reservation_discounted',
+    'payment_plan',
+    'payment_status',
+    'academic_discount_applied',
+    'academic_discount_rate',
+    'exception_reason',
+    'custom_monthly_fee',
+    'uses_custom_plan',
+    'plan_discount_type',
+    'plan_discount_value',
+    'plan_discount_reason',
+    'plan_discount_from',
+    'portal_code',
+    'parent_portal_code',
+    'notes',
+    'academic_year_id',
+    'tenant_id',
+    'created_at',
+    'updated_at',
+  ],
+  'academic_years': [
+    'id',
+    'label',
+    'starts_on',
+    'ends_on',
+    'term_1_start',
+    'term_1_end',
+    'term_2_start',
+    'term_2_end',
+    'status',
+    'is_current',
+    'tenant_id',
+    'created_at',
+    'updated_at',
+  ],
+  'student_years': [
+    'id',
+    'student_id',
+    'academic_year_id',
+    'grade_level',
+    'section',
+    'status',
+    'plan_discount_type',
+    'plan_discount_value',
+    'plan_discount_reason',
+    'tenant_id',
+    'created_at',
+    'updated_at',
+  ],
+  'finance_requests': [
+    'id',
+    'kind',
+    'status',
+    'summary',
+    'student_id',
+    'student_name',
+    'target_id',
+    'payload',
+    'amount',
+    'reason',
+    'requested_by_id',
+    'requested_by_name',
+    'decided_by_id',
+    'decided_by_name',
+    'decided_at',
+    'decision_note',
+    'tenant_id',
+    'created_at',
+    'updated_at',
+  ],
+  'audit_log': [
+    'id',
+    'action',
+    'summary',
+    'student_id',
+    'student_name',
+    'entity_id',
+    'amount',
+    'reason',
+    'user_id',
+    'user_name',
+    'tenant_id',
+    'created_at',
+    'updated_at',
   ],
   'student_attachments': [
-    'id', 'student_id_photo_path', 'birth_certificate_path',
-    'tenant_id', 'created_at', 'updated_at',
+    'id',
+    'student_id_photo_path',
+    'birth_certificate_path',
+    'tenant_id',
+    'created_at',
+    'updated_at',
   ],
   'finance_attachments': [
-    'id', 'record_type', 'storage_path',
-    'tenant_id', 'created_at', 'updated_at',
+    'id',
+    'record_type',
+    'storage_path',
+    'tenant_id',
+    'created_at',
+    'updated_at',
   ],
   'institution_settings': [
-    'id', 'institution_type', 'institution_name', 'logo', 'colors', 'settings',
-    'tenant_id', 'created_at', 'updated_at',
+    'id',
+    'institution_type',
+    'institution_name',
+    'logo',
+    'colors',
+    'settings',
+    'tenant_id',
+    'created_at',
+    'updated_at',
   ],
   'enrollments': [
-    'id', 'student_id', 'group_id', 'room_id', 'enrollment_date', 'enrolled_at',
-    'custom_price', 'applied_price', 'discount_reason',
-    'status', 'tenant_id', 'created_at', 'updated_at',
+    'id',
+    'student_id',
+    'group_id',
+    'room_id',
+    'enrollment_date',
+    'enrolled_at',
+    'custom_price',
+    'applied_price',
+    'discount_reason',
+    'status',
+    'tenant_id',
+    'created_at',
+    'updated_at',
   ],
   'installments': [
-    'id', 'student_id', 'title', 'amount', 'original_amount', 'due_date', 'paid_amount',
-    'status', 'tenant_id',
-    'created_at', 'updated_at',
+    'id',
+    'student_id',
+    'title',
+    'amount',
+    'original_amount',
+    'due_date',
+    'paid_amount',
+    'status',
+    'is_exempt',
+    'exempt_reason',
+    'discount_amount',
+    'discount_reason',
+    'plan_discount_share',
+    'seat_deduction',
+    'academic_year_id',
+    'tenant_id',
+    'created_at',
+    'updated_at',
   ],
   'payments': [
-    'id', 'receipt_number', 'student_id', 'enrollment_id', 'group_id',
-    'installment_id', 'amount', 'original_amount', 'discount_amount', 'discount_reason',
-    'payment_method', 'payment_date',
-    'received_by_user_id', 'payment_purpose', 'transfer_channel',
-    'transfer_date', 'custom_method_notes',
-    'sender_name', 'reference_number', 'total_due_at_payment',
-    'remaining_balance_after', 'is_cancelled', 'cancelled_reason',
-    'notes', 'tenant_id', 'created_at', 'updated_at',
+    'id',
+    'receipt_number',
+    'student_id',
+    'enrollment_id',
+    'group_id',
+    'installment_id',
+    'amount',
+    'original_amount',
+    'discount_amount',
+    'discount_reason',
+    'payment_method',
+    'payment_date',
+    'received_by_user_id',
+    'payment_purpose',
+    'transfer_channel',
+    'transfer_date',
+    'custom_method_notes',
+    'sender_name',
+    'reference_number',
+    'total_due_at_payment',
+    'remaining_balance_after',
+    'is_cancelled',
+    'cancelled_reason',
+    'payer_name',
+    'income_category',
+    'reverses_payment_id',
+    'reversed_by_payment_id',
+    'notes',
+    'academic_year_id',
+    'tenant_id',
+    'created_at',
+    'updated_at',
   ],
   'sessions': [
-    'id', 'group_id', 'teacher_id', 'substitute_teacher_id', 'room_id',
-    'session_date', 'start_time', 'end_time', 'status', 'notes', 'tenant_id',
-    'created_at', 'updated_at',
+    'id',
+    'group_id',
+    'teacher_id',
+    'substitute_teacher_id',
+    'room_id',
+    'session_date',
+    'start_time',
+    'end_time',
+    'status',
+    'notes',
+    'tenant_id',
+    'created_at',
+    'updated_at',
   ],
   'attendance': [
-    'id', 'session_id', 'student_id', 'status', 'marked_by_user_id', 'notes',
-    'tenant_id', 'created_at', 'updated_at',
+    'id',
+    'session_id',
+    'student_id',
+    'status',
+    'marked_by_user_id',
+    'notes',
+    'tenant_id',
+    'created_at',
+    'updated_at',
   ],
   'teacher_payouts': [
-    'id', 'teacher_id', 'group_id', 'amount', 'payout_type', 'period_start',
-    'period_end', 'payment_date', 'paid_by_user_id', 'payment_method',
-    'notes', 'tenant_id', 'created_at', 'updated_at',
+    'id',
+    'teacher_id',
+    'group_id',
+    'amount',
+    'payout_type',
+    'period_start',
+    'period_end',
+    'payment_date',
+    'paid_by_user_id',
+    'payment_method',
+    'notes',
+    'tenant_id',
+    'created_at',
+    'updated_at',
   ],
   'expenses': [
-    'id', 'category', 'description', 'amount', 'expense_date',
-    'recorded_by_user_id', 'payment_method', 'notes', 'tenant_id',
-    'created_at', 'updated_at',
+    'id',
+    'category',
+    'description',
+    'amount',
+    'expense_date',
+    'recorded_by_user_id',
+    'payment_method',
+    'notes',
+    'tenant_id',
+    'created_at',
+    'updated_at',
   ],
   'class_announcements': [
-    'id', 'tenant_id', 'teacher_id', 'group_id', 'title', 'content',
-    'image_url', 'created_at',
+    'id',
+    'tenant_id',
+    'teacher_id',
+    'group_id',
+    'title',
+    'content',
+    'image_url',
+    'created_at',
   ],
   'student_evaluations': [
-    'id', 'tenant_id', 'student_id', 'group_id', 'teacher_id', 'subject_id',
-    'title', 'score', 'max_score', 'evaluation_date', 'type', 'notes',
-    'term', 'component_id',
-    'created_at', 'updated_at',
+    'id',
+    'tenant_id',
+    'student_id',
+    'group_id',
+    'teacher_id',
+    'subject_id',
+    'title',
+    'score',
+    'max_score',
+    'evaluation_date',
+    'type',
+    'notes',
+    'term',
+    'component_id',
+    'created_at',
+    'updated_at',
   ],
 };
 
 const nonTextColumns = <String, List<String>>{
+  'audit_log': ['amount', 'created_at', 'tenant_id', 'updated_at'],
   'attendance': ['created_at', 'tenant_id', 'updated_at'],
   'enrollments': [
-    'applied_price', 'created_at', 'custom_price', 'enrolled_at', 'enrollment_date',
-    'tenant_id', 'updated_at',
+    'applied_price',
+    'created_at',
+    'custom_price',
+    'enrolled_at',
+    'enrollment_date',
+    'tenant_id',
+    'updated_at',
   ],
-  'expenses': ['amount', 'created_at', 'expense_date', 'tenant_id', 'updated_at'],
+  'expenses': [
+    'amount',
+    'created_at',
+    'expense_date',
+    'tenant_id',
+    'updated_at',
+  ],
+  'finance_requests': [
+    'amount',
+    'created_at',
+    'decided_at',
+    'payload',
+    'tenant_id',
+    'updated_at',
+  ],
   'grade_fees': [
-    'created_at', 'is_custom', 'monthly_fee', 'order_index', 'plan_items',
-    'tenant_id', 'term_1_end', 'term_1_start', 'term_2_end', 'term_2_start', 'updated_at',
+    'created_at',
+    'is_custom',
+    'monthly_fee',
+    'order_index',
+    'plan_items',
+    'tenant_id',
+    'term_1_end',
+    'term_1_start',
+    'term_2_end',
+    'term_2_start',
+    'updated_at',
   ],
   'groups': [
-    'created_at', 'days', 'end_time', 'max_students', 'price_per_month', 'room_ids', 'start_time',
-    'tenant_id', 'updated_at',
+    'created_at',
+    'days',
+    'end_time',
+    'max_students',
+    'price_per_month',
+    'room_ids',
+    'start_time',
+    'tenant_id',
+    'updated_at',
   ],
   'installments': [
-    'amount', 'created_at', 'due_date', 'original_amount', 'paid_amount',
-    'tenant_id', 'updated_at',
+    'amount',
+    'created_at',
+    'due_date',
+    'original_amount',
+    'paid_amount',
+    'tenant_id',
+    'updated_at',
   ],
-  'institution_settings': ['colors', 'created_at', 'settings', 'tenant_id', 'updated_at'],
+  'institution_settings': [
+    'colors',
+    'created_at',
+    'settings',
+    'tenant_id',
+    'updated_at',
+  ],
   'payments': [
-    'amount', 'created_at', 'discount_amount', 'is_cancelled', 'original_amount', 'payment_date',
-    'remaining_balance_after', 'tenant_id', 'total_due_at_payment', 'transfer_date', 'updated_at',
+    'amount',
+    'created_at',
+    'discount_amount',
+    'is_cancelled',
+    'original_amount',
+    'payment_date',
+    'remaining_balance_after',
+    'tenant_id',
+    'total_due_at_payment',
+    'transfer_date',
+    'updated_at',
   ],
   'rooms': ['capacity', 'created_at', 'tenant_id', 'updated_at'],
-  'sessions': ['created_at', 'end_time', 'session_date', 'start_time', 'tenant_id', 'updated_at'],
+  'sessions': [
+    'created_at',
+    'end_time',
+    'session_date',
+    'start_time',
+    'tenant_id',
+    'updated_at',
+  ],
   'student_attachments': ['created_at', 'tenant_id', 'updated_at'],
   'finance_attachments': ['created_at', 'tenant_id', 'updated_at'],
   'students': [
-    'academic_discount_applied', 'academic_discount_rate', 'balance', 'birth_date',
-    'created_at', 'custom_monthly_fee', 'enrollment_date', 'guardian_declaration',
-    'initial_rating', 'seat_reservation_discounted',
-    'seat_reservation_paid', 'tenant_id', 'updated_at',
+    'academic_discount_applied',
+    'academic_discount_rate',
+    'balance',
+    'birth_date',
+    'created_at',
+    'custom_monthly_fee',
+    'enrollment_date',
+    'guardian_declaration',
+    'initial_rating',
+    'seat_reservation_discounted',
+    'seat_reservation_paid',
+    'tenant_id',
+    'updated_at',
+  ],
+  'academic_years': [
+    'created_at',
+    'ends_on',
+    'is_current',
+    'starts_on',
+    'tenant_id',
+    'term_1_end',
+    'term_1_start',
+    'term_2_end',
+    'term_2_start',
+    'updated_at',
+  ],
+  'student_years': [
+    'created_at',
+    'plan_discount_value',
+    'tenant_id',
+    'updated_at',
   ],
   'subjects': ['created_at', 'tenant_id', 'updated_at'],
   'teacher_payouts': [
-    'amount', 'created_at', 'payment_date', 'period_end', 'period_start',
-    'tenant_id', 'updated_at',
+    'amount',
+    'created_at',
+    'payment_date',
+    'period_end',
+    'period_start',
+    'tenant_id',
+    'updated_at',
   ],
-  'teachers': ['created_at', 'payment_rate', 'subject_ids', 'tenant_id', 'updated_at'],
+  'teachers': [
+    'created_at',
+    'payment_rate',
+    'subject_ids',
+    'tenant_id',
+    'updated_at',
+  ],
   'tenants': ['created_at', 'expires_at', 'id', 'updated_at'],
-  'users': ['capabilities', 'created_at', 'is_active', 'tenant_id', 'updated_at'],
+  'users': [
+    'capabilities',
+    'created_at',
+    'is_active',
+    'tenant_id',
+    'updated_at',
+  ],
   'class_announcements': ['created_at', 'id', 'tenant_id'],
   'student_evaluations': [
-    'created_at', 'evaluation_date', 'id', 'max_score', 'score', 'tenant_id', 'updated_at',
+    'created_at',
+    'evaluation_date',
+    'id',
+    'max_score',
+    'score',
+    'tenant_id',
+    'updated_at',
   ],
 };
 
@@ -175,6 +581,8 @@ const tableLabelsAr = <String, String>{
   'grade_fees': 'رسوم الصفوف',
   'groups': 'المجموعات',
   'students': 'الطلاب',
+  'academic_years': 'الأعوام الدراسية',
+  'student_years': 'سجل أعوام الطلاب',
   'student_attachments': 'مرفقات الطلاب',
   'finance_attachments': 'إشعارات التحويل',
   'institution_settings': 'هوية المنشأة',
@@ -187,6 +595,8 @@ const tableLabelsAr = <String, String>{
   'expenses': 'المصروفات',
   'class_announcements': 'إعلانات الصفوف',
   'student_evaluations': 'التقييمات والدرجات',
+  'finance_requests': 'طلبات الموافقة',
+  'audit_log': 'سجل الحركات المالية',
 };
 
 /// أسماء العمليات كما تُعرض — مطابق لـ `ACTION_LABELS` في SyncDetails.tsx
@@ -198,12 +608,14 @@ const actionLabelsAr = <String, String>{
 
 const syncedTables = [
   'users',
+  'academic_years',
   'subjects',
   'rooms',
   'teachers',
   'grade_fees',
   'groups',
   'students',
+  'student_years',
   'student_attachments',
   'institution_settings',
   'enrollments',
@@ -214,6 +626,8 @@ const syncedTables = [
   'attendance',
   'teacher_payouts',
   'expenses',
+  'audit_log',
+  'finance_requests',
   'student_evaluations',
 ];
 
@@ -222,7 +636,11 @@ const syncedTables = [
 const pullConcurrency = 6;
 
 /// تشغيل [task] على [items] بحدٍّ أقصى [limit] معاً، والنتائج بترتيب العناصر.
-Future<List<R>> mapPooled<T, R>(List<T> items, int limit, Future<R> Function(T item) task) async {
+Future<List<R>> mapPooled<T, R>(
+  List<T> items,
+  int limit,
+  Future<R> Function(T item) task,
+) async {
   final results = List<R?>.filled(items.length, null);
   var next = 0;
   Future<void> worker() async {
@@ -241,7 +659,8 @@ Future<List<R>> mapPooled<T, R>(List<T> items, int limit, Future<R> Function(T i
 ///
 /// يحدث حين تُضاف ميزة في الكود ولم تُطبَّق هجرتها على قاعدة المنشأة بعد —
 /// كجدول `class_announcements`. يُميَّز عن بقية الأعطال لأنه لا يُصلَح بإعادة المحاولة.
-bool isMissingTableError(int status, String body) => status == 404 && body.contains('PGRST205');
+bool isMissingTableError(int status, String body) =>
+    status == 404 && body.contains('PGRST205');
 
 /// بصمة أعمدة المزامنة — تتغير متى أُضيف جدول أو عمود إلى [tableAllowedColumns].
 ///
@@ -299,7 +718,11 @@ int toTimestamp(dynamic value) {
   return parsed.millisecondsSinceEpoch;
 }
 
-Map<String, dynamic> sanitizePayload(String tableName, Map<String, dynamic>? payload, String tenantId) {
+Map<String, dynamic> sanitizePayload(
+  String tableName,
+  Map<String, dynamic>? payload,
+  String tenantId,
+) {
   if (payload == null) return {'tenant_id': tenantId};
   final allowed = tableAllowedColumns[tableName];
   final clean = <String, dynamic>{};
@@ -318,9 +741,13 @@ Map<String, dynamic> sanitizePayload(String tableName, Map<String, dynamic>? pay
   }
 
   if (tableName == 'enrollments') {
-    if (clean['enrollment_date'] == null || '${clean['enrollment_date']}'.isEmpty) {
+    if (clean['enrollment_date'] == null ||
+        '${clean['enrollment_date']}'.isEmpty) {
       if (payload['enrolled_at'] != null) {
-        clean['enrollment_date'] = payload['enrolled_at'].toString().split('T').first;
+        clean['enrollment_date'] = payload['enrolled_at']
+            .toString()
+            .split('T')
+            .first;
       } else {
         clean['enrollment_date'] = localDateStr();
       }
@@ -380,11 +807,7 @@ void queuePendingSync(
       return;
     }
 
-    existing.payload = {
-      ...?existing.payload,
-      ...?payload,
-      'id': recordId,
-    };
+    existing.payload = {...?existing.payload, ...?payload, 'id': recordId};
     existing.createdAt = now;
     existing.retryCount = 0;
     existing.lastError = null;
@@ -405,10 +828,19 @@ void queuePendingSync(
 }
 
 void cleanupBogusDemoUserSyncs(List<PendingSync> queue) {
-  queue.removeWhere((a) => a.tableName == 'users' && a.action == 'DELETE' && (a.payload == null || a.payload!['name'] == null));
+  queue.removeWhere(
+    (a) =>
+        a.tableName == 'users' &&
+        a.action == 'DELETE' &&
+        (a.payload == null || a.payload!['name'] == null),
+  );
 }
 
-String describeRecord(String table, Map<String, dynamic>? payload, Map<String, dynamic>? fallback) {
+String describeRecord(
+  String table,
+  Map<String, dynamic>? payload,
+  Map<String, dynamic>? fallback,
+) {
   final r = payload ?? fallback ?? const <String, dynamic>{};
   switch (table) {
     case 'students':
@@ -417,7 +849,9 @@ String describeRecord(String table, Map<String, dynamic>? payload, Map<String, d
       final name = '${r['first_name'] ?? ''} ${r['last_name'] ?? ''}'.trim();
       return name.isEmpty ? 'طالب' : name;
     case 'payments':
-      return r['receipt_number'] != null ? 'سند ${r['receipt_number']}' : 'سند قبض';
+      return r['receipt_number'] != null
+          ? 'سند ${r['receipt_number']}'
+          : 'سند قبض';
     case 'teachers':
     case 'users':
     case 'subjects':
@@ -428,6 +862,9 @@ String describeRecord(String table, Map<String, dynamic>? payload, Map<String, d
       return '${r['title'] ?? 'قسط'}';
     case 'expenses':
       return '${r['description'] ?? r['category'] ?? 'مصروف'}';
+    case 'finance_requests':
+    case 'audit_log':
+      return '${r['summary'] ?? '—'}';
     case 'grade_fees':
       return '${r['grade_name'] ?? 'رسوم صف'}';
     case 'sessions':
@@ -441,7 +878,9 @@ String describeRecord(String table, Map<String, dynamic>? payload, Map<String, d
     case 'student_attachments':
       return 'مرفقات طالب';
     case 'student_evaluations':
-      return '${r['title'] ?? ''}'.trim().isEmpty ? 'تقييم طالب' : 'تقييم ${r['title']}';
+      return '${r['title'] ?? ''}'.trim().isEmpty
+          ? 'تقييم طالب'
+          : 'تقييم ${r['title']}';
     case 'class_announcements':
       return '${r['title'] ?? 'إعلان صفّي'}';
     case 'institution_settings':
@@ -463,7 +902,8 @@ final _transientError = RegExp(
 ///
 /// احتسابه كان يحرق المحاولات الخمس على جهاز بشبكة ضعيفة، فتُركن سجلات
 /// سليمة تماماً في «المتعثرة» ولا يُعاد رفعها تلقائياً أبداً.
-bool isTransientSyncError(Object error) => _transientError.hasMatch(error.toString());
+bool isTransientSyncError(Object error) =>
+    _transientError.hasMatch(error.toString());
 
 /// تعارض رقم سند صدر مرتين من جهازين كانا يعملان بلا اتصال —
 /// قيد `uq_payments_tenant_receipt` في السحابة.
@@ -477,33 +917,60 @@ String describeSupabaseError(Object error, String tableName) {
   final raw = error.toString();
   final table = tableLabelsAr[tableName] ?? tableName;
 
-  if (RegExp(r'invalid input syntax for type (date|timestamp)', caseSensitive: false).hasMatch(raw)) {
+  if (RegExp(
+    r'invalid input syntax for type (date|timestamp)',
+    caseSensitive: false,
+  ).hasMatch(raw)) {
     return '$table: قيمة تاريخ غير صالحة في أحد الحقول.';
   }
-  if (RegExp(r'invalid input syntax for type (numeric|integer|bigint)', caseSensitive: false).hasMatch(raw)) {
+  if (RegExp(
+    r'invalid input syntax for type (numeric|integer|bigint)',
+    caseSensitive: false,
+  ).hasMatch(raw)) {
     return '$table: قيمة رقمية غير صالحة في أحد الحقول.';
   }
-  if (RegExp(r'invalid input syntax for type uuid', caseSensitive: false).hasMatch(raw)) {
+  if (RegExp(
+    r'invalid input syntax for type uuid',
+    caseSensitive: false,
+  ).hasMatch(raw)) {
     return '$table: معرّف غير صالح.';
   }
-  if (RegExp(r'duplicate key value|already exists', caseSensitive: false).hasMatch(raw)) {
+  if (RegExp(
+    r'duplicate key value|already exists',
+    caseSensitive: false,
+  ).hasMatch(raw)) {
     return '$table: هذا السجل مسجَّل مسبقاً برقم أو معرّف مكرّر.';
   }
-  if (RegExp(r'violates not-null constraint', caseSensitive: false).hasMatch(raw)) {
+  if (RegExp(
+    r'violates not-null constraint',
+    caseSensitive: false,
+  ).hasMatch(raw)) {
     final col = RegExp(r'column "([^"]+)"').firstMatch(raw)?.group(1);
     return '$table: حقل إلزامي فارغ${col != null ? ' ($col)' : ''}.';
   }
-  if (RegExp(r'violates foreign key constraint', caseSensitive: false).hasMatch(raw)) {
+  if (RegExp(
+    r'violates foreign key constraint',
+    caseSensitive: false,
+  ).hasMatch(raw)) {
     return '$table: السجل مرتبط بسجل آخر غير موجود في السحابة. ارفع السجل الأصل أولاً.';
   }
-  if (RegExp(r'PGRST303|jwt expired|invalid claim', caseSensitive: false).hasMatch(raw)) {
+  if (RegExp(
+    r'PGRST303|jwt expired|invalid claim',
+    caseSensitive: false,
+  ).hasMatch(raw)) {
     return '$table: انتهت جلسة الدخول. سجّل الخروج ثم الدخول من جديد ليُعاد الرفع.';
   }
-  if (RegExp(r'PGRST204|could not find|schema cache', caseSensitive: false).hasMatch(raw)) {
+  if (RegExp(
+    r'PGRST204|could not find|schema cache',
+    caseSensitive: false,
+  ).hasMatch(raw)) {
     final col = RegExp(r"'([^']+)' column").firstMatch(raw)?.group(1);
     return '$table: العمود ${col ?? 'المطلوب'} غير موجود في قاعدة البيانات. نفّذ ملف الهجرة على Supabase.';
   }
-  if (RegExp(r'Failed to fetch|NetworkError|fetch failed|SocketException|ClientException', caseSensitive: false).hasMatch(raw)) {
+  if (RegExp(
+    r'Failed to fetch|NetworkError|fetch failed|SocketException|ClientException',
+    caseSensitive: false,
+  ).hasMatch(raw)) {
     return 'تعذّر الوصول إلى السحابة. تحقق من الاتصال بالإنترنت.';
   }
   return '$table: $raw';
@@ -524,10 +991,15 @@ const deletesCursor = '__deleted_records';
 ///
 /// يُقارن ختم السيرفر لا `updated_at`: الأخير يكتبه الجهاز بساعته لحظة التعديل،
 /// فتعديلٌ رُفع متأخراً يحمل وقتاً أقدم من آخر سحب للأجهزة الأخرى فلا تراه أبداً.
-List<String> pickChangedIds(List<Map<String, dynamic>> remote, Map<String, String> localStamps) => [
-      for (final r in remote)
-        if (toTimestamp(localStamps['${r['id']}']) != toTimestamp(r['server_updated_at'])) '${r['id']}',
-    ];
+List<String> pickChangedIds(
+  List<Map<String, dynamic>> remote,
+  Map<String, String> localStamps,
+) => [
+  for (final r in remote)
+    if (toTimestamp(localStamps['${r['id']}']) !=
+        toTimestamp(r['server_updated_at']))
+      '${r['id']}',
+];
 
 /// حذف قادم من السحابة يُطبَّق ما لم يكن للسجل تعديل معلّق، أو نسخة أُنشئت بعده.
 bool shouldApplyRemoteDelete({
@@ -639,7 +1111,8 @@ class SyncService {
 
   PendingSummary getPendingSummary() {
     cleanupBogusDemoUserSyncs(local.pendingSyncs);
-    final actions = [...local.pendingSyncs]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final actions = [...local.pendingSyncs]
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     final bucket = <String, int>{};
     final items = <PendingSummaryItem>[];
 
@@ -651,20 +1124,21 @@ class SyncService {
           PendingSummaryItem(
             table: a.tableName,
             action: a.action,
-            label: describeRecord(a.tableName, a.payload, local.recordOf(a.tableName, a.recordId)),
+            label: describeRecord(
+              a.tableName,
+              a.payload,
+              local.recordOf(a.tableName, a.recordId),
+            ),
             at: a.createdAt,
           ),
         );
       }
     }
 
-    final rows = bucket.entries
-        .map((e) {
-          final parts = e.key.split('|');
-          return SyncRow(parts[0], e.value, parts.length > 1 ? parts[1] : '');
-        })
-        .toList()
-      ..sort((a, b) => b.count.compareTo(a.count));
+    final rows = bucket.entries.map((e) {
+      final parts = e.key.split('|');
+      return SyncRow(parts[0], e.value, parts.length > 1 ? parts[1] : '');
+    }).toList()..sort((a, b) => b.count.compareTo(a.count));
 
     return PendingSummary(total: actions.length, rows: rows, items: items);
   }
@@ -675,7 +1149,8 @@ class SyncService {
   String lastPullAuthKey(String tenantId) => 'last_pull_auth_$tenantId';
 
   /// علامة السحب: `session` أو `anon`، ومعها [pullColumnsSignature].
-  String pullMarkFor({required bool signedIn}) => '${signedIn ? 'session' : 'anon'}:$pullColumnsSignature';
+  String pullMarkFor({required bool signedIn}) =>
+      '${signedIn ? 'session' : 'anon'}:$pullColumnsSignature';
 
   String get _pullAuthMark => pullMarkFor(signedIn: SupabaseAuth.signedIn);
 
@@ -691,7 +1166,8 @@ class SyncService {
     final tenantId = local.tenantId;
     if (tenantId == null) return null;
     final prefs = await SharedPreferences.getInstance();
-    if (prefs.getString(lastPullAuthKey(tenantId)) != _pullAuthMark) return null;
+    if (prefs.getString(lastPullAuthKey(tenantId)) != _pullAuthMark)
+      return null;
     return prefs.getString(lastPullKey(tenantId));
   }
 
@@ -714,7 +1190,9 @@ class SyncService {
     var failed = false;
 
     // الجداول تُسأل معاً، والنتائج تُجمع بترتيبها
-    final checks = await mapPooled(syncedTables, pullConcurrency, (cloud) async {
+    final checks = await mapPooled(syncedTables, pullConcurrency, (
+      cloud,
+    ) async {
       String? cursor;
       final newIds = <String>[];
       final samples = <PendingSummaryItem>[];
@@ -745,12 +1223,18 @@ class SyncService {
         }
 
         if (newIds.isNotEmpty) {
-          final full = await _selectIn(cloud, tenantId, newIds.take(10).toList());
+          final full = await _selectIn(
+            cloud,
+            tenantId,
+            newIds.take(10).toList(),
+          );
           for (final row in full) {
             samples.add(
               PendingSummaryItem(
                 table: cloud,
-                action: local.recordOf(cloud, '${row['id']}') != null ? 'UPDATE' : 'INSERT',
+                action: local.recordOf(cloud, '${row['id']}') != null
+                    ? 'UPDATE'
+                    : 'INSERT',
                 label: describeRecord(cloud, row, null),
                 at: '${row['updated_at'] ?? ''}',
               ),
@@ -760,7 +1244,13 @@ class SyncService {
       } catch (_) {
         tableFailed = true;
       }
-      return (cloud: cloud, cursor: cursor, newIds: newIds, samples: samples, failed: tableFailed);
+      return (
+        cloud: cloud,
+        cursor: cursor,
+        newIds: newIds,
+        samples: samples,
+        failed: tableFailed,
+      );
     });
 
     // أقدم مؤشر جدول: يُعرض للمستخدم «منذ متى» لم يصله شيء
@@ -768,7 +1258,9 @@ class SyncService {
     for (final check in checks) {
       if (check.failed) failed = true;
       final cursor = check.cursor;
-      since = since == null ? cursor : (toTimestamp(cursor) < toTimestamp(since) ? cursor : since);
+      since = since == null
+          ? cursor
+          : (toTimestamp(cursor) < toTimestamp(since) ? cursor : since);
       if (check.newIds.isEmpty) continue;
       rows.add(SyncRow(check.cloud, check.newIds.length));
       total += check.newIds.length;
@@ -803,7 +1295,12 @@ class SyncService {
         ..addAll(allNewKeys);
     }
 
-    return RemoteChangeSummary(total: total, rows: rows..sort((a, b) => b.count.compareTo(a.count)), items: items, since: since);
+    return RemoteChangeSummary(
+      total: total,
+      rows: rows..sort((a, b) => b.count.compareTo(a.count)),
+      items: items,
+      since: since,
+    );
   }
 
   /// مفاتيح ما حُذف في السحابة ولم يُطبَّق على الجهاز بعد.
@@ -811,7 +1308,7 @@ class SyncService {
     final since = await _cursor(tenantId, deletesCursor);
     final keys = <String>[];
 
-    for (var from = 0;; from += pullPageSize) {
+    for (var from = 0; ; from += pullPageSize) {
       final page = await _select(
         'deleted_records',
         tenantId,
@@ -828,7 +1325,9 @@ class SyncService {
         final table = '${row['table_name'] ?? ''}';
         final id = '${row['record_id'] ?? ''}';
         if (table.isEmpty || id.isEmpty) continue;
-        final pending = local.pendingSyncs.any((p) => p.tableName == table && p.recordId == id);
+        final pending = local.pendingSyncs.any(
+          (p) => p.tableName == table && p.recordId == id,
+        );
         final applies = shouldApplyRemoteDelete(
           existsLocally: local.recordOf(table, id) != null,
           localStamp: local.serverStamp(table, id),
@@ -843,7 +1342,9 @@ class SyncService {
   }
 
   List<PendingSync> getFailedActions() {
-    return local.pendingSyncs.where((a) => a.retryCount >= maxSyncRetries).toList();
+    return local.pendingSyncs
+        .where((a) => a.retryCount >= maxSyncRetries)
+        .toList();
   }
 
   /// كل عملية معلّقة سجّلت خطأً، سواء استنفدت محاولاتها أم لا.
@@ -865,16 +1366,24 @@ class SyncService {
   /// [refreshRemote] يفحص بعد الرفع ما تغيّر في السحابة لعدّاد الواجهة — جولة
   /// على كل الجداول. الرفع التلقائي يستغني عنها: السحب يليه عند أي إشارة.
   Future<SyncResult> push({bool refreshRemote = true}) async {
-    if (_syncing) return SyncResult(success: false, message: 'عملية مزامنة أخرى جارية');
+    if (_syncing)
+      return SyncResult(success: false, message: 'عملية مزامنة أخرى جارية');
     if (local.isMaster) {
-      return SyncResult(success: false, message: 'وضع المطور لا يقوم بمزامنة بيانات المدارس');
+      return SyncResult(
+        success: false,
+        message: 'وضع المطور لا يقوم بمزامنة بيانات المدارس',
+      );
     }
     final tenantId = local.tenantId;
-    if (tenantId == null) return SyncResult(success: false, message: 'لا توجد منشأة محددة');
+    if (tenantId == null)
+      return SyncResult(success: false, message: 'لا توجد منشأة محددة');
     // القاعدة المحلية لمنشأة أخرى: لا يُرفع إليها ولا يُسحب فوقها قبل تبديلها
     final dbTenant = local.dbTenantId;
     if (dbTenant != null && dbTenant != tenantId) {
-      return SyncResult(success: false, message: 'البيانات المحلية تخص منشأة أخرى. أعد تسجيل الدخول.');
+      return SyncResult(
+        success: false,
+        message: 'البيانات المحلية تخص منشأة أخرى. أعد تسجيل الدخول.',
+      );
     }
 
     _syncing = true;
@@ -890,14 +1399,22 @@ class SyncService {
       if (result.failed > 0) {
         // السبب يُذكر هنا مباشرةً: تبويب الإعدادات قد يكون محجوباً عن صلاحية
         // المستخدم، فإحالته إليه تتركه بلا تفسير لما جرى.
-        final stuck = local.pendingSyncs.where((a) => a.lastError != null).toList();
+        final stuck = local.pendingSyncs
+            .where((a) => a.lastError != null)
+            .toList();
         final reason = stuck.firstOrNull?.lastError;
-        message = 'تم رفع ${result.pushed} تعديلاً، وتعذّر رفع ${result.failed}.'
+        message =
+            'تم رفع ${result.pushed} تعديلاً، وتعذّر رفع ${result.failed}.'
             '${reason != null ? '\nالسبب: $reason' : ''}';
       } else {
         message = 'تم رفع ${result.pushed} تعديلاً بنجاح';
       }
-      return SyncResult(success: result.failed == 0, message: message, pushed: result.pushed, failed: result.failed);
+      return SyncResult(
+        success: result.failed == 0,
+        message: message,
+        pushed: result.pushed,
+        failed: result.failed,
+      );
     } catch (err) {
       return SyncResult(success: false, message: err.toString());
     } finally {
@@ -906,16 +1423,24 @@ class SyncService {
   }
 
   Future<SyncResult> pull() async {
-    if (_syncing) return SyncResult(success: false, message: 'عملية مزامنة أخرى جارية');
+    if (_syncing)
+      return SyncResult(success: false, message: 'عملية مزامنة أخرى جارية');
     if (local.isMaster) {
-      return SyncResult(success: false, message: 'وضع المطور لا يقوم بمزامنة بيانات المدارس');
+      return SyncResult(
+        success: false,
+        message: 'وضع المطور لا يقوم بمزامنة بيانات المدارس',
+      );
     }
     final tenantId = local.tenantId;
-    if (tenantId == null) return SyncResult(success: false, message: 'لا توجد منشأة محددة');
+    if (tenantId == null)
+      return SyncResult(success: false, message: 'لا توجد منشأة محددة');
     // القاعدة المحلية لمنشأة أخرى: لا يُرفع إليها ولا يُسحب فوقها قبل تبديلها
     final dbTenant = local.dbTenantId;
     if (dbTenant != null && dbTenant != tenantId) {
-      return SyncResult(success: false, message: 'البيانات المحلية تخص منشأة أخرى. أعد تسجيل الدخول.');
+      return SyncResult(
+        success: false,
+        message: 'البيانات المحلية تخص منشأة أخرى. أعد تسجيل الدخول.',
+      );
     }
 
     _syncing = true;
@@ -923,14 +1448,19 @@ class SyncService {
       final result = await pullFromCloud(tenantId);
       // هوية المنشأة تصل ضمن السحب: تُقرأ فوراً ليظهر الشعار واللون المعتمد
       await local.onPulled();
-      final removedNote = result.removed > 0 ? ' وحُذف ${result.removed} سجلاً محذوفاً من السحابة' : '';
+      final removedNote = result.removed > 0
+          ? ' وحُذف ${result.removed} سجلاً محذوفاً من السحابة'
+          : '';
       local.notifySync();
 
       if (!result.isComplete) {
-        final names = result.failedTables.keys.map((t) => tableLabelsAr[t] ?? t).join('، ');
+        final names = result.failedTables.keys
+            .map((t) => tableLabelsAr[t] ?? t)
+            .join('، ');
         return SyncResult(
           success: false,
-          message: 'سحب ناقص: تم سحب ${result.pulled} سجلاً$removedNote، '
+          message:
+              'سحب ناقص: تم سحب ${result.pulled} سجلاً$removedNote، '
               'وتعذّر جلب ($names). ${result.failedTables.values.first}',
           pulled: result.pulled,
           removed: result.removed,
@@ -956,7 +1486,9 @@ class SyncService {
   /// فوق تعديل محلي لم يُرفع بعد، فيبدو للمستخدم أن تعديله «رجع».
   Future<SyncResult> syncAll() async {
     final pushResult = await push();
-    if (!pushResult.success && pushResult.pushed == 0 && getPendingCount() > 0) {
+    if (!pushResult.success &&
+        pushResult.pushed == 0 &&
+        getPendingCount() > 0) {
       return pushResult;
     }
     final pullResult = await pull();
@@ -972,7 +1504,11 @@ class SyncService {
 
   Future<({int pushed, int failed})> pushPendingChanges(String tenantId) async {
     // عمليات منشأة أخرى لا تُرفع إلى سحابة هذه: بقايا جهاز انتقل بين منشأتين
-    final all = [...local.pendingSyncs.where((a) => a.tenantId.isEmpty || a.tenantId == tenantId)];
+    final all = [
+      ...local.pendingSyncs.where(
+        (a) => a.tenantId.isEmpty || a.tenantId == tenantId,
+      ),
+    ];
     final actions = all.where((a) => a.retryCount < maxSyncRetries).toList();
     if (actions.isEmpty) return (pushed: 0, failed: all.length);
 
@@ -997,7 +1533,9 @@ class SyncService {
         ..sort((a, b) {
           final ia = syncedTables.indexOf(a);
           final ib = syncedTables.indexOf(b);
-          return (ia < 0 ? syncedTables.length : ia).compareTo(ib < 0 ? syncedTables.length : ib);
+          return (ia < 0 ? syncedTables.length : ia).compareTo(
+            ib < 0 ? syncedTables.length : ib,
+          );
         });
       return reverse ? list.reversed.toList() : list;
     }
@@ -1006,7 +1544,10 @@ class SyncService {
       final list = deletesByTable[tableName]!;
       for (var i = 0; i < list.length; i += pushChunk) {
         final chunk = list.sublist(i, (i + pushChunk).clamp(0, list.length));
-        final ids = chunk.map((a) => a.recordId).where((id) => id.isNotEmpty).toList();
+        final ids = chunk
+            .map((a) => a.recordId)
+            .where((id) => id.isNotEmpty)
+            .toList();
         if (ids.isEmpty) continue;
         try {
           await _deleteIds(tableName, tenantId, ids);
@@ -1014,7 +1555,11 @@ class SyncService {
           local.pendingSyncs.removeWhere((p) => chunk.any((c) => c.id == p.id));
         } catch (err) {
           failed += chunk.length;
-          _markFailed(chunk, describeSupabaseError(err, tableName), transient: isTransientSyncError(err));
+          _markFailed(
+            chunk,
+            describeSupabaseError(err, tableName),
+            transient: isTransientSyncError(err),
+          );
         }
       }
     }
@@ -1026,7 +1571,9 @@ class SyncService {
         final rows = <Map<String, dynamic>>[];
         final kept = <PendingSync>[];
         for (final action in chunk) {
-          final recordId = action.recordId.isNotEmpty ? action.recordId : '${action.payload?['id'] ?? ''}';
+          final recordId = action.recordId.isNotEmpty
+              ? action.recordId
+              : '${action.payload?['id'] ?? ''}';
           if (recordId.isEmpty) continue;
           var fullRecord = {...?action.payload};
           final localRec = local.recordOf(tableName, recordId);
@@ -1036,7 +1583,8 @@ class SyncService {
             fullRecord = {...fullRecord, 'id': recordId};
           }
           // جلسة بلا مجموعة تنتهك قيود السحابة ولن تُقبل مهما أُعيدت
-          if (tableName == 'sessions' && '${fullRecord['group_id'] ?? ''}'.isEmpty) {
+          if (tableName == 'sessions' &&
+              '${fullRecord['group_id'] ?? ''}'.isEmpty) {
             local.pendingSyncs.removeWhere((p) => p.id == action.id);
             continue;
           }
@@ -1058,9 +1606,16 @@ class SyncService {
           // فائدة. نُسجّل السبب بلا استهلاك محاولات ونتوقف — الطابور سليم
           // وسيُرفع كما هو عند عودة الاتصال.
           if (isTransientSyncError(err)) {
-            _markFailed(kept, describeSupabaseError(err, tableName), transient: true);
+            _markFailed(
+              kept,
+              describeSupabaseError(err, tableName),
+              transient: true,
+            );
             failed += kept.length;
-            return (pushed: pushed, failed: failed + (all.length - actions.length));
+            return (
+              pushed: pushed,
+              failed: failed + (all.length - actions.length),
+            );
           }
 
           // صف واحد معطوب يُسقط الدفعة كلها، فتُعاد صفاً صفاً لعزله وحده
@@ -1075,7 +1630,10 @@ class SyncService {
               // سندان برقم واحد صدرا من جهازين بلا اتصال: يُمنح هذا السند رقماً
               // متاحاً ويُحفظ رقمه الورقي في بيانه، بدل انتظار تدخل يدوي من المدير
               if (tableName == 'payments' && isDuplicateReceiptError(rowErr)) {
-                final reissued = await _retryWithFreshReceipt(kept[k], tenantId);
+                final reissued = await _retryWithFreshReceipt(
+                  kept[k],
+                  tenantId,
+                );
                 if (reissued) {
                   pushed++;
                   continue;
@@ -1098,12 +1656,17 @@ class SyncService {
   }
 
   /// إعادة رفع سند برقم جديد بعد تعارض رقمه. يعيد `true` إن نجح الرفع.
-  Future<bool> _retryWithFreshReceipt(PendingSync action, String tenantId) async {
+  Future<bool> _retryWithFreshReceipt(
+    PendingSync action,
+    String tenantId,
+  ) async {
     if (local.reissueReceiptNumber(action.recordId) == null) return false;
     final updated = local.recordOf('payments', action.recordId);
     if (updated == null) return false;
     try {
-      await _upsert('payments', [sanitizePayload('payments', updated, tenantId)]);
+      await _upsert('payments', [
+        sanitizePayload('payments', updated, tenantId),
+      ]);
       local.pendingSyncs.removeWhere((p) => p.id == action.id);
       local.markSynced('payments', action.recordId);
       return true;
@@ -1116,7 +1679,11 @@ class SyncService {
   ///
   /// [transient] يعني خطأ نقل (شبكة أو خادم): تُحفظ الرسالة ولا يُستهلك رصيد
   /// المحاولات، لأن السجل سليم ولا ذنب له في انقطاع الاتصال.
-  void _markFailed(List<PendingSync> actions, String message, {bool transient = false}) {
+  void _markFailed(
+    List<PendingSync> actions,
+    String message, {
+    bool transient = false,
+  }) {
     final now = DateTime.now().toUtc().toIso8601String();
     for (final a in actions) {
       if (!transient) a.retryCount = a.retryCount + 1;
@@ -1142,6 +1709,7 @@ class SyncService {
     local.pendingSyncs.removeWhere((a) => a.id == action.id);
     local.notifySync();
   }
+
   /// جلب ما تغيّر في السحابة ودمجه محلياً — مطابق لـ `pullFromCloud`.
   ///
   /// لكل جدول مؤشر بختم السيرفر: أول سحب يجلب الجدول كاملاً، وما بعده يجلب
@@ -1163,8 +1731,14 @@ class SyncService {
 
     // الجلب شبكيٌّ فيُطلب للجداول معاً، والتطبيق محليٌّ فيسير بترتيب الجداول بعده
     // المرفقات لا تُسحب دورياً: صورها تُجلب عند فتح السجل الذي تخصه وحده
-    final tables = syncedTables.where((t) => t != 'student_attachments' && t != 'finance_attachments').toList();
-    final fetched = await mapPooled(tables, pullConcurrency, (cloud) => _fetchTableChanges(cloud, tenantId));
+    final tables = syncedTables
+        .where((t) => t != 'student_attachments' && t != 'finance_attachments')
+        .toList();
+    final fetched = await mapPooled(
+      tables,
+      pullConcurrency,
+      (cloud) => _fetchTableChanges(cloud, tenantId),
+    );
 
     for (final f in fetched) {
       final cloud = f.cloud;
@@ -1176,7 +1750,10 @@ class SyncService {
       if (rows == null) continue;
 
       try {
-        final pendingIds = local.pendingSyncs.where((p) => p.tableName == cloud).map((p) => p.recordId).toSet();
+        final pendingIds = local.pendingSyncs
+            .where((p) => p.tableName == cloud)
+            .map((p) => p.recordId)
+            .toSet();
         final toWrite = <Map<String, dynamic>>[];
         final stamps = <String, String>{};
 
@@ -1187,14 +1764,18 @@ class SyncService {
           final loc = local.recordOf(cloud, id);
           if (loc != null &&
               loc['sync_status'] == 'pending' &&
-              toTimestamp(loc['updated_at']) > toTimestamp(record['updated_at']) + stampToleranceMs) {
+              toTimestamp(loc['updated_at']) >
+                  toTimestamp(record['updated_at']) + stampToleranceMs) {
             continue;
           }
 
           final rest = Map<String, dynamic>.from(record)..remove('tenant_id');
           final stamp = '${rest.remove('server_updated_at') ?? ''}';
           if (stamp.isNotEmpty) stamps[id] = stamp;
-          if (cloud == 'enrollments' && (rest['enrolled_at'] == null || '${rest['enrolled_at']}'.isEmpty) && rest['enrollment_date'] != null) {
+          if (cloud == 'enrollments' &&
+              (rest['enrolled_at'] == null ||
+                  '${rest['enrolled_at']}'.isEmpty) &&
+              rest['enrollment_date'] != null) {
             rest['enrolled_at'] = rest['enrollment_date'];
           }
           rest['sync_status'] = 'synced';
@@ -1242,14 +1823,27 @@ class SyncService {
     if (failedTables.isEmpty) {
       await _setLastPullAt(tenantId, DateTime.now().toUtc().toIso8601String());
     }
-    return PullOutcome(pulled: totalPulled, removed: totalRemoved, failedTables: failedTables);
+    return PullOutcome(
+      pulled: totalPulled,
+      removed: totalRemoved,
+      failedTables: failedTables,
+    );
   }
 
   /// الشقّ الشبكي من سحب جدول: ما تغيّر منذ مؤشره، بلا لمس للبيانات المحلية.
   ///
   /// [rows] `null` مع [error] فارغ يعني جدولاً غير موجود في قاعدة المنشأة بعد.
-  Future<({String cloud, String? since, int startedAt, String? maxStamp, List<Map<String, dynamic>>? rows, String? error})>
-      _fetchTableChanges(String cloud, String tenantId) async {
+  Future<
+    ({
+      String cloud,
+      String? since,
+      int startedAt,
+      String? maxStamp,
+      List<Map<String, dynamic>>? rows,
+      String? error,
+    })
+  >
+  _fetchTableChanges(String cloud, String tenantId) async {
     final startedAt = DateTime.now().millisecondsSinceEpoch;
     String? since;
     try {
@@ -1265,23 +1859,46 @@ class SyncService {
       } else {
         final changed = await _findChanged(cloud, tenantId, since);
         if (changed == null) {
-          final error = missingTables.contains(cloud) ? null : 'تعذّر جلب بيانات ${tableLabelsAr[cloud] ?? cloud} من السحابة.';
-          return (cloud: cloud, since: since, startedAt: startedAt, maxStamp: maxStamp, rows: null, error: error);
+          final error = missingTables.contains(cloud)
+              ? null
+              : 'تعذّر جلب بيانات ${tableLabelsAr[cloud] ?? cloud} من السحابة.';
+          return (
+            cloud: cloud,
+            since: since,
+            startedAt: startedAt,
+            maxStamp: maxStamp,
+            rows: null,
+            error: error,
+          );
         }
         maxStamp = changed.maxStamp;
         rows = changed.ids.isEmpty
             ? <Map<String, dynamic>>[]
             : changed.ids.length > maxIdFetch
-                ? await _fetchPages(cloud, tenantId, since)
-                : await _fetchByIds(cloud, tenantId, changed.ids);
+            ? await _fetchPages(cloud, tenantId, since)
+            : await _fetchByIds(cloud, tenantId, changed.ids);
       }
 
       final error = rows == null && !missingTables.contains(cloud)
           ? 'تعذّر جلب بيانات ${tableLabelsAr[cloud] ?? cloud} من السحابة.'
           : null;
-      return (cloud: cloud, since: since, startedAt: startedAt, maxStamp: maxStamp, rows: rows, error: error);
+      return (
+        cloud: cloud,
+        since: since,
+        startedAt: startedAt,
+        maxStamp: maxStamp,
+        rows: rows,
+        error: error,
+      );
     } catch (err) {
-      return (cloud: cloud, since: since, startedAt: startedAt, maxStamp: since, rows: null, error: describeSupabaseError(err, cloud));
+      return (
+        cloud: cloud,
+        since: since,
+        startedAt: startedAt,
+        maxStamp: since,
+        rows: null,
+        error: describeSupabaseError(err, cloud),
+      );
     }
   }
 
@@ -1293,7 +1910,7 @@ class SyncService {
     var maxStamp = since;
     var removed = 0;
 
-    for (var from = 0;; from += pullPageSize) {
+    for (var from = 0; ; from += pullPageSize) {
       final page = await _select(
         'deleted_records',
         tenantId,
@@ -1312,9 +1929,12 @@ class SyncService {
         final id = '${row['record_id'] ?? ''}';
         final deletedAt = '${row['deleted_at'] ?? ''}';
         maxStamp = laterStamp(maxStamp, deletedAt);
-        if (table.isEmpty || id.isEmpty || !syncedTables.contains(table)) continue;
+        if (table.isEmpty || id.isEmpty || !syncedTables.contains(table))
+          continue;
 
-        final pending = local.pendingSyncs.any((p) => p.tableName == table && p.recordId == id);
+        final pending = local.pendingSyncs.any(
+          (p) => p.tableName == table && p.recordId == id,
+        );
         final applies = shouldApplyRemoteDelete(
           existsLocally: local.recordOf(table, id) != null,
           localStamp: local.serverStamp(table, id),
@@ -1344,7 +1964,7 @@ class SyncService {
     final ids = <String>[];
     String? maxStamp = since;
 
-    for (var from = 0;; from += pullPageSize) {
+    for (var from = 0; ; from += pullPageSize) {
       final page = await _select(
         cloud,
         tenantId,
@@ -1365,9 +1985,13 @@ class SyncService {
     }
   }
 
-  Future<List<Map<String, dynamic>>?> _fetchPages(String cloud, String tenantId, String? since) async {
+  Future<List<Map<String, dynamic>>?> _fetchPages(
+    String cloud,
+    String tenantId,
+    String? since,
+  ) async {
     final all = <Map<String, dynamic>>[];
-    for (var from = 0;; from += pullPageSize) {
+    for (var from = 0; ; from += pullPageSize) {
       final page = await _select(
         cloud,
         tenantId,
@@ -1383,10 +2007,17 @@ class SyncService {
     }
   }
 
-  Future<List<Map<String, dynamic>>?> _fetchByIds(String cloud, String tenantId, List<String> ids) async {
+  Future<List<Map<String, dynamic>>?> _fetchByIds(
+    String cloud,
+    String tenantId,
+    List<String> ids,
+  ) async {
     final all = <Map<String, dynamic>>[];
     for (var i = 0; i < ids.length; i += idFetchChunk) {
-      final chunk = ids.sublist(i, i + idFetchChunk > ids.length ? ids.length : i + idFetchChunk);
+      final chunk = ids.sublist(
+        i,
+        i + idFetchChunk > ids.length ? ids.length : i + idFetchChunk,
+      );
       final page = await _selectIn(cloud, tenantId, chunk);
       all.addAll(page);
     }
@@ -1394,7 +2025,8 @@ class SyncService {
   }
 
   /// مؤشر الجدول: ختم السيرفر لآخر ما وصلنا منه.
-  String cursorKey(String tenantId, String table) => 'sync_cursor_${tenantId}_$table';
+  String cursorKey(String tenantId, String table) =>
+      'sync_cursor_${tenantId}_$table';
 
   String columnsSignatureKey(String tenantId) => 'sync_columns_$tenantId';
 
@@ -1423,15 +2055,17 @@ class SyncService {
   }
 
   /// تراجعٌ عن المؤشر قبل الجلب — انظر [cursorOverlapMs].
-  static String overlapped(String since) =>
-      DateTime.fromMillisecondsSinceEpoch(toTimestamp(since) - cursorOverlapMs, isUtc: true).toIso8601String();
+  static String overlapped(String since) => DateTime.fromMillisecondsSinceEpoch(
+    toTimestamp(since) - cursorOverlapMs,
+    isUtc: true,
+  ).toIso8601String();
 
   /// ترويسات الجلسة لا المفتاح المنشور: القاعدة محمية بـ RLS، والزائر المجهول
   /// يُعاد له جدول فارغ بلا خطأ — فكان السحب «ينجح» بصفر سجل والرفع يُرفض.
   Map<String, String> get _headers => {
-        ...SupabaseConfig.headers,
-        'Prefer': 'return=representation',
-      };
+    ...SupabaseConfig.headers,
+    'Prefer': 'return=representation',
+  };
 
   Future<List<Map<String, dynamic>>?> _select(
     String table,
@@ -1455,25 +2089,35 @@ class SyncService {
       // تراجعٌ عن المؤشر بلحظة: صفٌّ كُتب أثناء السحب السابق كان يُفوَّت للأبد
       params[sinceColumn] = 'gt.${overlapped(since)}';
     }
-    final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(queryParameters: params);
+    final uri = Uri.parse(
+      '$supabaseUrl/rest/v1/$table',
+    ).replace(queryParameters: params);
     try {
       final res = await SupabaseAuth.withRetryOnExpiry(
         () => http.get(uri, headers: {..._headers, 'Range': '$from-$to'}),
         expired: (r) => SupabaseAuth.isExpiredResponse(r.statusCode, r.body),
       );
       if (res.statusCode >= 400) {
-        if (isMissingTableError(res.statusCode, res.body)) missingTables.add(table);
+        if (isMissingTableError(res.statusCode, res.body))
+          missingTables.add(table);
         return null;
       }
       final data = jsonDecode(res.body);
       if (data is! List) return [];
-      return data.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      return data
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
     } catch (_) {
       return null;
     }
   }
 
-  Future<List<Map<String, dynamic>>> _selectIn(String table, String tenantId, List<String> ids) async {
+  Future<List<Map<String, dynamic>>> _selectIn(
+    String table,
+    String tenantId,
+    List<String> ids,
+  ) async {
     if (ids.isEmpty) return [];
     await SupabaseAuth.ensureFresh();
     final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(
@@ -1488,7 +2132,10 @@ class SyncService {
       if (res.statusCode >= 400) return [];
       final data = jsonDecode(res.body);
       if (data is! List) return [];
-      return data.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      return data
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
     } catch (_) {
       return [];
     }
@@ -1502,7 +2149,10 @@ class SyncService {
     await SupabaseAuth.ensureFresh();
     final conflict = tableConflictTarget[table] ?? 'id';
     final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(
-      queryParameters: {'on_conflict': conflict, 'select': 'id,server_updated_at'},
+      queryParameters: {
+        'on_conflict': conflict,
+        'select': 'id,server_updated_at',
+      },
     );
     final res = await SupabaseAuth.withRetryOnExpiry(
       () => http.post(
@@ -1540,7 +2190,11 @@ class SyncService {
     }
   }
 
-  Future<void> _deleteIds(String table, String tenantId, List<String> ids) async {
+  Future<void> _deleteIds(
+    String table,
+    String tenantId,
+    List<String> ids,
+  ) async {
     await SupabaseAuth.ensureFresh();
     final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(
       queryParameters: {

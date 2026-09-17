@@ -40,24 +40,29 @@ class _StudentsScreenState extends State<StudentsScreen> {
           return NoAccess(section: 'students', roleName: store.roleName);
         }
         final q = search.text.trim().toLowerCase();
-        final dueMap = overdueByStudent(store.installments);
-        final list = store.students.where((s) {
-          // المؤرشف مخفي افتراضياً — مطابق لـ Students.tsx
-          if (statusFilter.isEmpty) {
-            if (s.status == 'archived') return false;
-          } else if (s.status != statusFilter) {
-            return false;
-          }
-          if (grade.isNotEmpty && s.gradeLevel.trim() != grade) return false;
-          if (q.isEmpty) return true;
-          return s.fullName.toLowerCase().contains(q) ||
-              s.phone.contains(q) ||
-              s.parentName.toLowerCase().contains(q) ||
-              s.parentPhone.contains(q) ||
-              s.nationalId.contains(q);
-        }).toList()
-          // الأحدث تسجيلاً أولاً — مطابق لفرز Students.tsx
-          ..sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
+        final yearStudents = store.studentsInViewedYear;
+        final dueMap = overdueByStudent(store.installmentsInViewedYear);
+        final list =
+            yearStudents.where((s) {
+                // المؤرشف مخفي افتراضياً — مطابق لـ Students.tsx
+                if (statusFilter.isEmpty) {
+                  if (s.status == 'archived') return false;
+                } else if (s.status != statusFilter) {
+                  return false;
+                }
+                if (grade.isNotEmpty && s.gradeLevel.trim() != grade)
+                  return false;
+                if (q.isEmpty) return true;
+                return s.fullName.toLowerCase().contains(q) ||
+                    s.phone.contains(q) ||
+                    s.parentName.toLowerCase().contains(q) ||
+                    s.parentPhone.contains(q) ||
+                    s.nationalId.contains(q);
+              }).toList()
+              // الأحدث تسجيلاً أولاً — مطابق لفرز Students.tsx
+              ..sort(
+                (a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''),
+              );
 
         return ThumbActionLayer(
           action: store.can('students')
@@ -73,7 +78,11 @@ class _StudentsScreenState extends State<StudentsScreen> {
                       );
                       return;
                     }
-                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const StudentFormScreen()));
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const StudentFormScreen(),
+                      ),
+                    );
                   },
                 )
               : null,
@@ -93,10 +102,18 @@ class _StudentsScreenState extends State<StudentsScreen> {
                             children: [
                               TextSpan(
                                 text: '${list.length}',
-                                style: TextStyle(color: AppColors.heading, fontWeight: FontWeight.w800),
+                                style: TextStyle(
+                                  color: AppColors.heading,
+                                  fontWeight: FontWeight.w800,
+                                ),
                               ),
-                              if (list.length != store.students.length)
-                                TextSpan(text: '/${store.students.length}', style: const TextStyle(color: AppColors.faint)),
+                              if (list.length != yearStudents.length)
+                                TextSpan(
+                                  text: '/${yearStudents.length}',
+                                  style: const TextStyle(
+                                    color: AppColors.faint,
+                                  ),
+                                ),
                             ],
                           ),
                           style: const TextStyle(fontSize: 11.5),
@@ -106,7 +123,10 @@ class _StudentsScreenState extends State<StudentsScreen> {
                     const SizedBox(width: 8),
                     FilterButton(
                       value: grade,
-                      options: {'': 'كل المراحل', for (final g in store.gradeOptions) g: g},
+                      options: {
+                        '': 'كل المراحل',
+                        for (final g in store.gradeOptions) g: g,
+                      },
                       onSelected: (v) => setState(() => grade = v),
                     ),
                     const SizedBox(width: 6),
@@ -128,14 +148,23 @@ class _StudentsScreenState extends State<StudentsScreen> {
                 child: list.isEmpty
                     ? const Padding(
                         padding: EdgeInsets.all(12),
-                        child: EmptyState(message: 'لا توجد بيانات طلاب مطابقة للبحث'),
+                        child: EmptyState(
+                          message: 'لا توجد بيانات طلاب مطابقة للبحث',
+                        ),
                       )
                     : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, thumbActionClearance),
+                        padding: const EdgeInsets.fromLTRB(
+                          12,
+                          0,
+                          12,
+                          thumbActionClearance,
+                        ),
                         itemCount: list.length,
                         itemBuilder: (_, i) {
                           final student = list[i];
-                          final hasPlan = store.installments.any((inst) => inst.studentId == student.id);
+                          final hasPlan = store.installmentsInViewedYear.any(
+                            (inst) => inst.studentId == student.id,
+                          );
                           final due = dueMap[student.id] ?? 0;
                           // من له خطة: المستحق الحالّ؛ بلا خطة: الرصيد — StudentTable.tsx
                           final shown = hasPlan ? -due : student.balance;
@@ -144,15 +173,25 @@ class _StudentsScreenState extends State<StudentsScreen> {
                             child: _StudentCard(
                               student: student,
                               shownBalance: shown,
-                              onConfirmPending: store.can('students') && student.status == 'pending'
+                              onConfirmPending:
+                                  store.can('students') &&
+                                      student.status == 'pending'
                                   ? () {
                                       try {
-                                        store.upsertStudent(
-                                          Student.fromCloud({...student.toCloud(), 'status': 'active'}),
+                                        final result = store
+                                            .confirmPendingStudent(student.id);
+                                        showAppSnack(
+                                          context,
+                                          result.planBuilt
+                                              ? 'تم تأكيد تسجيل الطالب وبناء خطة أقساطه'
+                                              : 'تم تأكيد تسجيل الطالب',
                                         );
-                                        showAppSnack(context, 'تم تأكيد تسجيل الطالب');
                                       } on StoreException catch (e) {
-                                        showAppSnack(context, e.message, error: true);
+                                        showAppSnack(
+                                          context,
+                                          e.message,
+                                          error: true,
+                                        );
                                       }
                                     }
                                   : null,
@@ -182,14 +221,24 @@ class _StudentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final phone = student.phone.trim().isNotEmpty ? student.phone.trim() : student.parentPhone.trim();
-    final grade = student.gradeLevel.trim().isEmpty ? 'غير محدد' : student.gradeLevel.trim();
-    final meta = student.section.trim().isEmpty ? grade : '$grade  ·  شعبة ${student.section.trim()}';
+    final phone = student.phone.trim().isNotEmpty
+        ? student.phone.trim()
+        : student.parentPhone.trim();
+    final grade = student.gradeLevel.trim().isEmpty
+        ? 'غير محدد'
+        : student.gradeLevel.trim();
+    final meta = student.section.trim().isEmpty
+        ? grade
+        : '$grade  ·  شعبة ${student.section.trim()}';
 
     return AppCard(
       padding: const EdgeInsets.fromLTRB(6, 11, 12, 11),
       onTap: () {
-        Navigator.of(context).push(MaterialPageRoute(builder: (_) => StudentDetailScreen(studentId: student.id)));
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => StudentDetailScreen(studentId: student.id),
+          ),
+        );
       },
       child: Row(
         children: [
@@ -219,7 +268,10 @@ class _StudentCard extends StatelessWidget {
                   meta,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 11.5,
+                  ),
                 ),
                 if (student.parentName.trim().isNotEmpty) ...[
                   const SizedBox(height: 2),
@@ -227,7 +279,10 @@ class _StudentCard extends StatelessWidget {
                     'ولي الأمر: ${student.parentName.trim()}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppColors.faint, fontSize: 11),
+                    style: const TextStyle(
+                      color: AppColors.faint,
+                      fontSize: 11,
+                    ),
                   ),
                 ],
                 if (onConfirmPending != null) ...[
@@ -238,11 +293,20 @@ class _StudentCard extends StatelessWidget {
                       onPressed: onConfirmPending,
                       style: TextButton.styleFrom(
                         foregroundColor: AppColors.amber,
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 0,
+                        ),
                         minimumSize: const Size(0, 28),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      child: const Text('تأكيد', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+                      child: const Text(
+                        'تأكيد',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -254,7 +318,8 @@ class _StudentCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (StoreScope.of(context).can('finance')) _BalanceText(balance: shownBalance),
+              if (StoreScope.of(context).can('finance'))
+                _BalanceText(balance: shownBalance),
               if (phone.isNotEmpty) ...[
                 const SizedBox(height: 2),
                 Row(
@@ -263,7 +328,11 @@ class _StudentCard extends StatelessWidget {
                     ContactIconButton(
                       tooltip: 'اتصال هاتفي',
                       onTap: () => launchTel(phone),
-                      child: const Icon(Icons.phone_outlined, size: 18, color: AppColors.muted),
+                      child: const Icon(
+                        Icons.phone_outlined,
+                        size: 18,
+                        color: AppColors.muted,
+                      ),
                     ),
                     ContactIconButton(
                       tooltip: 'مراسلة واتساب',
@@ -295,7 +364,14 @@ class _BalanceText extends StatelessWidget {
         : ('مسدد', AppColors.success);
     return Padding(
       padding: const EdgeInsetsDirectional.only(end: 6),
-      child: Text(text, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700)),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
     );
   }
 }

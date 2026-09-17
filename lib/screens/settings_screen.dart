@@ -48,13 +48,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// التبويبات بترتيب Settings.tsx — تُخفى بحسب الصلاحية.
   static const _allTabs = [
+    _Tab('academic_years', Icons.calendar_month_outlined, 'الأعوام الدراسية'),
     _Tab('grade_fees', Icons.payments_outlined, 'المراحل والرسوم'),
     _Tab('payment_methods', Icons.credit_card_outlined, 'وسائل الدفع'),
     _Tab('teachers', Icons.school_outlined, 'المعلمون'),
     _Tab('subjects', Icons.menu_book_outlined, 'المواد'),
     _Tab('grading', Icons.workspace_premium_outlined, 'نظام العلامات'),
-    _Tab('users', Icons.manage_accounts_outlined, 'المستخدمون', section: 'settings.users'),
-    _Tab('backup', Icons.storage_outlined, 'البيانات والنسخ', section: 'settings.backup'),
+    _Tab(
+      'users',
+      Icons.manage_accounts_outlined,
+      'المستخدمون',
+      section: 'settings.users',
+    ),
+    _Tab(
+      'backup',
+      Icons.storage_outlined,
+      'البيانات والنسخ',
+      section: 'settings.backup',
+    ),
   ];
 
   @override
@@ -67,13 +78,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return NoAccess(section: 'settings', roleName: store.roleName);
         }
         final tabs = _allTabs.where((t) {
-          if (t.id == 'grading' && !store.features.enableEvaluations) return false;
+          if (t.id == 'grading' && !store.features.enableEvaluations)
+            return false;
           if (t.section != null && !store.can(t.section!)) return false;
           return true;
         }).toList();
-        if (tabs.isEmpty) return NoAccess(section: 'settings', roleName: store.roleName);
+        if (tabs.isEmpty)
+          return NoAccess(section: 'settings', roleName: store.roleName);
         // من فقد صلاحية التبويب المفتوح يعود إلى أول تبويب مسموح
-        final active = tabs.firstWhere((t) => t.id == current, orElse: () => tabs.first);
+        final active = tabs.firstWhere(
+          (t) => t.id == current,
+          orElse: () => tabs.first,
+        );
 
         return ThumbActionLayer(
           action: _actionFor(context, active.id),
@@ -82,6 +98,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _tabBar(tabs, active.id),
               Expanded(
                 child: switch (active.id) {
+                  'academic_years' => const _AcademicYearsTab(),
                   'grade_fees' => const _FeesTab(),
                   'payment_methods' => const PaymentMethodsTab(),
                   'subjects' => const _SubjectsTab(),
@@ -100,25 +117,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// زر الإضافة يتبع التبويب — تبويب البيانات بلا إضافة.
   ThumbAction? _actionFor(BuildContext context, String tab) {
-    void open(Widget page) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    void open(Widget page) =>
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
     return switch (tab) {
-      'grade_fees' => ThumbAction(label: 'مرحلة جديدة', icon: Icons.add, onPressed: () => open(const GradeFeeFormScreen())),
+      'grade_fees' => ThumbAction(
+        label: 'مرحلة جديدة',
+        icon: Icons.add,
+        onPressed: () => open(const GradeFeeFormScreen()),
+      ),
       'teachers' => ThumbAction(
-          label: 'إضافة مدرس',
-          icon: Icons.person_add_alt_1_outlined,
-          onPressed: () => open(const TeacherFormScreen()),
-        ),
+        label: 'إضافة مدرس',
+        icon: Icons.person_add_alt_1_outlined,
+        onPressed: () => open(const TeacherFormScreen()),
+      ),
       'payment_methods' => ThumbAction(
-          label: 'وسيلة دفع',
-          icon: Icons.add,
-          onPressed: () => addPaymentMethod(context),
-        ),
-      'subjects' => ThumbAction(label: 'إضافة مادة', icon: Icons.add, onPressed: () => open(const SubjectFormScreen())),
+        label: 'وسيلة دفع',
+        icon: Icons.add,
+        onPressed: () => addPaymentMethod(context),
+      ),
+      'subjects' => ThumbAction(
+        label: 'إضافة مادة',
+        icon: Icons.add,
+        onPressed: () => open(const SubjectFormScreen()),
+      ),
       'users' => ThumbAction(
-          label: 'مستخدم جديد',
-          icon: Icons.person_add_alt_1_outlined,
-          onPressed: () => open(const UserFormScreen()),
-        ),
+        label: 'مستخدم جديد',
+        icon: Icons.person_add_alt_1_outlined,
+        onPressed: () => open(const UserFormScreen()),
+      ),
       _ => null,
     };
   }
@@ -144,20 +170,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
                     border: Border(
-                      bottom: BorderSide(color: t.id == active ? AppColors.accent : Colors.transparent, width: 2),
+                      bottom: BorderSide(
+                        color: t.id == active
+                            ? AppColors.accent
+                            : Colors.transparent,
+                        width: 2,
+                      ),
                     ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(t.icon, size: 15, color: t.id == active ? AppColors.heading : AppColors.muted),
+                      Icon(
+                        t.icon,
+                        size: 15,
+                        color: t.id == active
+                            ? AppColors.heading
+                            : AppColors.muted,
+                      ),
                       const SizedBox(width: 5),
                       Text(
                         t.label,
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
-                          color: t.id == active ? AppColors.heading : AppColors.muted,
+                          color: t.id == active
+                              ? AppColors.heading
+                              : AppColors.muted,
                         ),
                       ),
                     ],
@@ -171,9 +210,251 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
+// ═══ الأعوام الدراسية ═══════════════════════════════════════════════════════
+
+class _AcademicYearsTab extends StatefulWidget {
+  const _AcademicYearsTab();
+
+  @override
+  State<_AcademicYearsTab> createState() => _AcademicYearsTabState();
+}
+
+class _AcademicYearsTabState extends State<_AcademicYearsTab> {
+  bool openDates = false;
+  String startsOn = '';
+  String endsOn = '';
+  String term1Start = '';
+  String term1End = '';
+  String term2Start = '';
+  String term2End = '';
+  bool busy = false;
+
+  void _loadDraft(AcademicYear? current) {
+    if (current == null) return;
+    startsOn = current.startsOn;
+    endsOn = current.endsOn;
+    term1Start = current.term1Start;
+    term1End = current.term1End;
+    term2Start = current.term2Start;
+    term2End = current.term2End;
+  }
+
+  Future<void> _pick(String current, ValueChanged<String> onPicked) async {
+    final initial = parseIsoDate(current) ?? DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2040),
+    );
+    if (picked != null) onPicked(isoDate(picked));
+  }
+
+  Future<void> _saveDates(AppStore store, AcademicYear current) async {
+    setState(() => busy = true);
+    try {
+      await store.updateAcademicYear(
+        current.id,
+        startsOn: startsOn,
+        endsOn: endsOn,
+        term1Start: term1Start,
+        term1End: term1End,
+        term2Start: term2Start,
+        term2End: term2End,
+      );
+      if (!mounted) return;
+      setState(() => openDates = false);
+      showAppSnack(context, 'تم حفظ تواريخ ${current.label}');
+    } on StoreException catch (e) {
+      if (mounted) showAppSnack(context, e.message, error: true);
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = StoreScope.of(context);
+    final years = [...store.academicYears]
+      ..sort((a, b) => b.startsOn.compareTo(a.startsOn));
+    final current = store.operationalAcademicYear;
+    if (!openDates && current != null && startsOn.isEmpty) {
+      _loadDraft(current);
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, thumbActionClearance),
+      children: [
+        for (final year in years)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: AppCard(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(year.label, style: _titleStyle),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${year.startsOn} — ${year.endsOn}',
+                          style: _metaStyle,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (year.isCurrent)
+                    StatusChip.success('الحالي')
+                  else if (year.status == 'closed')
+                    StatusChip.muted('مغلق')
+                  else
+                    GhostButton(
+                      label: 'جعله الحالي',
+                      onPressed: () async {
+                        await store.setCurrentAcademicYear(year.id);
+                        if (context.mounted) {
+                          showAppSnack(
+                            context,
+                            'تم تعيين ${year.label} عاماً حالياً',
+                          );
+                        }
+                      },
+                    ),
+                ],
+              ),
+            ),
+          ),
+        if (current != null) ...[
+          const SizedBox(height: 8),
+          GhostButton(
+            label: openDates ? 'إخفاء التواريخ' : 'تعديل تواريخ العام الحالي',
+            icon: Icons.edit_calendar_outlined,
+            onPressed: () => setState(() {
+              openDates = !openDates;
+              if (openDates) _loadDraft(current);
+            }),
+          ),
+          if (openDates) ...[
+            const SizedBox(height: 10),
+            AppCard(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text('العام', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                  const SizedBox(height: 6),
+                  FieldPair(
+                    start: [
+                      const FieldLabel('من'),
+                      SelectField(
+                        text: startsOn.isEmpty ? 'اختر' : startsOn,
+                        icon: Icons.calendar_today_outlined,
+                        placeholder: startsOn.isEmpty,
+                        onTap: () => _pick(startsOn, (v) => setState(() => startsOn = v)),
+                      ),
+                    ],
+                    end: [
+                      const FieldLabel('إلى'),
+                      SelectField(
+                        text: endsOn.isEmpty ? 'اختر' : endsOn,
+                        icon: Icons.calendar_today_outlined,
+                        placeholder: endsOn.isEmpty,
+                        onTap: () => _pick(endsOn, (v) => setState(() => endsOn = v)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const Text('الفصل الأول', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                  const SizedBox(height: 6),
+                  FieldPair(
+                    start: [
+                      const FieldLabel('من'),
+                      SelectField(
+                        text: term1Start.isEmpty ? 'اختر' : term1Start,
+                        icon: Icons.calendar_today_outlined,
+                        placeholder: term1Start.isEmpty,
+                        onTap: () => _pick(term1Start, (v) => setState(() => term1Start = v)),
+                      ),
+                    ],
+                    end: [
+                      const FieldLabel('إلى'),
+                      SelectField(
+                        text: term1End.isEmpty ? 'اختر' : term1End,
+                        icon: Icons.calendar_today_outlined,
+                        placeholder: term1End.isEmpty,
+                        onTap: () => _pick(term1End, (v) => setState(() => term1End = v)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const Text('الفصل الثاني', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                  const SizedBox(height: 6),
+                  FieldPair(
+                    start: [
+                      const FieldLabel('من'),
+                      SelectField(
+                        text: term2Start.isEmpty ? 'اختر' : term2Start,
+                        icon: Icons.calendar_today_outlined,
+                        placeholder: term2Start.isEmpty,
+                        onTap: () => _pick(term2Start, (v) => setState(() => term2Start = v)),
+                      ),
+                    ],
+                    end: [
+                      const FieldLabel('إلى'),
+                      SelectField(
+                        text: term2End.isEmpty ? 'اختر' : term2End,
+                        icon: Icons.calendar_today_outlined,
+                        placeholder: term2End.isEmpty,
+                        onTap: () => _pick(term2End, (v) => setState(() => term2End = v)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  PrimaryButton(
+                    label: busy ? 'جارِ الحفظ...' : 'حفظ التواريخ',
+                    onPressed: busy ? null : () => _saveDates(store, current),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+        const SizedBox(height: 12),
+        PrimaryButton(
+          label: 'إغلاق العام وفتح التالي',
+          icon: Icons.next_plan_outlined,
+          color: AppColors.navy,
+          onPressed: () async {
+            final cur = store.operationalAcademicYear;
+            if (cur == null) return;
+            final ok = await confirmSheet(
+              context,
+              title: 'إغلاق ${cur.label}',
+              message:
+                  'سيُغلق العام الحالي ويُفتح التالي مع نسخ الصفوف والمواد والخطط.',
+              confirmLabel: 'إغلاق وفتح التالي',
+            );
+            if (!ok || !context.mounted) return;
+            final result = await store.closeCurrentAndOpenNext();
+            if (context.mounted) {
+              showAppSnack(context, 'تم فتح ${result.opened.label}');
+            }
+          },
+        ),
+      ],
+    );
+  }
+}
+
 // ═══ عناصر مشتركة ═══════════════════════════════════════════════════════════
 
-TextStyle get _titleStyle => TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading);
+TextStyle get _titleStyle => TextStyle(
+  fontWeight: FontWeight.w800,
+  fontSize: 13,
+  color: AppColors.heading,
+);
 
 const _metaStyle = TextStyle(color: AppColors.muted, fontSize: 11);
 
@@ -220,7 +501,11 @@ class _Toolbar extends StatelessWidget {
         onChanged: onChanged,
         trailing: Text(
           shown == total ? '$total' : '$shown/$total',
-          style: const TextStyle(color: AppColors.muted, fontSize: 11, fontWeight: FontWeight.w700),
+          style: const TextStyle(
+            color: AppColors.muted,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
     );
@@ -242,11 +527,17 @@ Widget _cardList({
       if (offset == 1 && i == 0) {
         return Padding(
           padding: const EdgeInsets.only(bottom: 10),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: header),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: header,
+          ),
         );
       }
       if (count == 0) return SizedBox(height: 220, child: empty);
-      return Padding(padding: const EdgeInsets.only(bottom: 8), child: item(context, i - offset));
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: item(context, i - offset),
+      );
     },
   );
 }
@@ -268,8 +559,16 @@ class _FeesTab extends StatelessWidget {
       header: [
         StatRow(
           children: [
-            StatCard(label: 'المراحل الدراسية', value: '${fees.length}', color: AppColors.heading),
-            StatCard(label: 'الشعب', value: '${store.rooms.length}', color: AppColors.heading),
+            StatCard(
+              label: 'المراحل الدراسية',
+              value: '${fees.length}',
+              color: AppColors.heading,
+            ),
+            StatCard(
+              label: 'الشعب',
+              value: '${store.rooms.length}',
+              color: AppColors.heading,
+            ),
           ],
         ),
         const SizedBox(height: 10),
@@ -295,7 +594,11 @@ class _FeesTab extends StatelessWidget {
             ),
             child: Text(
               'طلاب نشطون بلا خطة أقساط لمرحلتهم: $missing',
-              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: AppColors.danger),
+              style: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
+                color: AppColors.danger,
+              ),
             ),
           ),
         ],
@@ -375,7 +678,10 @@ class _FeeItemsCardState extends State<_FeeItemsCard> {
         amount.clear();
         adding = false;
       });
-      showAppSnack(context, picking ? 'أُضيف — اختر طلابه' : 'قُيّد على ${result.added} طالباً');
+      showAppSnack(
+        context,
+        picking ? 'أُضيف — اختر طلابه' : 'قُيّد على ${result.added} طالباً',
+      );
     } on StoreException catch (e) {
       if (mounted) showAppSnack(context, e.message, error: true);
     }
@@ -401,7 +707,11 @@ class _FeeItemsCardState extends State<_FeeItemsCard> {
   /// اختيار طلاب الرسم بأسمائهم، ثم تقييده عليهم بالضبط.
   Future<void> _pick(FeeItem item) async {
     final store = widget.store;
-    final chosen = await showFeeStudentsSheet(context, store, selected: item.studentIds ?? const []);
+    final chosen = await showFeeStudentsSheet(
+      context,
+      store,
+      selected: item.studentIds ?? const [],
+    );
     if (chosen == null || !mounted) return;
     final updated = item.copyWith(studentIds: chosen, gradeLevel: '');
     try {
@@ -427,9 +737,14 @@ class _FeeItemsCardState extends State<_FeeItemsCard> {
     if (!ok || !mounted) return;
     try {
       final kept = store.removeFeeItem(item.id);
-      await store.saveFeeItems(store.feeItems.where((i) => i.id != item.id).toList());
+      await store.saveFeeItems(
+        store.feeItems.where((i) => i.id != item.id).toList(),
+      );
       if (!mounted) return;
-      showAppSnack(context, kept == 0 ? 'حُذف' : 'حُذف، وبقي على $kept طالباً لهم سندات');
+      showAppSnack(
+        context,
+        kept == 0 ? 'حُذف' : 'حُذف، وبقي على $kept طالباً لهم سندات',
+      );
     } on StoreException catch (e) {
       if (mounted) showAppSnack(context, e.message, error: true);
     }
@@ -451,14 +766,21 @@ class _FeeItemsCardState extends State<_FeeItemsCard> {
               Expanded(
                 child: Text(
                   'رسوم إضافية',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12.5,
+                    color: AppColors.heading,
+                  ),
                 ),
               ),
               TextButton.icon(
                 onPressed: () => setState(() => adding = !adding),
                 style: TextButton.styleFrom(
                   foregroundColor: AppColors.amber,
-                  textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                  textStyle: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
                 ),
                 icon: Icon(adding ? Icons.close : Icons.add, size: 16),
                 label: Text(adding ? 'إلغاء' : 'رسم جديد'),
@@ -471,14 +793,19 @@ class _FeeItemsCardState extends State<_FeeItemsCard> {
               children: [
                 Expanded(
                   flex: 3,
-                  child: TextField(controller: name, decoration: const InputDecoration(hintText: 'الزي المدرسي')),
+                  child: TextField(
+                    controller: name,
+                    decoration: const InputDecoration(hintText: 'الزي المدرسي'),
+                  ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   flex: 2,
                   child: TextField(
                     controller: amount,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     style: const TextStyle(fontFamily: 'monospace'),
                     decoration: InputDecoration(hintText: '0 $currency'),
                   ),
@@ -492,10 +819,19 @@ class _FeeItemsCardState extends State<_FeeItemsCard> {
                   child: AppDropdown<String>(
                     value: grade.isEmpty ? '' : grade,
                     items: [
-                      const DropdownMenuItem(value: '', child: Text('كل الطلاب')),
-                      const DropdownMenuItem(value: _pickStudents, child: Text('طلاب بعينهم')),
+                      const DropdownMenuItem(
+                        value: '',
+                        child: Text('كل الطلاب'),
+                      ),
+                      const DropdownMenuItem(
+                        value: _pickStudents,
+                        child: Text('طلاب بعينهم'),
+                      ),
                       for (final g in grades)
-                        DropdownMenuItem(value: g, child: Text(g, overflow: TextOverflow.ellipsis)),
+                        DropdownMenuItem(
+                          value: g,
+                          child: Text(g, overflow: TextOverflow.ellipsis),
+                        ),
                     ],
                     onChanged: (v) => setState(() => grade = v ?? ''),
                   ),
@@ -519,12 +855,19 @@ class _FeeItemsCardState extends State<_FeeItemsCard> {
               ],
             ),
             const SizedBox(height: 8),
-            PrimaryButton(label: 'إضافة وتقييد', color: AppColors.navy, onPressed: _add),
+            PrimaryButton(
+              label: 'إضافة وتقييد',
+              color: AppColors.navy,
+              onPressed: _add,
+            ),
           ],
           if (items.isEmpty && !adding)
             const Padding(
               padding: EdgeInsets.only(top: 6),
-              child: Text('لا رسوم إضافية', style: TextStyle(color: AppColors.muted, fontSize: 11.5)),
+              child: Text(
+                'لا رسوم إضافية',
+                style: TextStyle(color: AppColors.muted, fontSize: 11.5),
+              ),
             ),
           for (final item in items)
             Padding(
@@ -540,28 +883,43 @@ class _FeeItemsCardState extends State<_FeeItemsCard> {
                           item.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.text),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                            color: AppColors.text,
+                          ),
                         ),
                         Text(
                           '${money(item.amount)}  ·  ${_targetLabel(item)}  ·  ${item.dueDate}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
+                          style: const TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 10.5,
+                          ),
                         ),
                       ],
                     ),
                   ),
                   TextButton(
-                    onPressed: () => item.studentIds == null ? _apply(item) : _pick(item),
+                    onPressed: () =>
+                        item.studentIds == null ? _apply(item) : _pick(item),
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.amber,
-                      textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5),
+                      textStyle: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 11.5,
+                      ),
                     ),
                     child: Text(item.studentIds == null ? 'تطبيق' : 'الطلاب'),
                   ),
                   IconButton(
                     onPressed: () => _remove(item),
-                    icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.danger),
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      size: 18,
+                      color: AppColors.danger,
+                    ),
                   ),
                 ],
               ),
@@ -600,27 +958,51 @@ Future<List<String>?> showFeeStudentsSheet(
         // بالاسم أو الهوية كما تفلتر شاشة الطلاب
         final shown = q.isEmpty
             ? all
-            : all.where((s) => s.fullName.toLowerCase().contains(q) || s.nationalId.contains(q)).toList();
+            : all
+                  .where(
+                    (s) =>
+                        s.fullName.toLowerCase().contains(q) ||
+                        s.nationalId.contains(q),
+                  )
+                  .toList();
 
         return Padding(
-          padding: EdgeInsets.fromLTRB(16, 14, 16, 12 + MediaQuery.viewInsetsOf(ctx).bottom),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            14,
+            16,
+            12 + MediaQuery.viewInsetsOf(ctx).bottom,
+          ),
           child: SafeArea(
             top: false,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('طلاب الرسم', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading)),
+                Text(
+                  'طلاب الرسم',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    color: AppColors.heading,
+                  ),
+                ),
                 const SizedBox(height: 4),
                 Text(
                   '${chosen.length} من ${all.length} طالباً نشطاً',
                   style: const TextStyle(color: AppColors.muted, fontSize: 11),
                 ),
                 const SizedBox(height: 10),
-                SearchField(controller: search, hint: 'ابحث بالاسم أو الهوية', onChanged: (_) => setSt(() {})),
+                SearchField(
+                  controller: search,
+                  hint: 'ابحث بالاسم أو الهوية',
+                  onChanged: (_) => setSt(() {}),
+                ),
                 const SizedBox(height: 8),
                 ConstrainedBox(
-                  constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.4),
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(ctx).height * 0.4,
+                  ),
                   child: shown.isEmpty
                       ? const EmptyState(message: 'لا طلاب مطابقون للبحث')
                       : ListView.builder(
@@ -638,13 +1020,22 @@ Future<List<String>?> showFeeStudentsSheet(
                                 s.fullName,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                               subtitle: Text(
                                 '${s.gradeLevel}${s.section.isEmpty ? '' : ' · ${s.section}'}',
-                                style: const TextStyle(fontSize: 10.5, color: AppColors.muted),
+                                style: const TextStyle(
+                                  fontSize: 10.5,
+                                  color: AppColors.muted,
+                                ),
                               ),
-                              onChanged: (_) => setSt(() => on ? chosen.remove(s.id) : chosen.add(s.id)),
+                              onChanged: (_) => setSt(
+                                () =>
+                                    on ? chosen.remove(s.id) : chosen.add(s.id),
+                              ),
                             );
                           },
                         ),
@@ -652,7 +1043,12 @@ Future<List<String>?> showFeeStudentsSheet(
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx))),
+                    Expanded(
+                      child: GhostButton(
+                        label: 'إلغاء',
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       flex: 2,
@@ -698,7 +1094,11 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
   void initState() {
     super.initState();
     _readStore();
-    amount = TextEditingController(text: widget.store.seatReservationFee > 0 ? trimNum(widget.store.seatReservationFee) : '');
+    amount = TextEditingController(
+      text: widget.store.seatReservationFee > 0
+          ? trimNum(widget.store.seatReservationFee)
+          : '',
+    );
   }
 
   void _readStore() {
@@ -748,13 +1148,24 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
               Expanded(
                 child: Text(
                   'رسم حجز المقعد',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12.5,
+                    color: AppColors.heading,
+                  ),
                 ),
               ),
               if (saved)
                 const Padding(
                   padding: EdgeInsetsDirectional.only(end: 6),
-                  child: Text('حُفظ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.success)),
+                  child: Text(
+                    'حُفظ',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.success,
+                    ),
+                  ),
                 ),
               Switch.adaptive(
                 value: enabled,
@@ -774,7 +1185,9 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
                 Expanded(
                   child: TextField(
                     controller: amount,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     style: const TextStyle(fontFamily: 'monospace'),
                     onChanged: (_) => setState(() {
                       editing = true;
@@ -784,7 +1197,11 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                PrimaryButton(label: 'حفظ', color: AppColors.navy, onPressed: _save),
+                PrimaryButton(
+                  label: 'حفظ',
+                  color: AppColors.navy,
+                  onPressed: _save,
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -793,7 +1210,10 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
               spacing: 6,
               runSpacing: 6,
               children: [
-                for (final option in const [(true, 'يُخصم من الأقساط'), (false, 'رسم مستقل فوقها')])
+                for (final option in const [
+                  (true, 'يُخصم من الأقساط'),
+                  (false, 'رسم مستقل فوقها'),
+                ])
                   _MonthChip(
                     label: option.$2,
                     on: deduct == option.$1,
@@ -813,7 +1233,11 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
                   const Expanded(
                     child: Text(
                       'بلا رسم حجز',
-                      style: TextStyle(fontSize: 11.5, color: AppColors.muted, fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: AppColors.muted,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                   GhostButton(label: 'حفظ', onPressed: _save),
@@ -825,7 +1249,11 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
             enabled && !deduct
                 ? 'يُدفع مرة واحدة، ويبقى مطالبةً مستقلة فوق أقساط الطالب'
                 : 'يُدفع مرة واحدة ويُخصم من أول الأقساط',
-            style: const TextStyle(fontSize: 10.5, color: AppColors.faint, fontWeight: FontWeight.w600),
+            style: const TextStyle(
+              fontSize: 10.5,
+              color: AppColors.faint,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
@@ -834,7 +1262,11 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
 }
 
 class _MonthChip extends StatelessWidget {
-  const _MonthChip({required this.label, required this.on, required this.onTap});
+  const _MonthChip({
+    required this.label,
+    required this.on,
+    required this.onTap,
+  });
 
   final String label;
   final bool on;
@@ -875,8 +1307,12 @@ class _GradeFeeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final f = fee;
-    final sections = store.rooms.where((r) => r.gradeLevel == f.gradeName).toList();
-    final students = store.students.where((s) => isSameGrade(s.gradeLevel, f.gradeName)).length;
+    final sections = store.rooms
+        .where((r) => r.gradeLevel == f.gradeName)
+        .toList();
+    final students = store.students
+        .where((s) => isSameGrade(s.gradeLevel, f.gradeName))
+        .length;
 
     return AppCard(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
@@ -891,7 +1327,12 @@ class _GradeFeeCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(f.gradeName, maxLines: 1, overflow: TextOverflow.ellipsis, style: _titleStyle),
+                    Text(
+                      f.gradeName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _titleStyle,
+                    ),
                     const SizedBox(height: 2),
                     Text(
                       '${stageTierLabel(f.tier)}  ·  $students طالب',
@@ -906,8 +1347,18 @@ class _GradeFeeCard extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(money(f.monthlyFee), style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: AppColors.heading)),
-                  const Text('قيمة القسط', style: TextStyle(color: AppColors.faint, fontSize: 10.5)),
+                  Text(
+                    money(f.monthlyFee),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 15,
+                      color: AppColors.heading,
+                    ),
+                  ),
+                  const Text(
+                    'قيمة القسط',
+                    style: TextStyle(color: AppColors.faint, fontSize: 10.5),
+                  ),
                 ],
               ),
             ],
@@ -975,7 +1426,11 @@ class _GradePlanRow extends StatelessWidget {
           const Expanded(
             child: Text(
               'لا خطة أقساط لهذه المرحلة — من يُسجَّل فيها لا تُقيَّد عليه أقساط',
-              style: TextStyle(fontSize: 11, color: AppColors.danger, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                fontSize: 11,
+                color: AppColors.danger,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
           TileButton(
@@ -1000,7 +1455,11 @@ class _GradePlanRow extends StatelessWidget {
         Expanded(
           child: Text(
             '${items.length} قسطاً  ·  ${money(total)}',
-            style: const TextStyle(fontSize: 11.5, color: AppColors.muted, fontWeight: FontWeight.w700),
+            style: const TextStyle(
+              fontSize: 11.5,
+              color: AppColors.muted,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
         TileButton(
@@ -1009,9 +1468,9 @@ class _GradePlanRow extends StatelessWidget {
           color: AppColors.heading,
           background: Colors.white,
           border: AppColors.lineStrong,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => GradePlanScreen(fee: fee)),
-          ),
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => GradePlanScreen(fee: fee))),
         ),
       ],
     );
@@ -1046,7 +1505,12 @@ Future<void> _addSection(BuildContext context, GradeFee f) async {
     backgroundColor: Colors.white,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setSt) => Padding(
-        padding: EdgeInsets.fromLTRB(16, 16, 16, 12 + MediaQuery.viewInsetsOf(ctx).bottom),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          12 + MediaQuery.viewInsetsOf(ctx).bottom,
+        ),
         child: SafeArea(
           top: false,
           child: Column(
@@ -1055,22 +1519,38 @@ Future<void> _addSection(BuildContext context, GradeFee f) async {
             children: [
               Text(
                 'إضافة شعبة لمرحلة: ${f.gradeName}',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                  color: AppColors.heading,
+                ),
               ),
               const SizedBox(height: 12),
-              FieldLabel('اسم الشعبة', key: errors.key('name'), requiredField: true),
+              FieldLabel(
+                'اسم الشعبة',
+                key: errors.key('name'),
+                requiredField: true,
+              ),
               TextField(
                 controller: ctl,
                 autofocus: true,
                 onChanged: (_) {
                   if (errors.clear('name')) setSt(() {});
                 },
-                decoration: InputDecoration(hintText: 'مثال: الشعبة (ب)', errorText: errors['name']),
+                decoration: InputDecoration(
+                  hintText: 'مثال: الشعبة (ب)',
+                  errorText: errors['name'],
+                ),
               ),
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx))),
+                  Expanded(
+                    child: GhostButton(
+                      label: 'إلغاء',
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     flex: 2,
@@ -1082,7 +1562,11 @@ Future<void> _addSection(BuildContext context, GradeFee f) async {
                         setSt(() {
                           errors
                             ..reset()
-                            ..check('name', ctl.text.trim().isEmpty, 'يرجى إدخال اسم الشعبة');
+                            ..check(
+                              'name',
+                              ctl.text.trim().isEmpty,
+                              'يرجى إدخال اسم الشعبة',
+                            );
                         });
                         if (errors.report(ctx)) return;
                         try {
@@ -1097,7 +1581,10 @@ Future<void> _addSection(BuildContext context, GradeFee f) async {
                             ),
                           );
                           Navigator.pop(ctx);
-                          showAppSnack(context, 'تمت إضافة الشعبة «${ctl.text.trim()}» إلى ${f.gradeName}');
+                          showAppSnack(
+                            context,
+                            'تمت إضافة الشعبة «${ctl.text.trim()}» إلى ${f.gradeName}',
+                          );
                         } on StoreException catch (e) {
                           showAppSnack(ctx, e.message, error: true);
                         }
@@ -1138,7 +1625,9 @@ class _TeachersTabState extends State<_TeachersTab> {
     final q = search.text.trim();
     final list = store.teachers.where((t) {
       if (q.isEmpty) return true;
-      return t.name.contains(q) || t.phone.contains(q) || t.email.toLowerCase().contains(q.toLowerCase());
+      return t.name.contains(q) ||
+          t.phone.contains(q) ||
+          t.email.toLowerCase().contains(q.toLowerCase());
     }).toList();
 
     return Column(
@@ -1153,7 +1642,11 @@ class _TeachersTabState extends State<_TeachersTab> {
         Expanded(
           child: _cardList(
             count: list.length,
-            empty: EmptyState(message: q.isEmpty ? 'لا يوجد مدرسون مسجلون.' : 'لا يوجد مدرسون مطابقون للبحث.'),
+            empty: EmptyState(
+              message: q.isEmpty
+                  ? 'لا يوجد مدرسون مسجلون.'
+                  : 'لا يوجد مدرسون مطابقون للبحث.',
+            ),
             item: (context, i) => _TeacherCard(teacher: list[i]),
           ),
         ),
@@ -1173,8 +1666,12 @@ class _TeacherCard extends StatelessWidget {
     final store = StoreScope.of(context);
     final t = teacher;
     final phone = t.phone.trim();
-    final subjects = store.subjects.where((s) => t.subjectIds.contains(s.id) || s.name == t.subject).toList();
-    final groups = store.groups.where((g) => g.teacherId == t.id && g.isActive).length;
+    final subjects = store.subjects
+        .where((s) => t.subjectIds.contains(s.id) || s.name == t.subject)
+        .toList();
+    final groups = store.groups
+        .where((g) => g.teacherId == t.id && g.isActive)
+        .length;
     final meta = [
       phone.isEmpty ? 'بلا رقم هاتف' : formatPhoneDisplay(phone),
       if (groups > 0) '$groups مجموعة',
@@ -1193,7 +1690,12 @@ class _TeacherCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(t.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: _titleStyle),
+                    Text(
+                      t.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _titleStyle,
+                    ),
                     const SizedBox(height: 2),
                     Text(
                       meta.join('  ·  '),
@@ -1208,7 +1710,11 @@ class _TeacherCard extends StatelessWidget {
                 ContactIconButton(
                   tooltip: 'اتصال',
                   onTap: () => launchTel(phone),
-                  child: const Icon(Icons.phone_outlined, size: 18, color: AppColors.muted),
+                  child: const Icon(
+                    Icons.phone_outlined,
+                    size: 18,
+                    color: AppColors.muted,
+                  ),
                 ),
                 ContactIconButton(
                   tooltip: 'واتساب',
@@ -1229,7 +1735,9 @@ class _TeacherCard extends StatelessWidget {
                   Wrap(
                     spacing: 5,
                     runSpacing: 5,
-                    children: [for (final s in subjects) StatusChip.muted(s.name)],
+                    children: [
+                      for (final s in subjects) StatusChip.muted(s.name),
+                    ],
                   ),
                 ],
               ),
@@ -1264,7 +1772,9 @@ class _SubjectsTabState extends State<_SubjectsTab> {
     final q = search.text.trim();
     final list = store.subjects.where((s) {
       if (q.isEmpty) return true;
-      return s.name.contains(q) || s.code.toLowerCase().contains(q.toLowerCase()) || s.gradeLevel.contains(q);
+      return s.name.contains(q) ||
+          s.code.toLowerCase().contains(q.toLowerCase()) ||
+          s.gradeLevel.contains(q);
     }).toList();
 
     return Column(
@@ -1279,7 +1789,11 @@ class _SubjectsTabState extends State<_SubjectsTab> {
         Expanded(
           child: _cardList(
             count: list.length,
-            empty: EmptyState(message: q.isEmpty ? 'لا توجد مواد دراسية مسجلة.' : 'لا توجد مواد مطابقة للبحث.'),
+            empty: EmptyState(
+              message: q.isEmpty
+                  ? 'لا توجد مواد دراسية مسجلة.'
+                  : 'لا توجد مواد مطابقة للبحث.',
+            ),
             item: (context, i) => _SubjectCard(subject: list[i]),
           ),
         ),
@@ -1298,7 +1812,9 @@ class _SubjectCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final s = subject;
-    final teachers = store.teachers.where((t) => t.subjectIds.contains(s.id) || t.subject == s.name).length;
+    final teachers = store.teachers
+        .where((t) => t.subjectIds.contains(s.id) || t.subject == s.name)
+        .length;
 
     return AppCard(
       onTap: () => _open(context, SubjectFormScreen(subject: s)),
@@ -1315,7 +1831,12 @@ class _SubjectCard extends StatelessWidget {
               s.code.isEmpty ? '—' : s.code,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 10.5, fontFamily: 'monospace', color: AppColors.heading),
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 10.5,
+                fontFamily: 'monospace',
+                color: AppColors.heading,
+              ),
             ),
           ),
           const SizedBox(width: 10),
@@ -1324,7 +1845,12 @@ class _SubjectCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(s.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: _titleStyle),
+                Text(
+                  s.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _titleStyle,
+                ),
                 const SizedBox(height: 2),
                 Text(
                   s.gradeLevel.isEmpty ? 'عام / كل المراحل' : s.gradeLevel,
@@ -1337,7 +1863,10 @@ class _SubjectCard extends StatelessWidget {
                     s.description.trim(),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppColors.faint, fontSize: 11),
+                    style: const TextStyle(
+                      color: AppColors.faint,
+                      fontSize: 11,
+                    ),
                   ),
               ],
             ),
@@ -1399,7 +1928,11 @@ class _DeviceCard extends StatelessWidget {
               color: AppColors.amberSoft,
               border: Border.all(color: AppColors.amberBorder),
             ),
-            child: Icon(Icons.phonelink_lock_outlined, size: 19, color: AppColors.amber),
+            child: Icon(
+              Icons.phonelink_lock_outlined,
+              size: 19,
+              color: AppColors.amber,
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -1407,7 +1940,10 @@ class _DeviceCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('المستخدم المثبَّت على هذا الجهاز', style: TextStyle(color: AppColors.muted, fontSize: 11)),
+                const Text(
+                  'المستخدم المثبَّت على هذا الجهاز',
+                  style: TextStyle(color: AppColors.muted, fontSize: 11),
+                ),
                 const SizedBox(height: 2),
                 Text(
                   me == null ? 'لم يُثبَّت مستخدم بعد' : me.name,
@@ -1417,7 +1953,10 @@ class _DeviceCard extends StatelessWidget {
                 ),
                 if (me != null)
                   Text(
-                    [roleLabel(me.role), if (label.isNotEmpty) 'المستلم على السند: $label'].join('  ·  '),
+                    [
+                      roleLabel(me.role),
+                      if (label.isNotEmpty) 'المستلم على السند: $label',
+                    ].join('  ·  '),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: _metaStyle,
@@ -1434,7 +1973,11 @@ class _DeviceCard extends StatelessWidget {
 /// مستخدم: الاسم وشارة «هذا الجهاز» مقابل حالته، ودوره وعدد صلاحياته، ثم خط رفيع
 /// وأزرار التثبيت والصلاحيات والحذف.
 class _UserCard extends StatelessWidget {
-  const _UserCard({required this.user, required this.isThisDevice, required this.canDelete});
+  const _UserCard({
+    required this.user,
+    required this.isThisDevice,
+    required this.canDelete,
+  });
 
   final AppUser user;
   final bool isThisDevice;
@@ -1459,7 +2002,14 @@ class _UserCard extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Flexible(child: Text(u.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: _titleStyle)),
+                        Flexible(
+                          child: Text(
+                            u.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: _titleStyle,
+                          ),
+                        ),
                         if (isThisDevice) ...[
                           const SizedBox(width: 6),
                           StatusChip.success('هذا الجهاز'),
@@ -1554,7 +2104,12 @@ Future<void> _pinUser(BuildContext context, AppUser u) async {
         }
 
         return Padding(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, 12 + MediaQuery.viewInsetsOf(ctx).bottom),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            16,
+            16,
+            12 + MediaQuery.viewInsetsOf(ctx).bottom,
+          ),
           child: SafeArea(
             top: false,
             child: Column(
@@ -1563,14 +2118,22 @@ Future<void> _pinUser(BuildContext context, AppUser u) async {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.phonelink_lock_outlined, size: 18, color: AppColors.amber),
+                    Icon(
+                      Icons.phonelink_lock_outlined,
+                      size: 18,
+                      color: AppColors.amber,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'تثبيت «${u.name}» على هذا الجهاز',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                          color: AppColors.heading,
+                        ),
                       ),
                     ),
                   ],
@@ -1578,13 +2141,20 @@ Future<void> _pinUser(BuildContext context, AppUser u) async {
                 const SizedBox(height: 4),
                 const Text(
                   'اسمه يظهر مستلماً على السندات.',
-                  style: TextStyle(color: AppColors.muted, fontSize: 11.5, height: 1.5),
+                  style: TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 11.5,
+                    height: 1.5,
+                  ),
                 ),
                 const SizedBox(height: 14),
                 const FieldLabel('اسم المستلم على سند القبض'),
                 TextField(controller: label),
                 const SizedBox(height: 12),
-                const FieldLabel('كلمة مرور المدير الرئيسية', requiredField: true),
+                const FieldLabel(
+                  'كلمة مرور المدير الرئيسية',
+                  requiredField: true,
+                ),
                 TextField(
                   controller: pass,
                   obscureText: true,
@@ -1592,16 +2162,29 @@ Future<void> _pinUser(BuildContext context, AppUser u) async {
                     if (passError != null) setSt(() => passError = null);
                   },
                   onSubmitted: (_) => submit(),
-                  decoration: InputDecoration(hintText: 'مطلوبة لتثبيت أي مستخدم', errorText: passError),
+                  decoration: InputDecoration(
+                    hintText: 'مطلوبة لتثبيت أي مستخدم',
+                    errorText: passError,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Row(
                   children: [
-                    Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx))),
+                    Expanded(
+                      child: GhostButton(
+                        label: 'إلغاء',
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ),
                     const SizedBox(width: 10),
                     Expanded(
                       flex: 2,
-                      child: PrimaryButton(label: 'تثبيت على الجهاز', icon: Icons.check, height: 44, onPressed: submit),
+                      child: PrimaryButton(
+                        label: 'تثبيت على الجهاز',
+                        icon: Icons.check,
+                        height: 44,
+                        onPressed: submit,
+                      ),
                     ),
                   ],
                 ),
@@ -1655,13 +2238,18 @@ class _DataTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
       children: [
-        const FormSection(icon: Icons.cloud_sync_outlined, title: 'المزامنة مع السحابة'),
+        const FormSection(
+          icon: Icons.cloud_sync_outlined,
+          title: 'المزامنة مع السحابة',
+        ),
         StatRow(
           children: [
             StatCard(
               label: 'بانتظار الرفع',
               value: '${store.pendingPush}',
-              color: store.pendingPush > 0 ? AppColors.amber : AppColors.success,
+              color: store.pendingPush > 0
+                  ? AppColors.amber
+                  : AppColors.success,
             ),
             StatCard(
               label: 'عمليات متعثرة',
@@ -1675,10 +2263,16 @@ class _DataTab extends StatelessWidget {
           _FailedActions(failed: failed),
         ],
 
-        const FormSection(icon: Icons.storage_outlined, title: 'البيانات المحلية على هذا الجهاز'),
+        const FormSection(
+          icon: Icons.storage_outlined,
+          title: 'البيانات المحلية على هذا الجهاز',
+        ),
         _CountGrid(counts: counts),
 
-        const FormSection(icon: Icons.backup_outlined, title: 'النسخ الاحتياطي'),
+        const FormSection(
+          icon: Icons.backup_outlined,
+          title: 'النسخ الاحتياطي',
+        ),
         _NavTile(
           icon: Icons.download_outlined,
           title: 'تصدير نسخة احتياطية',
@@ -1697,8 +2291,17 @@ class _DataTab extends StatelessWidget {
         InfoStrip(
           child: Column(
             children: [
-              _infoRow('المنشأة', tenant?.name ?? (store.institutionName.isEmpty ? '—' : store.institutionName)),
-              _infoRow('المعرّف', tenant?.code.isNotEmpty == true ? tenant!.code : '—'),
+              _infoRow(
+                'المنشأة',
+                tenant?.name ??
+                    (store.institutionName.isEmpty
+                        ? '—'
+                        : store.institutionName),
+              ),
+              _infoRow(
+                'المعرّف',
+                tenant?.code.isNotEmpty == true ? tenant!.code : '—',
+              ),
               _infoRow('المستخدم على الجهاز', store.deviceUser?.name ?? '—'),
             ],
           ),
@@ -1722,7 +2325,10 @@ Widget _infoRow(String label, String value) {
     padding: const EdgeInsets.symmetric(vertical: 3),
     child: Row(
       children: [
-        Text(label, style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
+        Text(
+          label,
+          style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+        ),
         const SizedBox(width: 12),
         Expanded(
           child: Text(
@@ -1730,7 +2336,11 @@ Widget _infoRow(String label, String value) {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.end,
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading),
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+              color: AppColors.heading,
+            ),
           ),
         ),
       ],
@@ -1756,7 +2366,11 @@ class _CountGrid extends StatelessWidget {
           children: [
             for (var j = 0; j < _columns; j++) ...[
               if (j > 0) const SizedBox(width: 6),
-              Expanded(child: j < slice.length ? _cell(slice[j]) : const SizedBox.shrink()),
+              Expanded(
+                child: j < slice.length
+                    ? _cell(slice[j])
+                    : const SizedBox.shrink(),
+              ),
             ],
           ],
         ),
@@ -1780,12 +2394,22 @@ class _CountGrid extends StatelessWidget {
         children: [
           FittedBox(
             fit: BoxFit.scaleDown,
-            child: Text('${c.$2}', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: AppColors.heading)),
+            child: Text(
+              '${c.$2}',
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 15,
+                color: AppColors.heading,
+              ),
+            ),
           ),
           const SizedBox(height: 2),
           FittedBox(
             fit: BoxFit.scaleDown,
-            child: Text(c.$1, style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
+            child: Text(
+              c.$1,
+              style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
+            ),
           ),
         ],
       ),
@@ -1795,7 +2419,12 @@ class _CountGrid extends StatelessWidget {
 
 /// سطر يُفتح بلمسة: أيقونة في صندوق، وعنوان وشرح، وسهم الفتح.
 class _NavTile extends StatelessWidget {
-  const _NavTile({required this.icon, required this.title, required this.subtitle, required this.onTap});
+  const _NavTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
 
   final IconData icon;
   final String title;
@@ -1824,7 +2453,12 @@ class _NavTile extends StatelessWidget {
               children: [
                 Text(title, style: _titleStyle),
                 const SizedBox(height: 1),
-                Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: _metaStyle),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: _metaStyle,
+                ),
               ],
             ),
           ),
@@ -1851,7 +2485,11 @@ class _FailedActions extends StatelessWidget {
         children: [
           Text(
             'تعذّر رفع ${failed.length} عملية بعد $maxSyncRetries محاولات',
-            style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w800, fontSize: 12.5),
+            style: const TextStyle(
+              color: AppColors.danger,
+              fontWeight: FontWeight.w800,
+              fontSize: 12.5,
+            ),
           ),
           const SizedBox(height: 4),
           for (final a in failed.take(5))
@@ -1892,7 +2530,8 @@ class _FailedActions extends StatelessWidget {
                     final ok = await confirmSheet(
                       context,
                       title: 'تجاهل العمليات المتعثرة',
-                      message: 'سيتم إسقاط ${failed.length} عملية من طابور الرفع نهائياً. '
+                      message:
+                          'سيتم إسقاط ${failed.length} عملية من طابور الرفع نهائياً. '
                           'التعديلات تبقى على هذا الجهاز لكنها لن تصل السحابة.',
                       confirmLabel: 'تجاهل',
                     );
@@ -1902,7 +2541,10 @@ class _FailedActions extends StatelessWidget {
                     }
                     store.markAllDirty();
                     if (!context.mounted) return;
-                    showAppSnack(context, 'تم إسقاط ${failed.length} عملية متعثرة');
+                    showAppSnack(
+                      context,
+                      'تم إسقاط ${failed.length} عملية متعثرة',
+                    );
                   },
                 ),
               ),
@@ -1946,11 +2588,14 @@ Future<void> _restore(BuildContext context, AppStore store) async {
     return;
   }
 
-  final lines = summary.entries.map((e) => '${tableLabelsAr[e.key] ?? e.key}: ${e.value}').join('\n');
+  final lines = summary.entries
+      .map((e) => '${tableLabelsAr[e.key] ?? e.key}: ${e.value}')
+      .join('\n');
   final ok = await confirmSheet(
     context,
     title: 'استرجاع نسخة احتياطية',
-    message: 'سيتم استبدال كل البيانات المحلية بمحتوى الملف:\n\n$lines\n\n'
+    message:
+        'سيتم استبدال كل البيانات المحلية بمحتوى الملف:\n\n$lines\n\n'
         'لا يمكن التراجع عن هذه العملية. هل تريد المتابعة؟',
     confirmLabel: 'استرجاع',
   );
@@ -1994,10 +2639,18 @@ class _CollapsibleState extends State<_Collapsible> {
                 Expanded(
                   child: Text(
                     widget.title,
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12.5,
+                      color: AppColors.heading,
+                    ),
                   ),
                 ),
-                Icon(open ? Icons.expand_less : Icons.expand_more, size: 20, color: AppColors.faint),
+                Icon(
+                  open ? Icons.expand_less : Icons.expand_more,
+                  size: 20,
+                  color: AppColors.faint,
+                ),
               ],
             ),
           ),

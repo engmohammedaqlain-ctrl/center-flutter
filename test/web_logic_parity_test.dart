@@ -187,4 +187,43 @@ void main() {
       expect(s.computeStudentBalance(student.id), closeTo(-100, 0.01));
     });
   });
+
+  group('إعفاء القسط والتحاق من تاريخ التسجيل', () {
+    test('القسط المعفى لا يدخل الرصيد ولا المستحق', () {
+      final s = _seeded();
+      final student = _cleanStudent(s, nationalId: '555666777');
+      s.students.add(student);
+      final inst = Installment(
+        id: s.newId(),
+        studentId: student.id,
+        title: 'قسط',
+        amount: 200,
+        dueDate: DateTime.now().subtract(const Duration(days: 1)),
+      );
+      s.installments.add(inst);
+      s.recalculateAllBalances();
+      expect(s.computeStudentBalance(student.id), closeTo(-200, 0.01));
+
+      s.setInstallmentExempt(inst, exempt: true, reason: 'منحة');
+      expect(s.computeStudentBalance(student.id), closeTo(0, 0.01));
+      expect(s.outstandingDue(student.id), 0);
+    });
+
+    test('from_enrollment يستبعد أقساط ما قبل يوم التسجيل', () {
+      final items = [
+        PlanItem(id: 'a', title: '1', amount: 100, dueDate: '2026-01-01'),
+        PlanItem(id: 'b', title: '2', amount: 100, dueDate: '2026-06-01'),
+        PlanItem(id: 'c', title: '3', amount: 100, dueDate: '2026-09-01'),
+      ];
+      final kept = filterPlanFromEnrollment(items, '2026-06-01');
+      expect(kept.map((i) => i.id), ['b', 'c']);
+      final rows = buildStudentPlan(
+        items,
+        'stu',
+        enrollmentDate: '2026-06-01',
+        enrollmentMode: EnrollmentPlanMode.fromEnrollment,
+      );
+      expect(rows.where((r) => r.title != seatTitle).map((r) => r.title), ['2', '3']);
+    });
+  });
 }

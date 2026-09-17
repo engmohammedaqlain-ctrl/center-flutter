@@ -58,6 +58,17 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   // ── الخصم الشهري: المقابل لحالة `hasCustomDiscount` في StudentForm.tsx ──
   late bool hasDiscount;
 
+  /// للتسجيل الجديد فقط: خطة كاملة أو من تاريخ الالتحاق — `EnrollmentPlanMode`.
+  EnrollmentPlanMode enrollmentMode = EnrollmentPlanMode.full;
+
+  /// مصدر أقساط التسجيل: خطة المرحلة أو خطة مخصصة — كويب `planSource`.
+  String planSource = 'grade'; // grade | custom
+  final customCount = TextEditingController(text: '10');
+  final customAmount = TextEditingController(text: '');
+  final customEvery = TextEditingController(text: '1');
+  late String customFirstDue = isoDate(DateTime.now());
+  final scrollCtl = ScrollController();
+
   /// `percentage` نسبة من رسم المرحلة، `fixed` مبلغ يُحسم منه، `custom_fee` رسم
   /// شهري محدد يحلّ محلّه.
   late String discountType;
@@ -220,6 +231,10 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     discountFixed.dispose();
     customMonthlyFee.dispose();
     discountReason.dispose();
+    customCount.dispose();
+    customAmount.dispose();
+    customEvery.dispose();
+    scrollCtl.dispose();
     super.dispose();
   }
 
@@ -301,7 +316,46 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     }
     final full = combinePhoneAndPrefix(phoneNumber, phonePrefix);
     final dup = StoreScope.of(context).findByPhone(full, exclude: widget.student?.id);
-    phoneDuplicateError = dup == null ? null : 'رقم الجوال ($full) مسجل مسبقاً للطالب: ${dup.fullName}';
+    // تنبيه لا خطأ يمنع الحفظ: إخوة صغار يُسجَّلون برقم ولي أمرهم
+    phoneDuplicateError = dup == null
+        ? null
+        : 'رقم الجوال ($full) مسجل للطالب «${dup.fullName}» — يمكن المتابعة بنفس الرقم';
+  }
+
+  void _setPlanSource(String next) {
+    final top = scrollCtl.hasClients ? scrollCtl.offset : 0.0;
+    setState(() {
+      planSource = next;
+      if (next == 'custom') {
+        customFirstDue = isoDate(enrollmentDate);
+        final fee = _gradeFeeOf(context);
+        if (customAmount.text.trim().isEmpty && fee > 0) {
+          customAmount.text = trimNum(fee);
+        }
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (scrollCtl.hasClients) scrollCtl.jumpTo(top.clamp(0.0, scrollCtl.position.maxScrollExtent));
+    });
+  }
+
+  List<PlanItem>? _customPlanSchedule() {
+    if (planSource != 'custom' || widget.student != null) return null;
+    final count = int.tryParse(customCount.text.trim()) ?? 0;
+    final amount = double.tryParse(customAmount.text.trim()) ?? -1;
+    if (count <= 0 || amount < 0 || customFirstDue.isEmpty) return null;
+    var n = 0;
+    return generatePlanItems(
+      count: count,
+      amount: amount,
+      firstDueDate: customFirstDue,
+      everyMonths: int.tryParse(customEvery.text.trim()) ?? 1,
+      newId: () {
+        n++;
+        return 'slot_$n';
+      },
+      titlePrefix: 'قسط مخصص',
+    );
   }
 
   Future<void> _pickDate({required bool birth}) async {
@@ -338,7 +392,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     }
   }
 
-  void _save() {
+  Future<void> _save() async {
     final store = StoreScope.of(context);
     final trimmedFullName = name.text.trim();
     final cleanNatId = digitsOnly(nationalId.text);
@@ -366,18 +420,38 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           !isPhoneComplete(phoneNumber, phonePrefix),
           'الرقم غير مكتمل: يجب إدخال ${phoneTargetLength(phonePrefix)} أرقام بعد المقدمة ($phonePrefix)',
         )
-        ..check('phone', phoneDuplicateError != null, phoneDuplicateError ?? '')
         ..check(
           'parentPhone',
           parentPhoneNumber.trim().isNotEmpty && !isPhoneComplete(parentPhoneNumber, parentPhonePrefix),
           'الرقم غير مكتمل: يجب إدخال ${phoneTargetLength(parentPhonePrefix)} أرقام بعد المقدمة ($parentPhonePrefix)',
         );
+      if (widget.student == null && planSource == 'custom') {
+        final count = int.tryParse(customCount.text.trim()) ?? 0;
+        final amount = double.tryParse(customAmount.text.trim());
+        errors
+          ..check('customPlan', count <= 0, 'أدخل عدد أقساط الخطة المخصصة')
+          ..check('customPlan', amount == null || amount < 0, 'أدخل مبلغ القسط المخصص')
+          ..check('customPlan', customFirstDue.isEmpty, 'حدّد أول استحقاق للخطة المخصصة');
+      }
     });
     // حقل ناقص تحت «بيانات إضافية» يُفتح قسمه قبل التمرير إليه
     if (errors.report(context, reveal: (field) {
       if (_extraFieldKeys.contains(field)) setState(() => extra = true);
     })) {
       return;
+    }
+
+    if (phoneDuplicateError != null) {
+      final full = combinePhoneAndPrefix(phoneNumber, phonePrefix);
+      final dup = store.findByPhone(full, exclude: widget.student?.id);
+      final ok = await confirmSheet(
+        context,
+        title: 'رقم جوال مكرر',
+        message:
+            'رقم الجوال ($full) مسجل للطالب «${dup?.fullName ?? 'طالب آخر'}». هل تريد المتابعة بنفس الرقم؟',
+        confirmLabel: 'متابعة',
+      );
+      if (!ok || !mounted) return;
     }
 
     final parts = trimmedFullName.split(RegExp(r'\s+'));
@@ -389,6 +463,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     final finalGrade = grade.trim();
     final existing = widget.student;
     final id = existing?.id ?? store.newId();
+    final customSchedule = _customPlanSchedule();
 
     try {
       final gradeFee = _gradeFeeOf(context);
@@ -439,12 +514,17 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           academicDiscountApplied: hasDiscount,
           academicDiscountRate: hasDiscount && discountType == 'percentage' ? _discountRateValue : 0,
           hasException: existing?.hasException ?? false,
-          exceptionReason: hasDiscount ? discountReason.text.trim() : (existing?.exceptionReason ?? ''),
+          exceptionReason: customSchedule != null
+              ? 'خطة مخصصة'
+              : (hasDiscount ? discountReason.text.trim() : (existing?.exceptionReason ?? '')),
           customMonthlyFee: hasDiscount ? _netMonthlyFee(gradeFee) : null,
+          usesCustomPlan: customSchedule != null || (existing?.usesCustomPlan ?? false),
         ),
         isNew: existing == null,
-        // خصم التسجيل يُوزَّع على أقساط الخطة عند الإنشاء فقط — مثل StudentForm.tsx
-        discount: existing == null ? _planDiscountOf(gradeFee) : null,
+        discount: existing == null && customSchedule == null ? _planDiscountOf(gradeFee) : null,
+        enrollmentMode: existing == null && planSource == 'grade' ? enrollmentMode : EnrollmentPlanMode.full,
+        allowDuplicatePhone: phoneDuplicateError != null,
+        customPlanItems: customSchedule,
         attachments: attachmentsLoaded
             ? StudentAttachments(
                 id: id,
@@ -453,9 +533,9 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
               )
             : null,
       );
-      Navigator.pop(context);
+      if (mounted) Navigator.pop(context);
     } on StoreException catch (e) {
-      showAppSnack(context, e.message, error: true);
+      if (mounted) showAppSnack(context, e.message, error: true);
     }
   }
 
@@ -505,6 +585,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         child: ListView(
+          controller: scrollCtl,
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
           children: [
             // ── ١. الأساسي: ما يُسأل عنه عند التسجيل وحده، بصفوف بعمودين ──────
@@ -588,7 +669,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
               controller: phoneCtl,
               target: studentLen,
               complete: studentComplete,
-              error: errors['phone'] != null || phoneDuplicateError != null,
+              error: errors['phone'] != null,
               onPrefix: (v) => setState(() {
                 phonePrefix = v;
                 phoneNumber = '';
@@ -597,13 +678,22 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
               }),
               onNumber: _applyStudentPhone,
             ),
-            _phoneHint(
-              complete: studentComplete,
-              error: errors['phone'] ?? phoneDuplicateError,
-              length: phoneNumber.length,
-              target: studentLen,
-              okText: 'رقم صالح: $fullStudentPhone',
-            ),
+            if (phoneDuplicateError != null && errors['phone'] == null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  phoneDuplicateError!,
+                  style: const TextStyle(color: AppColors.amber, fontSize: 11.5, fontWeight: FontWeight.w600),
+                ),
+              )
+            else
+              _phoneHint(
+                complete: studentComplete,
+                error: errors['phone'],
+                length: phoneNumber.length,
+                target: studentLen,
+                okText: 'رقم صالح: $fullStudentPhone',
+              ),
             _gap,
             _pair(
               [
@@ -641,6 +731,125 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
             ),
 
             // ── ٤. الرسوم والخصم ─────────────────────────────────────────────
+            if (widget.student == null) ...[
+              const FormSection(icon: Icons.account_balance_wallet_outlined, title: 'نوع خطة الأقساط'),
+              Row(
+                children: [
+                  Expanded(
+                    child: _toggle(
+                      'خطة المرحلة',
+                      planSource == 'grade',
+                      AppColors.amber,
+                      () => _setPlanSource('grade'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _toggle(
+                      'خطة مخصصة',
+                      planSource == 'custom',
+                      AppColors.amber,
+                      () => _setPlanSource('custom'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              // ارتفاع محجوز يمنع قفز النموذج عند إظهار/إخفاء بناء الخطة المخصصة
+              if (planSource == 'custom') ...[
+                Text(
+                  errors['customPlan'] ??
+                      'الافتراضي: مسافة شهر بين كل قسط والذي يليه.',
+                  style: TextStyle(
+                    color: errors['customPlan'] != null ? AppColors.danger : AppColors.muted,
+                    fontSize: 11.5,
+                    height: 1.4,
+                  ),
+                ),
+                _gap,
+                FieldPair(
+                  start: [
+                    const FieldLabel('عدد الأقساط'),
+                    TextField(
+                      controller: customCount,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(hintText: '10'),
+                    ),
+                  ],
+                  end: [
+                    const FieldLabel('المبلغ (₪)'),
+                    TextField(
+                      controller: customAmount,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(hintText: '0'),
+                    ),
+                  ],
+                ),
+                _gap,
+                FieldPair(
+                  start: [
+                    const FieldLabel('أول استحقاق'),
+                    SelectField(
+                      text: customFirstDue.isEmpty ? 'اختر' : customFirstDue,
+                      icon: Icons.calendar_today_outlined,
+                      placeholder: customFirstDue.isEmpty,
+                      onTap: () async {
+                        final initial = parseIsoDate(customFirstDue) ?? enrollmentDate;
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: initial,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2035),
+                        );
+                        if (picked != null) setState(() => customFirstDue = isoDate(picked));
+                      },
+                    ),
+                  ],
+                  end: [
+                    const FieldLabel('كل (شهر)'),
+                    TextField(
+                      controller: customEvery,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(hintText: '1'),
+                    ),
+                  ],
+                ),
+              ] else
+                const SizedBox(height: 8),
+              if (planSource == 'grade') ...[
+                _gap,
+                const FieldLabel('كيف تُنسَخ خطة المرحلة؟'),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _toggle(
+                        'الخطة كاملة',
+                        enrollmentMode == EnrollmentPlanMode.full,
+                        AppColors.amber,
+                        () => setState(() => enrollmentMode = EnrollmentPlanMode.full),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _toggle(
+                        'من تاريخ الالتحاق',
+                        enrollmentMode == EnrollmentPlanMode.fromEnrollment,
+                        AppColors.amber,
+                        () => setState(() => enrollmentMode = EnrollmentPlanMode.fromEnrollment),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  enrollmentMode == EnrollmentPlanMode.fromEnrollment
+                      ? 'يُستبعد أي قسط تاريخه قبل يوم التسجيل — لا يظهر دين سابق.'
+                      : 'كل أقساط الخطة بتواريخها كما هي معرّفة للمرحلة.',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 11.5, height: 1.4),
+                ),
+              ],
+              _gap,
+            ],
             ..._discountSection(context),
 
             // ── ٥. بيانات إضافية (اختيارية) ──────────────────────────────────

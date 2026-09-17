@@ -19,7 +19,12 @@ import 'receipt_screen.dart';
 /// وخط، والقصيرة متجاورة، واعتماد الدفعة ثابت أسفل الشاشة. لا بطاقة تحبس
 /// الحقول ولا صندوق قائمة داخلها.
 class PaymentFormScreen extends StatefulWidget {
-  const PaymentFormScreen({super.key, this.studentId, this.installmentId, this.amount});
+  const PaymentFormScreen({
+    super.key,
+    this.studentId,
+    this.installmentId,
+    this.amount,
+  });
 
   final String? studentId;
   final String? installmentId;
@@ -68,7 +73,9 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
     super.initState();
     studentId = widget.studentId;
     item = widget.installmentId == null ? '' : 'inst:${widget.installmentId}';
-    amount = TextEditingController(text: widget.amount == null ? '' : widget.amount!.toStringAsFixed(0));
+    amount = TextEditingController(
+      text: widget.amount == null ? '' : widget.amount!.toStringAsFixed(0),
+    );
     // البند الافتراضي يحتاج أقساط الطالب، وهي في المخزن لا في الوسائط
     if (studentId != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -99,8 +106,12 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
   void _applyDefaults(AppStore store) {
     final student = studentId == null ? null : store.studentById(studentId!);
     if (student == null) return;
-    final open = _openOf(store.installments.where((i) => i.studentId == student.id).toList());
-    final chosen = open.where((i) => 'inst:${i.id}' == item).firstOrNull ?? open.where(isInstallmentDue).firstOrNull;
+    final open = _openOf(
+      store.installments.where((i) => i.studentId == student.id).toList(),
+    );
+    final chosen =
+        open.where((i) => 'inst:${i.id}' == item).firstOrNull ??
+        open.where(isInstallmentDue).firstOrNull;
     if (chosen != null) {
       item = 'inst:${chosen.id}';
       if (amount.text.trim().isEmpty) amount.text = trimNum(chosen.remaining);
@@ -166,12 +177,22 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
         ..reset()
         ..check('student', selected == null, 'يرجى اختيار الطالب أولاً')
         ..check('amount', settled <= 0, 'يرجى إدخال مبلغ صحيح أكبر من صفر')
-        ..check('discount', hasDiscount && disc > settled, 'الخصم أكبر من المبلغ')
-        ..check('customPurpose', item == 'other' && customPurpose.text.trim().isEmpty, 'اكتب بند الدفعة');
+        ..check(
+          'discount',
+          hasDiscount && disc > settled,
+          'الخصم أكبر من المبلغ',
+        )
+        ..check(
+          'customPurpose',
+          item == 'other' && customPurpose.text.trim().isEmpty,
+          'اكتب بند الدفعة',
+        );
     });
     if (errors.report(context) || selected == null) return;
     setState(() => busy = true);
-    final open = _openOf(store.installments.where((i) => i.studentId == selected.id).toList());
+    final open = _openOf(
+      store.installments.where((i) => i.studentId == selected.id).toList(),
+    );
     // يغطي بما سُدِّد من الذمة (قبل اقتطاع الخصم من النقد)
     final covered = _covers(open, settled);
     final due = _dueNow(selected, open);
@@ -180,7 +201,10 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
         ? '(خصم: -${trimNum(disc)} ₪${discountReason.text.trim().isEmpty ? '' : ' [${discountReason.text.trim()}]'})'
         : '';
     final baseNotes = notes.text.trim();
-    final finalNotes = [if (baseNotes.isNotEmpty) baseNotes, if (discountNote.isNotEmpty) discountNote].join(' ');
+    final finalNotes = [
+      if (baseNotes.isNotEmpty) baseNotes,
+      if (discountNote.isNotEmpty) discountNote,
+    ].join(' ');
     try {
       final p = store.addPayment(
         studentId: selected.id,
@@ -190,11 +214,15 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
         // بيان السند هو ما غطّته الدفعة فعلاً، لا اسم البند المختار
         purpose: item == 'other'
             ? customPurpose.text.trim()
-            : (covered.isNotEmpty ? covered : (item == 'general' ? 'دفعة عامة' : item)),
+            : (covered.isNotEmpty
+                  ? covered
+                  : (item == 'general' ? 'دفعة عامة' : item)),
         notes: finalNotes,
         reference: reference.text.trim(),
         senderName: sender.text.trim(),
-        channel: channelCtl.text.trim().isEmpty ? (method == 'cash' ? '' : channel) : channelCtl.text.trim(),
+        channel: channelCtl.text.trim().isEmpty
+            ? (method == 'cash' ? '' : channel)
+            : channelCtl.text.trim(),
         transferDate: transferDate == null ? '' : isoDate(transferDate!),
         customMethodNotes: customMethod.text.trim(),
         installmentId: item.startsWith('inst:') ? item.substring(5) : null,
@@ -204,7 +232,13 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
         totalDueAtPayment: due,
       );
       // الإشعار يلحق بالسند: يُحفظ على الجهاز الآن ويُرفع بأول اتصال
-      unawaited(store.saveFinanceAttachment(p.id, 'payment', notice.isEmpty ? null : notice));
+      unawaited(
+        store.saveFinanceAttachment(
+          p.id,
+          'payment',
+          notice.isEmpty ? null : notice,
+        ),
+      );
       if (!mounted) return;
       Navigator.pop(context);
       await ReceiptScreen.open(context, p);
@@ -218,15 +252,23 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
   /// اختيار صورة الإشعار وضغطها — الحدّ ٢ ميجابايت كما في حاوية الإشعارات.
   Future<void> _pickNotice() async {
     try {
-      final file = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 70, maxWidth: 1600);
+      final file = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 70,
+        maxWidth: 1600,
+      );
       if (file == null) return;
       final bytes = await file.readAsBytes();
       if (bytes.length > 2 * 1024 * 1024) {
-        if (mounted) showAppSnack(context, 'الصورة أكبر من 2 ميجابايت', error: true);
+        if (mounted)
+          showAppSnack(context, 'الصورة أكبر من 2 ميجابايت', error: true);
         return;
       }
       if (!mounted) return;
-      setState(() => notice = 'data:${file.mimeType ?? 'image/jpeg'};base64,${base64Encode(bytes)}');
+      setState(
+        () => notice =
+            'data:${file.mimeType ?? 'image/jpeg'};base64,${base64Encode(bytes)}',
+      );
     } catch (_) {
       if (mounted) showAppSnack(context, 'تعذّر اختيار الصورة', error: true);
     }
@@ -253,7 +295,9 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
         if (seat > 0) amount.text = trimNum(seat);
       } else if (item == 'monthly_fee') {
         // قيمة القسط في خطة مرحلته: ما يُطالَب به فعلاً لا رقم شهري مفترض
-        final student = studentId == null ? null : store.studentById(studentId!);
+        final student = studentId == null
+            ? null
+            : store.studentById(studentId!);
         final plan = student == null ? null : store.planForStudent(student);
         final fee = plan?.monthlyFee ?? 0;
         if (fee > 0) amount.text = trimNum(fee);
@@ -291,7 +335,11 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
           child: Text(
             label,
             textAlign: TextAlign.center,
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: on ? AppColors.amber : AppColors.muted),
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+              color: on ? AppColors.amber : AppColors.muted,
+            ),
           ),
         ),
       ),
@@ -304,11 +352,14 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
     return ListenableBuilder(
       listenable: store,
       builder: (context, _) {
-        if (!store.can('finance')) {
+        if (!store.can('finance.collect')) {
           return Scaffold(
             backgroundColor: Colors.white,
             appBar: AppBar(title: const Text('تسديد دفعة')),
-            body: NoAccess(section: 'finance', roleName: store.roleName),
+            body: NoAccess(
+              section: 'finance.collect',
+              roleName: store.roleName,
+            ),
           );
         }
 
@@ -316,13 +367,25 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
         final unpaid = store.students.where((s) {
           // البحث يشمل الجميع: الدفع المقدَّم يقبضه من لا ذمة عليه
           if (q.isNotEmpty) {
-            return s.fullName.contains(q) || s.phone.contains(q) || s.parentPhone.contains(q) || s.gradeLevel.contains(q);
+            return s.fullName.contains(q) ||
+                s.phone.contains(q) ||
+                s.parentPhone.contains(q) ||
+                s.gradeLevel.contains(q);
           }
-          final isUnpaid = s.balance < 0 || s.paymentStatus == 'unpaid' || s.paymentStatus == 'in_progress';
+          final isUnpaid =
+              s.balance < 0 ||
+              s.paymentStatus == 'unpaid' ||
+              s.paymentStatus == 'in_progress';
           return isUnpaid || widget.studentId == s.id;
         }).toList();
-        final selected = studentId == null ? null : store.studentById(studentId!);
-        final insts = selected == null ? <Installment>[] : store.installments.where((i) => i.studentId == selected.id).toList();
+        final selected = studentId == null
+            ? null
+            : store.studentById(studentId!);
+        final insts = selected == null
+            ? <Installment>[]
+            : store.installments
+                  .where((i) => i.studentId == selected.id)
+                  .toList();
         final open = _openOf(insts);
         final typed = double.tryParse(amount.text.trim()) ?? 0;
         final covered = _covers(open, typed);
@@ -331,8 +394,16 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
         return Scaffold(
           backgroundColor: Colors.white,
           appBar: AppBar(
-            title: Text(selected == null ? 'تسديد دفعة جديدة' : 'تسديد دفعة للطالب: ${selected.fullName}'),
-            titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+            title: Text(
+              selected == null
+                  ? 'تسديد دفعة جديدة'
+                  : 'تسديد دفعة للطالب: ${selected.fullName}',
+            ),
+            titleTextStyle: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: 14,
+            ),
           ),
           bottomNavigationBar: FormActionBar(
             label: 'اعتماد الدفعة وإصدار الوصل',
@@ -345,21 +416,44 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
               children: [
                 // ── ١. الطالب ─────────────────────────────────────────────────
-                const FormSection(icon: Icons.person_outline, title: 'الطالب', note: 'الحقول ذات * مطلوبة'),
-                if (selected != null) ..._selectedStudent(selected, insts) else ..._studentPicker(unpaid),
+                const FormSection(
+                  icon: Icons.person_outline,
+                  title: 'الطالب',
+                  note: 'الحقول ذات * مطلوبة',
+                ),
+                if (selected != null)
+                  ..._selectedStudent(selected, insts)
+                else
+                  ..._studentPicker(unpaid),
 
                 // ── ٢. بيانات الدفعة ──────────────────────────────────────────
-                const FormSection(icon: Icons.payments_outlined, title: 'بيانات الدفعة'),
+                const FormSection(
+                  icon: Icons.payments_outlined,
+                  title: 'بيانات الدفعة',
+                ),
                 FieldPair(
                   start: [
-                    FieldLabel('المبلغ المقبوض (₪)', key: errors.key('amount'), requiredField: true),
+                    FieldLabel(
+                      'المبلغ المقبوض (₪)',
+                      key: errors.key('amount'),
+                      requiredField: true,
+                    ),
                     TextField(
                       controller: amount,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: AppColors.amber),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                        color: AppColors.amber,
+                      ),
                       // سطر «يغطي» يتبع المبلغ المكتوب، فيُعاد البناء مع كل رقم
                       onChanged: (_) => setState(() => errors.clear('amount')),
-                      decoration: InputDecoration(hintText: '0', errorText: errors['amount']),
+                      decoration: InputDecoration(
+                        hintText: '0',
+                        errorText: errors['amount'],
+                      ),
                     ),
                   ],
                   end: [
@@ -391,22 +485,40 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                          const DropdownMenuItem(value: 'general', child: Text('دفعة عامة')),
+                          const DropdownMenuItem(
+                            value: 'general',
+                            child: Text('دفعة عامة'),
+                          ),
                         ] else ...[
-                          const DropdownMenuItem(value: 'monthly_fee', child: Text('رسوم شهرية')),
-                          if (store.seatReservationFee > 0 && selected != null && !selected.seatReservationPaid)
-                            const DropdownMenuItem(value: 'seat_reservation', child: Text('حجز مقعد')),
+                          const DropdownMenuItem(
+                            value: 'monthly_fee',
+                            child: Text('رسوم شهرية'),
+                          ),
+                          if (store.seatReservationFee > 0 &&
+                              selected != null &&
+                              !selected.seatReservationPaid)
+                            const DropdownMenuItem(
+                              value: 'seat_reservation',
+                              child: Text('حجز مقعد'),
+                            ),
                         ],
-                        const DropdownMenuItem(value: 'other', child: Text('أخرى')),
+                        const DropdownMenuItem(
+                          value: 'other',
+                          child: Text('أخرى'),
+                        ),
                       ],
                       onChanged: (v) => _onItem(store, open, v),
                     ),
-                    if (covered.isNotEmpty && (item == 'general' || covered.contains('،')))
+                    if (covered.isNotEmpty &&
+                        (item == 'general' || covered.contains('،')))
                       Padding(
                         padding: const EdgeInsets.only(top: 6),
                         child: Text(
                           'يغطي: $covered',
-                          style: const TextStyle(color: AppColors.muted, fontSize: 11),
+                          style: const TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 11,
+                          ),
                         ),
                       ),
                   ],
@@ -417,11 +529,22 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                       // الوسائل المفعّلة وحدها، ومعها وسيلة السند المعروض إن عُطّلت لاحقاً
                       items: [
                         for (final m in store.activePaymentMethods)
-                          DropdownMenuItem(value: m.id, child: Text(m.name, overflow: TextOverflow.ellipsis)),
-                        if (store.activePaymentMethods.every((m) => m.id != method))
+                          DropdownMenuItem(
+                            value: m.id,
+                            child: Text(
+                              m.name,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        if (store.activePaymentMethods.every(
+                          (m) => m.id != method,
+                        ))
                           DropdownMenuItem(
                             value: method,
-                            child: Text(store.paymentMethodLabel(method), overflow: TextOverflow.ellipsis),
+                            child: Text(
+                              store.paymentMethodLabel(method),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                       ],
                       onChanged: _onMethod,
@@ -430,86 +553,135 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                 ),
                 if (item == 'other') ...[
                   _gap,
-                  FieldLabel('البند المخصص', key: errors.key('customPurpose'), requiredField: true),
+                  FieldLabel(
+                    'البند المخصص',
+                    key: errors.key('customPurpose'),
+                    requiredField: true,
+                  ),
                   TextField(
                     controller: customPurpose,
                     onChanged: (_) {
                       if (errors.clear('customPurpose')) setState(() {});
                     },
-                    decoration: InputDecoration(hintText: 'اكتب البند...', errorText: errors['customPurpose']),
+                    decoration: InputDecoration(
+                      hintText: 'اكتب البند...',
+                      errorText: errors['customPurpose'],
+                    ),
                   ),
                 ],
                 if (method == 'other') ...[
                   _gap,
                   const FieldLabel('تفاصيل طريقة الدفع الأخرى'),
-                  TextField(controller: customMethod, decoration: const InputDecoration(hintText: 'اكتب طريقة الدفع...')),
+                  TextField(
+                    controller: customMethod,
+                    decoration: const InputDecoration(
+                      hintText: 'اكتب طريقة الدفع...',
+                    ),
+                  ),
                 ],
-                _gap,
-                // خصم على الدفعة — مطابق لقسم الخصم في PaymentForm.tsx
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'تسجيل خصم على هذه الدفعة',
-                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: AppColors.heading),
-                      ),
-                    ),
-                    if (hasDiscount && _discountOf(typed) > 0)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        child: Text(
-                          'الخصم: -${money(_discountOf(typed))}',
-                          style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w800, fontSize: 11.5),
-                        ),
-                      ),
-                    Switch.adaptive(
-                      value: hasDiscount,
-                      activeThumbColor: AppColors.amber,
-                      onChanged: (v) => setState(() => hasDiscount = v),
-                    ),
-                  ],
-                ),
-                if (hasDiscount) ...[
+                if (store.can('finance.discount')) ...[
                   _gap,
-                  FieldPair(
-                    start: [
-                      const FieldLabel('نوع الخصم'),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _discountToggle('مبلغ', discountType == 'amount', () => setState(() => discountType = 'amount')),
+                  // خصم على الدفعة — مطابق لقسم الخصم في PaymentForm.tsx
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'تسجيل خصم على هذه الدفعة',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12.5,
+                            color: AppColors.heading,
                           ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: _discountToggle('نسبة %', discountType == 'percentage', () => setState(() => discountType = 'percentage')),
-                          ),
-                        ],
-                      ),
-                    ],
-                    end: [
-                      FieldLabel(discountType == 'percentage' ? 'نسبة الخصم (%)' : 'مبلغ الخصم (₪)'),
-                      TextField(
-                        controller: discountVal,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        onChanged: (_) => setState(() => errors.clear('discount')),
-                        decoration: InputDecoration(
-                          hintText: discountType == 'percentage' ? '10' : '50',
-                          errorText: errors['discount'],
                         ),
+                      ),
+                      if (hasDiscount && _discountOf(typed) > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: Text(
+                            'الخصم: -${money(_discountOf(typed))}',
+                            style: const TextStyle(
+                              color: AppColors.danger,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 11.5,
+                            ),
+                          ),
+                        ),
+                      Switch.adaptive(
+                        value: hasDiscount,
+                        activeThumbColor: AppColors.amber,
+                        onChanged: (v) => setState(() => hasDiscount = v),
                       ),
                     ],
                   ),
-                  _gap,
-                  const FieldLabel('سبب الخصم (اختياري)'),
-                  TextField(controller: discountReason, decoration: const InputDecoration(hintText: 'سبب الخصم...')),
-                  if (_discountOf(typed) > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        'النقد المقبوض: ${money(typed - _discountOf(typed))}',
-                        style: const TextStyle(color: AppColors.muted, fontSize: 11.5, fontWeight: FontWeight.w700),
+                  if (hasDiscount) ...[
+                    _gap,
+                    FieldPair(
+                      start: [
+                        const FieldLabel('نوع الخصم'),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _discountToggle(
+                                'مبلغ',
+                                discountType == 'amount',
+                                () => setState(() => discountType = 'amount'),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: _discountToggle(
+                                'نسبة %',
+                                discountType == 'percentage',
+                                () =>
+                                    setState(() => discountType = 'percentage'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      end: [
+                        FieldLabel(
+                          discountType == 'percentage'
+                              ? 'نسبة الخصم (%)'
+                              : 'مبلغ الخصم (₪)',
+                        ),
+                        TextField(
+                          controller: discountVal,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          onChanged: (_) =>
+                              setState(() => errors.clear('discount')),
+                          decoration: InputDecoration(
+                            hintText: discountType == 'percentage'
+                                ? '10'
+                                : '50',
+                            errorText: errors['discount'],
+                          ),
+                        ),
+                      ],
+                    ),
+                    _gap,
+                    const FieldLabel('سبب الخصم (اختياري)'),
+                    TextField(
+                      controller: discountReason,
+                      decoration: const InputDecoration(
+                        hintText: 'سبب الخصم...',
                       ),
                     ),
+                    if (_discountOf(typed) > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          'النقد المقبوض: ${money(typed - _discountOf(typed))}',
+                          style: const TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                  ],
                 ],
                 _gap,
                 const FieldLabel('البيان'),
@@ -517,12 +689,17 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                   controller: notes,
                   minLines: 1,
                   maxLines: 3,
-                  decoration: const InputDecoration(hintText: 'تفاصيل إضافية عن الدفعة...'),
+                  decoration: const InputDecoration(
+                    hintText: 'تفاصيل إضافية عن الدفعة...',
+                  ),
                 ),
 
                 // ── ٣. تفاصيل التحويل (للدفع غير النقدي) ──────────────────────
                 if (electronic) ...[
-                  const FormSection(icon: Icons.account_balance_outlined, title: 'تفاصيل التحويل'),
+                  const FormSection(
+                    icon: Icons.account_balance_outlined,
+                    title: 'تفاصيل التحويل',
+                  ),
                   const FieldLabel('إشعار التحويل'),
                   NoticeBox(
                     image: notice,
@@ -533,7 +710,12 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                   FieldPair(
                     start: [
                       const FieldLabel('جهة التحويل'),
-                      TextField(controller: channelCtl, decoration: const InputDecoration(hintText: 'البنك أو المحفظة')),
+                      TextField(
+                        controller: channelCtl,
+                        decoration: const InputDecoration(
+                          hintText: 'البنك أو المحفظة',
+                        ),
+                      ),
                     ],
                     end: [
                       const FieldLabel('تاريخ التحويل'),
@@ -542,7 +724,8 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                         icon: Icons.calendar_today_outlined,
                         onTap: () async {
                           final picked = await _pickDay(transferDate ?? date);
-                          if (picked != null) setState(() => transferDate = picked);
+                          if (picked != null)
+                            setState(() => transferDate = picked);
                         },
                       ),
                     ],
@@ -551,11 +734,21 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                   FieldPair(
                     start: [
                       const FieldLabel('اسم المحول منه'),
-                      TextField(controller: sender, decoration: const InputDecoration(hintText: 'كما في الحوالة')),
+                      TextField(
+                        controller: sender,
+                        decoration: const InputDecoration(
+                          hintText: 'كما في الحوالة',
+                        ),
+                      ),
                     ],
                     end: [
                       const FieldLabel('الرقم المرجعي'),
-                      TextField(controller: reference, decoration: const InputDecoration(hintText: 'رقم الحركة')),
+                      TextField(
+                        controller: reference,
+                        decoration: const InputDecoration(
+                          hintText: 'رقم الحركة',
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -581,13 +774,18 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                   s.fullName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                    color: AppColors.heading,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text.rich(
                   TextSpan(
                     children: [
-                      if (s.gradeLevel.trim().isNotEmpty) TextSpan(text: '${s.gradeLevel.trim()}  ·  '),
+                      if (s.gradeLevel.trim().isNotEmpty)
+                        TextSpan(text: '${s.gradeLevel.trim()}  ·  '),
                       TextSpan(
                         text: 'المستحق: ${money(due)}',
                         style: TextStyle(
@@ -598,7 +796,10 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                       if (s.balance > 0)
                         TextSpan(
                           text: '  ·  له ${money(s.balance)}',
-                          style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.amber),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.amber,
+                          ),
                         ),
                     ],
                   ),
@@ -617,7 +818,10 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
               }),
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.amber,
-                textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                textStyle: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                ),
               ),
               icon: const Icon(Icons.swap_horiz, size: 16),
               label: const Text('تغيير الطالب'),
@@ -672,7 +876,9 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
       }),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.line))),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: AppColors.line)),
+        ),
         child: Row(
           children: [
             Expanded(
@@ -683,15 +889,32 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                     s.fullName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.text),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: AppColors.text,
+                    ),
                   ),
                   if (s.gradeLevel.trim().isNotEmpty)
-                    Text(s.gradeLevel.trim(), style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+                    Text(
+                      s.gradeLevel.trim(),
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 11,
+                      ),
+                    ),
                 ],
               ),
             ),
             const SizedBox(width: 8),
-            Text(money(s.balance), style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w800, fontSize: 12.5)),
+            Text(
+              money(s.balance),
+              style: const TextStyle(
+                color: AppColors.danger,
+                fontWeight: FontWeight.w800,
+                fontSize: 12.5,
+              ),
+            ),
             const SizedBox(width: 2),
             // «التالي» ينعكس مع الاتجاه فيُرسم «<»
             const Icon(Icons.chevron_right, size: 18, color: AppColors.faint),

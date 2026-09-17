@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../data/balance.dart';
+import '../data/fee_plan.dart';
+import '../data/grade_plan_sync.dart';
 import '../data/grading.dart';
+import '../data/installment_adjustments.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -13,6 +16,7 @@ import '../widgets/panels.dart';
 import '../widgets/widgets.dart';
 import 'payment_form_screen.dart';
 import 'receipt_screen.dart';
+import 'student_credit_sheet.dart';
 import 'student_subjects_card.dart';
 import 'student_form_screen.dart';
 
@@ -60,8 +64,7 @@ class StudentDetailScreen extends StatelessWidget {
 
         // الأحدث أولاً: آخر سند هو ما يُبحث عنه عادةً
         final pays = store.paymentsOf(student.id);
-        final insts = store.installments.where((i) => i.studentId == student.id).toList()
-          ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+        final insts = store.installments.where((i) => i.studentId == student.id).toList()..sort((a, b) => a.dueDate.compareTo(b.dueDate));
         final marks = store.attendance.where((a) => a.studentId == student.id).toList();
         // السند الملغى لا يُحتسب، والخصم يفسّر لماذا يزيد المسدَّد على المقبوض نقداً
         final activePays = pays.where((p) => !p.cancelled);
@@ -72,14 +75,13 @@ class StudentDetailScreen extends StatelessWidget {
         final excused = marks.where((m) => m.status == 'excused').length;
         // الالتزام يحتسب الحاضر وحده — مطابق لـ attendanceStats في StudentDetail.tsx
         final rate = marks.isEmpty ? 100 : ((present / marks.length) * 100).round();
-        final settled = store.isSettledToDate(student.id) &&
-            insts.every((i) => i.isPaid) &&
-            student.balance >= -cent;
+        final settled = store.isSettledToDate(student.id) && insts.every((i) => i.isPaid) && student.balance >= -cent;
         final dueNow = store.outstandingDue(student.id);
         // الأرصدة والدفعات تخصّ من يملك عرض المالية، والقبض من يملك القبض
         final canFinance = store.can('finance');
-        final canCollect = store.can('finance');
+        final canCollect = store.can('finance.collect');
         final canEdit = store.can('students');
+        final canRefundStudent = canFinance && store.studentRefundable(student.id) > cent;
 
         final grade = student.gradeLevel.trim().isEmpty ? 'مرحلة غير محددة' : student.gradeLevel.trim();
         final meta = student.section.trim().isEmpty ? grade : '$grade  ·  شعبة ${student.section.trim()}';
@@ -94,16 +96,10 @@ class StudentDetailScreen extends StatelessWidget {
 
         void pay() {
           // أول قسط مستحق غير مسدَّد — مطابق لـ openPaymentForm في StudentDetail.tsx
-          final next = insts
-              .where((i) => !i.isPaid && i.remaining > cent && isInstallmentDue(i))
-              .firstOrNull;
+          final next = insts.where((i) => !i.isPaid && i.remaining > cent && isInstallmentDue(i)).firstOrNull;
           Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (_) => PaymentFormScreen(
-                studentId: student.id,
-                installmentId: next?.id,
-                amount: next?.remaining,
-              ),
+              builder: (_) => PaymentFormScreen(studentId: student.id, installmentId: next?.id, amount: next?.remaining),
             ),
           );
         }
@@ -134,22 +130,26 @@ class StudentDetailScreen extends StatelessWidget {
                         style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 11, fontWeight: FontWeight.w500),
                       ),
                     ),
-                    if (!student.isActiveStudent) ...[
-                      const SizedBox(width: 6),
-                      StudentStatusChip(status: student.status, compact: true),
-                    ],
+                    if (!student.isActiveStudent) ...[const SizedBox(width: 6), StudentStatusChip(status: student.status, compact: true)],
                   ],
                 ),
               ],
             ),
           ),
-          bottomNavigationBar: (canCollect || canEdit)
+          bottomNavigationBar: (canCollect || canEdit || canRefundStudent)
               ? _ActionBar(
                   showPay: canCollect,
                   onPay: canCollect ? (settled ? null : pay) : null,
-                  onEdit: canEdit
-                      ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StudentFormScreen(student: student)))
+                  showRefund: canRefundStudent,
+                  onRefund: canRefundStudent
+                      ? () async {
+                          final receipt = await showStudentCreditSheet(context, store, student);
+                          if (receipt != null && context.mounted) {
+                            ReceiptScreen.open(context, receipt);
+                          }
+                        }
                       : null,
+                  onEdit: canEdit ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StudentFormScreen(student: student))) : null,
                 )
               : null,
           body: ListView(
@@ -166,12 +166,8 @@ class StudentDetailScreen extends StatelessWidget {
                           label: 'الرصيد المالي الحالي',
                           // المستحق الحالّ في البطاقة — مطابق لـ remainingDebt في StudentDetail.tsx
                           // والرصيد الموجب «له»؛ والدين الكامل يظهر في التفصيل تحته
-                          value: dueNow > 0
-                              ? 'عليه ${money(dueNow)}'
-                              : (student.balance > 0 ? 'له ${money(student.balance)}' : 'مسدد'),
-                          color: dueNow > 0
-                              ? AppColors.danger
-                              : (student.balance > 0 ? AppColors.amber : AppColors.success),
+                          value: dueNow > 0 ? 'عليه ${money(dueNow)}' : (student.balance > 0 ? 'له ${money(student.balance)}' : 'مسدد'),
+                          color: dueNow > 0 ? AppColors.danger : (student.balance > 0 ? AppColors.amber : AppColors.success),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -216,14 +212,13 @@ class StudentDetailScreen extends StatelessWidget {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Expanded(child: _ContactCell(label: 'هاتف الطالب', phone: student.phone)),
+                        Expanded(
+                          child: _ContactCell(label: 'هاتف الطالب', phone: student.phone),
+                        ),
                         if (parentPhone.isNotEmpty) ...[
                           const SizedBox(width: 8),
                           Expanded(
-                            child: _ContactCell(
-                              label: parentName.isEmpty ? 'هاتف ولي الأمر' : 'ولي الأمر · $parentName',
-                              phone: parentPhone,
-                            ),
+                            child: _ContactCell(label: parentName.isEmpty ? 'هاتف ولي الأمر' : 'ولي الأمر · $parentName', phone: parentPhone),
                           ),
                         ],
                       ],
@@ -244,11 +239,9 @@ class StudentDetailScreen extends StatelessWidget {
                       if (student.housingStatus.trim().isNotEmpty) _Field('طبيعة السكن', student.housingStatus.trim()),
                       if (student.gpa.trim().isNotEmpty) _Field('المعدل', student.gpa.trim(), ltr: true),
                       if (medical.isNotEmpty) _Field('تفاصيل الحالة الصحية', medical),
-                      if (student.previousSchool.trim().isNotEmpty)
-                        _Field('المدرسة السابقة', student.previousSchool.trim()),
+                      if (student.previousSchool.trim().isNotEmpty) _Field('المدرسة السابقة', student.previousSchool.trim()),
                       if (address.isNotEmpty) _Field('العنوان', address),
-                      if (student.referralSource.trim().isNotEmpty)
-                        _Field('مصدر التعرف', student.referralSource.trim()),
+                      if (student.referralSource.trim().isNotEmpty) _Field('مصدر التعرف', student.referralSource.trim()),
                       // الملاحظة القصيرة خانة كبقيتها تُكمل الصف، والطويلة وحدها بعرض السطر
                       if (student.notes.trim().isNotEmpty) _Field('ملاحظات', student.notes.trim()),
                       if (student.initialRating > 0)
@@ -276,11 +269,49 @@ class StudentDetailScreen extends StatelessWidget {
               ),
 
               // ── الأقساط المجدولة ────────────────────────────────────────────
-              if (canFinance && insts.isNotEmpty)
+              if (canFinance)
                 _Card(
                   title: 'الأقساط المجدولة (${insts.length})',
+                  trailing: PopupMenuButton<String>(
+                    tooltip: 'إجراءات الأقساط',
+                    icon: Icon(Icons.more_horiz, color: AppColors.heading, size: 20),
+                    onSelected: (value) {
+                      if (value == 'discount') {
+                        _showStudentDiscountSheet(context, store, student);
+                      } else if (value == 'extra') {
+                        _showExtraChargeSheet(context, store, student);
+                      } else if (value == 'custom') {
+                        _showCustomPlanSheet(context, store, student);
+                      } else if (value == 'return') {
+                        _returnToGradePlan(context, store, student);
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      if (!student.usesCustomPlan && student.gradeLevel.trim().isNotEmpty) const PopupMenuItem(value: 'discount', child: Text('خصم للطالب')),
+                      const PopupMenuItem(value: 'extra', child: Text('رسم خاص')),
+                      if (store.can('finance.discount')) PopupMenuItem(value: 'custom', child: Text(student.usesCustomPlan ? 'تعديل المخصصة' : 'خطة مخصصة')),
+                      if (student.usesCustomPlan && store.can('finance.discount')) const PopupMenuItem(value: 'return', child: Text('رجوع لخطة المرحلة')),
+                    ],
+                  ),
                   children: [
-                    for (final inst in insts) _InstallmentTile(student: student, inst: inst, canCollect: canCollect),
+                    if (student.usesCustomPlan)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          'خطة مخصصة — مستقلة عن خطة المرحلة',
+                          style: TextStyle(color: AppColors.info, fontSize: 11, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    if (insts.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 10),
+                        child: Text(
+                          'لا توجد أقساط بعد',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: AppColors.faint),
+                        ),
+                      ),
+                    for (final inst in insts) _InstallmentTile(student: student, inst: inst, canCollect: canCollect, canAdjust: canFinance),
                   ],
                 ),
 
@@ -292,7 +323,10 @@ class StudentDetailScreen extends StatelessWidget {
                     TextSpan(
                       text: 'المقبوض: ',
                       children: [
-                        TextSpan(text: money(totalPaid), style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
+                        TextSpan(
+                          text: money(totalPaid),
+                          style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading),
+                        ),
                         if (totalDiscount > 0)
                           TextSpan(
                             text: '  + خصم ${money(totalDiscount)}',
@@ -306,8 +340,11 @@ class StudentDetailScreen extends StatelessWidget {
                     if (pays.isEmpty)
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 16),
-                        child: Text('لا توجد دفعات مسجلة حتى الآن',
-                            textAlign: TextAlign.center, style: TextStyle(color: AppColors.muted, fontSize: 12)),
+                        child: Text(
+                          'لا توجد دفعات مسجلة حتى الآن',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: AppColors.muted, fontSize: 12),
+                        ),
                       )
                     else
                       for (final p in pays) _PaymentTile(payment: p, student: student),
@@ -318,8 +355,10 @@ class StudentDetailScreen extends StatelessWidget {
               if (marks.isNotEmpty && store.can('attendance'))
                 _Card(
                   title: 'سجل الحضور والالتزام',
-                  trailing: Text('الالتزام: $rate%',
-                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading)),
+                  trailing: Text(
+                    'الالتزام: $rate%',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading),
+                  ),
                   children: [
                     InfoStrip(
                       // الأرقام تتقلّص ولا تطفح على الشاشات الضيقة
@@ -327,24 +366,15 @@ class StudentDetailScreen extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
                           Expanded(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: TallyText('حضور', present, AppColors.success),
-                            ),
+                            child: FittedBox(fit: BoxFit.scaleDown, child: TallyText('حضور', present, AppColors.success)),
                           ),
                           const Text('•', style: TextStyle(color: AppColors.faint)),
                           Expanded(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: TallyText('غياب', absent, AppColors.danger),
-                            ),
+                            child: FittedBox(fit: BoxFit.scaleDown, child: TallyText('غياب', absent, AppColors.danger)),
                           ),
                           const Text('•', style: TextStyle(color: AppColors.faint)),
                           Expanded(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: TallyText('مأذون', excused, const Color(0xFFD97706)),
-                            ),
+                            child: FittedBox(fit: BoxFit.scaleDown, child: TallyText('مأذون', excused, const Color(0xFFD97706))),
                           ),
                         ],
                       ),
@@ -356,10 +386,7 @@ class StudentDetailScreen extends StatelessWidget {
                 ),
 
               // ── الصفوف والمجموعات: مواد الشعبة ومعلموها في المدرسة، ومجموعات المركز ──
-              if (store.can('classes')) ...[
-                StudentSubjectsCard(student: student),
-                const SizedBox(height: 10),
-              ],
+              if (store.can('classes')) ...[StudentSubjectsCard(student: student), const SizedBox(height: 10)],
 
               // ── الدرجات والتقييمات ─────────────────────────────────────────
               if (store.features.enableEvaluations && store.can('evaluations'))
@@ -433,10 +460,12 @@ class StudentDetailScreen extends StatelessWidget {
 
 /// شريط الإجراءات الثابت: تسديد دفعة أولاً وأعرض، ثم تعديل البيانات.
 class _ActionBar extends StatelessWidget {
-  const _ActionBar({required this.showPay, required this.onPay, required this.onEdit});
+  const _ActionBar({required this.showPay, required this.onPay, required this.showRefund, required this.onRefund, required this.onEdit});
 
   final bool showPay;
   final VoidCallback? onPay;
+  final bool showRefund;
+  final VoidCallback? onRefund;
   final VoidCallback? onEdit;
 
   @override
@@ -459,7 +488,16 @@ class _ActionBar extends StatelessWidget {
                   child: PrimaryButton(label: 'تسديد دفعة', icon: Icons.credit_card, onPressed: onPay),
                 ),
               ),
-            if (showPay && onEdit != null) const SizedBox(width: 10),
+            if (showPay && (showRefund || onEdit != null)) const SizedBox(width: 8),
+            if (showRefund)
+              Expanded(
+                flex: 2,
+                child: SizedBox(
+                  height: 44,
+                  child: GhostButton(label: 'رد مبلغ', icon: Icons.currency_exchange, onPressed: onRefund),
+                ),
+              ),
+            if (showRefund && onEdit != null) const SizedBox(width: 8),
             if (onEdit != null)
               Expanded(
                 flex: 2,
@@ -622,7 +660,10 @@ class _AttendanceChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(Corner.chip),
         border: Border.all(color: border),
       ),
-      child: Text(label, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: color)),
+      child: Text(
+        label,
+        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: color),
+      ),
     );
   }
 }
@@ -677,11 +718,7 @@ class _BalanceBreakdown extends StatelessWidget {
             const SizedBox(width: 6),
             Text(
               overdue > 0 ? 'المستحق اليوم: ${money(overdue)}' : 'لا مستحق اليوم',
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w900,
-                color: overdue > 0 ? AppColors.danger : AppColors.success,
-              ),
+              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: overdue > 0 ? AppColors.danger : AppColors.success),
             ),
           ],
         ),
@@ -769,7 +806,11 @@ class _Rule extends StatelessWidget {
 }
 
 /// صندوق خانة واحدة: خلفية رمادية خفيفة وإطار رفيع، ومحتوى في المنتصف.
-BoxDecoration _cellBox() => BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.bg, border: Border.all(color: AppColors.line));
+BoxDecoration _cellBox() => BoxDecoration(
+  borderRadius: BorderRadius.circular(Corner.box),
+  color: AppColors.bg,
+  border: Border.all(color: AppColors.line),
+);
 
 /// كلمة مرور بوابة — مطابقة لـ `SecretCode` في StudentDetail.tsx: مخفية بنقاط،
 /// وزرّا إظهار ونسخ، وتوليد لمن لا كلمة له.
@@ -794,13 +835,13 @@ class _SecretCodeState extends State<_SecretCode> {
     final code = widget.code.trim();
 
     Widget action(IconData icon, String tooltip, VoidCallback onTap) => IconButton(
-          tooltip: tooltip,
-          visualDensity: VisualDensity.compact,
-          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          padding: EdgeInsets.zero,
-          icon: Icon(icon, size: 16, color: AppColors.muted),
-          onPressed: onTap,
-        );
+      tooltip: tooltip,
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+      padding: EdgeInsets.zero,
+      icon: Icon(icon, size: 16, color: AppColors.muted),
+      onPressed: onTap,
+    );
 
     return Container(
       padding: const EdgeInsetsDirectional.fromSTEB(10, 4, 4, 4),
@@ -833,7 +874,10 @@ class _SecretCodeState extends State<_SecretCode> {
                       showAppSnack(context, 'تم توليد ${widget.label}');
                     },
                     icon: Icon(Icons.autorenew, size: 15, color: AppColors.amber),
-                    label: Text('توليد', style: TextStyle(color: AppColors.amber, fontWeight: FontWeight.w800, fontSize: 12)),
+                    label: Text(
+                      'توليد',
+                      style: TextStyle(color: AppColors.amber, fontWeight: FontWeight.w800, fontSize: 12),
+                    ),
                   )
           else ...[
             Container(
@@ -848,17 +892,10 @@ class _SecretCodeState extends State<_SecretCode> {
               child: Text(
                 visible ? code : '••••••',
                 textDirection: TextDirection.ltr,
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontWeight: FontWeight.w900,
-                  fontSize: 12.5,
-                  letterSpacing: 1.2,
-                  color: AppColors.heading,
-                ),
+                style: TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w900, fontSize: 12.5, letterSpacing: 1.2, color: AppColors.heading),
               ),
             ),
-            action(visible ? Icons.visibility_off_outlined : Icons.visibility_outlined, visible ? 'إخفاء' : 'إظهار',
-                () => setState(() => visible = !visible)),
+            action(visible ? Icons.visibility_off_outlined : Icons.visibility_outlined, visible ? 'إخفاء' : 'إظهار', () => setState(() => visible = !visible)),
             action(Icons.copy_outlined, 'نسخ', () async {
               await Clipboard.setData(ClipboardData(text: code));
               if (context.mounted) showAppSnack(context, 'تم نسخ ${widget.label}');
@@ -885,23 +922,20 @@ class _ContactCell extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
+          ),
           const SizedBox(height: 3),
           FittedBox(
             fit: BoxFit.scaleDown,
             child: Text(
               number.isEmpty ? '—' : number,
               textDirection: TextDirection.ltr,
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 14,
-                letterSpacing: 0.5,
-                color: number.isEmpty ? AppColors.faint : AppColors.heading,
-              ),
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, letterSpacing: 0.5, color: number.isEmpty ? AppColors.faint : AppColors.heading),
             ),
           ),
           if (number.isNotEmpty)
@@ -960,17 +994,16 @@ class _FieldGrid extends StatelessWidget {
     void flush() {
       if (pending.isEmpty) return;
       final cells = [...pending];
-      rows.add(IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (var i = 0; i < cells.length; i++) ...[
-              if (i > 0) const SizedBox(width: _gap),
-              Expanded(child: _cell(cells[i])),
+      rows.add(
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < cells.length; i++) ...[if (i > 0) const SizedBox(width: _gap), Expanded(child: _cell(cells[i]))],
             ],
-          ],
+          ),
         ),
-      ));
+      );
       pending.clear();
     }
 
@@ -988,10 +1021,7 @@ class _FieldGrid extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (var i = 0; i < rows.length; i++) ...[
-          if (i > 0) const SizedBox(height: _gap),
-          rows[i],
-        ],
+        for (var i = 0; i < rows.length; i++) ...[if (i > 0) const SizedBox(height: _gap), rows[i]],
       ],
     );
   }
@@ -1004,11 +1034,13 @@ class _FieldGrid extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(f.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
+          Text(
+            f.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
+          ),
           const SizedBox(height: 3),
           f.child ??
               Text(
@@ -1017,12 +1049,7 @@ class _FieldGrid extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 textDirection: f.ltr ? TextDirection.ltr : null,
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12.5,
-                  height: 1.45,
-                  color: empty ? AppColors.faint : AppColors.text,
-                ),
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, height: 1.45, color: empty ? AppColors.faint : AppColors.text),
               ),
         ],
       ),
@@ -1030,19 +1057,467 @@ class _FieldGrid extends StatelessWidget {
   }
 }
 
+Future<void> _showStudentDiscountSheet(BuildContext context, AppStore store, Student student) async {
+  final current = studentDiscountOf(student);
+  var percentage = current?.percentage ?? true;
+  final value = TextEditingController(text: current == null ? '' : '${current.value}');
+  final reason = TextEditingController(text: current?.reason ?? '');
+  GradePlanSyncResult? preview;
+
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.dialog))),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) {
+        void calculate() {
+          final amount = double.tryParse(value.text) ?? 0;
+          if (amount <= 0) {
+            setState(() => preview = null);
+            return;
+          }
+          try {
+            setState(
+              () => preview = InstallmentAdjustments(
+                store,
+              ).setStudentDiscount(student.id, PlanDiscount(percentage: percentage, value: amount, reason: reason.text)),
+            );
+          } on StoreException {
+            setState(() => preview = null);
+          }
+        }
+
+        Future<void> save(PlanDiscount? discount) async {
+          try {
+            InstallmentAdjustments(store).setStudentDiscount(student.id, discount, apply: true);
+            if (ctx.mounted) Navigator.pop(ctx);
+            if (context.mounted) {
+              showAppSnack(context, store.can('finance.discount') ? 'تم حفظ خصم الطالب' : 'أُرسل الطلب للمدير');
+            }
+          } on StoreException catch (e) {
+            if (ctx.mounted) showAppSnack(ctx, e.message, error: true);
+          }
+        }
+
+        final changed = preview == null ? 0 : preview!.reprice.installments + preview!.repricePaid.installments;
+        final difference = preview == null ? 0.0 : preview!.reprice.difference + preview!.repricePaid.difference;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom + MediaQuery.paddingOf(ctx).bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('خصم الطالب على أقساط خطته', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+              const SizedBox(height: 10),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: true, label: Text('نسبة %')),
+                  ButtonSegment(value: false, label: Text('مبلغ من كل قسط')),
+                ],
+                selected: {percentage},
+                onSelectionChanged: (selected) {
+                  setState(() => percentage = selected.first);
+                  calculate();
+                },
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: value,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                autofocus: true,
+                onChanged: (_) => calculate(),
+                decoration: InputDecoration(labelText: percentage ? 'النسبة %' : 'المبلغ ₪'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: reason,
+                decoration: const InputDecoration(labelText: 'السبب (مطلوب)'),
+              ),
+              const SizedBox(height: 9),
+              Container(
+                padding: const EdgeInsets.all(9),
+                decoration: tileDecoration(),
+                child: Text(
+                  preview == null
+                      ? 'أدخل قيمة لمعاينة الأثر'
+                      : changed == 0
+                      ? 'لا أقساط تتغير.'
+                      : 'يتغير $changed قسط، الفرق ${difference >= 0 ? '+' : '−'}${money(difference.abs())}',
+                  style: const TextStyle(fontSize: 11.5),
+                ),
+              ),
+              if (!store.can('finance.discount')) ...[
+                const SizedBox(height: 7),
+                Text('يُرسل الطلب للمدير ولا يتغير الحساب حتى يوافق.', style: TextStyle(color: AppColors.amberDark, fontSize: 11)),
+              ],
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  if (current != null)
+                    TextButton(
+                      onPressed: () => save(null),
+                      child: const Text('إزالة الخصم', style: TextStyle(color: AppColors.danger)),
+                    ),
+                  const Spacer(),
+                  PrimaryButton(
+                    label: store.can('finance.discount') ? 'حفظ' : 'إرسال للمدير',
+                    onPressed: () => save(PlanDiscount(percentage: percentage, value: double.tryParse(value.text) ?? 0, reason: reason.text)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    ),
+  );
+  value.dispose();
+  reason.dispose();
+}
+
+Future<void> _showExtraChargeSheet(BuildContext context, AppStore store, Student student) async {
+  final title = TextEditingController();
+  final amount = TextEditingController();
+  final due = TextEditingController(text: isoDate(DateTime.now()));
+  final ok = await showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.dialog))),
+    builder: (ctx) => Padding(
+      padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom + MediaQuery.paddingOf(ctx).bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('رسم خاص بالطالب', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+          const SizedBox(height: 10),
+          TextField(
+            controller: title,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'اسم الرسم (كتاب، غرامة، نشاط...)'),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: amount,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'المبلغ ₪'),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: due,
+            decoration: const InputDecoration(labelText: 'تاريخ الاستحقاق YYYY-MM-DD'),
+          ),
+          const SizedBox(height: 12),
+          PrimaryButton(label: 'إضافة', onPressed: () => Navigator.pop(ctx, true)),
+        ],
+      ),
+    ),
+  );
+  if (ok == true && context.mounted) {
+    try {
+      InstallmentAdjustments(
+        store,
+      ).addExtraCharge(studentId: student.id, title: title.text, amount: double.tryParse(amount.text) ?? 0, dueDate: parseIsoDate(due.text) ?? DateTime.now());
+      showAppSnack(context, 'تمت إضافة الرسم الخاص');
+    } on StoreException catch (e) {
+      showAppSnack(context, e.message, error: true);
+    }
+  }
+  title.dispose();
+  amount.dispose();
+  due.dispose();
+}
+
+Future<void> _showCustomPlanSheet(BuildContext context, AppStore store, Student student) async {
+  final existing = store.installments.where((i) => i.studentId == student.id && isCustomInstallmentId(i.id)).toList()
+    ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+  final count = TextEditingController(text: existing.isEmpty ? '8' : '${existing.length}');
+  final amount = TextEditingController(text: existing.isEmpty ? '' : '${existing.first.amount}');
+  final firstDate = TextEditingController(text: existing.isEmpty ? isoDate(student.enrollmentDate) : isoDate(existing.first.dueDate));
+  final every = TextEditingController(text: '1');
+  final reason = TextEditingController(text: student.usesCustomPlan && student.exceptionReason.isNotEmpty ? student.exceptionReason : 'خطة مخصصة');
+  final ok = await showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.dialog))),
+    builder: (ctx) => Padding(
+      padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom + MediaQuery.paddingOf(ctx).bottom),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(student.usesCustomPlan ? 'تعديل الخطة المخصصة' : 'خطة مخصصة للطالب', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+            const SizedBox(height: 6),
+            const Text('أقساط خاصة بهذا الطالب — مستقلة عن خطة مرحلته.', style: TextStyle(color: AppColors.muted, fontSize: 11)),
+            const SizedBox(height: 10),
+            TextField(
+              controller: count,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'عدد الأقساط'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: amount,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'مبلغ كل قسط ₪'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: firstDate,
+              decoration: const InputDecoration(labelText: 'تاريخ أول قسط YYYY-MM-DD'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: every,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'المسافة بين الأقساط (شهر)'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: reason,
+              decoration: const InputDecoration(labelText: 'السبب / ملاحظة'),
+            ),
+            const SizedBox(height: 12),
+            PrimaryButton(label: student.usesCustomPlan ? 'استبدال الخطة' : 'إنشاء الخطة', onPressed: () => Navigator.pop(ctx, true)),
+          ],
+        ),
+      ),
+    ),
+  );
+  if (ok == true && context.mounted) {
+    try {
+      final rows = generatePlanItems(
+        count: int.tryParse(count.text) ?? 0,
+        amount: double.tryParse(amount.text) ?? 0,
+        firstDueDate: firstDate.text,
+        everyMonths: int.tryParse(every.text) ?? 1,
+        titlePrefix: 'قسط مخصص',
+        newId: store.newId,
+      );
+      store.applyCustomPlan(student.id, schedule: rows, reason: reason.text);
+      showAppSnack(context, 'تم حفظ الخطة المخصصة');
+    } on StoreException catch (e) {
+      showAppSnack(context, e.message, error: true);
+    }
+  }
+  count.dispose();
+  amount.dispose();
+  firstDate.dispose();
+  every.dispose();
+  reason.dispose();
+}
+
+Future<void> _returnToGradePlan(BuildContext context, AppStore store, Student student) async {
+  final ok = await confirmSheet(
+    context,
+    title: 'رجوع لخطة المرحلة',
+    message: 'تُحذف الأقساط المخصصة غير المدفوعة، ويبقى المدفوع في السجل، ثم تُطبّق خطة «${student.gradeLevel}».',
+    confirmLabel: 'رجوع للخطة',
+    confirmColor: AppColors.heading,
+  );
+  if (!ok || !context.mounted) return;
+  try {
+    store.returnToGradePlan(student.id);
+    showAppSnack(context, 'تم الرجوع لخطة المرحلة');
+  } on StoreException catch (e) {
+    showAppSnack(context, e.message, error: true);
+  }
+}
+
+Future<void> _showInstallmentActionSheet(BuildContext context, AppStore store, Installment installment) async {
+  final hasDiscount = installment.isExempt || installment.discountAmount > cent;
+  final action = await showModalBottomSheet<String>(
+    context: context,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.dialog))),
+    builder: (ctx) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            title: Text(installment.title, style: const TextStyle(fontWeight: FontWeight.w800)),
+            subtitle: Text('قيمة القسط: ${money(installment.amount + installment.discountAmount)}'),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.percent, color: AppColors.info),
+            title: const Text('خصم بمبلغ'),
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            onTap: () => Navigator.pop(ctx, 'amount'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.volunteer_activism, color: AppColors.success),
+            title: const Text('إعفاء كامل'),
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            onTap: () => Navigator.pop(ctx, 'exempt'),
+          ),
+          if (hasDiscount)
+            ListTile(
+              leading: Icon(Icons.undo, color: AppColors.heading),
+              title: const Text('إزالة الخصم'),
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              onTap: () => Navigator.pop(ctx, 'none'),
+            ),
+          if (InstallmentAdjustments.canRemove(installment))
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: AppColors.danger),
+              title: const Text('حذف'),
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              onTap: () => Navigator.pop(ctx, 'remove'),
+            ),
+        ],
+      ),
+    ),
+  );
+  if (action == null || !context.mounted) return;
+  if (action == 'none') {
+    try {
+      InstallmentAdjustments(store).setDiscount(installment, const InstallmentDiscountInput.none());
+      showAppSnack(context, store.can('finance.discount') ? 'تمت إزالة الخصم' : 'أُرسل الطلب للمدير');
+    } on StoreException catch (e) {
+      showAppSnack(context, e.message, error: true);
+    }
+    return;
+  }
+  await _showInstallmentAdjustmentForm(context, store, installment, action);
+}
+
+Future<void> _showInstallmentAdjustmentForm(BuildContext context, AppStore store, Installment installment, String action) async {
+  final amount = TextEditingController();
+  final reason = TextEditingController();
+  final adjustments = InstallmentAdjustments(store);
+  final removing = action == 'remove';
+  final exempt = action == 'exempt';
+  MoneyMovePreview? preview;
+  try {
+    preview = adjustments.previewDiscount(installment, const InstallmentDiscountInput.exempt(''));
+  } catch (_) {}
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.dialog))),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) {
+        void refreshPreview() {
+          final input = exempt || removing
+              ? InstallmentDiscountInput.exempt(reason.text)
+              : InstallmentDiscountInput.amount(double.tryParse(amount.text) ?? 0, reason.text);
+          setState(() => preview = adjustments.previewDiscount(installment, input));
+        }
+
+        Future<void> save() async {
+          try {
+            if (removing) {
+              adjustments.remove(installment, reason: reason.text);
+            } else {
+              adjustments.setDiscount(
+                installment,
+                exempt ? InstallmentDiscountInput.exempt(reason.text) : InstallmentDiscountInput.amount(double.tryParse(amount.text) ?? 0, reason.text),
+              );
+            }
+            if (ctx.mounted) Navigator.pop(ctx);
+            if (context.mounted) {
+              showAppSnack(context, store.can('finance.discount') ? 'تم حفظ التعديل' : 'أُرسل الطلب للمدير');
+            }
+          } on StoreException catch (e) {
+            if (ctx.mounted) showAppSnack(ctx, e.message, error: true);
+          }
+        }
+
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom + MediaQuery.paddingOf(ctx).bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                removing
+                    ? 'حذف «${installment.title}»'
+                    : exempt
+                    ? 'إعفاء كامل'
+                    : 'خصم بمبلغ',
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+              ),
+              if (!exempt && !removing) ...[
+                const SizedBox(height: 10),
+                TextField(
+                  controller: amount,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  autofocus: true,
+                  onChanged: (_) => refreshPreview(),
+                  decoration: const InputDecoration(labelText: 'مبلغ الخصم ₪'),
+                ),
+              ],
+              const SizedBox(height: 8),
+              TextField(
+                controller: reason,
+                onChanged: (_) => refreshPreview(),
+                decoration: InputDecoration(labelText: removing && store.can('finance.discount') ? 'السبب (اختياري)' : 'السبب (مطلوب)'),
+              ),
+              if (preview != null && preview!.paid > cent) ...[const SizedBox(height: 10), _MoneyMovesView(preview!)],
+              if (!store.can('finance.discount')) ...[
+                const SizedBox(height: 8),
+                Text('لا تملك هذه الصلاحية: يُرسل طلباً للمدير ويُنفّذ بعد موافقته.', style: TextStyle(color: AppColors.amberDark, fontSize: 11)),
+              ],
+              const SizedBox(height: 12),
+              PrimaryButton(
+                label: store.can('finance.discount') ? (removing ? 'حذف' : 'حفظ') : 'إرسال للمدير',
+                color: removing ? AppColors.danger : null,
+                onPressed: save,
+              ),
+            ],
+          ),
+        );
+      },
+    ),
+  );
+  amount.dispose();
+  reason.dispose();
+}
+
+class _MoneyMovesView extends StatelessWidget {
+  const _MoneyMovesView(this.preview);
+  final MoneyMovePreview preview;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(9),
+    decoration: tileDecoration(),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('يتحرر من مدفوع القسط ${money(preview.paid)} ويُحسب على:', style: const TextStyle(fontSize: 11.5)),
+        for (final move in preview.movesTo) Text('• ${move.title}: ${money(move.amount)}', style: const TextStyle(fontSize: 11)),
+        if (preview.credit > cent) Text('• رصيد للطالب: ${money(preview.credit)}', style: const TextStyle(color: AppColors.success, fontSize: 11)),
+      ],
+    ),
+  );
+}
+
 /// قسط مجدول — بلاطة مستقلة: العنوان وحالته، ثم الاستحقاق مقابل المبالغ.
 /// غير المسدد أبيض ويُفتح للتسديد لمن يملك القبض، والمسدد رمادي فاتح.
 class _InstallmentTile extends StatelessWidget {
-  const _InstallmentTile({required this.student, required this.inst, required this.canCollect});
+  const _InstallmentTile({required this.student, required this.inst, required this.canCollect, required this.canAdjust});
 
   final Student student;
   final Installment inst;
   final bool canCollect;
+  final bool canAdjust;
 
   @override
   Widget build(BuildContext context) {
     final future = dateOnly(inst.dueDate).isAfter(dateOnly(DateTime.now()));
-    final payable = !inst.isPaid && canCollect;
+    final payable = !inst.isExempt && !inst.isPaid && canCollect;
+    final store = StoreScope.of(context);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -1056,18 +1531,31 @@ class _InstallmentTile extends StatelessWidget {
                 );
               }
             : null,
+        onLongPress: canAdjust ? () => _showInstallmentActionSheet(context, store, inst) : null,
         child: Container(
           padding: const EdgeInsets.all(10),
-          decoration: tileDecoration(white: !inst.isPaid),
+          decoration: tileDecoration(white: !inst.isPaid && !inst.isExempt),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
                 children: [
                   Expanded(
-                    child: Text(inst.title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.text)),
+                    child: Text(
+                      inst.title,
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.text),
+                    ),
                   ),
-                  if (inst.isPaid)
+                  if (canAdjust)
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'إجراءات القسط',
+                      icon: const Icon(Icons.more_vert, size: 19, color: AppColors.muted),
+                      onPressed: () => _showInstallmentActionSheet(context, store, inst),
+                    ),
+                  if (inst.isExempt)
+                    StatusChip.muted('معفى')
+                  else if (inst.isPaid)
                     StatusChip.success('مسدد')
                   else if (future)
                     StatusChip.muted('مجدول')
@@ -1075,6 +1563,10 @@ class _InstallmentTile extends StatelessWidget {
                     StatusChip.danger('مستحق'),
                 ],
               ),
+              if (inst.isExempt && inst.exemptReason.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(inst.exemptReason, style: const TextStyle(color: AppColors.faint, fontSize: 11)),
+              ],
               const SizedBox(height: 6),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1089,16 +1581,22 @@ class _InstallmentTile extends StatelessWidget {
                         runSpacing: 2,
                         alignment: WrapAlignment.end,
                         children: [
-                          Text('المطلوب: ${money(inst.amount)}', style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-                          if (!inst.isPaid)
-                            Text('المتبقي: ${money(inst.remaining)}',
-                                style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w800, fontSize: 11)),
+                          Text(inst.isExempt ? 'المطلوب: 0' : 'المطلوب: ${money(inst.amount)}', style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+                          if (!inst.isExempt && !inst.isPaid)
+                            Text(
+                              'المتبقي: ${money(inst.remaining)}',
+                              style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w800, fontSize: 11),
+                            ),
                         ],
                       ),
                     ),
                   ),
                 ],
               ),
+              if (canAdjust) ...[
+                const SizedBox(height: 4),
+                Text('اضغط مطوّلاً لإجراءات الخصم والإعفاء', style: const TextStyle(color: AppColors.faint, fontSize: 10)),
+              ],
             ],
           ),
         ),
@@ -1137,11 +1635,13 @@ class _PaymentTile extends StatelessWidget {
                 child: Row(
                   children: [
                     Flexible(
-                      child: Text(p.receiptNumber,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textDirection: TextDirection.ltr,
-                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading)),
+                      child: Text(
+                        p.receiptNumber,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textDirection: TextDirection.ltr,
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading),
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Flexible(
@@ -1175,11 +1675,7 @@ class _PaymentTile extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  [
-                    StoreScope.of(context).paymentMethodLabel(p.method),
-                    if (purpose.trim().isNotEmpty) purpose,
-                    if (p.cancelled) 'ملغاة',
-                  ].join('  •  '),
+                  [StoreScope.of(context).paymentMethodLabel(p.method), if (purpose.trim().isNotEmpty) purpose, if (p.cancelled) 'ملغاة'].join('  •  '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: p.cancelled ? AppColors.danger : AppColors.muted, fontSize: 11),
@@ -1231,15 +1727,18 @@ class _EvaluationsCard extends StatelessWidget {
       final avg = term.components.isEmpty || term.currentAverage == null
           ? '—'
           : term.isComplete
-              ? '${term.total.round()}%'
-              : '${term.currentAverage!.round()}% (حالي)';
+          ? '${term.total.round()}%'
+          : '${term.currentAverage!.round()}% (حالي)';
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
               Expanded(
-                child: Text(label, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: AppColors.text)),
+                child: Text(
+                  label,
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: AppColors.text),
+                ),
               ),
               Text(
                 avg,
@@ -1352,17 +1851,13 @@ class _EvaluationsCard extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          [
-                            if (store.subjectName(e.subjectId).isNotEmpty) store.subjectName(e.subjectId),
-                            e.typeLabel,
-                          ].join('  •  '),
+                          [if (store.subjectName(e.subjectId).isNotEmpty) store.subjectName(e.subjectId), e.typeLabel].join('  •  '),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
                         ),
                       ),
-                      if (e.evaluationDate.isNotEmpty)
-                        Text(e.evaluationDate, style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
+                      if (e.evaluationDate.isNotEmpty) Text(e.evaluationDate, style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
                     ],
                   ),
                 ],
@@ -1397,10 +1892,7 @@ class _AttachmentsCardState extends State<_AttachmentsCard> {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     if (!store.features.enableStudentAttachments) return const SizedBox.shrink();
-    return FutureBuilder<StudentAttachments?>(
-      future: _load,
-      builder: (context, snap) => _card(snap.data ?? store.attachmentsOf(widget.studentId)),
-    );
+    return FutureBuilder<StudentAttachments?>(future: _load, builder: (context, snap) => _card(snap.data ?? store.attachmentsOf(widget.studentId)));
   }
 
   Widget _card(StudentAttachments? att) {
@@ -1419,7 +1911,9 @@ class _AttachmentsCardState extends State<_AttachmentsCard> {
           children: [
             for (var i = 0; i < items.length; i++) ...[
               if (i > 0) const SizedBox(width: 10),
-              Expanded(child: _Thumb(label: items[i].$1, data: items[i].$2)),
+              Expanded(
+                child: _Thumb(label: items[i].$1, data: items[i].$2),
+              ),
             ],
           ],
         ),
@@ -1457,7 +1951,10 @@ class _Thumb extends StatelessWidget {
             children: [
               Padding(
                 padding: const EdgeInsets.all(10),
-                child: Text(label, style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
+                child: Text(
+                  label,
+                  style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading),
+                ),
               ),
               Flexible(child: InteractiveViewer(maxScale: 5, child: Image.memory(bytes))),
               Padding(
@@ -1478,11 +1975,13 @@ class _Thumb extends StatelessWidget {
             child: Image.memory(bytes, fit: BoxFit.cover),
           ),
           const SizedBox(height: 5),
-          Text(label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 11, color: AppColors.muted),
+          ),
         ],
       ),
     );

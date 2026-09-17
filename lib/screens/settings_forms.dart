@@ -137,7 +137,8 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
 
   void _save() {
     final store = StoreScope.of(context);
-    final rateValue = double.tryParse(rate.text.trim());
+    // الراتب لا يُعرض في النموذج (كويب): عند التعديل يُحفظ كما كان، وعند الإضافة صفر.
+    final rateValue = widget.teacher?.rate ?? 0.0;
     final idDigits = digitsOnly(nationalId.text);
     final number = digitsOnly(phone.text);
     setState(() {
@@ -145,8 +146,7 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
         ..reset()
         ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المدرس')
         ..check('phone', number.isEmpty, 'يرجى إدخال رقم هاتف المدرس')
-        ..check('nationalId', idDigits.isNotEmpty && idDigits.length != 9, 'رقم الهوية يجب أن يتكون من 9 أرقام')
-        ..check('rate', rateValue == null || rateValue < 0, 'يرجى إدخال راتب صحيح');
+        ..check('nationalId', idDigits.isNotEmpty && idDigits.length != 9, 'رقم الهوية يجب أن يتكون من 9 أرقام');
     });
     if (errors.report(context)) return;
 
@@ -158,7 +158,7 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
           name: name.text.trim(),
           phone: combinePhoneAndPrefix(number, prefix),
           subject: names.isEmpty ? '' : names.first,
-          rate: rateValue ?? 0,
+          rate: rateValue,
           email: email.text.trim(),
           notes: notes.text.trim(),
           nationalId: idDigits,
@@ -322,24 +322,8 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
                 ],
               ),
 
-            // ── ٤. المحاسبة ─────────────────────────────────────────────────
-            const FormSection(icon: Icons.payments_outlined, title: 'المحاسبة والراتب'),
-            const FieldLabel('الراتب الشهري (₪)'),
-            TextField(
-              controller: rate,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              onChanged: (_) {
-                if (errors.clear('rate')) setState(() {});
-              },
-              decoration: InputDecoration(errorText: errors['rate']),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'رقمٌ يُقترح به سند الصرف ويُعدَّل أو يُتجاهل — لا مطالبة شهرية',
-              style: TextStyle(color: AppColors.muted, fontSize: 10.5),
-            ),
-            _gap,
-            const FieldLabel('ملاحظات'),
+            // ── ٤. المحاسبة (الراتب يبقى في السجل دون واجهة تعديل — كويب) ──
+            const FormSection(icon: Icons.notes_outlined, title: 'ملاحظات'),
             TextField(
               controller: notes,
               minLines: 1,
@@ -800,7 +784,7 @@ class _UserFormScreenState extends State<UserFormScreen> {
     });
     if (errors.report(context)) return;
     try {
-      store.addUser(AppUser(id: store.newId(), name: name.text.trim(), role: role, capabilities: [...sections]));
+      store.addUser(AppUser(id: store.newId(), name: name.text.trim(), role: role, capabilities: serializeSections(sections)));
       showAppSnack(context, 'تمت إضافة المستخدم');
       Navigator.pop(context);
     } on StoreException catch (e) {
@@ -882,7 +866,7 @@ class _UserAccessScreenState extends State<UserAccessScreen> {
     final u = widget.user;
     try {
       store.updateUser(
-        AppUser(id: u.id, name: u.name, role: u.role, email: u.email, isActive: u.isActive, capabilities: [...sections]),
+        AppUser(id: u.id, name: u.name, role: u.role, email: u.email, isActive: u.isActive, capabilities: serializeSections(sections)),
       );
       showAppSnack(context, 'تم الحفظ');
       Navigator.pop(context);

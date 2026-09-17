@@ -9,8 +9,9 @@
 ///
 /// رقم الإصدار جزءان (`2.18`) للبناء، وثلاثة (`2.18.3`) للتحديث الصامت.
 /// كلاهما يُسجَّل على GitHub بالترتيب (`v2.18` ثم `v2.18.1` ثم `v2.18.2`…):
-/// البناء يرفع APK ويحدّث `latest`، والصامت يرفع وصفاً فقط بلا لمس `latest`
-/// كي تبقى الأجهزة تقرأ آخر بناء. التطبيق يميّز وحده: جزءان = تثبيت، ثلاثة = Shorebird.
+/// البناء يرفع APK ويحدّث `latest`، والصامت يرفع وصفاً (ومع `--attach-apk` حزمة
+/// للتوزيع اليدوي) بلا لمس `latest` كي تبقى الأجهزة تقرأ آخر بناء. التطبيق
+/// يميّز وحده: جزءان = تثبيت عبر latest، ثلاثة = Shorebird.
 ///
 /// مع `shorebird.yaml` يُبنى الإصدار بـ `shorebird release`، فتستقبل أجهزته بعد
 /// ذلك تصليحات كود Dart بصمت: `shorebird patch android --release-version=<الإصدار>`.
@@ -45,6 +46,9 @@ Publish a new mobile release
                                 2.18     two parts  = APK build the user installs
                                 2.18.3   three parts = silent update (Shorebird)
   --patch                     silent update on the published release, next number
+  --attach-apk                with a silent update: also build and upload an APK
+                              for manual share (new institutions). Does not change
+                              latest / mobile-latest.json — devices keep the build
   --bump minor|major          without --version: which part grows (minor by default)
   --min-supported <n>|current
                               oldest build number still allowed to run; older ones
@@ -130,6 +134,25 @@ String silentLabelFor(String base, int number) => '$base.$number';
 String apkNameFor(PubVersion v) => 'center-${v.name}.apk';
 
 String apkUrlFor(PubVersion v) => 'https://github.com/$releasesRepo/releases/download/${tagFor(v)}/${apkNameFor(v)}';
+
+/// حزمة للتوزيع اليدوي مع التحديث الصامت — ليست ما تقرؤه الأجهزة من `latest`.
+String silentApkNameFor(String label) => 'center-$label.apk';
+
+String silentApkUrlFor(String label) {
+  final m = RegExp(r'^(\d+\.\d+)\.(\d+)$').firstMatch(label.trim());
+  if (m == null) throw ArgumentError('Silent APK label must look like 1.3.2, not "$label"');
+  return 'https://github.com/$releasesRepo/releases/download/${silentTagFor(m[1]!, int.parse(m[2]!))}/${silentApkNameFor(label)}';
+}
+
+/// ترقيم حزمة التوزيع المرفقة بالصامت: اسم العرض ثلاثة أجزاء، ورقم البناء = بناء الأساس.
+///
+/// تُبنى بـ Flutter لا بـ `shorebird release` حتى لا يُسجَّل إصدار Shorebird ثانٍ.
+/// الكود الحالي مدمج فيها؛ من يثبّتها لا يحتاج patch الأساس. `latest` يبقى على البناء.
+PubVersion silentApkVersion(String label, int baseBuild) {
+  final m = RegExp(r'^(\d+)\.(\d+)\.(\d+)$').firstMatch(label.trim());
+  if (m == null) throw ArgumentError('Silent APK label must look like 1.3.2, not "$label"');
+  return PubVersion(int.parse(m[1]!), int.parse(m[2]!), int.parse(m[3]!), baseBuild);
+}
 
 /// ملف الوصف بالحقول التي يقرؤها `AppRelease.fromJson` في التطبيق.
 Map<String, dynamic> buildManifest({
@@ -510,6 +533,8 @@ class _Args {
   bool mandatory = true;
   bool dryRun = false;
   bool allowDirty = false;
+  /// مع الصامت: ارفع أيضاً APK للتوزيع اليدوي بلا لمس latest.
+  bool attachApk = false;
 
   static _Args parse(List<String> raw) {
     final args = _Args();
@@ -526,6 +551,8 @@ class _Args {
           args.version = value();
         case '--patch':
           args.patch = true;
+        case '--attach-apk':
+          args.attachApk = true;
         case '--bump':
           args.bump = value();
         case '--min-supported':
@@ -554,6 +581,8 @@ class _Args {
 ///
 /// لا يلمس `mobile-latest.json` ولا شارة `latest`: الأجهزة تبقى على آخر بناء.
 /// ولا يُكتب `pubspec.yaml`: الحزمة المثبَّتة نفسها تستقبل الـ patch.
+/// مع `--attach-apk` تُبنى حزمة Flutter بالتعديلات الحالية وتُرفع مع الوسم
+/// للتوزيع اليدوي (مؤسسة جديدة) دون أن تصبح Latest.
 Future<void> _publishPatch(_Args args, RequestedVersion? requested, String published, int publishedCode) async {
   if (!File('shorebird.yaml').existsSync()) _fail('Silent updates need Shorebird: run shorebird init');
   if (published.isEmpty || publishedCode <= 0) {
@@ -584,7 +613,12 @@ Future<void> _publishPatch(_Args args, RequestedVersion? requested, String publi
   await _run(patch.exe, patch.args, shell: patch.shell);
 
   if (args.dryRun) {
+    File? shareApk;
+    if (args.attachApk) {
+      shareApk = await _buildSilentShareApk(label: label, baseBuild: publishedCode);
+    }
     _step('Dry run - nothing was published');
+    if (shareApk != null) _info('Share APK staged at ${shareApk.path}');
     return;
   }
 
@@ -596,6 +630,11 @@ Future<void> _publishPatch(_Args args, RequestedVersion? requested, String publi
         '  If you answered No to an asset warning, re-run and answer Yes');
   }
   _info('Shorebird patch $number is live');
+
+  File? shareApk;
+  if (args.attachApk) {
+    shareApk = await _buildSilentShareApk(label: label, baseBuild: publishedCode);
+  }
 
   _step('Recording $label on GitHub (history only — devices keep the last build)');
   final outDir = Directory('build/release')..createSync(recursive: true);
@@ -612,8 +651,18 @@ Future<void> _publishPatch(_Args args, RequestedVersion? requested, String publi
   await _ensureRepoHasCommit();
   // --latest=false إلزامي: بدونها GitHub يجعل أحدث وسم Latest فيكسر رابط الأجهزة
   await _run('gh', [
-    'release', 'create', silentTagFor(published, number), manifestFile.path, //
-    '--repo', releasesRepo, '--title', label, '--notes-file', notesFile.path, '--latest=false',
+    'release',
+    'create',
+    silentTagFor(published, number),
+    manifestFile.path,
+    if (shareApk != null) shareApk.path,
+    '--repo',
+    releasesRepo,
+    '--title',
+    label,
+    '--notes-file',
+    notesFile.path,
+    '--latest=false',
   ]);
   // شبكة أمان إن تجاهل gh العلم مع رفع الملفات
   await _run('gh', [
@@ -625,6 +674,51 @@ Future<void> _publishPatch(_Args args, RequestedVersion? requested, String publi
   _info('Devices get it silently: downloaded on open, applied on the next open');
   _info('GitHub history: https://github.com/$releasesRepo/releases/tag/${silentTagFor(published, number)}');
   _info('APK latest stays on build $published');
+  if (shareApk != null) {
+    _info('Manual install for a new institution (does not change latest):\n    ${silentApkUrlFor(label)}');
+  }
+}
+
+/// يبني APK بالتعديلات الحالية للتوزيع اليدوي مع وسم الصامت.
+///
+/// Flutter لا Shorebird: لا يُنشأ إصدار Shorebird جديد. رقم البناء = بناء الأساس
+/// حتى لا يسبق `mobile-latest.json`. الاسم ثلاثة أجزاء (`center-1.3.2.apk`).
+Future<File> _buildSilentShareApk({required String label, required int baseBuild}) async {
+  final version = silentApkVersion(label, baseBuild);
+  final built = File('build/app/outputs/flutter-apk/app-release.apk');
+  if (built.existsSync()) built.deleteSync();
+
+  _step('Building a shareable APK for $label (manual install only)');
+  final build = buildCommand(version, shorebird: false);
+  await _run(build.exe, build.args, shell: build.shell);
+  if (!built.existsSync()) _fail('The shareable APK build produced no file - read the build output above');
+
+  final aapt = _findBuildTool('aapt2', windowsExtension: '.exe');
+  if (aapt == null) {
+    _warn('aapt2 not found - could not confirm the APK carries $version');
+  } else {
+    final badging = apkBadging(await _capture(aapt, ['dump', 'badging', built.path]));
+    if (badging == null) _fail('Could not read the version out of the shareable APK');
+    if (badging.name != version.semver || badging.code != version.build) {
+      _fail('The shareable APK carries ${badging.name}+${badging.code}, not $version');
+    }
+    _info('Share APK carries $version');
+  }
+
+  final apksigner = _findApksigner() ?? _fail('apksigner not found - install Android SDK Build-Tools');
+  final digest = signerDigest(await _capture(apksigner, ['verify', '--print-certs', built.path], shell: true));
+  if (digest != expectedCertSha256) {
+    _fail('Shareable APK is not signed with the app key (${digest ?? 'unsigned'})');
+  }
+  _info('Share APK signed with the app key');
+
+  final outDir = Directory('build/release')..createSync(recursive: true);
+  final apk = built.copySync('${outDir.path}/${silentApkNameFor(label)}');
+  final size = apk.lengthSync();
+  final sha = (await crypto.sha256.bind(apk.openRead()).first).toString();
+  _info('${apk.path} (${(size / (1024 * 1024)).toStringAsFixed(1)} MB)');
+  _info('sha256 $sha');
+  return apk;
 }
 
 /// GitHub لا ينشئ إصداراً في مستودع بلا كوميت: الوسم يحتاج كوميتاً يشير إليه.

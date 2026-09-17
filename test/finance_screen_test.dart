@@ -26,16 +26,25 @@ Future<AppStore> _store({List<String>? caps}) async {
   return s;
 }
 
-Future<void> _pump(WidgetTester tester, AppStore s, {double width = 360}) async {
+Future<void> _pump(
+  WidgetTester tester,
+  AppStore s, {
+  double width = 360,
+}) async {
   tester.view.physicalSize = Size(width, 740);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(StoreScope(
-    store: s,
-    child: const MaterialApp(
-      home: Directionality(textDirection: TextDirection.rtl, child: Scaffold(body: FinanceScreen())),
+  await tester.pumpWidget(
+    StoreScope(
+      store: s,
+      child: const MaterialApp(
+        home: Directionality(
+          textDirection: TextDirection.rtl,
+          child: Scaffold(body: FinanceScreen()),
+        ),
+      ),
     ),
-  ));
+  );
   await tester.pump(const Duration(milliseconds: 300));
 }
 
@@ -45,17 +54,24 @@ Future<void> _open(WidgetTester tester, String tab) async {
 }
 
 void main() {
-  testWidgets('المصروفات تظهر لمن يفتح المالية ولو بلا صلاحيتها — كما في Center', (tester) async {
-    final s = await _store(caps: ['finance.view']);
-    await _pump(tester, s);
+  testWidgets(
+    'المصروفات تظهر لمن يفتح المالية ولو بلا صلاحيتها — كما في Center',
+    (tester) async {
+      final s = await _store(caps: ['finance.view']);
+      await _pump(tester, s);
 
-    expect(find.text('المصروفات'), findsOneWidget);
-    await _open(tester, 'المصروفات');
-    expect(find.text('شراء قرطاسية'), findsOneWidget);
-    expect(find.text('إضافة سند صرف'), findsNothing, reason: 'تسجيل سند الصرف وحده يتطلب صلاحيته');
+      expect(find.text('المصروفات'), findsOneWidget);
+      await _open(tester, 'المصروفات');
+      expect(find.text('شراء قرطاسية'), findsOneWidget);
+      expect(
+        find.text('إضافة سند صرف'),
+        findsNothing,
+        reason: 'تسجيل سند الصرف وحده يتطلب صلاحيته',
+      );
 
-    await s.flush();
-  });
+      await s.flush();
+    },
+  );
 
   testWidgets('من يملك صلاحية المصروفات يرى زر سند الصرف', (tester) async {
     final s = await _store();
@@ -74,7 +90,9 @@ void main() {
   });
 
   for (final width in [320.0, 360.0]) {
-    testWidgets('التبويبات الثلاثة بلا طفح على عرض ${width.toInt()}', (tester) async {
+    testWidgets('التبويبات الثلاثة بلا طفح على عرض ${width.toInt()}', (
+      tester,
+    ) async {
       final s = await _store();
       await _pump(tester, s, width: width);
       for (final tab in ['المستحقات', 'المصروفات', 'المقبوضات']) {
@@ -85,20 +103,26 @@ void main() {
     });
   }
 
-  testWidgets('المالية تفتح على المستحقات، وترتيب التبويبات كما في الديسكتوب', (tester) async {
+  testWidgets('المالية تفتح على المستحقات، وترتيب التبويبات كما في الديسكتوب', (
+    tester,
+  ) async {
     final s = await _store();
     await _pump(tester, s);
 
     // المستحقات سبب فتح المالية، فهي أولها والمفتوحة عند الدخول
     final tabs = ['المستحقات', 'المقبوضات', 'المصروفات'];
-    final order = [for (final t in tabs) tester.getRect(find.text(t)).center.dx];
+    final order = [
+      for (final t in tabs) tester.getRect(find.text(t)).center.dx,
+    ];
     expect(order[0], greaterThan(order[1]), reason: 'من اليمين لليسار');
     expect(order[1], greaterThan(order[2]));
     expect(find.text('لا مستحقات'), findsNothing);
     await s.flush();
   });
 
-  testWidgets('البحث والتصفية في سطر واحد في المستحقات والمقبوضات', (tester) async {
+  testWidgets('البحث والتصفية في سطر واحد في المستحقات والمقبوضات', (
+    tester,
+  ) async {
     final s = await _store();
     await _pump(tester, s);
 
@@ -109,13 +133,22 @@ void main() {
 
     await _open(tester, 'المقبوضات');
     final search = tester.getRect(find.byType(SearchField));
-    expect(tester.getRect(find.byType(GroupedFilterButton)).center.dy, closeTo(search.center.dy, 1));
+    expect(
+      tester.getRect(find.byType(GroupedFilterButton)).center.dy,
+      closeTo(search.center.dy, 1),
+    );
     await s.flush();
   });
 
   testWidgets('تصفية الحالة تُظهر الملغاة وحدها', (tester) async {
     final s = await _store();
-    final target = s.payments.firstWhere((p) => !p.cancelled);
+    // الإلغاء لسند اليوم فقط؛ السند الأقدم يُعكس ولا يتحول إلى «ملغى».
+    final target = s.addPayment(
+      studentId: s.students.first.id,
+      amount: 10,
+      method: 'cash',
+      date: DateTime.now(),
+    );
     s.cancelPayment(target);
     await _pump(tester, s);
     await _open(tester, 'المقبوضات');
@@ -127,7 +160,10 @@ void main() {
 
     final cancelled = s.payments.where((p) => p.cancelled).length;
     expect(
-      find.descendant(of: find.byType(SearchField), matching: find.text('$cancelled/${s.payments.length}')),
+      find.descendant(
+        of: find.byType(SearchField),
+        matching: find.text('$cancelled/${s.payments.length}'),
+      ),
       findsOneWidget,
     );
     expect(find.text('معتمد'), findsNothing);

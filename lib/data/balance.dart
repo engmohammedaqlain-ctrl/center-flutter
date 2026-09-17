@@ -3,13 +3,9 @@
 /// بدل تخزين الرصيد رقماً جامداً يُعدَّل مع كل حركة — فيتضارب بين جهازين يعملان
 /// بلا اتصال ويفوز آخر من يصل السحابة — يُحسب دائماً من السجلات الأصلية:
 ///
-///   الرصيد = (مجموع السندات النشطة + خصوماتها) − (رسوم التسجيلات النشطة + الأقساط في المدرسة)
+///   الرصيد = (مجموع السندات النشطة + خصوماتها) − (رسوم التسجيلات النشطة + الأقساط المطالَب بها)
 ///
-/// في المدرسة الأقساط (ومنها المستحقات الشهرية ورسم الحجز) هي مصدر المطالبة،
-/// **وما حان موعده منها وحده**: الطالب في شهره الأول لا يُطالَب بقسط الشهر
-/// القادم لأنه لم يدرسه بعد. من سدّد ما استُحق عليه رصيده صفر، ومن دفع فوقه
-/// يظهر الفائض «له» ويُخصم من القسط التالي حين يحلّ.
-/// وفي المركز تبقى رسوم التسجيل وحدها، لأن أقساطه غير مربوطة بها.
+/// القسط المعفى (`is_exempt`) لا يدخل المطالبة — `chargeableAmount` في الويب.
 library;
 
 import 'dart:math' as math;
@@ -18,6 +14,9 @@ import '../models/models.dart';
 
 /// أقلّ من قرش لا يُعتدّ به — مطابق لـ `CENT`.
 const cent = 0.005;
+
+/// المبلغ المطالَب من القسط — مطابق لـ `chargeableAmount`.
+double chargeableAmount(Installment i) => i.isExempt ? 0.0 : i.amount;
 
 /// حالة القسط من مبلغه والمسدَّد منه — مطابق لـ `installmentStatus`.
 String installmentStatusFor(double amount, double paid) {
@@ -42,7 +41,7 @@ Map<String, double> overdueByStudent(Iterable<Installment> installments, [DateTi
   final day = today ?? startOfToday();
   final due = <String, double>{};
   for (final i in installments) {
-    final unpaid = isInstallmentDue(i, day) ? math.max(0.0, i.amount - i.paidAmount) : 0.0;
+    final unpaid = isInstallmentDue(i, day) ? math.max(0.0, chargeableAmount(i) - i.paidAmount) : 0.0;
     due[i.studentId] = (due[i.studentId] ?? 0) + unpaid;
   }
   return due;
@@ -58,9 +57,6 @@ double paymentAdvance(Payment p) {
 const seatTitle = 'رسم حجز مقعد';
 
 /// ترتيب السداد: رسم الحجز أولاً ثم الأقدم استحقاقاً — `compareInstallments`.
-///
-/// تاريخ الحجز هو يوم التسجيل، فبالتاريخ وحده يأتي بعد مستحق الشهر (أوله)،
-/// فتذهب الدفعة العامة إلى الشهر ويبقى الحجز معلّقاً على الطالب.
 int compareInstallments(Installment a, Installment b) {
   final seatFirst = (b.title == seatTitle ? 1 : 0) - (a.title == seatTitle ? 1 : 0);
   if (seatFirst != 0) return seatFirst;
@@ -69,16 +65,12 @@ int compareInstallments(Installment a, Installment b) {
 }
 
 /// توزيع ما دفعه الطالب على أقساطه — مطابق لـ `allocatePaymentsToInstallments`.
-///
-/// السند المربوط بقسط يُسدِّد قسطه أولاً، وما يزيد يُضاف إلى غير المربوط، ثم
-/// يُوزَّع الباقي على الأقدم استحقاقاً. المسدَّد مشتقّ من السندات دائماً، فالإلغاء
-/// والدفعة التي تغطي أكثر من شهر يعطيان النتيجة نفسها على كل جهاز.
 Map<String, double> allocatePaymentsToInstallments(
   Iterable<Installment> installments,
   Iterable<Payment> payments,
 ) {
   final ordered = [...installments]..sort(compareInstallments);
-  final remaining = {for (final i in ordered) i.id: math.max(0.0, i.amount)};
+  final remaining = {for (final i in ordered) i.id: math.max(0.0, chargeableAmount(i))};
   final paid = {for (final i in ordered) i.id: 0.0};
 
   final active = payments.where((p) => !p.cancelled).toList()
@@ -100,11 +92,12 @@ Map<String, double> allocatePaymentsToInstallments(
     pool += credit;
   }
 
-  for (final inst in ordered) {
+  for (final i in ordered) {
     if (pool <= cent) break;
-    final take = math.min(pool, remaining[inst.id]!);
-    remaining[inst.id] = remaining[inst.id]! - take;
-    paid[inst.id] = paid[inst.id]! + take;
+    final take = math.min(pool, remaining[i.id]!);
+    if (take <= cent) continue;
+    remaining[i.id] = remaining[i.id]! - take;
+    paid[i.id] = paid[i.id]! + take;
     pool -= take;
   }
 
@@ -113,8 +106,7 @@ Map<String, double> allocatePaymentsToInstallments(
 
 /// الرصيد من السجلات — مطابق لـ `balanceFrom` في الويب.
 ///
-/// في المدرسة تدخل **كل** الأقساط (المستحق والمجدول) في الرصيد، كما في
-/// `balanceUtils.ts`. «المستحق الآن» شيء آخر يحسبه [overdueByStudent].
+/// في المدرسة تدخل **كل** الأقساط المطالَب بها (غير المعفاة) في الرصيد.
 double balanceFrom({
   required Iterable<StudentEnrollment> enrollments,
   required Iterable<Installment> installments,
@@ -127,10 +119,9 @@ double balanceFrom({
     enrollmentFees += e.appliedPrice ?? e.customPrice ?? 0;
   }
 
-  // كل الأقساط — مطابق للويب حين المؤسسة مدرسة (لا مركز)
   var installmentFees = 0.0;
   for (final i in installments) {
-    installmentFees += i.amount;
+    installmentFees += chargeableAmount(i);
   }
 
   var totalPaid = 0.0;

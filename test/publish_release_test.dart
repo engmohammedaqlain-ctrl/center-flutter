@@ -169,7 +169,19 @@ void main() {
       expect(silent['baseVersionCode'], 3);
       expect(silent['patchNumber'], 1);
       expect(silent['notes'], 'سطر التحديث');
-      expect(silent.containsKey('apkUrl'), isFalse, reason: 'الصامت ليس بناءً');
+      expect(silent.containsKey('apkUrl'), isFalse, reason: 'وصف الصامت ليس بناء latest');
+    });
+
+    test('--attach-apk يسمّي حزمة التوزيع يدوياً بثلاثة أجزاء ورقم بناء الأساس', () {
+      expect(publish.silentApkNameFor('1.3.2'), 'center-1.3.2.apk');
+      expect(
+        publish.silentApkUrlFor('1.3.2'),
+        'https://github.com/engmohammedaqlain-ctrl/center-mobile-releases/releases/download/v1.3.2/center-1.3.2.apk',
+      );
+      final v = publish.silentApkVersion('1.3.2', 3);
+      expect(v.name, '1.3', reason: 'اسم العرض جزءان؛ الملف يحمل الوسم الكامل');
+      expect('$v', '1.3.2+3');
+      expect(() => publish.silentApkVersion('1.3', 3), throwsArgumentError);
     });
   });
 
