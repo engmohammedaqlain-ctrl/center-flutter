@@ -55,9 +55,8 @@ void main() {
     expect(AppColors.heading, const Color(0xFF4A0E17), reason: 'primaryButton');
     expect(AppColors.amber, const Color(0xFFB91C1C), reason: 'actionButton');
     expect(AppColors.bg, const Color(0xFFFFF9F9), reason: 'appBg');
-    // index.css يُحيل `text-[#E88C15]` و`text-[#F39C12]` و`bg-[#FFF7ED]` —
-    // القسم المفتوح في الهاتف — إلى لون العمليات لا إلى activeItem
-    expect(AppColors.accent, const Color(0xFFB91C1C), reason: 'التمييز يتبع لون العمليات');
+    // تمييز القسم المفتوح على الهاتف يتبع activeItem كهوية المنشأة
+    expect(AppColors.accent, const Color(0xFFDC2626), reason: 'التمييز يتبع activeItem');
   });
 
   test('اسم المنشأة في الترويسة رمادي ثابت لا يتبع لون الهوية', () {
@@ -71,11 +70,11 @@ void main() {
     );
   });
 
-  test('activeItem is kept for the portals but does not recolour mobile highlights', () {
-    // لا يُرسم إلا في قائمة سطح المكتب الجانبية والبوابات، فيبقى محفوظاً كما هو
+  test('activeItem drives mobile section highlights; actionButton stays for actions', () {
     expect(InstitutionColors.fromMap(_red.toMap()).activeItem, '#DC2626');
     AppColors.apply(_red);
-    expect(AppColors.accent, isNot(const Color(0xFFDC2626)));
+    expect(AppColors.accent, const Color(0xFFDC2626));
+    expect(AppColors.amber, const Color(0xFFB91C1C));
   });
 
   test('a missing highlight falls back to the action colour', () {

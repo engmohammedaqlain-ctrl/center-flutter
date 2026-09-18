@@ -333,6 +333,7 @@ class _LoginScreenState extends State<LoginScreen> {
     super.initState();
     // آخر اسم مستخدم أُدخل على هذا الجهاز — مطابق لسلوك LandingPage
     user.text = AppStore.instance.lastUsername;
+    portalId.text = AppStore.instance.lastPortalNationalId;
   }
 
   Future<void> _portalSubmit() async {
@@ -353,6 +354,8 @@ class _LoginScreenState extends State<LoginScreen> {
       });
       return;
     }
+
+    await AppStore.instance.rememberPortalNationalId(portalId.text);
 
     // حساب واحد: فُتحت جلسته فندخل مباشرةً. أكثر من واحد: يختار المستخدم
     // منشأته أو دوره، ثم يُعاد التحقق بالخيار لتُفتح جلسته هو

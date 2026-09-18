@@ -289,5 +289,38 @@ void main() {
       s.enrollments.firstWhere((e) => e.id == 'e-unknown').roomId = '';
       expect(await s.migrateEnrollmentRooms(), 0, reason: 'مرة واحدة');
     });
+
+    test('طالب جديد بشعبة قائمة يُسجَّل في موادها دون إعادة حفظ التوزيع', () {
+      final s = _empty();
+      const grade = 'عاشر';
+      final room = _room(s, 'room-a', 'شعبة (أ)', grade);
+      _subject(s, 'sub-math', 'رياضيات', grade);
+      _teacher(s, 'tch-1', 'أحمد');
+      _student(s, 'stu-early', 'شعبة (أ)', grade);
+      _save(s, room, {'sub-math': 'tch-1'});
+
+      final group = s.sectionSubjectGroups('room-a').single;
+      expect(_enrollment(s, 'stu-early', group.id), isNotNull);
+
+      final late = Student(
+        id: 'stu-late',
+        fullName: 'طالب متأخر',
+        gradeLevel: grade,
+        section: 'شعبة (أ)',
+        phone: '0599111000',
+        parentName: 'ولي',
+        parentPhone: '0598222000',
+        balance: 0,
+        nationalId: '123456789',
+        status: 'active',
+      );
+      s.upsertStudent(late, isNew: true);
+
+      expect(
+        _enrollment(s, 'stu-late', group.id),
+        isNotNull,
+        reason: 'التسجيل الجديد يزامن مواد الشعبة',
+      );
+    });
   });
 }

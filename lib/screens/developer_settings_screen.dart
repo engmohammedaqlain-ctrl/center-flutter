@@ -31,6 +31,8 @@ class DeveloperSettingsScreen extends StatefulWidget {
 class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
 
   bool unlocked = false;
+  bool verifying = false;
+  final gateUser = TextEditingController();
   final gate = TextEditingController();
   String? gateError;
 
@@ -73,10 +75,13 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
     seatFee = TextEditingController(text: trimNum(store.seatReservationFee));
     supabaseUrlCtrl = TextEditingController(text: store.db.settings[SupabaseConfig.urlSettingKey] ?? '');
     supabaseKeyCtrl = TextEditingController(text: store.db.settings[SupabaseConfig.keySettingKey] ?? '');
+    // مطور دخل المنشأة من لوحته: لا يُعاد طلب كلمة المرور
+    if (SupabaseAuth.isDeveloper) unlocked = true;
   }
 
   @override
   void dispose() {
+    gateUser.dispose();
     gate.dispose();
     name.dispose();
     seatFee.dispose();
@@ -139,15 +144,28 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
               ),
               const SizedBox(height: 4),
               const Text(
-                'كلمة مرور المطور',
+                'أدخل حساب المطور للوصول إلى الألوان والميزات والأدوات',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.muted, fontSize: 12, height: 1.5),
               ),
               const SizedBox(height: 18),
+              const FieldLabel('اسم مستخدم المطور', requiredField: true),
+              TextField(
+                controller: gateUser,
+                textDirection: TextDirection.ltr,
+                textAlign: TextAlign.left,
+                enabled: !verifying,
+                onChanged: (_) {
+                  if (gateError != null) setState(() => gateError = null);
+                },
+                decoration: const InputDecoration(hintText: 'username'),
+              ),
+              const SizedBox(height: 12),
               const FieldLabel('كلمة مرور المطور', requiredField: true),
               TextField(
                 controller: gate,
                 obscureText: true,
+                enabled: !verifying,
                 onSubmitted: (_) => _unlock(),
                 onChanged: (_) {
                   if (gateError != null) setState(() => gateError = null);
@@ -155,7 +173,13 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
                 decoration: InputDecoration(hintText: '••••••••', errorText: gateError),
               ),
               const SizedBox(height: 14),
-              PrimaryButton(expand: true, height: 44, label: 'فتح القسم', icon: Icons.key, onPressed: _unlock),
+              PrimaryButton(
+                expand: true,
+                height: 44,
+                label: verifying ? 'جاري التحقق...' : 'فتح القسم',
+                icon: Icons.key,
+                onPressed: verifying ? null : _unlock,
+              ),
             ],
           ),
         ),
@@ -163,20 +187,41 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
     );
   }
 
-  void _unlock() {
+  Future<void> _unlock() async {
+    final user = gateUser.text.trim();
     final entered = gate.text.trim();
-    if (!TenantService.hasMasterAccount) {
-      // نسخة وُزّعت بلا حساب مطور: لا باب خلفياً يُفتح بكلمة محفوظة في الكود
-      setState(() => gateError = 'هذه النسخة بُنيت بلا حساب مطور');
-    } else if (entered.isEmpty) {
-      setState(() => gateError = 'يرجى إدخال كلمة مرور المطور');
-    } else if (entered != TenantService.masterPassword.trim()) {
-      setState(() => gateError = 'كلمة المرور غير صحيحة');
-    } else {
+    if (user.isEmpty || entered.isEmpty) {
+      setState(() => gateError = 'أدخل اسم المستخدم وكلمة المرور');
+      return;
+    }
+
+    // مسار التطوير المحلي: dart-define دون شبكة
+    if (TenantService.hasMasterAccount &&
+        user.toLowerCase() == TenantService.masterUsername.trim().toLowerCase() &&
+        entered == TenantService.masterPassword.trim()) {
       setState(() {
         unlocked = true;
         gateError = null;
+        gate.clear();
       });
+      return;
+    }
+
+    setState(() {
+      verifying = true;
+      gateError = null;
+    });
+    final check = await supabaseVerifyDeveloper(user, entered);
+    if (!mounted) return;
+    setState(() => verifying = false);
+    if (check.claims != null) {
+      setState(() {
+        unlocked = true;
+        gateError = null;
+        gate.clear();
+      });
+    } else {
+      setState(() => gateError = check.error ?? 'بيانات المطور غير صحيحة');
     }
   }
 

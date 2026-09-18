@@ -989,6 +989,7 @@ class PortalService {
     final groups = at(1)
         .map(Group.fromCloud)
         .where((g) => g.isActive)
+        .where((g) => g.isSchoolGroup) // المدرسة فقط — بلا مجموعات مركز مدفوعة/مجدولة
         .where((g) {
           // مجموعات عام سجل المعلم فقط — وإلا تظهر صفوف أعوام سابقة بعد الإغلاق
           if (teacherYearId == null) return true;

@@ -1882,7 +1882,7 @@ class _TeacherCard extends StatelessWidget {
         .length;
     final meta = [
       phone.isEmpty ? 'بلا رقم هاتف' : formatPhoneDisplay(phone),
-      if (groups > 0) '$groups مجموعة',
+      if (groups > 0) '$groups مادة',
     ];
 
     return AppCard(

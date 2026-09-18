@@ -59,10 +59,10 @@ abstract final class AppColors {
   /// فيبقى التدرّج متناسقاً مهما اختار المدير.
   static void apply(InstitutionColors c) {
     final side = parseHexColor(c.sidebarBg) ?? const Color(0xFF0B2545);
-    final highlight = parseHexColor(c.activeItem) ?? const Color(0xFFE88C15);
     // لون ناقص أو تالف يعود إلى أقرب لون من هوية المنشأة نفسها — لا إلى لون
     // النظام الافتراضي، فمنشأة ضبطت لونين فقط لا تظهر بنصف هويتها
-    final action = parseHexColor(c.actionButton) ?? highlight;
+    final action = parseHexColor(c.actionButton) ?? const Color(0xFFE88C15);
+    final highlight = parseHexColor(c.activeItem) ?? action;
     final primary = parseHexColor(c.primaryButton) ?? side;
     final surfaceBg = parseHexColor(c.appBg) ?? const Color(0xFFF8FAFC);
 
@@ -72,11 +72,9 @@ abstract final class AppColors {
 
     amber = action;
     amberDark = _shade(action, 0.86);
-    // على الهاتف يتبع التمييز لونَ العمليات، كما في index.css بالنسخة المكتبية:
-    // `text-[#E88C15]` و`text-[#F39C12]` و`bg-[#FFF7ED]` كلها تُحال إلى
-    // `--theme-action-btn`. لون `activeItem` لا يُرسم إلا في القائمة الجانبية
-    // لسطح المكتب وفي البوابات، فيُحفظ ويُزامَن ولا يظهر هنا.
-    accent = action;
+    // تمييز القسم المفتوح على الهاتف يتبع activeItem (هوية المنشأة)، كما في
+    // القائمة الجانبية على سطح المكتب. لون العمليات يبقى للأزرار والشارات.
+    accent = highlight;
     amberSoft = _mix(action, 0.10);
     amberBorder = _mix(action, 0.25);
 

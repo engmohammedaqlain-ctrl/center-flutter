@@ -272,7 +272,7 @@ class _GroupList extends StatelessWidget {
   Widget build(BuildContext context) {
     if (groups.isEmpty) {
       return const Center(
-        child: Text('لا مجموعات مطابقة', style: TextStyle(color: AppColors.muted, fontWeight: FontWeight.w700)),
+        child: Text('لا شعب مطابقة', style: TextStyle(color: AppColors.muted, fontWeight: FontWeight.w700)),
       );
     }
     return ListView.separated(

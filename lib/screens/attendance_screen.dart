@@ -155,7 +155,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 child: list.isEmpty
                     ? const Padding(
                         padding: EdgeInsets.all(14),
-                        child: EmptyState(message: 'لا يوجد طلاب مسجلون في هذا الصف/المجموعة'),
+                        child: EmptyState(message: 'لا يوجد طلاب مسجلون في هذه الشعبة'),
                       )
                     // بناء كسول: صفّ واحد لكل ما يظهر على الشاشة فقط.
                     // بناء القائمة كاملةً كان يُنشئ مئات الصفوف عند كل تعديل،

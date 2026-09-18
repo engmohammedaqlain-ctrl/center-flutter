@@ -223,6 +223,39 @@ Future<SignInResult> supabaseSignIn(String username, String password) async {
   }
 }
 
+/// التحقق من كلمة مرور حساب مطور دون استبدال جلسة المنشأة الحالية —
+/// المقابل لـ `verifyDeveloper` / `checkPassword` على الويب.
+Future<SignInResult> supabaseVerifyDeveloper(String username, String password) async {
+  if (!SupabaseAuth.isValidUsername(username) || password.isEmpty) {
+    return (claims: null, error: _invalidCredentials);
+  }
+  try {
+    final res = await http.post(
+      Uri.parse('${SupabaseConfig.url}/auth/v1/token?grant_type=password'),
+      headers: {'apikey': SupabaseConfig.key, 'Content-Type': 'application/json'},
+      body: jsonEncode({'email': SupabaseAuth.emailFor(username), 'password': password}),
+    );
+    if (res.statusCode >= 400) {
+      final body = res.body.toLowerCase();
+      if (res.statusCode == 429 || body.contains('rate limit')) {
+        return (claims: null, error: 'محاولات كثيرة، انتظر دقائق ثم أعد المحاولة');
+      }
+      return (claims: null, error: _invalidCredentials);
+    }
+    final decoded = Map<String, dynamic>.from(jsonDecode(res.body) as Map);
+    final user = decoded['user'];
+    final meta = user is Map ? user['app_metadata'] : null;
+    final claims = meta is Map ? Map<String, dynamic>.from(meta) : <String, dynamic>{};
+    if ('${claims['role'] ?? ''}' != 'developer') {
+      return (claims: null, error: 'هذا الحساب ليس حساب مطور');
+    }
+    // لا تُطبَّق الجلسة: جلسة المنشأة على الجهاز تبقى كما هي
+    return (claims: claims, error: null);
+  } catch (_) {
+    return (claims: null, error: _offlineMessage);
+  }
+}
+
 /// استدعاء دالة سيرفر (Edge Function) — `supabase.functions.invoke`.
 ///
 /// يعيد جسم الرد، ويضع رسالة الخطأ التي تعيدها الدالة نفسها في `error` —

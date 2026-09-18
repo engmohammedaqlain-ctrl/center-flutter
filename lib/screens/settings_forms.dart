@@ -175,7 +175,7 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
     final ok = await confirmSheet(
       context,
       title: 'حذف المدرس',
-      message: 'سيتم فك ارتباط المدرس بالمجموعات وحذف بياناته نهائياً.',
+      message: 'سيتم فك ارتباط المدرس بالمواد والشعب وحذف بياناته نهائياً.',
       confirmLabel: 'تأكيد الحذف',
     );
     if (!ok || !mounted) return;

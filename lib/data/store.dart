@@ -477,6 +477,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   static const _kDeviceUser = 'device_user_id';
   static const _kReceiptLabel = 'device_receipt_label';
   static const _kLastUsername = 'last_entered_username';
+  static const _kLastPortalId = 'last_entered_portal_id';
   static const _kReceiptCounter = 'receipt_counter';
   static const _kDeviceUid = 'device_uid';
   static const _kDeviceCode = 'receipt_device_code';
@@ -956,6 +957,15 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   String? get _settingsTenant => db.settings[_kSettingsTenant];
 
   String get lastUsername => db.settings[_kLastUsername] ?? '';
+
+  /// آخر رقم هوية أُدخل في دخول البوابة على هذا الجهاز (بلا رمز الدخول).
+  String get lastPortalNationalId => db.settings[_kLastPortalId] ?? '';
+
+  Future<void> rememberPortalNationalId(String nationalId) async {
+    final id = nationalId.trim();
+    if (id.isEmpty) return;
+    await db.setSetting(_kLastPortalId, id);
+  }
 
   void _restoreSession() {
     final s = db.settings;
@@ -2075,13 +2085,22 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   void _persistInstitutionRow() {
     final tid = tenantId;
     if (tid == null) return;
+    final stored = _storedColorsMap;
+    // لا تُحقَن ألوان النظام الافتراضية (البرتقالي) في صف السحابة قبل سحب هوية
+    // المنشأة: جهاز يدخل مدرسة جديدة كان يكتب #E88C15 فوق ألوانها ويُعيد رفعها.
+    final hasPalette = stored.containsKey('sidebarBg') ||
+        stored.containsKey('activeItem') ||
+        stored.containsKey('actionButton') ||
+        stored.containsKey('primaryButton') ||
+        stored.containsKey('appBg');
+    final colorsPayload = hasPalette ? {...stored, ...institutionColors.toMap()} : Map<String, dynamic>.from(stored);
     final row = {
       'id': tid,
       // النظام مدرسي وحده: يُكتب ثابتاً ولا يُقرأ، لأن أجهزة لم تُحدَّث ما زالت تقرؤه
       'institution_type': 'school',
       'institution_name': institutionName,
       'logo': institutionLogo.isEmpty ? null : institutionLogo,
-      'colors': {..._storedColorsMap, ...institutionColors.toMap()},
+      'colors': colorsPayload,
       'settings': settings.toMap(),
       'updated_at': _nowIso(),
     };
@@ -3447,6 +3466,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
           reason: discount.reason,
         );
       }
+      // طالب جديد بشعبة موجودة: يُسجَّل في مواد شعبته (مودل/معلمون/علامات)
+      // كما عند نقل الشعبة أو تأكيد الانتظار — وإلا يبقى بلا تسجيلات.
+      syncStudentRoomEnrollments([incoming.id]);
     }
 
     if (attachments != null) {

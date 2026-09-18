@@ -266,7 +266,7 @@ class _Card extends StatelessWidget {
   }
 }
 
-/// «الصف / المجموعة:» — عنوان الحقل.
+/// «الشعبة / المادة:» — عنوان الحقل.
 class _Label extends StatelessWidget {
   const _Label(this.text);
   final String text;
@@ -1403,23 +1403,37 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     );
   }
 
-  List<DropdownMenuItem<String>> _groupItems({required bool detailed}) {
+  /// تسمية اختيار الشعبة للمعلم: اسم الشعبة أولاً ثم المادة والمرحلة.
+  String _classLabel(TeacherClass k) {
+    final section = k.roomName.trim().isNotEmpty
+        ? k.roomName.trim()
+        : cleanGroupName(k.group.name, k.group.gradeLevel);
+    return [
+      section.isEmpty ? 'شعبة' : section,
+      if (k.subjectName.trim().isNotEmpty) '(${k.subjectName.trim()})',
+      if (k.group.gradeLevel.trim().isNotEmpty) '— ${k.group.gradeLevel.trim()}',
+    ].join(' ');
+  }
+
+  String _studentMetaLine(Student s) {
+    final parts = [
+      if (s.gradeLevel.trim().isNotEmpty) s.gradeLevel.trim(),
+      if (s.section.trim().isNotEmpty) s.section.trim(),
+    ];
+    return parts.join(' · ');
+  }
+
+  List<DropdownMenuItem<String>> _groupItems() {
     final classes = data?.classes ?? const <TeacherClass>[];
     if (classes.isEmpty) {
-      return const [DropdownMenuItem(value: '', child: Text('لا توجد مجموعات مسندة لك'))];
+      return const [DropdownMenuItem(value: '', child: Text('لا توجد شعب مسندة لك'))];
     }
     return [
       for (final k in classes)
         DropdownMenuItem(
           value: k.group.id,
           child: Text(
-            detailed
-                ? [
-                    k.group.name,
-                    if (k.subjectName.isNotEmpty) '(${k.subjectName})',
-                    if (k.roomName.isNotEmpty) '- ${k.roomName}',
-                  ].join(' ')
-                : k.group.name,
+            _classLabel(k),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -1449,10 +1463,10 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const _Label('الصف / المجموعة:'),
+            const _Label('الشعبة / المادة:'),
             _Select<String>(
               value: groupId,
-              items: _groupItems(detailed: true),
+              items: _groupItems(),
               onChanged: (data?.classes.isEmpty ?? true) ? null : _selectGroup,
             ),
             const SizedBox(height: 12),
@@ -1523,7 +1537,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
             ),
             Text.rich(
               TextSpan(
-                text: 'الصف: ',
+                text: 'الشعبة: ',
                 children: [
                   TextSpan(
                     text: (c?.roomName ?? '').isEmpty ? '—' : c!.roomName,
@@ -1538,7 +1552,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       ),
       const SizedBox(height: 4),
       if (students.isEmpty)
-        const _Empty('لا يوجد طلاب مسجلين في هذه المجموعة', height: 150)
+        const _Empty('لا يوجد طلاب مسجلون في هذه الشعبة', height: 150)
       else
         for (var i = 0; i < students.length; i++)
           Padding(
@@ -1609,11 +1623,11 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
             ),
             const SizedBox(height: 12),
             field(
-              'الصف / المجموعة:',
+              'الشعبة / المادة:',
               _Select<String>(
                 value: groupId,
                 height: 36,
-                items: _groupItems(detailed: false),
+                items: _groupItems(),
                 onChanged: (data?.classes.isEmpty ?? true) ? null : _selectGroup,
               ),
             ),
@@ -1732,11 +1746,27 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      s.fullName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: _C.text, fontSize: 12, fontWeight: FontWeight.w800),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          s.fullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: _C.text, fontSize: 12, fontWeight: FontWeight.w800),
+                        ),
+                        if (_studentMetaLine(s).isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              _studentMetaLine(s),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: _C.faint, fontSize: 10.5),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1843,14 +1873,20 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
               value: groupId,
               height: 36,
               items: classes.isEmpty
-                  ? const [DropdownMenuItem(value: '', child: Text('لا توجد مجموعات مسندة لك'))]
+                  ? const [DropdownMenuItem(value: '', child: Text('لا توجد شعب مسندة لك'))]
                   : [
                       for (final k in classes)
                         DropdownMenuItem(
                           value: k.group.id,
                           child: Text(
-                            '${cleanGroupName(k.group.name, k.group.gradeLevel)} — '
-                            '${k.group.gradeLevel.trim().isEmpty ? 'عام' : k.group.gradeLevel.trim()}',
+                            [
+                              k.roomName.trim().isNotEmpty
+                                  ? k.roomName.trim()
+                                  : cleanGroupName(k.group.name, k.group.gradeLevel),
+                              if (k.subjectName.trim().isNotEmpty) '(${k.subjectName.trim()})',
+                              if (k.group.gradeLevel.trim().isNotEmpty)
+                                '— ${k.group.gradeLevel.trim()}',
+                            ].join(' '),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -1950,11 +1986,33 @@ class _AttendanceRow extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                student.fullName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: _C.text, fontSize: 12, fontWeight: FontWeight.w800),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    student.fullName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: _C.text, fontSize: 12, fontWeight: FontWeight.w800),
+                  ),
+                  if ([
+                    if (student.gradeLevel.trim().isNotEmpty) student.gradeLevel.trim(),
+                    if (student.section.trim().isNotEmpty) student.section.trim(),
+                  ].isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        [
+                          if (student.gradeLevel.trim().isNotEmpty) student.gradeLevel.trim(),
+                          if (student.section.trim().isNotEmpty) student.section.trim(),
+                        ].join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: _C.faint, fontSize: 10.5),
+                      ),
+                    ),
+                ],
               ),
             ),
           ],
@@ -2702,7 +2760,13 @@ class _CopySectionSheetState extends State<_CopySectionSheet> {
                   value: selected.contains(t.group.id),
                   onChanged: (v) => setState(() => v == true ? selected.add(t.group.id) : selected.remove(t.group.id)),
                   title: Text(
-                    '${t.group.name} (${t.group.gradeLevel.trim().isEmpty ? 'عام' : t.group.gradeLevel.trim()})',
+                    [
+                      t.roomName.trim().isNotEmpty
+                          ? t.roomName.trim()
+                          : cleanGroupName(t.group.name, t.group.gradeLevel),
+                      if (t.subjectName.trim().isNotEmpty) '(${t.subjectName.trim()})',
+                      if (t.group.gradeLevel.trim().isNotEmpty) '— ${t.group.gradeLevel.trim()}',
+                    ].join(' '),
                     style: const TextStyle(color: _C.text, fontSize: 12, fontWeight: FontWeight.w800),
                   ),
                 ),
@@ -3564,53 +3628,60 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
         for (final p in f.payments)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: _Card(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 4,
-                          crossAxisAlignment: WrapCrossAlignment.center,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => _showReceipt(p),
+                borderRadius: BorderRadius.circular(Corner.card),
+                child: _Card(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'سند #${p.receiptNumber}',
-                              style: TextStyle(color: brand.primary, fontSize: 12, fontWeight: FontWeight.w900, fontFamily: _mono),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(
+                                  'سند #${p.receiptNumber}',
+                                  style: TextStyle(color: brand.primary, fontSize: 12, fontWeight: FontWeight.w900, fontFamily: _mono),
+                                ),
+                                _Badge(data!.branding.methodLabel(p.method), fg: _C.muted, bg: _C.soft, radius: Corner.chip),
+                              ],
                             ),
-                            _Badge(data!.branding.methodLabel(p.method), fg: _C.muted, bg: _C.soft, radius: Corner.chip),
+                            const SizedBox(height: 3),
+                            Text(isoDate(p.date), style: const TextStyle(color: _C.faint, fontSize: 10.5, fontFamily: _mono)),
+                            if (p.purpose.isNotEmpty)
+                              Text(
+                                paymentPurposeNames[p.purpose] ?? p.purpose,
+                                style: const TextStyle(color: _C.slate600, fontSize: 10.5),
+                              ),
                           ],
                         ),
-                        const SizedBox(height: 3),
-                        Text(isoDate(p.date), style: const TextStyle(color: _C.faint, fontSize: 10.5, fontFamily: _mono)),
-                        if (p.purpose.isNotEmpty)
+                      ),
+                      const SizedBox(width: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          _Badge('+ ${money(p.amount)}', fg: _C.emerald600, bg: _C.emerald50, border: _C.emerald200, radius: Corner.chip),
+                          const SizedBox(height: 6),
                           Text(
-                            paymentPurposeNames[p.purpose] ?? p.purpose,
-                            style: const TextStyle(color: _C.slate600, fontSize: 10.5),
+                            'عرض الوصل',
+                            style: TextStyle(
+                              color: brand.primary,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              decoration: TextDecoration.underline,
+                            ),
                           ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      _Badge('+ ${money(p.amount)}', fg: _C.emerald600, bg: _C.emerald50, border: _C.emerald200, radius: Corner.chip),
-                      const SizedBox(height: 6),
-                      _Soft(
-                        label: 'عرض الوصل',
-                        icon: Icons.description_outlined,
-                        fg: _C.navy,
-                        bg: _C.bg,
-                        border: _C.line,
-                        height: 32,
-                        onTap: () => _showReceipt(p),
+                        ],
                       ),
                     ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
