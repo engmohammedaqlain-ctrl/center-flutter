@@ -607,7 +607,16 @@ Future<void> _publishPatch(_Args args, RequestedVersion? requested, String publi
 
   _step('Building the update and sending it to Shorebird');
   final patch = shorebirdCommand(
-    ['patch', 'android', '--release-version', releaseVersion, if (args.dryRun) '--dry-run'],
+    [
+      'patch',
+      'android',
+      '--release-version',
+      releaseVersion,
+      // NativeAssetsManifest يتغيّر غالباً بلا أصول حقيقية؛ السؤال التفاعلي
+      // (y/N) يلغي النشر على ويندوز إن بقي الافتراضي No أو تعطّل لوحة المفاتيح.
+      '--allow-asset-diffs',
+      if (args.dryRun) '--dry-run',
+    ],
     powerShellScript: launcher,
   );
   await _run(patch.exe, patch.args, shell: patch.shell);
