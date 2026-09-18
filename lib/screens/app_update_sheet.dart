@@ -210,18 +210,18 @@ class UpdatePanel extends StatelessWidget {
   static Widget _actionButton(AppUpdater u, AppRelease release) {
     final percent = u.progress == null ? null : (u.progress! * 100).floor();
     return switch (u.phase) {
+      // الشريط في البطاقة أعلاه يقول كم بقي؛ الزر يقول ما يجري بكلامٍ ثابت.
+      // مؤشرٌ دوّار مكانه يُخفي النص ويشدّ العين إلى دورانٍ لا يدلّ على شيء
       UpdatePhase.downloading => PrimaryButton(
-          label: percent == null ? 'جارِ التنزيل...' : 'جارِ التنزيل $percent%',
-          icon: Icons.download,
+          label: percent == null ? 'جارِ تنزيل التحديث' : 'جارِ تنزيل التحديث $percent%',
+          icon: Icons.downloading_rounded,
           color: AppColors.success,
-          busy: true,
           onPressed: null,
         ),
       UpdatePhase.verifying => PrimaryButton(
-          label: 'جارِ التحقق...',
+          label: 'جارِ التحقق من الملف',
           icon: Icons.verified_user_outlined,
           color: AppColors.success,
-          busy: true,
           onPressed: null,
         ),
       UpdatePhase.retrying => PrimaryButton(
@@ -311,7 +311,7 @@ class DownloadProgressCard extends StatelessWidget {
     final size = total == null ? megabytes(u.received) : '${megabytes(u.received)} من ${megabytes(total)}';
     final remaining = u.remaining;
     final pace = phase == UpdatePhase.downloading && u.speed > 0
-        ? '${megabytes(u.speed.round())}/ث${remaining == null ? '' : ' · باقٍ ${_duration(remaining)}'}'
+        ? '${perSecond(u.speed)}${remaining == null ? '' : ' · باقٍ ${_duration(remaining)}'}'
         : '';
 
     return Container(
@@ -448,35 +448,44 @@ class UpdateStatusStrip extends StatelessWidget {
                   color: content.tone.withValues(alpha: 0.10),
                   child: InkWell(
                     onTap: content.opensSheet ? () => showUpdateSheet(context, checkNow: false, updater: u) : null,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                      child: Row(
-                        children: [
-                          if (content.spinning)
-                            SizedBox(
-                              width: 13,
-                              height: 13,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                value: content.progress,
-                                color: content.tone,
-                                backgroundColor: content.progress == null ? null : content.tone.withValues(alpha: 0.2),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                          child: Row(
+                            children: [
+                              if (content.spinning)
+                                SizedBox(
+                                  width: 13,
+                                  height: 13,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: content.tone),
+                                )
+                              else
+                                Icon(content.icon, size: 15, color: content.tone),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  content.text,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: content.tone, fontSize: 11.5, fontWeight: FontWeight.w800),
+                                ),
                               ),
-                            )
-                          else
-                            Icon(content.icon, size: 15, color: content.tone),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              content.text,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: content.tone, fontSize: 11.5, fontWeight: FontWeight.w800),
-                            ),
+                              if (content.opensSheet) Icon(Icons.chevron_left, size: 16, color: content.tone),
+                            ],
                           ),
-                          if (content.opensSheet) Icon(Icons.chevron_left, size: 16, color: content.tone),
-                        ],
-                      ),
+                        ),
+                        // شريطٌ يمتد بعرض الشاشة تحت السطر: نسبةٌ تُلمح بطرف
+                        // العين وأنت في عملك، بلا أن تفتح شيئاً
+                        if (content.progress != null)
+                          LinearProgressIndicator(
+                            value: content.progress,
+                            minHeight: 2.5,
+                            color: content.tone,
+                            backgroundColor: content.tone.withValues(alpha: 0.18),
+                          ),
+                      ],
                     ),
                   ),
                 ),
@@ -492,13 +501,17 @@ class UpdateStatusStrip extends StatelessWidget {
       switch (u.phase) {
         case UpdatePhase.downloading:
           return _StripContent(
-            text: percent == null ? 'جارِ تنزيل التحديث...' : 'جارِ تنزيل التحديث $percent%',
+            text: percent == null ? 'جارِ تنزيل التحديث' : 'جارِ تنزيل التحديث $percent%',
             tone: AppColors.success,
-            spinning: true,
+            icon: Icons.downloading_rounded,
             progress: u.progress,
           );
         case UpdatePhase.verifying:
-          return const _StripContent(text: 'جارِ التحقق من التحديث...', tone: AppColors.info, spinning: true);
+          return const _StripContent(
+            text: 'جارِ التحقق من الملف',
+            tone: AppColors.info,
+            icon: Icons.verified_user_outlined,
+          );
         case UpdatePhase.retrying:
           return _StripContent(
             text: 'انقطع الاتصال — محاولة جديدة خلال ${u.retryIn} ث',

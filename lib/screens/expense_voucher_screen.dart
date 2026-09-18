@@ -5,6 +5,7 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../data/printing.dart';
 import '../data/store.dart';
+import '../data/teacher_salary.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
@@ -24,6 +25,7 @@ class ExpenseVoucher {
     this.method = 'cash',
     this.notes = '',
     this.issuedBy = '',
+    this.recipient = '',
   });
 
   final String id;
@@ -33,16 +35,28 @@ class ExpenseVoucher {
   final String date;
   final String category;
 
-  /// البيان أو اسم المستفيد.
+  /// اسم المستفيد (صُرف إلى).
   final String description;
   final double amount;
   final String method;
   final String notes;
 
-  /// من صرف السند — اسم مجمَّد لحظة التسجيل.
+  /// من صرف السند — اسم مجمَّد لحظة التسجيل (الصارف).
   final String issuedBy;
 
+  /// المستلم إن وُجد (اسم المعلم في سند الأجر).
+  final String recipient;
+
   String get title => isPayout ? 'سند صرف أجر معلم' : 'سند صرف';
+
+  /// «وذلك عن: التصنيف — الملاحظة» كما في الويب.
+  String get aboutLine {
+    final cat = category.trim();
+    final note = notes.trim();
+    if (cat.isEmpty) return note;
+    if (note.isEmpty) return cat;
+    return '$cat — $note';
+  }
 
   factory ExpenseVoucher.fromExpense(Expense e) => ExpenseVoucher(
         id: e.id,
@@ -56,17 +70,26 @@ class ExpenseVoucher {
         issuedBy: e.recordedByName,
       );
 
-  factory ExpenseVoucher.fromPayout(TeacherPayout p) => ExpenseVoucher(
-        id: p.id,
-        isPayout: true,
-        date: p.paymentDate,
-        category: 'أجور تدريس',
-        description: p.teacherName.trim().isEmpty ? 'أجر معلم' : p.teacherName.trim(),
-        amount: p.amount,
-        method: p.method,
-        notes: p.notes,
-        issuedBy: p.paidByName,
-      );
+  factory ExpenseVoucher.fromPayout(TeacherPayout p, {String fallbackName = ''}) {
+    final name = p.teacherName.trim().isNotEmpty
+        ? p.teacherName.trim()
+        : fallbackName.trim();
+    final typeMonth =
+        '${payoutTypeNames[p.payoutType] ?? 'راتب'} ${monthLabel(salaryMonthOf(p))}';
+    final note = p.notes.trim();
+    return ExpenseVoucher(
+      id: p.id,
+      isPayout: true,
+      date: p.paymentDate,
+      category: payoutExpenseCategory,
+      description: name.isEmpty ? 'معلم' : name,
+      amount: p.amount,
+      method: p.method,
+      notes: note.isEmpty ? typeMonth : '$typeMonth — $note',
+      issuedBy: p.paidByName,
+      recipient: name,
+    );
+  }
 
   static Future<void> open(BuildContext context, ExpenseVoucher voucher) {
     return showModalBottomSheet<void>(
@@ -100,6 +123,8 @@ class _VoucherSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final day = parseIsoDate(voucher.date.length >= 10 ? voucher.date.substring(0, 10) : voucher.date);
+    final methodLabel = store.paymentMethodLabel(voucher.method);
+    final issuer = voucher.issuedBy.isEmpty ? store.receiptReceiver : voucher.issuedBy;
 
     return Padding(
       padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + MediaQuery.paddingOf(context).bottom),
@@ -150,20 +175,33 @@ class _VoucherSheet extends StatelessWidget {
                   const SizedBox(height: 12),
                   const Divider(color: AppColors.line),
                   const SizedBox(height: 8),
-                  _row(voucher.isPayout ? 'صُرف إلى' : 'البيان', voucher.description),
-                  _row('التصنيف', voucher.category),
+                  _row('صُرف إلى', voucher.description),
+                  _row('وذلك عن', voucher.aboutLine),
                   _row('المبلغ المصروف', money(voucher.amount)),
                   _row('وقدره كتابةً', amountInArabicWords(voucher.amount)),
-                  _row('طريقة الصرف', expenseMethodNames[voucher.method] ?? voucher.method),
-                  if (voucher.notes.isNotEmpty) _row('ملاحظات', voucher.notes),
+                  _row('طريقة الصرف', methodLabel),
                   _NoticeImage(recordId: voucher.id),
                   const SizedBox(height: 10),
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: Text(
-                          'صرفها: ${voucher.issuedBy.isEmpty ? store.receiptReceiver : voucher.issuedBy}',
-                          style: const TextStyle(fontSize: 11, color: AppColors.muted),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'الصارف: $issuer',
+                              style: const TextStyle(fontSize: 11, color: AppColors.muted),
+                            ),
+                            if (voucher.recipient.trim().isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  'المستلم: ${voucher.recipient.trim()}',
+                                  style: const TextStyle(fontSize: 11, color: AppColors.muted),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                       if (store.institutionStamp.isNotEmpty)
@@ -218,6 +256,8 @@ class _VoucherSheet extends StatelessWidget {
   Future<void> _print(BuildContext context, AppStore store) async {
     final stamp = PdfKit.decodeImage(store.institutionStamp);
     final day = parseIsoDate(voucher.date.length >= 10 ? voucher.date.substring(0, 10) : voucher.date);
+    final methodLabel = store.paymentMethodLabel(voucher.method);
+    final issuer = voucher.issuedBy.isEmpty ? store.receiptReceiver : voucher.issuedBy;
     final bytes = await PdfKit.build(
       title: '${voucher.title} رقم ${expenseVoucherNumber(voucher)}',
       institutionName: store.institutionName.isEmpty ? appName : store.institutionName,
@@ -227,12 +267,11 @@ class _VoucherSheet extends StatelessWidget {
         PdfKit.table(
           headers: const ['البيان', 'التفاصيل'],
           rows: [
-            [voucher.isPayout ? 'صُرف إلى' : 'البيان', voucher.description],
-            ['التصنيف', voucher.category],
+            ['صُرف إلى', voucher.description],
+            ['وذلك عن', voucher.aboutLine],
             ['المبلغ المصروف', money(voucher.amount)],
             ['وقدره كتابةً', amountInArabicWords(voucher.amount)],
-            ['طريقة الصرف', expenseMethodNames[voucher.method] ?? voucher.method],
-            if (voucher.notes.isNotEmpty) ['ملاحظات', voucher.notes],
+            ['طريقة الصرف', methodLabel],
           ],
           flex: [3, 8],
         ),
@@ -240,9 +279,19 @@ class _VoucherSheet extends StatelessWidget {
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text(
-              'صرفها: ${voucher.issuedBy.isEmpty ? store.receiptReceiver : voucher.issuedBy}',
-              style: const pw.TextStyle(fontSize: 9),
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text('الصارف: $issuer', style: const pw.TextStyle(fontSize: 9)),
+                if (voucher.recipient.trim().isNotEmpty)
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.only(top: 4),
+                    child: pw.Text(
+                      'المستلم: ${voucher.recipient.trim()}',
+                      style: const pw.TextStyle(fontSize: 9),
+                    ),
+                  ),
+              ],
             ),
             if (stamp != null)
               pw.SizedBox(width: 90, height: 42, child: pw.Image(stamp, fit: pw.BoxFit.contain))

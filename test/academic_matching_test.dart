@@ -1,4 +1,5 @@
 import 'package:center_mobile/data/academic_matching.dart';
+import 'package:center_mobile/models/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// منقول من `academicMatching.test.ts`: المطابقة الضبابية (`contains`) كانت تجعل
@@ -31,12 +32,33 @@ void main() {
     });
 
     test('مادة المرحلة ومادة عامة فقط تصلحان للشعبة', () {
-      expect(subjectAppliesToGrade('حادي عشر', 'ثاني عشر علمي'), isFalse);
-      expect(subjectAppliesToGrade('ثاني عشر علمي', 'ثاني عشر علمي'), isTrue);
-      expect(subjectAppliesToGrade('عام / كل المراحل', 'ثاني عشر علمي'), isTrue);
-      expect(subjectAppliesToGrade(null, 'ثاني عشر علمي'), isTrue);
+      expect(subjectAppliesToGrade(['حادي عشر'], 'ثاني عشر علمي'), isFalse);
+      expect(subjectAppliesToGrade(['ثاني عشر علمي'], 'ثاني عشر علمي'), isTrue);
+      expect(subjectAppliesToGrade(['عام / كل المراحل'], 'ثاني عشر علمي'), isTrue);
+      expect(subjectAppliesToGrade(const [], 'ثاني عشر علمي'), isTrue);
+      // مادة لأكثر من مرحلة
+      expect(subjectAppliesToGrade(['حادي عشر', 'ثاني عشر علمي'], 'ثاني عشر علمي'), isTrue);
       // شعبة بلا مرحلة تقبل كل المواد
-      expect(subjectAppliesToGrade('حادي عشر', ''), isTrue);
+      expect(subjectAppliesToGrade(['حادي عشر'], ''), isTrue);
+    });
+
+    test('subjectGrades يقرأ القائمة أو العمود القديم ويعرض التسمية', () {
+      final multi = SubjectItem(
+        id: '1',
+        name: 'فيزياء',
+        code: 'PHY',
+        gradeLevel: 'عاشر',
+        gradeLevels: const ['عاشر', 'حادي عشر', 'ثاني عشر علمي'],
+      );
+      expect(subjectGrades(multi), ['عاشر', 'حادي عشر', 'ثاني عشر علمي']);
+      expect(subjectCoversGrade(multi, 'حادي عشر'), isTrue);
+      expect(subjectCoversGrade(multi, 'عاشر أدبي'), isFalse);
+      expect(subjectGradesLabel(multi), 'عاشر · حادي عشر · ثاني عشر علمي');
+
+      final legacy = SubjectItem(id: '2', name: 'تربية', code: 'NAT', gradeLevel: 'عام / كل المراحل');
+      expect(subjectGrades(legacy), isEmpty);
+      expect(subjectCoversGrade(legacy, 'عاشر'), isTrue);
+      expect(subjectGradesLabel(legacy), 'كل المراحل');
     });
 
     test('عضوية الطالب في الشعبة تتطلب تطابق الاسم والمرحلة معاً', () {

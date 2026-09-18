@@ -48,7 +48,7 @@ void main() {
           _payout(200, month: '2026-09', type: 'advance'),
           _payout(150, month: '2026-09', type: 'bonus'),
         ],
-        't1',
+        {'t1'},
         '2026-09',
       );
 
@@ -64,17 +64,25 @@ void main() {
         _payout(500, month: '2026-09', teacherId: 't2'),
       ];
 
-      expect(paidInMonth(payouts, 't1', '2026-09').total, 0);
-      expect(paidInMonth(payouts, 't1', '2026-10').salary, 1000);
-      expect(paidInMonth(payouts, 't2', '2026-09').salary, 500);
+      expect(paidInMonth(payouts, {'t1'}, '2026-09').total, 0);
+      expect(paidInMonth(payouts, {'t1'}, '2026-10').salary, 1000);
+      expect(paidInMonth(payouts, {'t2'}, '2026-09').salary, 500);
     });
 
     test('شهرٌ بلا صرف يعيد أصفاراً — لا مطالبة تُولَّد', () {
-      expect(paidInMonth(const [], 't1', '2026-09').total, 0);
+      expect(paidInMonth(const [], {'t1'}, '2026-09').total, 0);
     });
 
     test('نوعٌ لا يعرفه النظام يُحسب راتباً', () {
-      expect(paidInMonth([_payout(300, month: '2026-09', type: 'other')], 't1', '2026-09').salary, 300);
+      expect(paidInMonth([_payout(300, month: '2026-09', type: 'other')], {'t1'}, '2026-09').salary, 300);
+    });
+
+    test('نسخ المعلم عبر الأعوام تُجمع معاً', () {
+      final payouts = [
+        _payout(400, month: '2026-09', teacherId: 't1-old'),
+        _payout(600, month: '2026-09', teacherId: 't1'),
+      ];
+      expect(paidInMonth(payouts, {'t1', 't1-old'}, '2026-09').salary, 1000);
     });
   });
 

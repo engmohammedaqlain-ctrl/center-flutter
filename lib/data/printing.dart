@@ -189,13 +189,11 @@ class PdfKit {
   }
 }
 
-/// تحويل المبلغ إلى كلمات عربية — «وقدره كتابةً» في سند القبض.
+/// تحويل المبلغ إلى كلمات عربية — مطابق لـ `tafqeet` في الويب (بلا أغورات).
 String amountInArabicWords(num value) {
   final whole = value.abs().floor();
-  final fraction = ((value.abs() - whole) * 100).round();
   final words = _numberToArabic(whole);
-  if (fraction == 0) return '$words شيكل فقط لا غير';
-  return '$words شيكل و${_numberToArabic(fraction)} أغورة فقط لا غير';
+  return 'فقط $words شيكلاً لا غير';
 }
 
 const _ones = [
@@ -204,7 +202,18 @@ const _ones = [
   'ستة عشر', 'سبعة عشر', 'ثمانية عشر', 'تسعة عشر',
 ];
 const _tens = ['', '', 'عشرون', 'ثلاثون', 'أربعون', 'خمسون', 'ستون', 'سبعون', 'ثمانون', 'تسعون'];
-const _hundreds = ['', 'مئة', 'مئتان', 'ثلاثمئة', 'أربعمئة', 'خمسمئة', 'ستمئة', 'سبعمئة', 'ثمانمئة', 'تسعمئة'];
+const _hundreds = [
+  '',
+  'مائة',
+  'مائتان',
+  'ثلاثمائة',
+  'أربعمائة',
+  'خمسمائة',
+  'ستمائة',
+  'سبعمائة',
+  'ثمانمائة',
+  'تسعمائة',
+];
 
 String _numberToArabic(int n) {
   if (n == 0) return 'صفر';
@@ -212,7 +221,7 @@ String _numberToArabic(int n) {
 
   final parts = <String>[];
 
-  void chunk(int value, String singular, String dual, String plural) {
+  void chunk(int value, String singular, String dual, String plural, {String accusative = ''}) {
     if (value == 0) return;
     if (value == 1) {
       parts.add(singular);
@@ -221,7 +230,7 @@ String _numberToArabic(int n) {
     } else if (value <= 10) {
       parts.add('${_below100(value)} $plural');
     } else {
-      parts.add('${_below1000(value)} $singular');
+      parts.add('${_below1000(value)} ${accusative.isEmpty ? singular : accusative}');
     }
   }
 
@@ -230,7 +239,7 @@ String _numberToArabic(int n) {
   final rest = n % 1000;
 
   chunk(millions, 'مليون', 'مليونان', 'ملايين');
-  chunk(thousands, 'ألف', 'ألفان', 'آلاف');
+  chunk(thousands, 'ألف', 'ألفان', 'آلاف', accusative: 'ألفاً');
   if (rest > 0) parts.add(_below1000(rest));
 
   return parts.join(' و');

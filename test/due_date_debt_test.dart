@@ -192,19 +192,17 @@ void main() {
   });
 
   group('بند المستحقات', () {
-    test('يميّز المجدول عمّا حان موعده', () {
+    test('يميّز المجدول عمّا حان موعده — القائمة تعرض الحالّ فقط', () {
       final s = _seeded();
       final student = _cleanStudent(s);
       final later = _installment(s, student, daysFromNow: 9);
       final late = _installment(s, student, daysFromNow: -9);
 
       final items = s.dueItems().where((d) => d.student.id == student.id).toList();
-      final scheduled = items.firstWhere((d) => d.installmentId == later.id);
+      // المجدول لا يدخل قائمة المستحقات (FD-01)
+      expect(items.any((d) => d.installmentId == later.id), isFalse);
       final overdue = items.firstWhere((d) => d.installmentId == late.id);
 
-      expect(scheduled.scheduled, isTrue);
-      expect(scheduled.late, isFalse);
-      expect(scheduled.stageLabel, 'مجدول');
       expect(overdue.scheduled, isFalse);
       expect(overdue.late, isTrue);
       expect(overdue.stageLabel, 'متأخر عن السداد');

@@ -33,8 +33,8 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
   String groupId = '';
   String type = 'quiz';
 
-  /// الفصل والمكوّن من مخطط المدرسة — فارغان لمن لا مخطط له.
-  String term = 'term_1';
+  /// الفصل والمكوّن من مخطط المدرسة — فارغان بلا ربط بفصل.
+  String term = '';
   String componentId = '';
   final title = TextEditingController();
   final maxScore = TextEditingController(text: '100');
@@ -60,6 +60,13 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
     super.dispose();
   }
 
+  void _fillMaxFromGroup(String id) {
+    final g = widget.store.groupById(id);
+    if (g == null) return;
+    final mark = widget.store.gradingForViewedYear.fullMarkForSubject(g.gradeLevel, g.subjectId);
+    maxScore.text = trimNum(mark);
+  }
+
   void _selectGroup(String? id) {
     setState(() {
       groupId = id ?? '';
@@ -73,6 +80,20 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
       for (final s in widget.store.studentsInGroup(groupId)) {
         scores[s.id] = TextEditingController();
         notes[s.id] = TextEditingController();
+      }
+      if (groupId.isNotEmpty) _fillMaxFromGroup(groupId);
+    });
+  }
+
+  void _selectComponent(String? id) {
+    setState(() {
+      componentId = id ?? '';
+      if (componentId.isEmpty) return;
+      final c = widget.store.gradingScheme.of(term).where((x) => x.id == componentId).firstOrNull;
+      if (c == null) return;
+      if (title.text.trim().isEmpty) title.text = c.name;
+      if (errors.clear('title')) {
+        // أُزيل خطأ العنوان إن وُجد
       }
     });
   }
@@ -146,6 +167,8 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
   Widget build(BuildContext context) {
     final store = widget.store;
     final roster = store.studentsInGroup(groupId);
+    final hasScheme = !store.gradingScheme.isEmpty;
+    final showType = !hasScheme || term.isEmpty;
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
@@ -188,8 +211,17 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                     hint: 'اختر الشعبة',
                     errorText: errors['group'],
                     items: [
-                      for (final g in store.groups)
-                        DropdownMenuItem(value: g.id, child: Text(g.name)),
+                      for (final g in store.groupsInViewedYear)
+                        DropdownMenuItem(
+                          value: g.id,
+                          child: Text(
+                            [
+                              store.subjectName(g.subjectId),
+                              if (g.gradeLevel.trim().isNotEmpty) g.gradeLevel.trim(),
+                            ].where((x) => x.isNotEmpty && x != 'غير محدد').join(' — '),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                     ],
                     onChanged: _selectGroup,
                   ),
@@ -208,20 +240,22 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                   ),
                   const SizedBox(height: 10),
 
-                  const FieldLabel('نوع التقييم'),
-                  AppDropdown<String>(
-                    value: type,
-                    items: [
-                      for (final e in evaluationTypeNames.entries)
-                        DropdownMenuItem(value: e.key, child: Text(e.value)),
-                    ],
-                    onChanged: (v) => setState(() => type = v ?? type),
-                  ),
-                  const SizedBox(height: 10),
+                  if (showType) ...[
+                    const FieldLabel('نوع التقييم'),
+                    AppDropdown<String>(
+                      value: type,
+                      items: [
+                        for (final e in evaluationTypeNames.entries)
+                          DropdownMenuItem(value: e.key, child: Text(e.value)),
+                      ],
+                      onChanged: (v) => setState(() => type = v ?? type),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
 
                   // مخطط العلامات إن عُرّف: الفصل ومكوّنه يجعلان للتقييم وزناً
                   // في المعدل بدل متوسط بسيط يساوي بين النهائي والواجب
-                  if (!store.gradingScheme.isEmpty) ...[
+                  if (hasScheme) ...[
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -233,11 +267,12 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                               AppDropdown<String>(
                                 value: term,
                                 items: [
+                                  const DropdownMenuItem(value: '', child: Text('بدون ربط بفصل')),
                                   for (final e in gradingTermLabels.entries)
                                     DropdownMenuItem(value: e.key, child: Text(e.value)),
                                 ],
                                 onChanged: (v) => setState(() {
-                                  term = v ?? term;
+                                  term = v ?? '';
                                   componentId = '';
                                 }),
                               ),
@@ -257,7 +292,9 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                                   for (final c in store.gradingScheme.of(term))
                                     DropdownMenuItem(value: c.id, child: Text('${c.name} (${trimNum(c.weight)}%)')),
                                 ],
-                                onChanged: (v) => setState(() => componentId = v ?? ''),
+                                onChanged: term.isEmpty
+                                    ? (_) {}
+                                    : _selectComponent,
                               ),
                             ],
                           ),

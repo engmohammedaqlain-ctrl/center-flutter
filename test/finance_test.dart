@@ -16,6 +16,18 @@ void main() {
       expect(AppStore.maxSerialFor(2026, const []), 1000);
     });
 
+    test('maxSerialFor يفصل رمز الجهاز عن الأرقام القديمة', () {
+      expect(AppStore.maxSerialFor(2026, ['A-2026/1009', 'B-2026/1500', '2026/3000'], 'B'), 1500);
+      expect(AppStore.maxSerialFor(2026, ['A-2026/1009', 'B-2026/1500', '2026/3000'], 'A'), 1009);
+      expect(AppStore.maxSerialFor(2026, ['A-2026/1009', 'B-2026/1500', '2026/3000']), 3000);
+    });
+
+    test('parseReceiptNumber يقرأ الرمز والسنة والتسلسل', () {
+      expect(AppStore.parseReceiptNumber('K-2026/1001'), (code: 'K', year: 2026, serial: 1001));
+      expect(AppStore.parseReceiptNumber('2026/1001'), (code: null, year: 2026, serial: 1001));
+      expect(AppStore.parseReceiptNumber('bad'), isNull);
+    });
+
     test('serials never restart below 1001 and never collide locally', () {
       final s = seeded();
       final student = s.students.first;
@@ -23,8 +35,8 @@ void main() {
       for (var i = 0; i < 5; i++) {
         final p = s.addPayment(studentId: student.id, amount: 5, method: 'cash', date: DateTime.now());
         expect(issued.add(p.receiptNumber), isTrue, reason: 'لا تكرار في أرقام السندات');
-        final serial = int.parse(p.receiptNumber.split('/')[1]);
-        expect(serial, greaterThanOrEqualTo(1001));
+        final parsed = AppStore.parseReceiptNumber(p.receiptNumber)!;
+        expect(parsed.serial, greaterThanOrEqualTo(1001));
       }
     });
 
@@ -38,6 +50,7 @@ void main() {
         Payment(id: 'b', receiptNumber: 'REC-2025-7', studentId: student.id, amount: 1, method: 'cash', date: DateTime.now()),
         Payment(id: 'c', receiptNumber: '42', studentId: student.id, amount: 1, method: 'cash', date: DateTime.now()),
         Payment(id: 'd', receiptNumber: '$year/1500', studentId: student.id, amount: 1, method: 'cash', date: DateTime.now()),
+        Payment(id: 'e', receiptNumber: 'K-$year/1600', studentId: student.id, amount: 1, method: 'cash', date: DateTime.now()),
       ]);
 
       final changed = await s.migrateReceiptNumbers();
@@ -47,9 +60,22 @@ void main() {
       expect(s.payments.firstWhere((p) => p.id == 'c').receiptNumber, '$year/1042');
       expect(s.payments.firstWhere((p) => p.id == 'd').receiptNumber, '$year/1500',
           reason: 'الأرقام الصحيحة لا تُمس');
+      expect(s.payments.firstWhere((p) => p.id == 'e').receiptNumber, 'K-$year/1600',
+          reason: 'أرقام الجهاز لا تُمس');
 
       // لا تعمل مرتين — التشغيل المتكرر كان يُنتج تأرجحاً مع السحب
       expect(await s.migrateReceiptNumbers(), 0);
+    });
+
+    test('deviceReceiptCode يحجز رمزاً ويصدر سنداً به', () async {
+      final s = seeded();
+      final code = await s.deviceReceiptCode();
+      expect(code, isNotEmpty);
+      expect(RegExp(r'^[A-Z]{1,3}$').hasMatch(code), isTrue);
+      final student = s.students.first;
+      final p = s.addPayment(studentId: student.id, amount: 5, method: 'cash', date: DateTime.now());
+      expect(p.receiptNumber.startsWith('$code-'), isTrue);
+      expect(await s.deviceReceiptCode(), code, reason: 'الرمز ثابت للجهاز');
     });
   });
 
@@ -216,7 +242,7 @@ void main() {
       s.installments.removeWhere((i) => i.studentId == student.id);
       final mine = s.dueItems().where((d) => d.student.id == student.id).toList();
       expect(mine.length, 1);
-      expect(mine.first.title, 'رسوم شهرية مستحقة');
+      expect(mine.first.title, 'رسوم مستحقة');
       expect(mine.first.amount, student.balance.abs());
     });
   });

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/academic_matching.dart';
 import '../data/permissions.dart';
 import '../data/phone.dart';
 import '../data/store.dart';
@@ -100,13 +101,11 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
   late final name = TextEditingController(text: widget.teacher?.name ?? '');
   late final phone = TextEditingController(text: _parsed.number);
   late String prefix = _parsed.prefix;
-  late final email = TextEditingController(text: widget.teacher?.email ?? '');
   late final nationalId = TextEditingController(text: widget.teacher?.nationalId ?? '');
   late final portalCode = TextEditingController(
     text: (widget.teacher?.portalCode.isNotEmpty ?? false) ? widget.teacher!.portalCode : AppStore.instance.newPortalCode(),
   );
   late final rate = TextEditingController(text: trimNum(widget.teacher?.rate ?? 70));
-  late final notes = TextEditingController(text: widget.teacher?.notes ?? '');
   late final List<String> subjectIds = [...?widget.teacher?.subjectIds];
   final errors = FieldErrors();
   bool _seeded = false;
@@ -127,11 +126,9 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
   void dispose() {
     name.dispose();
     phone.dispose();
-    email.dispose();
     nationalId.dispose();
     portalCode.dispose();
     rate.dispose();
-    notes.dispose();
     super.dispose();
   }
 
@@ -151,7 +148,7 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
     if (errors.report(context)) return;
 
     try {
-      final names = store.subjects.where((s) => subjectIds.contains(s.id)).map((s) => s.name).toList();
+      final names = store.subjectsInViewedYear.where((s) => subjectIds.contains(s.id)).map((s) => s.name).toList();
       store.upsertTeacher(
         Teacher(
           id: widget.teacher?.id ?? store.newId(),
@@ -159,8 +156,8 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
           phone: combinePhoneAndPrefix(number, prefix),
           subject: names.isEmpty ? '' : names.first,
           rate: rateValue,
-          email: email.text.trim(),
-          notes: notes.text.trim(),
+          email: widget.teacher?.email ?? '',
+          notes: widget.teacher?.notes ?? '',
           nationalId: idDigits,
           portalCode: portalCode.text.trim(),
           subjectIds: [...subjectIds],
@@ -250,15 +247,6 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
                 ],
               ),
             ),
-            _gap,
-            const FieldLabel('البريد الإلكتروني'),
-            TextField(
-              controller: email,
-              keyboardType: TextInputType.emailAddress,
-              textDirection: TextDirection.ltr,
-              decoration: const InputDecoration(hintText: 'name@mail.com'),
-            ),
-
             // ── ٢. دخول البوابة ─────────────────────────────────────────────
             const FormSection(icon: Icons.vpn_key_outlined, title: 'دخول بوابة المعلم'),
             FieldPair(
@@ -299,7 +287,7 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
 
             // ── ٣. المواد ───────────────────────────────────────────────────
             const FormSection(icon: Icons.menu_book_outlined, title: 'المواد التي يدرّسها'),
-            if (store.subjects.isEmpty)
+            if (store.subjectsInViewedYear.isEmpty)
               const Text(
                 'لا توجد مواد بعد — أضفها من تبويب «المواد».',
                 style: TextStyle(color: AppColors.muted, fontSize: 12),
@@ -309,7 +297,7 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
                 spacing: 6,
                 runSpacing: 6,
                 children: [
-                  for (final s in store.subjects)
+                  for (final s in store.subjectsInViewedYear)
                     _choiceChip(s.name, subjectIds.contains(s.id), () {
                       setState(() {
                         if (subjectIds.contains(s.id)) {
@@ -322,14 +310,6 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
                 ],
               ),
 
-            // ── ٤. المحاسبة (الراتب يبقى في السجل دون واجهة تعديل — كويب) ──
-            const FormSection(icon: Icons.notes_outlined, title: 'ملاحظات'),
-            TextField(
-              controller: notes,
-              minLines: 1,
-              maxLines: 3,
-              decoration: const InputDecoration(hintText: 'ملاحظات اختيارية...'),
-            ),
             if (editing) _DeleteButton(label: 'حذف المدرس', onPressed: _delete),
           ],
         ),
@@ -350,23 +330,30 @@ class SubjectFormScreen extends StatefulWidget {
 }
 
 class _SubjectFormScreenState extends State<SubjectFormScreen> {
-  static const _general = 'عام / كل المراحل';
-
   late final name = TextEditingController(text: widget.subject?.name ?? '');
   late final code = TextEditingController(text: widget.subject?.code ?? '');
   late final description = TextEditingController(text: widget.subject?.description ?? '');
-  String? grade;
+  /// فارغة = كل المراحل (كالويب).
+  late List<String> selectedGrades = [
+    for (final g in (widget.subject?.gradeLevels ?? const <String>[]))
+      if (g.trim().isNotEmpty && g.trim() != generalGradeLabel) g.trim(),
+  ];
+  bool _seededGrades = false;
   final errors = FieldErrors();
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (grade != null) return;
-    final store = StoreScope.of(context);
+    if (_seededGrades) return;
+    _seededGrades = true;
     final s = widget.subject;
-    grade = (s?.gradeLevel.isNotEmpty ?? false)
-        ? s!.gradeLevel
-        : (store.gradeFees.isNotEmpty ? store.gradeFees.first.gradeName : _general);
+    if (s == null) return;
+    if (selectedGrades.isNotEmpty) return;
+    // توافق العمود القديم: مرحلة واحدة غير عامة
+    final legacy = s.gradeLevel.trim();
+    if (legacy.isNotEmpty && legacy != generalGradeLabel) {
+      selectedGrades = [legacy];
+    }
   }
 
   @override
@@ -385,13 +372,15 @@ class _SubjectFormScreenState extends State<SubjectFormScreen> {
         ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المادة');
     });
     if (errors.report(context)) return;
+    final grades = normalizeSubjectGrades(selectedGrades);
     try {
       store.upsertSubject(
         SubjectItem(
           id: widget.subject?.id ?? store.newId(),
           name: name.text.trim(),
           code: code.text.trim(),
-          gradeLevel: grade ?? _general,
+          gradeLevel: grades.isEmpty ? generalGradeLabel : grades.first,
+          gradeLevels: grades,
           description: description.text.trim(),
         ),
       );
@@ -428,11 +417,11 @@ class _SubjectFormScreenState extends State<SubjectFormScreen> {
     if (!store.can('settings')) return _denied(store, title);
 
     final grades = <String>{
-      _general,
-      ...store.gradeFees.map((g) => g.gradeName),
-      ...store.rooms.map((r) => r.gradeLevel),
-    }.where((g) => g.trim().isNotEmpty).toList();
-    if (grade != null && !grades.contains(grade)) grades.add(grade!);
+      ...store.gradeFeesInViewedYear.map((g) => g.gradeName),
+      ...store.roomsInViewedYear.map((r) => r.gradeLevel),
+      ...selectedGrades,
+    }.where((g) => g.trim().isNotEmpty && g.trim() != generalGradeLabel).toList();
+    final allGrades = selectedGrades.isEmpty;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -453,26 +442,40 @@ class _SubjectFormScreenState extends State<SubjectFormScreen> {
               decoration: InputDecoration(hintText: 'مثال: الرياضيات، الفيزياء...', errorText: errors['name']),
             ),
             _gap,
-            FieldPair(
-              startFlex: 2,
-              endFlex: 3,
-              start: [
-                const FieldLabel('رمز المادة'),
-                TextField(
-                  controller: code,
-                  textDirection: TextDirection.ltr,
-                  decoration: const InputDecoration(hintText: 'MATH-1'),
+            const FieldLabel('رمز المادة'),
+            TextField(
+              controller: code,
+              textDirection: TextDirection.ltr,
+              decoration: const InputDecoration(hintText: 'MATH-1'),
+            ),
+            _gap,
+            Row(
+              children: [
+                const Expanded(child: FieldLabel('المراحل الدراسية')),
+                Text(
+                  allGrades ? 'كل المراحل' : '${selectedGrades.length} مرحلة محدّدة',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 11.5, fontWeight: FontWeight.w700),
                 ),
               ],
-              end: [
-                const FieldLabel('المرحلة الدراسية'),
-                AppDropdown<String>(
-                  value: grade,
-                  items: [
-                    for (final g in grades) DropdownMenuItem(value: g, child: Text(g, overflow: TextOverflow.ellipsis)),
-                  ],
-                  onChanged: (v) => setState(() => grade = v ?? grade),
-                ),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                _choiceChip('كل المراحل', allGrades, () {
+                  setState(() => selectedGrades = []);
+                }),
+                for (final g in grades)
+                  _choiceChip(g, selectedGrades.contains(g), () {
+                    setState(() {
+                      if (selectedGrades.contains(g)) {
+                        selectedGrades = [...selectedGrades]..remove(g);
+                      } else {
+                        selectedGrades = [...selectedGrades, g];
+                      }
+                    });
+                  }),
               ],
             ),
             _gap,
@@ -519,12 +522,15 @@ class _GradeFeeFormScreenState extends State<GradeFeeFormScreen> {
 
   void _save() {
     final store = StoreScope.of(context);
+    final editing = widget.fee != null;
     final value = double.tryParse(monthly.text.trim());
     setState(() {
       errors
         ..reset()
-        ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المرحلة الدراسية')
-        ..check('fee', value == null || value < 0, 'يرجى إدخال رسم شهري صحيح');
+        ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المرحلة الدراسية');
+      if (!editing) {
+        errors.check('fee', value == null || value < 0, 'يرجى إدخال رسم شهري صحيح');
+      }
     });
     if (errors.report(context)) return;
 
@@ -535,10 +541,10 @@ class _GradeFeeFormScreenState extends State<GradeFeeFormScreen> {
           GradeFee(
             id: store.newId(),
             gradeName: name.text.trim(),
-            monthlyFee: value!,
+            monthlyFee: value ?? 0,
             tier: tier,
             isCustom: true,
-            orderIndex: store.gradeFees.length + 1,
+            orderIndex: store.gradeFeesInViewedYear.length + 1,
           ),
           initialSection: section.text.trim(),
         );
@@ -547,7 +553,7 @@ class _GradeFeeFormScreenState extends State<GradeFeeFormScreen> {
           GradeFee(
             id: f.id,
             gradeName: name.text.trim(),
-            monthlyFee: value!,
+            monthlyFee: f.monthlyFee,
             tier: tier,
             orderIndex: f.orderIndex,
             isCustom: f.isCustom,
@@ -613,33 +619,26 @@ class _GradeFeeFormScreenState extends State<GradeFeeFormScreen> {
               decoration: InputDecoration(hintText: 'مثال: الصف الثاني عشر...', errorText: errors['name']),
             ),
             _gap,
-            FieldPair(
-              startFlex: 3,
-              endFlex: 2,
-              start: [
-                const FieldLabel('المرحلة الكبرى', requiredField: true),
-                AppDropdown<String>(
-                  value: tier,
-                  items: [
-                    for (final e in educationalStageTiers.entries)
-                      DropdownMenuItem(value: e.key, child: Text(e.value, overflow: TextOverflow.ellipsis)),
-                  ],
-                  onChanged: (v) => setState(() => tier = v ?? tier),
-                ),
+            const FieldLabel('المرحلة الكبرى', requiredField: true),
+            AppDropdown<String>(
+              value: tier,
+              items: [
+                for (final e in educationalStageTiers.entries)
+                  DropdownMenuItem(value: e.key, child: Text(e.value, overflow: TextOverflow.ellipsis)),
               ],
-              end: [
-                FieldLabel('الرسم الشهري (₪)', key: errors.key('fee'), requiredField: true),
-                TextField(
-                  controller: monthly,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (_) {
-                    if (errors.clear('fee')) setState(() {});
-                  },
-                  decoration: InputDecoration(hintText: '200', errorText: errors['fee']),
-                ),
-              ],
+              onChanged: (v) => setState(() => tier = v ?? tier),
             ),
             if (!editing) ...[
+              _gap,
+              FieldLabel('الرسم الشهري (₪)', key: errors.key('fee'), requiredField: true),
+              TextField(
+                controller: monthly,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                onChanged: (_) {
+                  if (errors.clear('fee')) setState(() {});
+                },
+                decoration: InputDecoration(hintText: '200', errorText: errors['fee']),
+              ),
               _gap,
               const FieldLabel('الشعبة الأولى (اختياري)'),
               TextField(controller: section, decoration: const InputDecoration(hintText: 'مثال: الشعبة (أ)')),

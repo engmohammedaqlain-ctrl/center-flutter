@@ -7,7 +7,7 @@ String gradeTier(AppStore store, String grade) {
   final name = grade.trim();
   if (name.isEmpty) return 'other';
 
-  final fee = store.gradeFees.where((f) => f.gradeName.trim().toLowerCase() == name.toLowerCase()).firstOrNull;
+  final fee = store.gradeFeesInViewedYear.where((f) => f.gradeName.trim().toLowerCase() == name.toLowerCase()).firstOrNull;
   if (fee != null && educationalStageTiers.containsKey(fee.tier)) return fee.tier;
 
   final g = name.toLowerCase();

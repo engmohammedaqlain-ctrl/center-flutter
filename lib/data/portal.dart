@@ -2,6 +2,8 @@ import 'package:uuid/uuid.dart';
 
 import '../models/models.dart';
 import 'academic_matching.dart';
+import 'attendance_days.dart';
+import 'balance.dart';
 import 'grading.dart';
 import 'institution.dart';
 import 'payment_methods.dart';
@@ -301,6 +303,7 @@ class PortalInstallment {
     required this.paidAmount,
     required this.status,
     required this.isDueNow,
+    this.isScheduled = false,
   });
 
   final String id;
@@ -314,8 +317,11 @@ class PortalInstallment {
   /// `paid | unpaid | partially_paid`
   final String status;
 
-  /// حلّ موعده (أو لا موعد له): مطلوب الآن لا قسطٌ قادم.
+  /// حلّ موعده عبر `isInstallmentDue` — مطلوب الآن لا قسطٌ مجدول.
   final bool isDueNow;
+
+  /// لم يحن موعده بعد — مقابل `isScheduled` في بوابة الويب.
+  final bool isScheduled;
 
   double get remaining => (amount - paidAmount) < 0 ? 0 : amount - paidAmount;
 }
@@ -326,68 +332,65 @@ class PortalFinance {
     this.totalDue = 0,
     this.totalPaid = 0,
     this.remainingBalance = 0,
+    this.scheduledRemaining = 0,
     this.currentDue = 0,
     this.installments = const [],
     this.payments = const [],
   });
 
-  /// إجمالي الرسوم: مجموع الأقساط كلها.
+  /// مجموع `chargeableAmount` للأقساط الحالّة فقط.
   final double totalDue;
   final double totalPaid;
 
-  /// المتبقي لكامل العام، ومنه أقساط لم يحن موعدها.
+  /// مرادف لـ [scheduledRemaining] — توافق مع الشاشات القديمة.
   final double remainingBalance;
 
-  /// المستحق حالياً — يطابق الرصيد المحاسبي للطالب في صفحته بالإدارة.
+  /// المتبقي من الأقساط التي لم يحن موعدها — «مجدول لاحقاً».
+  final double scheduledRemaining;
+
+  /// المستحق حالياً من `dueAndScheduled` — يطابق ملف الطالب في الإدارة.
   final double currentDue;
   final List<PortalInstallment> installments;
   final List<Payment> payments;
 
-  /// الحساب نفسه في `getStudentPortalData`.
-  ///
-  /// المستحق حالياً هو دين الطالب المسجَّل إن كان عليه دين؛ وإلا فالأقساط التي
-  /// حلّ موعدها ناقص المسدَّد، بحدٍّ أعلى هو المتبقي لكامل العام.
+  /// الحساب نفسه في `getStudentPortalData` (~718–761 على الويب).
   factory PortalFinance.compute({
     required double? studentBalance,
     required List<Installment> installments,
     required List<Payment> payments,
     DateTime? today,
   }) {
-    final todayStr = isoDate(today ?? DateTime.now());
+    final day = today ?? startOfToday();
     final sorted = [...installments]..sort((a, b) => a.dueDate.compareTo(b.dueDate));
     final active = payments.where((p) => !p.cancelled).toList();
     sortPayments(active);
 
-    final totalDue = sorted.fold<double>(0, (a, i) => a + i.amount);
+    final dueOnly = sorted.where((i) => isInstallmentDue(i, day));
+    final totalDue = dueOnly.fold<double>(0, (a, i) => a + chargeableAmount(i));
     final totalPaid = active.fold<double>(0, (a, p) => a + p.amount);
-    final remaining = (totalDue - totalPaid) < 0 ? 0.0 : totalDue - totalPaid;
-
-    double currentDue;
-    if (studentBalance != null && studentBalance < 0) {
-      currentDue = studentBalance.abs();
-    } else {
-      final pastOrCurrent = sorted
-          .where((i) => isoDate(i.dueDate).compareTo(todayStr) <= 0)
-          .fold<double>(0, (a, i) => a + i.amount);
-      currentDue = (pastOrCurrent - totalPaid).clamp(0, remaining).toDouble();
-    }
+    final buckets = dueAndScheduled(sorted, fallbackBalance: studentBalance, today: day);
 
     return PortalFinance(
       totalDue: totalDue,
       totalPaid: totalPaid,
-      remainingBalance: remaining,
-      currentDue: currentDue,
+      remainingBalance: buckets.scheduled,
+      scheduledRemaining: buckets.scheduled,
+      currentDue: buckets.due,
       installments: [
         for (final i in sorted)
-          PortalInstallment(
-            id: i.id,
-            title: i.title,
-            amount: i.amount,
-            dueDate: isoDate(i.dueDate),
-            paidAmount: i.paidAmount,
-            status: const {'paid', 'unpaid', 'partially_paid'}.contains(i.status) ? i.status : 'unpaid',
-            isDueNow: isoDate(i.dueDate).compareTo(todayStr) <= 0,
-          ),
+          () {
+            final dueNow = isInstallmentDue(i, day);
+            return PortalInstallment(
+              id: i.id,
+              title: i.title,
+              amount: chargeableAmount(i),
+              dueDate: isoDate(i.dueDate),
+              paidAmount: i.paidAmount,
+              status: const {'paid', 'unpaid', 'partially_paid'}.contains(i.status) ? i.status : 'unpaid',
+              isDueNow: dueNow,
+              isScheduled: !dueNow,
+            );
+          }(),
       ],
       payments: active,
     );
@@ -848,35 +851,45 @@ class PortalService {
 
     // الحضور: تاريخه في الحصة المرتبطة، فتُجلب حصصه وحدها
     final sessionIds = at(8).map((r) => '${r['session_id'] ?? ''}').where((s) => s.isNotEmpty).toSet();
-    final sessionDate = <String, String>{};
+    final sessionRows = <Map<String, dynamic>>[];
     if (sessionIds.isNotEmpty) {
       final sessions = await supabaseSelect(
         'sessions',
         filters: {'id': _inList(sessionIds)},
-        columns: 'id,session_date',
+        columns: 'id,session_date,group_id',
       );
-      for (final s in sessions ?? const <Map<String, dynamic>>[]) {
-        sessionDate['${s['id']}'] = '${s['session_date'] ?? ''}'.split('T').first;
-      }
+      sessionRows.addAll(sessions ?? const []);
     }
-    final marks = <AttendanceMark>[];
-    var present = 0, absent = 0, excused = 0;
+    final sessionObjs = [
+      for (final s in sessionRows)
+        ClassSession(
+          id: '${s['id']}',
+          groupId: '${s['group_id'] ?? ''}',
+          sessionDate: '${s['session_date'] ?? ''}'.split('T').first,
+          roomId: '',
+        ),
+    ];
+    final rawMarks = <AttendanceMark>[];
     for (final r in at(8)) {
       final raw = '${r['status'] ?? ''}';
       // «متأخر» أُلغيت من النظام: كل ما ليس حاضراً أو مأذوناً غياب
       final status = raw == 'present' ? 'present' : (raw == 'excused' ? 'excused' : 'absent');
-      final date = sessionDate['${r['session_id']}'] ?? '${r['created_at'] ?? ''}'.split('T').first;
-      marks.add(AttendanceMark.fromCloud({...r, 'status': status, 'session_date': date}));
-      switch (status) {
-        case 'present':
-          present++;
-        case 'excused':
-          excused++;
-        default:
-          absent++;
-      }
+      rawMarks.add(AttendanceMark.fromCloud({...r, 'status': status}));
     }
-    marks.sort((a, b) => b.date.compareTo(a.date));
+    // يوم بيوم: غياب يوم رصده ست مواد كان يُعدّ ستة أيام غياب
+    final days = dailyAttendance(rawMarks, sessionObjs);
+    final present = days.where((d) => d.status == 'present').length;
+    final absent = days.where((d) => d.status == 'absent').length;
+    final excused = days.where((d) => d.status == 'excused').length;
+    final marks = [
+      for (final d in days)
+        AttendanceMark(
+          id: d.date,
+          studentId: student.id,
+          date: d.date,
+          status: d.status,
+        ),
+    ];
 
     final evaluations = [
       for (final r in at(9))
@@ -911,6 +924,34 @@ class PortalService {
 
   // ── بوابة المعلم ───────────────────────────────────────────────────────────
 
+  /// أسماء طلاب البوابة بلا PII — عبر `portal_students` إن وُجدت، وإلا أعمدة محدودة.
+  Future<List<Map<String, dynamic>>> _portalStudentRows(
+    Set<String> enrolledIds,
+    Map<String, String> tenant,
+  ) async {
+    if (enrolledIds.isEmpty) return const [];
+    final idFilter = {'id': _inList(enrolledIds)};
+    const safeCols = 'id,full_name,section,grade_level,status';
+
+    final viaView = await supabaseSelect(
+      'portal_students',
+      filters: {...tenant, ...idFilter},
+      columns: 'id,full_name,name,section,grade_level,status',
+    );
+    if (viaView != null) {
+      return [
+        for (final r in viaView)
+          {
+            ...r,
+            if ('${r['full_name'] ?? ''}'.trim().isEmpty && '${r['name'] ?? ''}'.trim().isNotEmpty)
+              'full_name': '${r['name']}',
+          },
+      ];
+    }
+
+    return (await supabaseSelect('students', filters: idFilter, columns: safeCols)) ?? const [];
+  }
+
   Future<TeacherPortalData> teacherData(PortalUser user) async {
     final tenant = {'tenant_id': 'eq.${user.tenantId}'};
 
@@ -932,23 +973,44 @@ class PortalService {
       supabaseSelect('groups', filters: {...tenant, 'teacher_id': _inList(teacherIds)}),
       supabaseSelect('subjects', filters: tenant),
       supabaseSelect('rooms', filters: tenant),
-      supabaseSelect('students', filters: tenant),
+      supabaseSelect('teachers', filters: {...tenant, 'id': 'eq.${user.id}'}, columns: 'academic_year_id', limit: 1),
     ]);
 
     List<Map<String, dynamic>> at(int i) =>
         (results[i] as List<Map<String, dynamic>>?) ?? const <Map<String, dynamic>>[];
 
-    final groups = at(1).map(Group.fromCloud).where((g) => g.isActive).toList();
+    final teacherYearId = () {
+      final rows = at(4);
+      if (rows.isEmpty) return null;
+      final id = '${rows.first['academic_year_id'] ?? ''}';
+      return id.isEmpty ? null : id;
+    }();
+
+    final groups = at(1)
+        .map(Group.fromCloud)
+        .where((g) => g.isActive)
+        .where((g) {
+          // مجموعات عام سجل المعلم فقط — وإلا تظهر صفوف أعوام سابقة بعد الإغلاق
+          if (teacherYearId == null) return true;
+          return g.academicYearId.isEmpty || g.academicYearId == teacherYearId;
+        })
+        .toList();
     final subjects = at(2).map(SubjectItem.fromCloud).toList();
     final subjectName = {for (final s in subjects) s.id: s.name};
     final rooms = {for (final r in at(3)) '${r['id']}': r};
-    final students = at(4).map(Student.fromCloud).toList();
-    final byId = {for (final s in students) s.id: s};
 
+    // طلاب التسجيلات فقط — عبر portal_students إن وُجدت (بلا PII)، وإلا أعمدة محدودة
     final enrollments = groups.isEmpty
         ? const <Map<String, dynamic>>[]
         : (await supabaseSelect('enrollments', filters: {'group_id': _inList(groups.map((g) => g.id))})) ??
             const <Map<String, dynamic>>[];
+    final enrolledIds = {
+      for (final e in enrollments)
+        if ('${e['status'] ?? 'active'}' == 'active') '${e['student_id']}',
+    }..removeWhere((id) => id.isEmpty);
+    final studentRows = await _portalStudentRows(enrolledIds, tenant);
+    final students = studentRows.map(Student.fromCloud).toList();
+    final byId = {for (final s in students) s.id: s};
 
     final classes = <TeacherClass>[];
     for (final group in groups) {
@@ -958,8 +1020,7 @@ class PortalService {
             byId['${e['student_id']}']!,
       ];
 
-      // بلا تسجيلات: طلاب شعبها أنفسهم. الموديل الواحد يشترك فيه أكثر من شعبة،
-      // فتُؤخذ كلها لا الأساسية وحدها
+      // بلا تسجيلات: طلاب شعبها من المسجّلين فقط (لا نحمّل جدول الطلاب كاملاً)
       final groupRooms = [
         for (final id in group.allRoomIds)
           if (rooms[id] != null) rooms[id]!,
@@ -1146,12 +1207,14 @@ class PortalService {
   Future<void> setSectionVisible(String sectionId, bool visible) =>
       supabaseUpdate('course_sections', {'id': 'eq.$sectionId'}, {'is_visible': visible});
 
-  /// حذف وحدة وملفات موادها. موادها تُحذف بالتتابع في قاعدة البيانات.
+  /// حذف وحدة وملفات موادها غير المشتركة مع شعب أخرى.
   Future<void> deleteSection(CourseSection section, String tenantId) async {
-    await storageRemove(materialsBucket, [
+    final paths = [
       for (final it in section.items)
         if (materialPath(it.contentUrl) != null) materialPath(it.contentUrl)!,
-    ]);
+    ];
+    final removable = await _unsharedFiles(paths, tenantId, sectionId: section.id);
+    if (removable.isNotEmpty) await storageRemove(materialsBucket, removable);
     await supabaseDelete('course_sections', {'id': 'eq.${section.id}', 'tenant_id': 'eq.$tenantId'});
   }
 
@@ -1232,8 +1295,45 @@ class PortalService {
 
   Future<void> deleteItem(CourseItem item, String tenantId) async {
     final path = materialPath(item.contentUrl);
-    if (path != null) await storageRemove(materialsBucket, [path]);
+    if (path != null) {
+      final removable = await _unsharedFiles([path], tenantId, itemId: item.id);
+      if (removable.isNotEmpty) await storageRemove(materialsBucket, removable);
+    }
     await supabaseDelete('course_items', {'id': 'eq.${item.id}', 'tenant_id': 'eq.$tenantId'});
+  }
+
+  /// ملفات لا يشير إليها عنصر آخر — نسخ القسم ينسخ الرابط لا الملف.
+  Future<List<String>> _unsharedFiles(
+    List<String> paths,
+    String tenantId, {
+    String? itemId,
+    String? sectionId,
+  }) async {
+    final removable = <String>[];
+    for (final path in paths) {
+      final fileName = path.split('/').last;
+      if (fileName.isEmpty) continue;
+      try {
+        final rows = await supabaseSelect(
+          'course_items',
+          columns: 'id,section_id,content_url',
+          filters: {
+            'tenant_id': 'eq.$tenantId',
+            'content_url': 'like.%/course_materials/%$fileName%',
+          },
+        );
+        if (rows == null) continue; // عند التعذّر يبقى الملف
+        final others = rows.where((r) {
+          if (itemId != null && '${r['id']}' == itemId) return false;
+          if (sectionId != null && '${r['section_id']}' == sectionId) return false;
+          return true;
+        });
+        if (others.isEmpty) removable.add(path);
+      } catch (_) {
+        // ملف زائد في المخزن أهون من مادة معطوبة
+      }
+    }
+    return removable;
   }
 
   /// نسخ وحدة بموادها إلى شعب أخرى — `copySectionToGroups`. يُعيد عدد الشعب.

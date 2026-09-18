@@ -35,6 +35,16 @@ class _FinanceScreenState extends State<FinanceScreen> {
   String method = '';
   String status = '';
   String dueStage = '';
+  /// مصدر المقبوضات: '' الكل | students | other
+  String sourceFilter = '';
+  /// فلتر معلم في المصروفات (نسخه عبر الأعوام)
+  String statementTeacherId = '';
+  /// فلتر سنة المالية المستقل عن العام المعروض: `current` | `all` | yearId
+  String financeYearFilter = 'current';
+  String termFilter = 'all';
+  bool showProcessedRequests = false;
+  String auditUserFilter = '';
+  String auditActionFilter = '';
 
   static const _statusOptions = {
     '': 'كل الحالات',
@@ -45,9 +55,101 @@ class _FinanceScreenState extends State<FinanceScreen> {
     '': 'كل الحالات',
     'due': 'مستحق',
     'late': 'متأخر عن السداد',
-    'scheduled': 'مجدول',
-    'exception': 'استثناء',
   };
+
+  String _resolvedFinanceYearId(AppStore store) {
+    if (financeYearFilter == 'all') return '';
+    if (financeYearFilter == 'current') {
+      return store.operationalAcademicYear?.id ?? store.viewedAcademicYearId;
+    }
+    return financeYearFilter;
+  }
+
+  AcademicYear? _filterYear(AppStore store) {
+    final id = _resolvedFinanceYearId(store);
+    if (id.isEmpty) return null;
+    return store.academicYears.where((y) => y.id == id).firstOrNull;
+  }
+
+  bool _matchesFinancePeriod(
+    AppStore store, {
+    String? yearId,
+    String? dueDate,
+    String? paymentDate,
+  }) {
+    final resolved = _resolvedFinanceYearId(store);
+    final year = _filterYear(store);
+    if (financeYearFilter != 'all' && resolved.isNotEmpty) {
+      if (yearId != null && yearId.isNotEmpty) {
+        if (yearId != resolved) return false;
+      } else {
+        final d = (dueDate ?? paymentDate ?? '').split('T').first;
+        if (year != null && d.isNotEmpty) {
+          if (d.compareTo(year.startsOn) < 0 || d.compareTo(year.endsOn) > 0) {
+            return false;
+          }
+        }
+      }
+    }
+    if (termFilter != 'all' && year != null) {
+      final d = (dueDate ?? paymentDate ?? '').split('T').first;
+      if (!_dueDateInTerm(d, year, termFilter)) return false;
+    }
+    return true;
+  }
+
+  bool _dueDateInTerm(String date, AcademicYear year, String term) {
+    if (date.isEmpty) return true;
+    if (term == 'term_1') {
+      final start = year.term1Start.isNotEmpty ? year.term1Start : year.startsOn;
+      final end = year.term1End.isNotEmpty ? year.term1End : year.endsOn;
+      return date.compareTo(start) >= 0 && date.compareTo(end) <= 0;
+    }
+    if (term == 'term_2') {
+      final start = year.term2Start.isNotEmpty ? year.term2Start : year.startsOn;
+      final end = year.term2End.isNotEmpty ? year.term2End : year.endsOn;
+      return date.compareTo(start) >= 0 && date.compareTo(end) <= 0;
+    }
+    return true;
+  }
+
+  List<Payment> _periodPayments(AppStore store) {
+    final source = financeYearFilter == 'all'
+        ? store.payments
+        : store.filterByYear(store.payments, yearId: _resolvedFinanceYearId(store));
+    return source.where((p) {
+      return _matchesFinancePeriod(
+        store,
+        yearId: p.academicYearId,
+        paymentDate: isoDate(p.date),
+      );
+    }).toList();
+  }
+
+  ({double received, double spent, double net}) _periodNet(AppStore store) {
+    final pays = _periodPayments(store).where((p) => !p.cancelled);
+    final received = pays.fold<double>(0, (a, p) => a + p.amount);
+    final year = _filterYear(store);
+    var spent = 0.0;
+    for (final e in store.expenses) {
+      if (!_matchesFinancePeriod(store, paymentDate: e.expenseDate)) continue;
+      if (financeYearFilter != 'all' && year != null) {
+        final d = e.expenseDate.split('T').first;
+        if (d.compareTo(year.startsOn) < 0 || d.compareTo(year.endsOn) > 0) continue;
+      }
+      spent += e.amount;
+    }
+    for (final p in store.teacherPayouts) {
+      final d = p.periodStart.isNotEmpty ? p.periodStart : p.paymentDate;
+      if (!_matchesFinancePeriod(store, paymentDate: d)) continue;
+      if (financeYearFilter != 'all' && year != null) {
+        final day = d.split('T').first;
+        if (day.compareTo(year.startsOn) < 0 || day.compareTo(year.endsOn) > 0) continue;
+      }
+      spent += p.amount;
+    }
+    return (received: received, spent: spent, net: received - spent);
+  }
 
   @override
   void dispose() {
@@ -67,11 +169,20 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
         // التبويب يتبع الميزة وحدها كما في Finance.tsx: من يفتح المالية يرى
         // المصروفات، وتسجيل سند الصرف وحده يتطلب صلاحيته
-        final showExpenses = store.features.enableExpenses;
+        final showExpenses = store.features.enableExpenses && store.can('finance.expenses');
         if (tab == 2 && !showExpenses) tab = 0;
 
         final q = search.text.trim().toLowerCase();
-        final allDues = store.dueItems();
+        final allDues = store.dueItems().where((d) {
+          final inst = d.installmentId == null
+              ? null
+              : store.installments.where((i) => i.id == d.installmentId).firstOrNull;
+          return _matchesFinancePeriod(
+            store,
+            yearId: inst?.academicYearId,
+            dueDate: isoDate(d.dueDate),
+          );
+        }).toList();
 
         // الإجراء يتبع التبويب: قبض دفعة، أو سند صرف في تبويب المصروفات
         final ThumbAction? action;
@@ -102,6 +213,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
                   },
                 )
               : null;
+        } else if (tab == 4) {
+          action = null;
         } else {
           action = store.can('finance.collect')
               ? ThumbAction(
@@ -118,16 +231,20 @@ class _FinanceScreenState extends State<FinanceScreen> {
               : null;
         }
 
+        final net = showExpenses ? _periodNet(store) : null;
+
         return ThumbActionLayer(
           action: action,
           child: Column(
             children: [
+              _periodBar(store, showExpenses, net),
               _tabBar(store, allDues.length, showExpenses),
               Expanded(
                 child: switch (tab) {
                   1 => _payments(context, store, q),
                   2 => _expenses(store),
                   3 => _generalIncome(context, store),
+                  4 => _controls(context, store),
                   _ => _dues(context, store, allDues, q),
                 },
               ),
@@ -140,9 +257,59 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   // ── التبويبات ─────────────────────────────────────────────────────────────
 
+  Widget _periodBar(
+    AppStore store,
+    bool showExpenses,
+    ({double received, double spent, double net})? net,
+  ) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 4),
+      color: Colors.white,
+      child: Row(
+        children: [
+          FilterButton(
+            value: financeYearFilter,
+            options: {
+              'current': 'عام التشغيل',
+              'all': 'كل الأعوام',
+              for (final y in store.academicYears) y.id: y.label,
+            },
+            onSelected: (v) => setState(() => financeYearFilter = v),
+          ),
+          const SizedBox(width: 6),
+          FilterButton(
+            value: termFilter,
+            options: const {
+              'all': 'كل الفصول',
+              'term_1': 'الفصل الأول',
+              'term_2': 'الفصل الثاني',
+            },
+            onSelected: (v) => setState(() => termFilter = v),
+          ),
+          if (showExpenses && net != null) ...[
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'صافي ${money(net.net)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: net.net >= 0 ? AppColors.heading : AppColors.danger,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _tabBar(AppStore store, int dueCount, bool showExpenses) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6),
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: AppColors.line)),
@@ -152,7 +319,6 @@ class _FinanceScreenState extends State<FinanceScreen> {
           Expanded(
             child: _tab(
               'المستحقات',
-              Icons.schedule,
               0,
               dueCount,
               alert: dueCount > 0,
@@ -161,16 +327,14 @@ class _FinanceScreenState extends State<FinanceScreen> {
           Expanded(
             child: _tab(
               'المقبوضات',
-              Icons.receipt_long_outlined,
               1,
-              store.paymentsInViewedYear.length,
+              _periodPayments(store).length,
             ),
           ),
           if (showExpenses)
             Expanded(
               child: _tab(
                 'المصروفات',
-                Icons.payments_outlined,
                 2,
                 store.expenses.length + store.teacherPayouts.length,
               ),
@@ -178,9 +342,16 @@ class _FinanceScreenState extends State<FinanceScreen> {
           Expanded(
             child: _tab(
               'إيرادات',
-              Icons.savings_outlined,
               3,
               store.generalIncomes.length,
+            ),
+          ),
+          Expanded(
+            child: _tab(
+              'الرقابة',
+              4,
+              store.pendingFinanceRequests.length,
+              alert: store.pendingFinanceRequests.isNotEmpty,
             ),
           ),
         ],
@@ -190,7 +361,6 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   Widget _tab(
     String label,
-    IconData icon,
     int index,
     int count, {
     bool alert = false,
@@ -207,8 +377,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
         });
       },
       child: Container(
-        height: 46,
-        padding: const EdgeInsets.symmetric(horizontal: 4),
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
@@ -219,40 +390,46 @@ class _FinanceScreenState extends State<FinanceScreen> {
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 15, color: fg),
-            const SizedBox(width: 5),
             Flexible(
               child: Text(
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.w800,
+                  height: 1.1,
                   color: fg,
                 ),
               ),
             ),
-            const SizedBox(width: 5),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(Corner.chip),
-                color: alert ? AppColors.dangerSoft : const Color(0xFFF1F5F9),
-                border: Border.all(
-                  color: alert ? AppColors.dangerBorder : AppColors.line,
+            if (count > 0) ...[
+              const SizedBox(width: 3),
+              Container(
+                constraints: const BoxConstraints(minWidth: 15),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: alert ? AppColors.dangerSoft : const Color(0xFFF1F5F9),
+                  border: Border.all(
+                    color: alert ? AppColors.dangerBorder : AppColors.line,
+                  ),
+                ),
+                child: Text(
+                  count > 99 ? '99+' : '$count',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 9,
+                    height: 1.1,
+                    fontWeight: FontWeight.w800,
+                    color: alert ? AppColors.danger : AppColors.muted,
+                  ),
                 ),
               ),
-              child: Text(
-                '$count',
-                style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w800,
-                  color: alert ? AppColors.danger : AppColors.muted,
-                ),
-              ),
-            ),
+            ],
           ],
         ),
       ),
@@ -326,7 +503,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
   // ── المقبوضات ─────────────────────────────────────────────────────────────
 
   Widget _payments(BuildContext context, AppStore store, String q) {
-    final yearPayments = store.paymentsInViewedYear;
+    final yearPayments = _periodPayments(store);
     final pays = yearPayments.where((p) {
       final name = (store.studentById(p.studentId)?.fullName ?? '')
           .toLowerCase();
@@ -344,13 +521,17 @@ class _FinanceScreenState extends State<FinanceScreen> {
           status.isEmpty ||
           (status == 'active' && !p.cancelled) ||
           (status == 'cancelled' && p.cancelled);
-      return matchQ && matchM && matchS;
+      final matchSource = sourceFilter.isEmpty ||
+          (sourceFilter == 'students' && p.studentId.isNotEmpty) ||
+          (sourceFilter == 'other' && p.studentId.isEmpty);
+      return matchQ && matchM && matchS && matchSource;
     }).toList();
     sortPayments(pays);
 
     final active = pays.where((p) => !p.cancelled).toList();
     final collected = active.fold<double>(0, (a, p) => a + p.amount);
     final cancelled = pays.length - active.length;
+    final refunded = active.where((p) => p.amount < 0).length;
     return Column(
       children: [
         _toolbar(
@@ -359,6 +540,16 @@ class _FinanceScreenState extends State<FinanceScreen> {
           total: yearPayments.length,
           filter: GroupedFilterButton(
             groups: [
+              FilterGroup(
+                title: 'المصدر',
+                options: const {
+                  '': 'الكل',
+                  'students': 'الطلاب',
+                  'other': 'إيرادات أخرى',
+                },
+                value: sourceFilter,
+                onSelected: (v) => setState(() => sourceFilter = v),
+              ),
               FilterGroup(
                 title: 'طريقة الدفع',
                 options: {
@@ -382,7 +573,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
             header: [
               if (store.pendingFinanceRequests.isNotEmpty) ...[
                 InkWell(
-                  onTap: () => _showFinanceRequests(context, store),
+                  onTap: () => setState(() => tab = 4),
                   child: InfoStrip(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -413,7 +604,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                         Padding(
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
-                            'اضغط لعرض الطلبات ومعالجتها',
+                            'اضغط لفتح تبويب الطلبات والرقابة',
                             style: TextStyle(
                               color: AppColors.heading,
                               fontSize: 10,
@@ -434,12 +625,21 @@ class _FinanceScreenState extends State<FinanceScreen> {
                     value: money(collected),
                     color: AppColors.success,
                     caption: '${active.length} سند معتمد',
+                    compact: true,
+                  ),
+                  StatCard(
+                    label: 'مستردة',
+                    value: '$refunded',
+                    color: refunded > 0 ? AppColors.danger : AppColors.heading,
+                    caption: 'ردود وعكوس',
+                    compact: true,
                   ),
                   StatCard(
                     label: 'السندات الملغاة',
                     value: '$cancelled',
                     color: cancelled > 0 ? AppColors.danger : AppColors.heading,
                     caption: 'من ${pays.length} سند',
+                    compact: true,
                   ),
                 ],
               ),
@@ -448,17 +648,29 @@ class _FinanceScreenState extends State<FinanceScreen> {
             empty: const EmptyState(
               message: 'لا توجد دفعات مسجلة مطابقة للبحث',
             ),
-            item: (context, i) => _PaymentCard(
-              payment: pays[i],
-              student: store.studentById(pays[i].studentId),
-              onCancel: !pays[i].cancelled
-                  ? () => _cancel(context, store, pays[i])
-                  : null,
-            ),
+            item: (context, i) {
+              final p = pays[i];
+              return _PaymentCard(
+                payment: p,
+                student: store.studentById(p.studentId),
+                onCancel: _canCancelPayment(p)
+                    ? () => _cancel(context, store, p)
+                    : null,
+              );
+            },
           ),
         ),
       ],
     );
+  }
+
+  /// هل يظهر زر الإلغاء/العكس — مطابق لمنطق Finance.tsx.
+  bool _canCancelPayment(Payment p) {
+    if (p.cancelled || p.reversedByPaymentId != null) return false;
+    final sameDay = dateOnly(p.date) == dateOnly(DateTime.now());
+    // سند سالب (رد/عكس) من يوم سابق لا يُبطَل من الواجهة
+    if (p.amount < 0 && !sameDay) return false;
+    return true;
   }
 
   Future<void> _cancel(BuildContext context, AppStore store, Payment p) async {
@@ -559,201 +771,372 @@ class _FinanceScreenState extends State<FinanceScreen> {
     }
   }
 
-  Future<void> _showFinanceRequests(
+  Future<void> _rejectFinanceRequest(
     BuildContext context,
     AppStore store,
+    FinanceRequest request,
   ) async {
-    await showModalBottomSheet<void>(
+    final note = TextEditingController();
+    final ok = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(Corner.dialog),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          14,
+          16,
+          14 + MediaQuery.viewInsetsOf(ctx).bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'رفض الطلب',
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: note,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'سبب الرفض (يراه الموظف)',
+              ),
+            ),
+            const SizedBox(height: 12),
+            PrimaryButton(
+              label: 'تأكيد الرفض',
+              color: AppColors.danger,
+              onPressed: () {
+                if (note.text.trim().isEmpty) {
+                  showAppSnack(ctx, 'اكتب سبب الرفض', error: true);
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+            ),
+          ],
         ),
       ),
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) {
-          final requests = store.pendingFinanceRequests;
+    );
+    if (ok == true) {
+      store.rejectFinanceRequest(request.id, note.text);
+    }
+    note.dispose();
+  }
 
-          Future<void> reject(FinanceRequest request) async {
-            final note = TextEditingController();
-            final ok = await showModalBottomSheet<bool>(
-              context: context,
-              isScrollControlled: true,
-              backgroundColor: Colors.white,
-              builder: (ctx) => Padding(
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  14,
-                  16,
-                  14 + MediaQuery.viewInsetsOf(ctx).bottom,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      'رفض الطلب',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: note,
-                      autofocus: true,
-                      decoration: const InputDecoration(
-                        labelText: 'سبب الرفض (يراه الموظف)',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    PrimaryButton(
-                      label: 'تأكيد الرفض',
-                      color: AppColors.danger,
-                      onPressed: () {
-                        if (note.text.trim().isEmpty) {
-                          showAppSnack(ctx, 'اكتب سبب الرفض', error: true);
-                          return;
-                        }
-                        Navigator.pop(ctx, true);
-                      },
-                    ),
-                  ],
+  /// تبويب الطلبات والرقابة — المقابل لـ `FinanceControlPanel.tsx`.
+  Widget _controls(BuildContext context, AppStore store) {
+    final pending = store.pendingFinanceRequests;
+    final done = store.financeRequests
+        .where((r) => r.status != 'pending')
+        .toList()
+      ..sort((a, b) => (b.updatedAt ?? b.createdAt ?? '')
+          .compareTo(a.updatedAt ?? a.createdAt ?? ''));
+    final auditUsers = {
+      for (final a in store.financeAudit)
+        if (a.userName.trim().isNotEmpty) a.userName,
+    }.toList()
+      ..sort();
+    final audit = store.financeAudit.where((a) {
+      if (auditUserFilter.isNotEmpty && a.userName != auditUserFilter) {
+        return false;
+      }
+      if (auditActionFilter.isNotEmpty && a.action != auditActionFilter) {
+        return false;
+      }
+      return true;
+    }).toList()
+      ..sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
+
+    Widget requestCard(FinanceRequest request) {
+      final pendingRow = request.status == 'pending';
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: AppCard(
+          padding: const EdgeInsets.all(11),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                [
+                  financeRequestLabel(request.kind),
+                  if (request.studentName.isNotEmpty) request.studentName,
+                ].join(' — '),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12.5,
+                  color: AppColors.text,
                 ),
               ),
-            );
-            if (ok == true) {
-              store.rejectFinanceRequest(request.id, note.text);
-              setSheetState(() {});
-            }
-            note.dispose();
-          }
-
-          return SafeArea(
-            top: false,
-            child: DraggableScrollableSheet(
-              expand: false,
-              initialChildSize: .72,
-              minChildSize: .4,
-              maxChildSize: .94,
-              builder: (context, controller) => ListView(
-                controller: controller,
-                padding: const EdgeInsets.fromLTRB(12, 14, 12, 20),
-                children: [
+              const SizedBox(height: 4),
+              Text(
+                request.summary,
+                style: const TextStyle(
+                  color: AppColors.text,
+                  fontSize: 11.5,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                [
+                  'السبب: ${request.reason}',
+                  if (request.requestedByName.isNotEmpty)
+                    'من ${request.requestedByName}',
+                  if ((request.createdAt ?? '').isNotEmpty)
+                    (request.createdAt ?? '').split('T').first,
+                ].join('  ·  '),
+                style: const TextStyle(
+                  color: AppColors.muted,
+                  fontSize: 10.5,
+                  height: 1.45,
+                ),
+              ),
+              if (!pendingRow) ...[
+                const SizedBox(height: 4),
+                Text(
+                  [
+                    request.status == 'approved' ? 'وافق' : 'رفض',
+                    if (request.decidedByName.isNotEmpty) request.decidedByName,
+                    if ((request.decidedAt ?? '').isNotEmpty)
+                      (request.decidedAt ?? '').split('T').first,
+                    if (request.decisionNote.isNotEmpty)
+                      '— ${request.decisionNote}',
+                  ].join(' '),
+                  style: TextStyle(
+                    color: request.status == 'approved'
+                        ? AppColors.success
+                        : AppColors.danger,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+              if (pendingRow) ...[
+                const SizedBox(height: 9),
+                if (store.isFinanceAdmin)
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          'طلبات الموافقة المالية (${requests.length})',
-                          style: TextStyle(
-                            color: AppColors.heading,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 15,
-                          ),
+                        child: PrimaryButton(
+                          label: 'موافقة وتنفيذ',
+                          color: AppColors.success,
+                          onPressed: () {
+                            try {
+                              store.approveFinanceRequest(request.id);
+                            } on StoreException catch (e) {
+                              showAppSnack(context, e.message, error: true);
+                            }
+                          },
                         ),
                       ),
-                      IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: GhostButton(
+                          label: 'رفض',
+                          onPressed: () =>
+                              _rejectFinanceRequest(context, store, request),
+                        ),
                       ),
                     ],
+                  )
+                else
+                  Text(
+                    'بانتظار المدير',
+                    textAlign: TextAlign.end,
+                    style: TextStyle(
+                      color: AppColors.amberDark,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                  if (requests.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 50),
-                      child: Text(
-                        'لا طلبات معلّقة',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: AppColors.muted),
-                      ),
-                    )
-                  else
-                    for (final request in requests)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: AppCard(
-                          padding: const EdgeInsets.all(11),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Text(
-                                request.summary,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 12.5,
-                                  color: AppColors.text,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                [
-                                  if (request.studentName.isNotEmpty)
-                                    request.studentName,
-                                  'السبب: ${request.reason}',
-                                  if (request.requestedByName.isNotEmpty)
-                                    'من ${request.requestedByName}',
-                                ].join('  ·  '),
-                                style: const TextStyle(
-                                  color: AppColors.muted,
-                                  fontSize: 10.5,
-                                  height: 1.45,
-                                ),
-                              ),
-                              const SizedBox(height: 9),
-                              if (store.isFinanceAdmin)
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: PrimaryButton(
-                                        label: 'موافقة وتنفيذ',
-                                        color: AppColors.success,
-                                        onPressed: () {
-                                          try {
-                                            store.approveFinanceRequest(
-                                              request.id,
-                                            );
-                                            setSheetState(() {});
-                                          } on StoreException catch (e) {
-                                            showAppSnack(
-                                              context,
-                                              e.message,
-                                              error: true,
-                                            );
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: GhostButton(
-                                        label: 'رفض',
-                                        onPressed: () => reject(request),
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              else
-                                Text(
-                                  'بانتظار المدير',
-                                  textAlign: TextAlign.end,
-                                  style: TextStyle(
-                                    color: AppColors.amberDark,
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                ],
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 24),
+      children: [
+        Text(
+          'طلبات بانتظار الموافقة (${pending.length})',
+          style: TextStyle(
+            color: AppColors.heading,
+            fontWeight: FontWeight.w900,
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (pending.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 18),
+            child: Text(
+              'لا طلبات معلّقة',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.muted, fontSize: 12),
+            ),
+          )
+        else
+          for (final r in pending) requestCard(r),
+        if (done.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          TextButton(
+            onPressed: () =>
+                setState(() => showProcessedRequests = !showProcessedRequests),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.navy,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              alignment: AlignmentDirectional.centerStart,
+              textStyle: const TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 11.5,
               ),
             ),
-          );
-        },
-      ),
+            child: Text(
+              showProcessedRequests
+                  ? 'إخفاء الطلبات المُعالجة (${done.length})'
+                  : 'عرض الطلبات المُعالجة (${done.length})',
+            ),
+          ),
+          if (showProcessedRequests)
+            for (final r in done) requestCard(r),
+        ],
+        if (store.isFinanceAdmin) ...[
+          const SizedBox(height: 16),
+          Text(
+            'سجل الحركات الحساسة',
+            style: TextStyle(
+              color: AppColors.heading,
+              fontWeight: FontWeight.w900,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: AppDropdown<String>(
+                  value: auditUserFilter.isEmpty ? null : auditUserFilter,
+                  hint: 'كل الموظفين',
+                  items: [
+                    const DropdownMenuItem(value: '', child: Text('كل الموظفين')),
+                    for (final u in auditUsers)
+                      DropdownMenuItem(value: u, child: Text(u)),
+                  ],
+                  onChanged: (v) =>
+                      setState(() => auditUserFilter = v ?? ''),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: AppDropdown<String>(
+                  value: auditActionFilter.isEmpty ? null : auditActionFilter,
+                  hint: 'كل الحركات',
+                  items: [
+                    const DropdownMenuItem(value: '', child: Text('كل الحركات')),
+                    for (final e in financeAuditActionLabels.entries)
+                      DropdownMenuItem(value: e.key, child: Text(e.value)),
+                  ],
+                  onChanged: (v) =>
+                      setState(() => auditActionFilter = v ?? ''),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (audit.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 18),
+              child: Text(
+                'لا حركات',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.muted, fontSize: 12),
+              ),
+            )
+          else
+            for (final a in audit)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: AppCard(
+                  padding: const EdgeInsets.all(11),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              financeAuditActionLabel(a.action),
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
+                                color: AppColors.heading,
+                              ),
+                            ),
+                          ),
+                          if (a.amount != null)
+                            Text(
+                              money(a.amount!),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 12,
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        [
+                          if (a.userName.isNotEmpty) a.userName,
+                          if ((a.createdAt ?? '').isNotEmpty)
+                            (a.createdAt ?? '').replaceFirst('T', ' ').split('.').first,
+                        ].join('  ·  '),
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 10.5,
+                        ),
+                      ),
+                      if (a.studentName.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          a.studentName,
+                          style: const TextStyle(
+                            color: AppColors.text,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 3),
+                      Text(
+                        a.summary,
+                        style: const TextStyle(
+                          color: AppColors.text,
+                          fontSize: 11.5,
+                          height: 1.35,
+                        ),
+                      ),
+                      if (a.reason.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          'السبب: ${a.reason}',
+                          style: const TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 10.5,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+        ],
+      ],
     );
   }
 
@@ -774,8 +1157,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
       final matchS =
           dueStage.isEmpty ||
           (dueStage == 'late' && d.late) ||
-          (dueStage == 'due' && !d.late && !d.scheduled) ||
-          (dueStage == 'scheduled' && d.scheduled);
+          (dueStage == 'due' && !d.late && !d.scheduled);
       return matchQ && matchS;
     }).toList();
 
@@ -816,6 +1198,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                     value: money(total),
                     color: AppColors.danger,
                     caption: '${dues.length} بند',
+                    compact: true,
                   ),
                   // للإدارة وحدها: متوقع لا يُطالَب به قبل موعده
                   StatCard(
@@ -823,12 +1206,14 @@ class _FinanceScreenState extends State<FinanceScreen> {
                     value: money(store.projectRemainingYear()),
                     color: AppColors.heading,
                     caption: 'متوقع',
+                    compact: true,
                   ),
                   StatCard(
                     label: 'طلاب عليهم مستحقات',
                     value: '$debtors',
                     color: AppColors.heading,
                     caption: 'من ${store.students.length} طالب',
+                    compact: true,
                   ),
                 ],
               ),
@@ -906,12 +1291,14 @@ class _FinanceScreenState extends State<FinanceScreen> {
               value: money(total),
               color: AppColors.success,
               caption: '${active.length} سند معتمد',
+              compact: true,
             ),
             StatCard(
               label: 'كل السندات',
               value: '${rows.length}',
               color: AppColors.heading,
               caption: store.viewedAcademicYear?.label ?? 'العام المعروض',
+              compact: true,
             ),
           ],
         ),
@@ -941,68 +1328,102 @@ class _FinanceScreenState extends State<FinanceScreen> {
   /// سجل موحّد للمصروفات وأجور المعلمين مرتّب بالتاريخ تنازلياً —
   /// نفس دمج القائمتين في جدول واحد في Finance.tsx.
   Widget _expenses(AppStore store) {
+    final linked = statementTeacherId.isEmpty
+        ? null
+        : store.linkedTeacherIds(statementTeacherId);
     final expenses = store.expenses;
-    final payouts = store.teacherPayouts;
+    final payouts = [
+      for (final p in store.teacherPayouts)
+        if (linked == null || linked.contains(p.teacherId)) p,
+    ];
     final rows = <_SpendRow>[
       for (final e in expenses)
-        _SpendRow(
-          date: e.expenseDate,
-          isPayout: false,
-          category: expenseCategoryLabel(e.category),
-          description: e.description,
-          amount: e.amount,
-          method: e.method,
-          voucher: ExpenseVoucher.fromExpense(e),
-        ),
+        if (linked == null)
+          _SpendRow(
+            date: e.expenseDate,
+            isPayout: false,
+            category: expenseCategoryLabel(e.category),
+            description: e.description,
+            amount: e.amount,
+            method: e.method,
+            voucher: ExpenseVoucher.fromExpense(e),
+          ),
       for (final p in payouts)
         _SpendRow(
           date: p.paymentDate,
           isPayout: true,
-          category: 'أجور تدريس',
-          // الاسم المجمَّد وقت الصرف أولاً: سند سابق لا يتغيّر نصّه إذا عُدّل اسم
-          // المعلم أو حُذف بعد صرفه — مطابق لـ `p.teacher_name || t?.name`
-          description: switch (p.teacherName.trim().isNotEmpty
-              ? p.teacherName.trim()
-              : (store.teacherById(p.teacherId)?.name ?? '')) {
-            '' => 'صرف مستحقات معلم',
-            final name => 'صرف مستحقات المعلم: $name',
-          },
+          category: payoutExpenseCategory,
+          description: payoutDescription(
+            p,
+            fallbackName: store.teacherById(p.teacherId)?.name ?? '',
+          ),
           amount: p.amount,
           method: p.method,
-          voucher: ExpenseVoucher.fromPayout(p),
+          voucher: ExpenseVoucher.fromPayout(
+            p,
+            fallbackName: store.teacherById(p.teacherId)?.name ?? '',
+          ),
         ),
     ]..sort((a, b) => b.date.compareTo(a.date));
 
-    return _list(
-      header: [
-        _SalariesDueCard(store: store),
-        const SizedBox(height: 8),
-        StatRow(
-          children: [
-            StatCard(
-              label: 'المصروفات',
-              value: money(store.totalExpenses + store.totalPayouts),
-              color: AppColors.danger,
-              caption: '${rows.length} سند',
-            ),
-            StatCard(
-              label: 'تشغيلية',
-              value: money(store.totalExpenses),
-              color: AppColors.heading,
-              caption: '${expenses.length} سند',
-            ),
-            StatCard(
-              label: 'أجور معلمين',
-              value: money(store.totalPayouts),
-              color: AppColors.amber,
-              caption: '${payouts.length} دفعة',
-            ),
-          ],
+    final payoutTotal = payouts.fold<double>(0, (a, p) => a + p.amount);
+    final expenseTotal = linked == null
+        ? store.totalExpenses
+        : 0.0;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+          child: AppDropdown<String>(
+            value: statementTeacherId.isEmpty ? null : statementTeacherId,
+            hint: 'كل المعلمين',
+            items: [
+              const DropdownMenuItem(value: '', child: Text('كل المعلمين')),
+              for (final t in store.teachersInViewedYear)
+                DropdownMenuItem(value: t.id, child: Text(t.name)),
+            ],
+            onChanged: (v) => setState(() => statementTeacherId = v ?? ''),
+          ),
+        ),
+        Expanded(
+          child: _list(
+            header: [
+              _SalariesDueCard(store: store),
+              const SizedBox(height: 8),
+              StatRow(
+                children: [
+                  StatCard(
+                    label: linked == null ? 'المصروفات' : 'سندات المعلم',
+                    value: money(expenseTotal + payoutTotal),
+                    color: AppColors.danger,
+                    caption: '${rows.length} سند',
+                    compact: true,
+                  ),
+                  if (linked == null)
+                    StatCard(
+                      label: 'تشغيلية',
+                      value: money(store.totalExpenses),
+                      color: AppColors.heading,
+                      caption: '${expenses.length} سند',
+                      compact: true,
+                    ),
+                  StatCard(
+                    label: 'أجور معلمين',
+                    value: money(payoutTotal),
+                    color: AppColors.amber,
+                    caption: '${payouts.length} دفعة',
+                    compact: true,
+                  ),
+                ],
+              ),
+            ],
+            count: rows.length,
+            empty: const EmptyState(message: 'لا سندات صرف'),
+            item: (context, i) => _SpendCard(row: rows[i]),
+          ),
         ),
       ],
-      count: rows.length,
-      empty: const EmptyState(message: 'لا سندات صرف'),
-      item: (context, i) => _SpendCard(row: rows[i]),
     );
   }
 }
@@ -1055,13 +1476,21 @@ class _PaymentCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = payment;
-    final name =
-        student?.fullName ??
-        (p.notes.trim().isEmpty ? 'سند عام' : p.notes.trim());
+    final payer = p.payerName.trim();
+    final category = p.incomeCategory.trim();
+    final name = student?.fullName ??
+        (payer.isNotEmpty
+            ? (category.isNotEmpty ? '$payer · $category' : payer)
+            : (p.notes.trim().isEmpty ? 'سند عام' : p.notes.trim()));
     final method = [
       StoreScope.of(context).paymentMethodLabel(p.method),
-      if (p.reference.trim().isNotEmpty) '#${p.reference.trim()}',
+      if (p.reference.trim().isNotEmpty) '(${p.reference.trim()})',
     ].join('  ');
+    final reversed = p.reversedByPaymentId != null;
+    final sameDay = dateOnly(p.date) == dateOnly(DateTime.now());
+    final amountColor = p.cancelled
+        ? AppColors.faint
+        : (p.amount < 0 ? AppColors.danger : AppColors.success);
 
     return AppCard(
       onTap: () => ReceiptScreen.open(context, p),
@@ -1085,12 +1514,25 @@ class _PaymentCard extends StatelessWidget {
                 style: TextStyle(
                   fontWeight: FontWeight.w900,
                   fontSize: 15,
-                  color: p.cancelled ? AppColors.faint : AppColors.success,
+                  color: amountColor,
                   decoration: p.cancelled ? TextDecoration.lineThrough : null,
                 ),
               ),
             ],
           ),
+          if (p.discountAmount.abs() > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                '(خصم: -${money(p.discountAmount.abs())})',
+                textAlign: TextAlign.end,
+                style: const TextStyle(
+                  color: AppColors.danger,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
           const SizedBox(height: 3),
           Row(
             children: [
@@ -1138,9 +1580,12 @@ class _PaymentCard extends StatelessWidget {
           const _Rule(),
           Row(
             children: [
-              p.cancelled
-                  ? StatusChip.danger('ملغى')
-                  : StatusChip.success('معتمد'),
+              if (p.cancelled)
+                StatusChip.danger('ملغى')
+              else if (reversed)
+                StatusChip.muted('معكوس')
+              else
+                StatusChip.success('معتمد'),
               const SizedBox(width: 8),
               Expanded(
                 child: Align(
@@ -1158,7 +1603,7 @@ class _PaymentCard extends StatelessWidget {
                         border: AppColors.lineStrong,
                         onTap: () => ReceiptScreen.open(context, p),
                       ),
-                      if (!p.cancelled && student != null)
+                      if (!p.cancelled && !reversed && student != null)
                         TileButton(
                           label: 'واتساب',
                           icon: const MessageCircleIcon(
@@ -1173,7 +1618,7 @@ class _PaymentCard extends StatelessWidget {
                         ),
                       if (onCancel != null)
                         TileButton(
-                          label: 'إلغاء',
+                          label: sameDay ? 'إلغاء' : 'عكس',
                           icon: const Icon(Icons.block, size: 13),
                           color: AppColors.danger,
                           background: Colors.white,
@@ -1336,7 +1781,7 @@ class _SpendCard extends StatelessWidget {
     );
     final details = [
       day == null ? row.date : formatDate(day),
-      expenseMethodNames[row.method] ?? row.method,
+      StoreScope.of(context).paymentMethodLabel(row.method),
     ].join('  ·  ');
 
     return AppCard(
@@ -1502,11 +1947,11 @@ class _SalariesDueCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (store.teachers.isEmpty) return const SizedBox.shrink();
+    if (store.teachersInViewedYear.isEmpty) return const SizedBox.shrink();
     final month = monthKeyOf(DateTime.now());
     final rows = [
-      for (final t in store.teachers)
-        (teacher: t, paid: paidInMonth(store.teacherPayouts, t.id, month)),
+      for (final t in store.teachersInViewedYear)
+        (teacher: t, paid: paidInMonth(store.teacherPayouts, store.linkedTeacherIds(t.id), month)),
     ];
     final total = rows.fold<double>(0, (sum, r) => sum + r.paid.total);
 
@@ -1621,15 +2066,38 @@ Future<int> showPayrollSheet(
   required String month,
 }) async {
   final amounts = <String, TextEditingController>{
-    for (final t in store.teachers)
+    for (final t in store.teachersInViewedYear)
       t.id: TextEditingController(text: t.rate > 0 ? trimNum(t.rate) : ''),
   };
   final chosen = <String>{};
+  var payrollMonth = month;
   var date = DateTime.now();
-  var method = store.activePaymentMethods.firstOrNull?.id ?? 'cash';
+  var method = store.activePaymentMethods
+          .where((m) => m.isDefault)
+          .firstOrNull
+          ?.id ??
+      store.activePaymentMethods.firstOrNull?.id ??
+      'cash';
+  var payoutType = 'salary';
 
   double amountOf(String id) =>
       double.tryParse(amounts[id]?.text.trim() ?? '') ?? 0;
+
+  String shiftMonth(String key, int delta) {
+    final parts = key.split('-');
+    final y = int.tryParse(parts.first) ?? DateTime.now().year;
+    final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 1 : 1;
+    final d = DateTime(y, m + delta, 1);
+    return monthKeyOf(d);
+  }
+
+  void refillAmounts() {
+    for (final t in store.teachersInViewedYear) {
+      final ctl = amounts[t.id];
+      if (ctl == null) continue;
+      ctl.text = payoutType == 'salary' && t.rate > 0 ? trimNum(t.rate) : '';
+    }
+  }
 
   final saved = await showModalBottomSheet<int>(
     context: context,
@@ -1639,6 +2107,30 @@ Future<int> showPayrollSheet(
       builder: (ctx, setSt) {
         final selected = chosen.where((id) => amountOf(id) > 0).toList();
         final total = selected.fold<double>(0, (sum, id) => sum + amountOf(id));
+        final title = payoutType == 'advance'
+            ? 'صرف سلف'
+            : payoutType == 'bonus'
+                ? 'صرف مكافآت'
+                : 'صرف رواتب';
+
+        void toggleAll() {
+          setSt(() {
+            if (selected.isNotEmpty) {
+              chosen.clear();
+              return;
+            }
+            for (final t in store.teachersInViewedYear) {
+              final paid = paidInMonth(
+                store.teacherPayouts,
+                store.linkedTeacherIds(t.id),
+                payrollMonth,
+              );
+              // الراتب لا يُصرف مرتين في الشهر؛ السلفة والمكافأة بلا قيد
+              if (payoutType == 'salary' && paid.salary > 0) continue;
+              chosen.add(t.id);
+            }
+          });
+        }
 
         return Padding(
           padding: EdgeInsets.fromLTRB(
@@ -1654,7 +2146,7 @@ Future<int> showPayrollSheet(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'صرف رواتب ${monthLabel(month)}',
+                  '$title ${monthLabel(payrollMonth)}',
                   style: TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 13,
@@ -1662,6 +2154,63 @@ Future<int> showPayrollSheet(
                   ),
                 ),
                 const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppDropdown<String>(
+                        value: payoutType,
+                        items: [
+                          for (final e in payoutTypeNames.entries)
+                            DropdownMenuItem(value: e.key, child: Text('صرف ${e.value}')),
+                        ],
+                        onChanged: (v) => setSt(() {
+                          payoutType = v ?? payoutType;
+                          chosen.clear();
+                          refillAmounts();
+                        }),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.bg,
+                        borderRadius: BorderRadius.circular(Corner.box),
+                        border: Border.all(color: AppColors.line),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: 'الشهر السابق',
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.chevron_right, size: 18),
+                            onPressed: () => setSt(
+                              () => payrollMonth = shiftMonth(payrollMonth, -1),
+                            ),
+                          ),
+                          Text(
+                            monthLabel(payrollMonth),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                              color: AppColors.heading,
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'الشهر التالي',
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.chevron_left, size: 18),
+                            onPressed: () => setSt(
+                              () => payrollMonth = shiftMonth(payrollMonth, 1),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(
@@ -1700,20 +2249,38 @@ Future<int> showPayrollSheet(
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton(
+                    onPressed: toggleAll,
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.navy,
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      textStyle: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                    child: Text(selected.isEmpty ? 'تحديد الكل' : 'إلغاء الكل'),
+                  ),
+                ),
+                const SizedBox(height: 6),
                 ConstrainedBox(
                   constraints: BoxConstraints(
                     maxHeight: MediaQuery.sizeOf(ctx).height * 0.38,
                   ),
                   child: ListView.builder(
                     shrinkWrap: true,
-                    itemCount: store.teachers.length,
+                    itemCount: store.teachersInViewedYear.length,
                     itemBuilder: (_, i) {
-                      final t = store.teachers[i];
+                      final t = store.teachersInViewedYear[i];
                       final paid = paidInMonth(
                         store.teacherPayouts,
-                        t.id,
-                        month,
+                        store.linkedTeacherIds(t.id),
+                        payrollMonth,
                       );
                       return Row(
                         children: [
@@ -1742,7 +2309,14 @@ Future<int> showPayrollSheet(
                                 ),
                                 if (paid.total > 0)
                                   Text(
-                                    'صُرف ${money(paid.total)}',
+                                    [
+                                      if (paid.salary > 0)
+                                        'صُرف ${money(paid.salary)}',
+                                      if (paid.advance > 0)
+                                        'سلفة ${money(paid.advance)}',
+                                      if (paid.bonus > 0)
+                                        'مكافأة ${money(paid.bonus)}',
+                                    ].join('  ·  '),
                                     style: const TextStyle(
                                       color: AppColors.success,
                                       fontSize: 10,
@@ -1809,9 +2383,9 @@ Future<int> showPayrollSheet(
                                       teacherId: id,
                                       amount: amountOf(id),
                                       paymentDate: isoDate(date),
-                                      payoutType: 'salary',
-                                      periodStart: '$month-01',
-                                      periodEnd: monthEnd(month),
+                                      payoutType: payoutType,
+                                      periodStart: '$payrollMonth-01',
+                                      periodEnd: monthEnd(payrollMonth),
                                       method: method,
                                     );
                                   }

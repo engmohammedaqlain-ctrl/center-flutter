@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:center_mobile/data/app_update.dart';
+import 'package:center_mobile/data/download_notification.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -41,6 +42,50 @@ AppRelease _release(List<int> bytes, {int code = 5, String? hash}) => AppRelease
       sha256: hash ?? _sha(bytes),
       sizeBytes: bytes.length,
     );
+
+/// حزمةٌ تتجاوز حدّ التقسيم، فتُطلب على عدة اتصالات.
+const _big = 5 * 1024 * 1024;
+
+/// ما يقابل ترويسة `Range` من الحزمة.
+List<int> _slice(List<int> bytes, String header) {
+  final m = RegExp(r'bytes=(\d+)-(\d*)').firstMatch(header)!;
+  final from = int.parse(m.group(1)!);
+  final to = m.group(2)!.isEmpty ? bytes.length - 1 : int.parse(m.group(2)!);
+  return bytes.sublist(from, to + 1);
+}
+
+/// استضافةٌ تقبل النطاقات كما تفعل استضافة الإصدارات.
+MockClient _rangeServer(List<int> bytes, {void Function(String?)? onRange}) =>
+    MockClient.streaming((request, _) async {
+      final header = request.headers['Range'] ?? request.headers['range'];
+      onRange?.call(header);
+      if (header == null) {
+        return http.StreamedResponse(Stream.value(bytes), 200, contentLength: bytes.length);
+      }
+      final slice = _slice(bytes, header);
+      return http.StreamedResponse(Stream.value(slice), 206, contentLength: slice.length);
+    });
+
+/// وصفٌ وحزمة معاً على خادمٍ واحد.
+http.Client Function() _apkServer(List<int> bytes) => () => MockClient.streaming((request, _) async {
+      if (request.url.path.endsWith('.json')) return _json(_manifestFor(bytes));
+      return http.StreamedResponse(Stream.value(bytes), 200, contentLength: bytes.length);
+    });
+
+class _FakeNotifier implements DownloadNotifier {
+  final shown = <String>[];
+  int hidden = 0;
+  int finished = 0;
+
+  @override
+  Future<void> show(String text, {int percent = -1}) async => shown.add(text);
+
+  @override
+  Future<void> finish(String text) async => finished++;
+
+  @override
+  Future<void> hide() async => hidden++;
+}
 
 /// يقدّم الحزمة على دفعات كما تصل من الشبكة.
 MockClient _serving(List<int> bytes, {void Function()? onRequest}) => MockClient.streaming((request, _) async {
@@ -109,6 +154,7 @@ AppUpdater _updater({
   DateTime Function()? clock,
   Future<String?> Function(String path)? installer,
   PatchSource? patches,
+  DownloadNotifier? notifier,
 }) =>
     AppUpdater(
       supported: true,
@@ -119,6 +165,7 @@ AppUpdater _updater({
       client: client,
       clock: clock,
       patches: patches ?? _FakePatches([PatchStatus.upToDate]),
+      notifier: notifier ?? const SilentDownloadNotifier(),
       // العدّ التنازلي بين المحاولات لا ينتظر ثوانٍ حقيقية
       wait: (_) async {},
     );
@@ -215,6 +262,13 @@ void main() {
         isNull,
       );
       expect(await fetchLatestRelease('   '), isNull);
+    });
+  });
+
+  group('عرض الأرقام', () {
+    test('سرعةٌ دون الميجابايت تُكتب بالكيلوبايت لا صفراً', () {
+      expect(perSecond(300 * 1024), '300 ك.ب/ث');
+      expect(perSecond(3.5 * 1024 * 1024), '3.5 م.ب/ث');
     });
   });
 
@@ -324,6 +378,154 @@ void main() {
 
       expect(await again.readAsBytes(), bytes);
       expect(requests, 1);
+    });
+  });
+
+  group('تنزيل حزمة كبيرة على عدة اتصالات', () {
+    test('تُطلب نطاقاتٍ متوازية وتُلصق بترتيبها، ولا تبقى ملفاتها', () async {
+      final dir = await _tempDir();
+      final bytes = _apk(_big);
+      final ranges = <String?>[];
+
+      final file = await downloadRelease(_release(bytes), dir, client: _rangeServer(bytes, onRange: ranges.add));
+
+      expect(await file.readAsBytes(), bytes, reason: 'النطاقات تُلصق بترتيبها لا بترتيب وصولها');
+      expect(ranges.length, greaterThan(1), reason: 'اتصالٌ واحد لا يملأ خطاً سريعاً');
+      expect(ranges.every((r) => r != null && r.startsWith('bytes=')), isTrue);
+      expect(dir.listSync().map((e) => e.path), [file.path], reason: 'لا يبقى نطاقٌ ولا ملف مؤقت');
+    });
+
+    test('مجموع النطاقات هو ما يُعرض من التقدّم، ويصل إلى الحجم كاملاً', () async {
+      final dir = await _tempDir();
+      final bytes = _apk(_big);
+      final seen = <int>[];
+
+      await downloadRelease(
+        _release(bytes),
+        dir,
+        client: _rangeServer(bytes),
+        onProgress: (got, total) {
+          seen.add(got);
+          expect(total, bytes.length);
+        },
+      );
+
+      expect(seen.last, bytes.length);
+      expect(seen.reduce(math.max), bytes.length, reason: 'لا نسبة تتجاوز المئة');
+    });
+
+    test('انقطاعُ نطاقٍ لا يُضيّع ما نزل من غيره', () async {
+      final dir = await _tempDir();
+      final bytes = _apk(_big);
+      var calls = 0;
+      final client = MockClient.streaming((request, _) async {
+        final slice = _slice(bytes, request.headers['Range']!);
+        // نطاقٌ واحد يُقطع في منتصفه، وبقيّتها تصل كاملة
+        if (++calls == 3) {
+          final body = Stream<List<int>>.multi((out) {
+            out.add(slice.sublist(0, 100));
+            out.addError(http.ClientException('connection lost'));
+            out.close();
+          });
+          return http.StreamedResponse(body, 206, contentLength: slice.length);
+        }
+        return http.StreamedResponse(Stream.value(slice), 206, contentLength: slice.length);
+      });
+
+      await expectLater(
+        downloadRelease(_release(bytes), dir, client: client),
+        throwsA(isA<UpdateException>().having((e) => e.retryable, 'retryable', isTrue)),
+      );
+      final kept = await partialBytes(_release(bytes), dir);
+      expect(kept, greaterThan(bytes.length ~/ 2), reason: 'ما نزل من النطاقات السليمة لا يُرمى');
+      expect(kept, lessThan(bytes.length));
+
+      var asked = 0;
+      final file = await downloadRelease(
+        _release(bytes),
+        dir,
+        client: _rangeServer(bytes, onRange: (r) => asked += _slice(bytes, r!).length),
+      );
+
+      expect(await file.readAsBytes(), bytes);
+      expect(asked, bytes.length - kept, reason: 'يُطلب ما بقي وحده');
+    });
+
+    test('استضافةٌ لا تقبل النطاقات: اتصالٌ واحد من أوله', () async {
+      final dir = await _tempDir();
+      final bytes = _apk(_big);
+      var requests = 0;
+
+      final file = await downloadRelease(
+        _release(bytes),
+        dir,
+        client: MockClient.streaming((_, _) async {
+          requests++;
+          return http.StreamedResponse(Stream.value(bytes), 200, contentLength: bytes.length);
+        }),
+      );
+
+      expect(await file.readAsBytes(), bytes);
+      expect(requests, 1, reason: 'لا ستة اتصالات كلٌّ يجرّ الملف كاملاً');
+    });
+  });
+
+  group('إشعار التنزيل', () {
+    setUp(() => SharedPreferences.setMockInitialValues({}));
+
+    test('يبدأ مع التنزيل ويُرفع بعد أن يُفتح المثبِّت', () async {
+      final dir = await _tempDir();
+      final bytes = _apk();
+      final notifier = _FakeNotifier();
+      final updater = _updater(dir: dir, client: _apkServer(bytes), notifier: notifier);
+
+      await updater.start();
+      await updater.install();
+
+      expect(notifier.shown, isNotEmpty, reason: 'التنزيل خارج التطبيق يحتاج خدمةً في المقدمة');
+      expect(notifier.shown.first, contains('جارِ تنزيل التحديث'));
+      expect(notifier.hidden, 1);
+      expect(notifier.finished, 0);
+    });
+
+    test('اكتمل والمستخدم في تطبيقٍ آخر: إشعارٌ ينتظره ولا مثبِّت يُفتح', () async {
+      final dir = await _tempDir();
+      final bytes = _apk();
+      final notifier = _FakeNotifier();
+      var opened = 0;
+      final updater = _updater(
+        dir: dir,
+        client: _apkServer(bytes),
+        notifier: notifier,
+        installer: (_) async {
+          opened++;
+          return null;
+        },
+      )..inForeground = false;
+
+      await updater.start();
+      await updater.install();
+
+      expect(opened, 0, reason: 'أندرويد يمنع فتح نافذةٍ من الخلفية فتضيع بلا أثر');
+      expect(notifier.finished, 1);
+      expect(updater.phase, UpdatePhase.ready);
+    });
+
+    test('انقطاعٌ يُنهي التنزيل يرفع الإشعار', () async {
+      final dir = await _tempDir();
+      final bytes = _apk();
+      final notifier = _FakeNotifier();
+      http.Client server() => MockClient.streaming((request, _) async {
+            if (request.url.path.endsWith('.json')) return _json(_manifestFor(bytes));
+            throw http.ClientException('offline');
+          });
+      final updater = _updater(dir: dir, client: server, notifier: notifier);
+
+      await updater.start();
+      await updater.install();
+
+      expect(updater.phase, UpdatePhase.paused);
+      expect(notifier.hidden, 1, reason: 'إشعارٌ ثابت بلا تنزيلٍ يعمل خلفه');
     });
   });
 
@@ -528,6 +730,15 @@ void main() {
       await updater.install();
 
       expect(updater.error, 'اسمح للتطبيق بالتثبيت');
+    });
+
+    test('القرار مجهول قبل قراءة المحفوظ: الإقلاع ينتظره فلا يقلب واجهتين', () async {
+      final dir = await _tempDir();
+      final updater = _updater(dir: dir, client: _offline());
+
+      expect(updater.loaded, isFalse);
+      await updater.start();
+      expect(updater.loaded, isTrue);
     });
 
     test('حزم الإصدارات المثبَّتة تُحذف عند الإقلاع', () async {

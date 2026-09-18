@@ -85,17 +85,19 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         final canEdit = store.can('attendance');
 
         // المرحلة ثم الشعبة
-        final grades = store.rooms.map((r) => r.gradeLevel).where((g) => g.trim().isNotEmpty).toSet().toList();
+        final grades = store.roomsInViewedYear.map((r) => r.gradeLevel).where((g) => g.trim().isNotEmpty).toSet().toList();
         final currentGrade =
             grade != null && grades.contains(grade) ? grade : (grades.isNotEmpty ? grades.first : null);
-        final owners = store.rooms.where((r) => currentGrade == null || r.gradeLevel == currentGrade).toList();
+        final owners = store.roomsInViewedYear.where((r) => currentGrade == null || r.gradeLevel == currentGrade).toList();
 
         final ownerIds = owners.map((r) => r.id).toList();
         final currentOwner =
             (ownerId != null && ownerIds.contains(ownerId)) ? ownerId! : (ownerIds.isNotEmpty ? ownerIds.first : '');
-        final room = store.rooms.where((r) => r.id == currentOwner).firstOrNull;
+        final room = store.roomById(currentOwner);
 
-        final list = room == null ? <Student>[] : store.attendanceRosterOf(room);
+        final list = room == null
+            ? <Student>[]
+            : store.attendanceRosterOf(room, weekDates: week.map((d) => d.dateStr));
         final ownerName = room?.name ?? '';
 
         // اليوم المختار داخل الأسبوع المعروض، وإلا اليوم الحالي أو أوله
@@ -126,7 +128,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   color: AppColors.success,
                   onPressed: list.isEmpty || currentOwner.isEmpty
                       ? null
-                      : () => store.markAllPresent(day.dateStr, list, ownerId: currentOwner),
+                      : () {
+                          store.markAllPresent(day.dateStr, list, ownerId: currentOwner);
+                          showAppSnack(context, 'تم الحفظ');
+                        },
                 )
               : null,
           child: Column(
@@ -567,7 +572,7 @@ class _StudentRowState extends State<_StudentRow> {
 
     final buttons = [
       _markButton(
-        label: 'حاضر ✓',
+        label: 'حاضر',
         on: present,
         fg: AppColors.success,
         softBg: const Color(0xFFF0FDF4),
@@ -575,7 +580,7 @@ class _StudentRowState extends State<_StudentRow> {
         onTap: canEdit ? () => _tap(present ? null : 'present') : null,
       ),
       _markButton(
-        label: 'غائب ✗',
+        label: 'غائب',
         on: absent,
         fg: AppColors.danger,
         softBg: const Color(0xFFFEF2F2),

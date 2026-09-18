@@ -23,32 +23,42 @@ class ReceiptScreen {
       return;
     }
 
-    final remaining = payment.remainingAfter > 0
-        ? money(payment.remainingAfter)
-        : (student.balance < 0 ? money(student.balance.abs()) : '0 ₪ (مسدد بالكامل)');
+    final remainingText = payment.remainingAfter > 0
+        ? '${_shekel(payment.remainingAfter)} شيكل'
+        : (student.balance < 0
+            ? '${_shekel(student.balance.abs())} شيكل'
+            : '0 شيكل (مسدد بالكامل)');
+
+    final purpose = paymentPurposeLabel(payment.purpose);
+    final note = payment.notes.trim();
+    final statement = note.isNotEmpty && note != purpose ? '$purpose — $note' : purpose;
 
     final msg = StringBuffer()
       ..writeln('السلام عليكم ورحمة الله وبركاته')
       ..writeln('حضرة ولي أمر الطالب/ة: *${student.fullName}* المحترم')
       ..writeln()
-      ..writeln('نحيطكم علماً بأنه تم تسديد دفعة مالية وتوثيق وصل رسمي:')
-      ..writeln('*رقم الوصل:* ${payment.receiptNumber}')
-      ..writeln('*المبلغ:* ${money(payment.amount)}')
-      ..writeln('*طريقة الدفع:* ${StoreScope.of(context).paymentMethodLabel(payment.method)}')
-      ..writeln('*البيان:* ${paymentPurposeNames[payment.purpose] ?? payment.purpose}');
-    if (payment.senderName.isNotEmpty) msg.writeln('*المحول منه:* ${payment.senderName}');
-    if (payment.reference.isNotEmpty) msg.writeln('*الرقم المرجعي:* ${payment.reference}');
+      ..writeln('إشعار استلام دفعة مالية:')
+      ..writeln('- رقم الوصل: ${payment.receiptNumber}')
+      ..writeln('- المبلغ: ${_shekel(payment.amount.abs())} شيكل')
+      ..writeln('- طريقة الدفع: ${StoreScope.of(context).paymentMethodLabel(payment.method)}')
+      ..writeln('- البيان: $statement');
+    if (payment.senderName.isNotEmpty) msg.writeln('- اسم المحول: ${payment.senderName}');
+    if (payment.reference.isNotEmpty) msg.writeln('- الرقم المرجعي: ${payment.reference}');
     msg
-      ..writeln('*تاريخ الدفعة:* ${formatDate(payment.date)}')
-      ..write('*المتبقي المستحق:* $remaining');
-    // ما زاد عن المستحق يُقال رقماً لا عبارةً
+      ..writeln('- تاريخ الدفعة: ${formatDate(payment.date)}')
+      ..write('- المتبقي: $remainingText');
     if (paymentAdvance(payment) > 0) {
       msg
         ..writeln()
-        ..write('*رصيد مقدم:* ${money(paymentAdvance(payment))}');
+        ..write('- رصيد مقدم: ${_shekel(paymentAdvance(payment))} شيكل');
     }
 
     await launchWaWithText(raw, msg.toString());
+  }
+
+  static String _shekel(num value) {
+    final n = value == value.roundToDouble() ? value.toInt().toString() : value.toStringAsFixed(2);
+    return n;
   }
 
   static Future<void> open(BuildContext context, Payment payment) {
@@ -70,6 +80,17 @@ class _ReceiptSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final student = store.studentById(payment.studentId);
+    final outgoing = payment.amount < 0;
+    final reversal = isReversalPurpose(payment.purpose);
+    final generalIncome = payment.studentId.isEmpty || isGeneralIncomePurpose(payment.purpose);
+    final sheetTitle = !outgoing
+        ? (generalIncome ? 'سند إيراد' : 'سند قبض مالي')
+        : (reversal ? 'سند عكس' : 'سند رد مبلغ');
+    final absAmount = payment.amount.abs();
+    final payerLabel = outgoing
+        ? (reversal ? 'عكس لحساب' : 'رُدّ إلى ولي أمر')
+        : 'وصلنا من';
+    final amountLabel = outgoing ? 'المبلغ المردود' : 'المبلغ المقبوض';
 
     return Padding(
       padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + MediaQuery.paddingOf(context).bottom),
@@ -95,7 +116,7 @@ class _ReceiptSheet extends StatelessWidget {
                               store.institutionName.isEmpty ? appName : store.institutionName,
                               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading),
                             ),
-                            const Text('سند قبض رسمي', style: TextStyle(color: AppColors.muted, fontSize: 11)),
+                            Text(sheetTitle, style: const TextStyle(color: AppColors.muted, fontSize: 11)),
                           ],
                         ),
                       ),
@@ -112,33 +133,42 @@ class _ReceiptSheet extends StatelessWidget {
                   const SizedBox(height: 12),
                   const Divider(color: AppColors.line),
                   const SizedBox(height: 8),
-                  _row('وصلنا من', _payerName(payment, student)),
-                  _row('المرحلة', student?.gradeLevel ?? '—'),
-                  _row('المبلغ المقبوض', money(payment.amount)),
+                  _row(payerLabel, _payerName(payment, student)),
+                  if (student != null) _row('المرحلة', student.gradeLevel),
+                  if (generalIncome && payment.incomeCategory.trim().isNotEmpty)
+                    _row('نوع الإيراد', payment.incomeCategory),
+                  _row(amountLabel, money(absAmount)),
                   // «وقدره كتابةً» — بند رسمي في السند لا يجوز إسقاطه
-                  _row('وقدره كتابةً', amountInArabicWords(payment.amount)),
-                  if (payment.discountAmount > 0) ...[
+                  _row('وقدره كتابةً', amountInArabicWords(absAmount)),
+                  if (payment.discountAmount.abs() > 0) ...[
                     _row(
                       'الأصلي',
-                      money(payment.originalAmount ?? (payment.amount + payment.discountAmount)),
+                      money((payment.originalAmount ?? (payment.amount + payment.discountAmount)).abs()),
                     ),
                     _row(
                       'الخصم',
-                      '-${money(payment.discountAmount)}${payment.discountReason.isEmpty ? '' : ' (${payment.discountReason})'}',
+                      '-${money(payment.discountAmount.abs())}${payment.discountReason.isEmpty ? '' : ' (${payment.discountReason})'}',
                     ),
                   ],
-                  _row('طريقة السداد', store.paymentMethodLabel(payment.method)),
-                  _row('وذلك عن', paymentPurposeNames[payment.purpose] ?? payment.purpose),
+                  _row(
+                    'طريقة السداد',
+                    [
+                      store.paymentMethodLabel(payment.method),
+                      if (payment.channel.trim().isNotEmpty) '(${payment.channel.trim()})',
+                    ].join(' '),
+                  ),
+                  _row(
+                    'وذلك عن',
+                    _statementLine(payment),
+                  ),
                   if (payment.senderName.isNotEmpty) _row('اسم المحول منه', payment.senderName),
                   if (payment.reference.isNotEmpty) _row('الرقم المرجعي', payment.reference),
-                  if (payment.channel.isNotEmpty) _row('جهة التحويل', payment.channel),
-                  if (payment.transferDate.isNotEmpty) _row('تاريخ التحويل', payment.transferDate),
                   if (payment.customMethodNotes.isNotEmpty) _row('تفاصيل الوسيلة', payment.customMethodNotes),
                   _NoticeRow(payment: payment),
-                  // بيانٌ يكرّر البند لا يُعرض مرتين
-                  if (payment.notes.isNotEmpty && payment.notes != payment.purpose) _row('البيان', payment.notes),
-                  const SizedBox(height: 6),
-                  _ledger(payment),
+                  if (!outgoing && !generalIncome) ...[
+                    const SizedBox(height: 6),
+                    _ledger(payment),
+                  ],
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -240,7 +270,10 @@ class _ReceiptSheet extends StatelessWidget {
           cell('المتبقي المستحق', p.remainingAfter <= 0 ? '0 ₪' : money(p.remainingAfter),
               color: p.remainingAfter <= 0 ? AppColors.success : AppColors.danger),
         const SizedBox(width: 4),
-        cell('الحالة', p.cancelled ? 'ملغى' : 'معتمد', color: p.cancelled ? AppColors.danger : AppColors.success),
+        cell('الحالة', p.cancelled ? 'ملغى' : (p.remainingAfter <= 0 ? 'مسدد بالكامل' : 'مستمر'),
+            color: p.cancelled
+                ? AppColors.danger
+                : (p.remainingAfter <= 0 ? AppColors.success : AppColors.amber)),
       ],
     );
   }
@@ -259,51 +292,64 @@ class _ReceiptSheet extends StatelessWidget {
   }
 
   Future<void> _print(BuildContext context, AppStore store, Student? student) async {
+    final outgoing = payment.amount < 0;
+    final reversal = isReversalPurpose(payment.purpose);
+    final generalIncome = payment.studentId.isEmpty || isGeneralIncomePurpose(payment.purpose);
+    final sheetTitle = !outgoing
+        ? (generalIncome ? 'سند إيراد' : 'سند قبض مالي')
+        : (reversal ? 'سند عكس' : 'سند رد مبلغ');
+    final absAmount = payment.amount.abs();
     final rows = <List<String>>[
-      ['وصلنا من', _payerName(payment, student)],
+      [outgoing ? (reversal ? 'عكس لحساب' : 'رُدّ إلى ولي أمر') : 'وصلنا من', _payerName(payment, student)],
       if (student != null) ['المرحلة الدراسية', student.gradeLevel],
-      ['المبلغ المقبوض', money(payment.amount)],
-      ['وقدره كتابةً', amountInArabicWords(payment.amount)],
-      if (payment.discountAmount > 0) ...[
-        ['الأصلي', money(payment.originalAmount ?? (payment.amount + payment.discountAmount))],
+      if (generalIncome && payment.incomeCategory.trim().isNotEmpty) ['نوع الإيراد', payment.incomeCategory],
+      [outgoing ? 'المبلغ المردود' : 'المبلغ المقبوض', money(absAmount)],
+      ['وقدره كتابةً', amountInArabicWords(absAmount)],
+      if (payment.discountAmount.abs() > 0) ...[
+        ['الأصلي', money((payment.originalAmount ?? (payment.amount + payment.discountAmount)).abs())],
         [
           'الخصم',
-          '-${money(payment.discountAmount)}${payment.discountReason.isEmpty ? '' : ' (${payment.discountReason})'}',
+          '-${money(payment.discountAmount.abs())}${payment.discountReason.isEmpty ? '' : ' (${payment.discountReason})'}',
         ],
       ],
-      ['طريقة السداد', store.paymentMethodLabel(payment.method)],
-      ['وذلك عن', paymentPurposeNames[payment.purpose] ?? payment.purpose],
+      ['طريقة السداد', [
+        store.paymentMethodLabel(payment.method),
+        if (payment.channel.trim().isNotEmpty) '(${payment.channel.trim()})',
+      ].join(' ')],
+      ['وذلك عن', _statementLine(payment)],
       if (payment.senderName.isNotEmpty) ['اسم المحول منه', payment.senderName],
       if (payment.reference.isNotEmpty) ['الرقم المرجعي', payment.reference],
-      if (payment.channel.isNotEmpty) ['جهة التحويل', payment.channel],
-      if (payment.notes.isNotEmpty && payment.notes != payment.purpose) ['البيان', payment.notes],
     ];
 
     final stamp = PdfKit.decodeImage(store.institutionStamp);
     final bytes = await PdfKit.build(
-      title: 'سند قبض رسمي رقم ${payment.receiptNumber}',
+      title: '$sheetTitle رقم ${payment.receiptNumber}',
       institutionName: store.institutionName.isEmpty ? appName : store.institutionName,
       logoBase64: store.institutionLogo,
       subtitle: 'التاريخ: ${formatDate(payment.date)}',
       body: (ctx) => [
         PdfKit.table(headers: const ['البيان', 'التفاصيل'], rows: rows, flex: [3, 8]),
-        pw.SizedBox(height: 12),
-        PdfKit.table(
-          headers: [
-            'المبلغ المسدد',
-            paymentAdvance(payment) > 0 ? 'رصيد مقدم' : 'المتبقي المستحق',
-            'الحالة',
-          ],
-          rows: [
-            [
-              money(payment.amount),
-              paymentAdvance(payment) > 0
-                  ? money(paymentAdvance(payment))
-                  : (payment.remainingAfter <= 0 ? '0 ₪ (مسدد بالكامل)' : money(payment.remainingAfter)),
-              payment.cancelled ? 'ملغى' : 'معتمد',
+        if (!outgoing && !generalIncome) ...[
+          pw.SizedBox(height: 12),
+          PdfKit.table(
+            headers: [
+              'المبلغ المسدد',
+              paymentAdvance(payment) > 0 ? 'رصيد مقدم' : 'المتبقي المستحق',
+              'الحالة',
             ],
-          ],
-        ),
+            rows: [
+              [
+                money(absAmount),
+                paymentAdvance(payment) > 0
+                    ? money(paymentAdvance(payment))
+                    : (payment.remainingAfter <= 0 ? '0 ₪ (مسدد بالكامل)' : money(payment.remainingAfter)),
+                payment.cancelled
+                    ? 'ملغى'
+                    : (payment.remainingAfter <= 0 ? 'مسدد بالكامل' : 'مستمر'),
+              ],
+            ],
+          ),
+        ],
         if (payment.cancelled) ...[
           pw.SizedBox(height: 10),
           pw.Container(
@@ -341,9 +387,23 @@ class _ReceiptSheet extends StatelessWidget {
 
 /// اسم دافع السند: المجمَّد وقت الإصدار أولاً، فلا يتغيّر وصل قديم إن تغيّر اسم الطالب.
 String _payerName(Payment payment, Student? student) {
+  if (payment.payerName.trim().isNotEmpty) return payment.payerName.trim();
   final frozen = payment.studentName.trim();
   if (frozen.isNotEmpty) return frozen;
-  return student?.fullName ?? (payment.notes.isEmpty ? 'سند عام' : payment.notes);
+  return student?.fullName ?? 'عميل عام';
+}
+
+/// «وذلك عن: البند — الملاحظة» مدموجاً كما في الويب.
+String _statementLine(Payment payment) {
+  final purpose = paymentPurposeLabel(payment.purpose);
+  if (isGeneralIncomePurpose(payment.purpose) && payment.incomeCategory.trim().isNotEmpty) {
+    final note = payment.notes.trim();
+    final cat = payment.incomeCategory.trim();
+    return note.isEmpty ? cat : '$cat — $note';
+  }
+  final note = payment.notes.trim();
+  if (note.isEmpty || note == purpose || note == payment.purpose) return purpose;
+  return '$purpose — $note';
 }
 
 /// اسم المستلم: المجمَّد وقت الإصدار، وإلا مستلم هذا الجهاز الآن.

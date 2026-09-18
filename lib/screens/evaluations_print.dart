@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:pdf/widgets.dart' as pw;
 
 import '../data/printing.dart';
 import '../data/store.dart';
@@ -15,13 +16,15 @@ Future<void> printEvaluations(
   /// الشعبة المصفّى عليها — تدخل اسم الملف كما في `groupSuffix` بالنسخة المكتبية.
   String groupName = '',
 }) async {
+  final year = store.viewedAcademicYear?.label ?? '';
+  final extracted = isoDate(DateTime.now());
   final rows = [
     for (final e in evaluations)
       [
         store.studentById(e.studentId)?.fullName ?? 'طالب محذوف',
         [
-          store.groups.where((g) => g.id == e.groupId).firstOrNull?.name ?? '',
           store.subjects.where((s) => s.id == e.subjectId).firstOrNull?.name ?? '',
+          store.groups.where((g) => g.id == e.groupId).firstOrNull?.gradeLevel ?? '',
         ].where((x) => x.isNotEmpty).join(' · '),
         e.title,
         e.typeLabel,
@@ -33,15 +36,28 @@ Future<void> printEvaluations(
   ];
 
   final bytes = await PdfKit.build(
-    title: 'كشف درجات وتقييمات الطلاب',
+    title: 'كشف الدرجات والتقييمات الأكاديمية',
     institutionName: store.institutionName,
     logoBase64: store.institutionLogo,
+    subtitle: [
+      if (year.isNotEmpty) 'العام الدراسي: $year',
+      'تاريخ الاستخراج: $extracted',
+    ].join('   ·   '),
     landscape: true,
     body: (ctx) => [
       PdfKit.table(
-        headers: ['الطالب', 'الشعبة والمادة', 'عنوان التقييم', 'النوع', 'الدرجة', 'النسبة', 'التاريخ', 'ملاحظات'],
+        headers: ['الطالب', 'المادة والمرحلة', 'عنوان التقييم', 'النوع', 'الدرجة', 'النسبة', 'التاريخ', 'ملاحظات'],
         rows: rows,
         flex: [5, 4, 4, 3, 2, 2, 3, 4],
+      ),
+      pw.SizedBox(height: 18),
+      pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text('معلم المادة: ....................', style: const pw.TextStyle(fontSize: 9)),
+          pw.Text('المشرف الأكاديمي: ....................', style: const pw.TextStyle(fontSize: 9)),
+          pw.Text('اعتماد الإدارة: ....................', style: const pw.TextStyle(fontSize: 9)),
+        ],
       ),
     ],
   );

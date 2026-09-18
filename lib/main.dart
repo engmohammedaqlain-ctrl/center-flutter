@@ -137,11 +137,17 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
   final updater = AppUpdater.instance;
   bool _prompting = false;
 
+  /// ما يهمّ الإقلاعَ من حالة التحديث. ما عداه — نسبة التنزيل وسرعته — يتغيّر
+  /// مئات المرات في الدقيقة، وإعادةُ بناء التطبيق كلّه لأجله تُبطئ التنزيل نفسه
+  /// وتُقطّع الحركة. الشريط أعلى الشاشة يستمع وحده لذلك.
+  bool _loaded = false;
+  UpdateAction _action = UpdateAction.none;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    updater.addListener(_maybePrompt);
+    updater.addListener(_onUpdater);
     AppStore.instance.addListener(_maybePrompt);
     unawaited(updater.start());
   }
@@ -149,9 +155,20 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    updater.removeListener(_maybePrompt);
+    updater.removeListener(_onUpdater);
     AppStore.instance.removeListener(_maybePrompt);
     super.dispose();
+  }
+
+  void _onUpdater() {
+    if (!mounted) return;
+    if (updater.loaded != _loaded || updater.action != _action) {
+      setState(() {
+        _loaded = updater.loaded;
+        _action = updater.action;
+      });
+    }
+    _maybePrompt();
   }
 
   /// إصدار اختياري جديد يُعرض وحده مرة واحدة، بعد أن يُقلع المخزن فلا يغطي
@@ -160,13 +177,20 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
     if (_prompting || !mounted || !AppStore.instance.ready || !updater.shouldPrompt) return;
     _prompting = true;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // الورقة تُرفع بعد أن تستقر الشاشة الأولى: صعودها فوق انتقالٍ ما زال
+      // جارياً يبدو قفزة لا حركة
+      await Future<void>.delayed(_settle);
       if (mounted && updater.shouldPrompt) await showUpdateSheet(context, checkNow: false);
       _prompting = false;
     });
   }
 
+  /// ما يكفي لانتهاء انتقال شاشة الإقلاع قبل أن تُرفع ورقة التحديث فوقها.
+  static const _settle = Duration(milliseconds: 420);
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    updater.inForeground = state == AppLifecycleState.resumed;
     if (state != AppLifecycleState.resumed) return;
     // جهازٌ يبقى التطبيق مفتوحاً عليه أياماً لا يُعاد إقلاعه ليفحص
     unawaited(updater.check());
@@ -184,10 +208,12 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     return ListenableBuilder(
-      listenable: Listenable.merge([store, updater]),
+      listenable: store,
       builder: (context, _) {
         final Widget screen;
-        if (!store.ready) {
+        // قرار التحديث يُنتظر مع إقلاع المخزن: بدونه تُعرض شاشة الدخول ثم تُقلب
+        // بعد جزءٍ من الثانية إلى شاشة التحديث، فيرى المستخدم واجهتين لا واحدة
+        if (!store.ready || !updater.loaded) {
           screen = const SplashScreen();
         } else if (updater.action == UpdateAction.mandatory) {
           // قبل الدخول وبعده: إصدارٌ لم يعد مقبولاً لا يرفع ولا يسحب

@@ -1,9 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../data/academic_matching.dart';
 import '../data/backup.dart';
 import '../data/permissions.dart';
 import '../data/phone.dart';
+import '../data/payment_methods.dart';
 import '../data/store.dart';
 import '../data/sync.dart';
 import '../models/models.dart';
@@ -553,7 +556,7 @@ class _FeesTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    final fees = store.gradeFees;
+    final fees = store.gradeFeesInViewedYear;
     final missing = store.studentsMissingPlan;
     return _cardList(
       header: [
@@ -566,16 +569,20 @@ class _FeesTab extends StatelessWidget {
             ),
             StatCard(
               label: 'الشعب',
-              value: '${store.rooms.length}',
+              value: '${store.roomsInViewedYear.length}',
               color: AppColors.heading,
             ),
           ],
         ),
         const SizedBox(height: 10),
-        // أقسام مطوية: التبويب كان يفتح على أربع بطاقات فوق قائمة المراحل
+        // كالويب: رسم الحجز وخصم المتفوقين في قسم واحد تحت المراحل
         _Collapsible(
-          title: 'رسم حجز المقعد',
-          children: [_SeatFeeCard(store: store)],
+          title: 'الرسوم المحددة والخصومات',
+          children: [
+            _SeatFeeCard(store: store),
+            const SizedBox(height: 8),
+            _ExcellenceDiscountCard(store: store),
+          ],
         ),
         const SizedBox(height: 8),
         _Collapsible(
@@ -1261,6 +1268,207 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
   }
 }
 
+/// خصم المتفوقين — المقابل لخياره في GradeFeesSettings.tsx.
+///
+/// اقتراح عند التسجيل لمن بلغ المعدل؛ القرار يبقى للإدارة. منفصل عن قواعد
+/// خصم التفوق في نظام العلامات (نمط المعدل الشهري).
+class _ExcellenceDiscountCard extends StatefulWidget {
+  const _ExcellenceDiscountCard({required this.store});
+
+  final AppStore store;
+
+  @override
+  State<_ExcellenceDiscountCard> createState() => _ExcellenceDiscountCardState();
+}
+
+class _ExcellenceDiscountCardState extends State<_ExcellenceDiscountCard> {
+  late bool enabled;
+  late final TextEditingController minGpa;
+  late final TextEditingController rate;
+  bool saved = false;
+  bool editing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final rules = widget.store.discountRules;
+    enabled = rules.autoSuggestExcellence;
+    minGpa = TextEditingController(text: _num(rules.excellenceMinGpa));
+    rate = TextEditingController(text: _num(rules.excellenceDiscountRate));
+  }
+
+  static String _num(double v) => v == v.roundToDouble() ? '${v.round()}' : '$v';
+
+  @override
+  void didUpdateWidget(covariant _ExcellenceDiscountCard old) {
+    super.didUpdateWidget(old);
+    if (editing) return;
+    final rules = widget.store.discountRules;
+    enabled = rules.autoSuggestExcellence;
+    final g = _num(rules.excellenceMinGpa);
+    final r = _num(rules.excellenceDiscountRate);
+    if (minGpa.text != g) minGpa.text = g;
+    if (rate.text != r) rate.text = r;
+  }
+
+  @override
+  void dispose() {
+    minGpa.dispose();
+    rate.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save({bool? turnOn}) async {
+    final on = turnOn ?? enabled;
+    final gpa = double.tryParse(minGpa.text.trim()) ?? 90;
+    final pct = double.tryParse(rate.text.trim()) ?? 10;
+    final cleanGpa = gpa <= 0 || gpa > 100 ? 90.0 : gpa;
+    final cleanPct = pct <= 0 || pct > 100 ? 10.0 : pct;
+    try {
+      await widget.store.saveDiscountRules(
+        SchoolDiscountRules(
+          autoSuggestExcellence: on,
+          excellenceMinGpa: cleanGpa,
+          excellenceDiscountRate: cleanPct,
+        ),
+      );
+      if (!mounted) return;
+      setState(() {
+        enabled = on;
+        saved = true;
+        editing = false;
+        minGpa.text = _num(cleanGpa);
+        rate.text = _num(cleanPct);
+      });
+      showAppSnack(context, on ? 'تم حفظ خصم المتفوقين' : 'تم إيقاف خصم المتفوقين');
+    } on StoreException catch (e) {
+      if (mounted) showAppSnack(context, e.message, error: true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'خصم المتفوقين',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12.5,
+                    color: AppColors.heading,
+                  ),
+                ),
+              ),
+              if (saved)
+                const Padding(
+                  padding: EdgeInsetsDirectional.only(end: 6),
+                  child: Text(
+                    'حُفظ',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.success,
+                    ),
+                  ),
+                ),
+              Switch.adaptive(
+                value: enabled,
+                activeThumbColor: AppColors.amber,
+                onChanged: (v) {
+                  setState(() {
+                    enabled = v;
+                    editing = true;
+                    saved = false;
+                  });
+                  if (!v) _save(turnOn: false);
+                },
+              ),
+            ],
+          ),
+          if (enabled) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'أدنى معدل (%)',
+                        style: TextStyle(color: AppColors.muted, fontSize: 10.5, fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 4),
+                      TextField(
+                        controller: minGpa,
+                        keyboardType: TextInputType.number,
+                        textDirection: TextDirection.ltr,
+                        textAlign: TextAlign.center,
+                        onChanged: (_) => setState(() {
+                          editing = true;
+                          saved = false;
+                        }),
+                        decoration: const InputDecoration(hintText: '90'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'نسبة الخصم (%)',
+                        style: TextStyle(color: AppColors.muted, fontSize: 10.5, fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 4),
+                      TextField(
+                        controller: rate,
+                        keyboardType: TextInputType.number,
+                        textDirection: TextDirection.ltr,
+                        textAlign: TextAlign.center,
+                        onChanged: (_) => setState(() {
+                          editing = true;
+                          saved = false;
+                        }),
+                        decoration: const InputDecoration(hintText: '10'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                PrimaryButton(
+                  label: 'حفظ',
+                  color: AppColors.navy,
+                  onPressed: () => _save(turnOn: true),
+                ),
+              ],
+            ),
+          ] else
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text(
+                'معطّل — لا يُقترح خصم تلقائي عند التسجيل',
+                style: TextStyle(fontSize: 11.5, color: AppColors.muted, fontWeight: FontWeight.w600),
+              ),
+            ),
+          const SizedBox(height: 6),
+          const Text(
+            'اقتراح لا إلزام: عند التسجيل يُنبَّه لمن بلغ الحد الأدنى، والقرار للإدارة.',
+            style: TextStyle(fontSize: 10.5, color: AppColors.faint, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _MonthChip extends StatelessWidget {
   const _MonthChip({
     required this.label,
@@ -1307,7 +1515,7 @@ class _GradeFeeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final f = fee;
-    final sections = store.rooms
+    final sections = store.roomsInViewedYear
         .where((r) => r.gradeLevel == f.gradeName)
         .toList();
     final students = store.students
@@ -1623,7 +1831,7 @@ class _TeachersTabState extends State<_TeachersTab> {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final q = search.text.trim();
-    final list = store.teachers.where((t) {
+    final list = store.teachersInViewedYear.where((t) {
       if (q.isEmpty) return true;
       return t.name.contains(q) ||
           t.phone.contains(q) ||
@@ -1636,7 +1844,7 @@ class _TeachersTabState extends State<_TeachersTab> {
           controller: search,
           hint: 'ابحث باسم المدرس أو رقم الهاتف...',
           shown: list.length,
-          total: store.teachers.length,
+          total: store.teachersInViewedYear.length,
           onChanged: (_) => setState(() {}),
         ),
         Expanded(
@@ -1666,10 +1874,10 @@ class _TeacherCard extends StatelessWidget {
     final store = StoreScope.of(context);
     final t = teacher;
     final phone = t.phone.trim();
-    final subjects = store.subjects
+    final subjects = store.subjectsInViewedYear
         .where((s) => t.subjectIds.contains(s.id) || s.name == t.subject)
         .toList();
-    final groups = store.groups
+    final groups = store.groupsInViewedYear
         .where((g) => g.teacherId == t.id && g.isActive)
         .length;
     final meta = [
@@ -1770,11 +1978,12 @@ class _SubjectsTabState extends State<_SubjectsTab> {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final q = search.text.trim();
-    final list = store.subjects.where((s) {
+    final list = store.subjectsInViewedYear.where((s) {
       if (q.isEmpty) return true;
       return s.name.contains(q) ||
           s.code.toLowerCase().contains(q.toLowerCase()) ||
-          s.gradeLevel.contains(q);
+          subjectGradesLabel(s).contains(q) ||
+          s.gradeLevels.any((g) => g.contains(q));
     }).toList();
 
     return Column(
@@ -1783,7 +1992,7 @@ class _SubjectsTabState extends State<_SubjectsTab> {
           controller: search,
           hint: 'ابحث باسم المادة، الرمز، أو المرحلة...',
           shown: list.length,
-          total: store.subjects.length,
+          total: store.subjectsInViewedYear.length,
           onChanged: (_) => setState(() {}),
         ),
         Expanded(
@@ -1812,7 +2021,7 @@ class _SubjectCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final s = subject;
-    final teachers = store.teachers
+    final teachers = store.teachersInViewedYear
         .where((t) => t.subjectIds.contains(s.id) || t.subject == s.name)
         .length;
 
@@ -1853,7 +2062,7 @@ class _SubjectCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  s.gradeLevel.isEmpty ? 'عام / كل المراحل' : s.gradeLevel,
+                  subjectGradesLabel(s),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: _metaStyle,
@@ -2226,13 +2435,13 @@ class _DataTab extends StatelessWidget {
     final tenant = store.currentTenant;
     final counts = <(String, int)>[
       ('الطلاب', store.students.length),
-      ('الصفوف', store.rooms.length),
-      ('المدرسون', store.teachers.length),
-      ('المواد', store.subjects.length),
+      ('الصفوف', store.roomsInViewedYear.length),
+      ('المدرسون', store.teachersInViewedYear.length),
+      ('المواد', store.subjectsInViewedYear.length),
       ('المقبوضات', store.payments.length),
       ('الأقساط', store.installments.length),
       ('الحضور', store.attendance.length),
-      ('المراحل', store.gradeFees.length),
+      ('المراحل', store.gradeFeesInViewedYear.length),
     ];
 
     return ListView(
@@ -2579,15 +2788,19 @@ Future<void> _restore(BuildContext context, AppStore store) async {
   }
   if (json == null || !context.mounted) return;
 
+  Map decoded;
   Map<String, int> summary;
   try {
+    decoded = jsonDecode(json) as Map;
+    service.validateTenant(store, decoded);
     summary = service.summarize(json);
-  } catch (_) {
+  } catch (e) {
     if (!context.mounted) return;
-    showAppSnack(context, 'الملف ليس نسخة احتياطية صالحة', error: true);
+    showAppSnack(context, '$e'.replaceFirst('FormatException: ', ''), error: true);
     return;
   }
 
+  final total = summary.values.fold<int>(0, (a, b) => a + b);
   final lines = summary.entries
       .map((e) => '${tableLabelsAr[e.key] ?? e.key}: ${e.value}')
       .join('\n');
@@ -2595,16 +2808,17 @@ Future<void> _restore(BuildContext context, AppStore store) async {
     context,
     title: 'استرجاع نسخة احتياطية',
     message:
-        'سيتم استبدال كل البيانات المحلية بمحتوى الملف:\n\n$lines\n\n'
-        'لا يمكن التراجع عن هذه العملية. هل تريد المتابعة؟',
-    confirmLabel: 'استرجاع',
+        'سيتم دمج $total سجلاً في البيانات الحالية، وتسجيلها للرفع إلى السحابة.\n'
+        'السجل الأحدث على الجهاز لا يُستبدل.\n\n$lines\n\nهل تريد المتابعة؟',
+    confirmLabel: 'تنفيذ',
   );
   if (!ok || !context.mounted) return;
 
   try {
-    final count = await service.restore(store, json);
+    final result = await service.restore(store, json);
     if (!context.mounted) return;
-    showAppSnack(context, 'تم استرجاع $count سجلاً بنجاح');
+    final skipped = result.skipped > 0 ? '، وتُرك ${result.skipped} أحدث محلياً' : '';
+    showAppSnack(context, 'تم استرجاع ${result.restored} سجلاً$skipped');
   } catch (e) {
     if (!context.mounted) return;
     showAppSnack(context, 'فشل الاسترجاع: $e', error: true);

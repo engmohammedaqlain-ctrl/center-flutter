@@ -40,7 +40,7 @@ class _MoodleAdminScreenState extends State<MoodleAdminScreen> {
   List<Group> _groups(AppStore store) {
     final q = search.text.trim().toLowerCase();
     return [
-      for (final g in store.groups.where((g) => g.isActive))
+      for (final g in store.groupsInViewedYear.where((g) => g.isActive))
         if (_matches(store, g, q)) g,
     ]..sort((a, b) => a.name.compareTo(b.name));
   }
@@ -164,12 +164,12 @@ class _MoodleAdminScreenState extends State<MoodleAdminScreen> {
 
         final groups = _groups(store);
         final grades = <String>{
-          for (final g in store.groups.where((g) => g.isActive))
+          for (final g in store.groupsInViewedYear.where((g) => g.isActive))
             if (g.gradeLevel.trim().isNotEmpty) g.gradeLevel.trim(),
         }.toList()
           ..sort();
-        final subjects = store.subjects.toList()..sort((a, b) => a.name.compareTo(b.name));
-        final selected = groupId == null ? null : store.groups.where((g) => g.id == groupId).firstOrNull;
+        final subjects = store.subjectsInViewedYear.toList()..sort((a, b) => a.name.compareTo(b.name));
+        final selected = groupId == null ? null : store.groupById(groupId!);
 
         return Scaffold(
           backgroundColor: Colors.white,
@@ -407,7 +407,7 @@ class _GroupDetail extends StatelessWidget {
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 40),
             child: Text(
-              'لا وحدات لهذه الشعبة في هذا الفصل',
+              'لا وحدات مضافة لهذه المادة في هذا الفصل',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.muted, fontWeight: FontWeight.w700),
             ),

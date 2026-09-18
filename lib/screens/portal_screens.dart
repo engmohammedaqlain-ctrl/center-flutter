@@ -942,6 +942,9 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   final evalMax = TextEditingController(text: '100');
   String evalType = 'quiz';
   String evalDate = isoDate(DateTime.now());
+  /// ربط بمخطط العلامات: فارغ = بلا فصل؛ `term_1` / `term_2` مع مكوّن اختياري.
+  String evalTerm = '';
+  String evalComponentId = '';
   String? titleError;
   final _scores = <String, TextEditingController>{};
   final _notes = <String, TextEditingController>{};
@@ -1020,6 +1023,9 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       marks = {};
       recent = const [];
       sections = const [];
+      // علامة المادة الكاملة تُملأ تلقائياً — بوابة المعلم بلا تخصيص لكل مادة
+      evalMax.text = trimNum(defaultFullMark);
+      evalComponentId = '';
     });
     _refreshTab();
   }
@@ -1120,7 +1126,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     final title = evalTitle.text.trim();
     setState(() => titleError = title.isEmpty ? 'يرجى إدخال عنوان الاختبار أو التقييم' : null);
     if (title.isEmpty) {
-      showAppSnack(context, 'يرجى تحديد عنوان التقييم واختيار الشعبة', error: true);
+      showAppSnack(context, 'يرجى تحديد عنوان التقييم واختيار المادة', error: true);
       return;
     }
 
@@ -1146,6 +1152,8 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         evaluationDate: evalDate,
         type: evalType,
         notes: _ctl(_notes, s.id).text.trim(),
+        term: evalTerm,
+        componentId: evalTerm.isNotEmpty ? evalComponentId : '',
       ));
     }
     if (batch.isEmpty) {
@@ -1161,6 +1169,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         savingEvaluations = false;
         evaluationsSaved = true;
         evalTitle.clear();
+        evalComponentId = '';
         // الدرجات تُمسح مع العنوان: بقاؤها يُعيد حفظها تحت عنوان الاختبار التالي
         for (final ctl in [..._scores.values, ..._notes.values]) {
           ctl.clear();
@@ -1333,7 +1342,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         color: _Brand(data!.branding).primary,
       ),
     );
-    if (count != null && mounted) _flash('تم نسخ القسم بنجاح إلى $count شعبة');
+    if (count != null && mounted) _flash('تم نسخ القسم بنجاح إلى $count مادة');
   }
 
   // ── البناء ────────────────────────────────────────────────────────────────
@@ -1550,6 +1559,9 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     final c = _current;
     final students = c?.students ?? const <Student>[];
     final names = {for (final s in students) s.id: s.fullName};
+    final scheme = data?.branding.gradingScheme ?? GradingScheme.empty;
+    final schemeOn = !scheme.isEmpty;
+    final components = evalTerm.isEmpty ? const <GradingComponent>[] : scheme.of(evalTerm);
 
     Widget pair(Widget a, Widget b) => Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1561,6 +1573,19 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [_Label(label), input],
         );
+
+    void onComponent(String? id) {
+      final cid = id ?? '';
+      setState(() {
+        evalComponentId = cid;
+        final comp = components.where((x) => x.id == cid).firstOrNull;
+        if (comp != null) {
+          if (evalTitle.text.trim().isEmpty) evalTitle.text = comp.name;
+          // علامة المادة الكاملة — بوابة المعلم بلا تخصيص لكل مادة في الهوية
+          evalMax.text = trimNum(defaultFullMark);
+        }
+      });
+    }
 
     return [
       _Card(
@@ -1616,6 +1641,43 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                 ),
               ),
             ),
+            if (schemeOn) ...[
+              const SizedBox(height: 12),
+              pair(
+                field(
+                  'الفصل الدراسي:',
+                  _Select<String>(
+                    value: evalTerm,
+                    height: 36,
+                    items: [
+                      const DropdownMenuItem(value: '', child: Text('-- بدون ربط بفصل --')),
+                      for (final e in gradingTermLabels.entries)
+                        DropdownMenuItem(value: e.key, child: Text(e.value)),
+                    ],
+                    onChanged: (v) => setState(() {
+                      evalTerm = v ?? '';
+                      evalComponentId = '';
+                    }),
+                  ),
+                ),
+                field(
+                  'مكوّن العلامة:',
+                  _Select<String>(
+                    value: evalComponentId,
+                    height: 36,
+                    items: [
+                      const DropdownMenuItem(value: '', child: Text('اختر المكوّن')),
+                      for (final c in components)
+                        DropdownMenuItem(
+                          value: c.id,
+                          child: Text('${c.name} (${trimNum(c.weight)}%)'),
+                        ),
+                    ],
+                    onChanged: evalTerm.isEmpty || components.isEmpty ? null : onComponent,
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             pair(
               field(
@@ -1834,7 +1896,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         )
       else if (sections.isEmpty)
         _Empty(
-          'لا توجد وحدات أو أقسام مضافة لهذه الشعبة في هذا الفصل',
+          'لا توجد وحدات مضافة لهذه المادة في هذا الفصل',
           icon: Icons.layers_outlined,
           dashed: true,
           height: 200,
@@ -2059,7 +2121,7 @@ class _TeacherSectionCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                _iconAction(Icons.copy_outlined, 'نسخ القسم لشعب أخرى', _C.muted, onCopy),
+                _iconAction(Icons.copy_outlined, 'نسخ القسم لمواد أخرى', _C.muted, onCopy),
                 _iconAction(
                   sec.isVisible ? Icons.visibility_outlined : Icons.visibility_off_outlined,
                   sec.isVisible ? 'إخفاء القسم عن الطلاب' : 'إظهار القسم للطلاب',
@@ -2604,7 +2666,7 @@ class _CopySectionSheetState extends State<_CopySectionSheet> {
   Widget build(BuildContext context) {
     return _sheetFrame(
       context,
-      title: 'نسخ القسم لشعب أخرى',
+      title: 'نسخ القسم لمواد أخرى',
       children: [
         Text.rich(
           TextSpan(
@@ -3406,7 +3468,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
           Expanded(child: _Stat.plain('إجمالي الرسوم', money(f.totalDue), valueColor: brand.primary, radius: Corner.card)),
         ],
       ),
-      if (f.remainingBalance > f.currentDue) ...[
+      if (f.scheduledRemaining > 0) ...[
         const SizedBox(height: 10),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
@@ -3417,13 +3479,12 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
           ),
           child: Text.rich(
             TextSpan(
-              text: 'المتبقي لكامل العام: ',
+              text: 'مجدول لاحقاً: ',
               children: [
                 TextSpan(
-                  text: money(f.remainingBalance),
+                  text: money(f.scheduledRemaining),
                   style: const TextStyle(color: _C.navy, fontWeight: FontWeight.w800),
                 ),
-                const TextSpan(text: ' (أقساط مجدولة قادمة)'),
               ],
             ),
             textAlign: TextAlign.center,
@@ -3558,14 +3619,14 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
 
   Widget _installmentBadge(PortalInstallment i) {
     if (i.status == 'unpaid') {
-      return i.isDueNow
-          ? const _Badge('مستحق الآن', fg: _C.rose700, bg: _C.rose50, border: _C.rose200)
-          : const _Badge('قسط قادم', fg: _C.slate600, bg: _C.soft, border: _C.line);
+      return i.isScheduled
+          ? const _Badge('مجدول', fg: _C.slate600, bg: _C.soft, border: _C.line)
+          : const _Badge('مستحق', fg: _C.rose700, bg: _C.rose50, border: _C.rose200);
     }
     if (i.status == 'partially_paid') {
-      return i.isDueNow
-          ? _Badge('مستحق جزئياً (باقي ${money(i.remaining)})', fg: _C.amber700, bg: _C.amber50, border: _C.amber200)
-          : _Badge('قادم (باقي ${money(i.remaining)})', fg: _C.slate600, bg: _C.soft, border: _C.line);
+      return i.isScheduled
+          ? _Badge('مجدول (باقي ${money(i.remaining)})', fg: _C.slate600, bg: _C.soft, border: _C.line)
+          : _Badge('باقي ${money(i.remaining)}', fg: _C.amber700, bg: _C.amber50, border: _C.amber200);
     }
     return const _Badge('مسدد', fg: _C.emerald700, bg: _C.emerald50, border: _C.emerald200);
   }

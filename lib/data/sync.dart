@@ -39,6 +39,7 @@ const tableAllowedColumns = <String, List<String>>{
     'name',
     'code',
     'grade_level',
+    'grade_levels',
     'description',
     'academic_year_id',
     'tenant_id',
@@ -319,6 +320,8 @@ const tableAllowedColumns = <String, List<String>>{
     'cancelled_reason',
     'payer_name',
     'income_category',
+    'student_name',
+    'received_by_name',
     'reverses_payment_id',
     'reversed_by_payment_id',
     'notes',
@@ -356,6 +359,7 @@ const tableAllowedColumns = <String, List<String>>{
   'teacher_payouts': [
     'id',
     'teacher_id',
+    'teacher_name',
     'group_id',
     'amount',
     'payout_type',
@@ -363,6 +367,7 @@ const tableAllowedColumns = <String, List<String>>{
     'period_end',
     'payment_date',
     'paid_by_user_id',
+    'paid_by_name',
     'payment_method',
     'notes',
     'tenant_id',
@@ -376,6 +381,7 @@ const tableAllowedColumns = <String, List<String>>{
     'amount',
     'expense_date',
     'recorded_by_user_id',
+    'recorded_by_name',
     'payment_method',
     'notes',
     'tenant_id',
@@ -466,15 +472,22 @@ const nonTextColumns = <String, List<String>>{
   'installments': [
     'amount',
     'created_at',
+    'discount_amount',
     'due_date',
+    'exempt_reason',
+    'is_exempt',
     'original_amount',
     'paid_amount',
+    'plan_discount_share',
+    'seat_deduction',
+    'server_updated_at',
     'tenant_id',
     'updated_at',
   ],
   'institution_settings': [
     'colors',
     'created_at',
+    'server_updated_at',
     'settings',
     'tenant_id',
     'updated_at',
@@ -487,22 +500,24 @@ const nonTextColumns = <String, List<String>>{
     'original_amount',
     'payment_date',
     'remaining_balance_after',
+    'server_updated_at',
     'tenant_id',
     'total_due_at_payment',
     'transfer_date',
     'updated_at',
   ],
-  'rooms': ['capacity', 'created_at', 'tenant_id', 'updated_at'],
+  'rooms': ['capacity', 'created_at', 'server_updated_at', 'tenant_id', 'updated_at'],
   'sessions': [
     'created_at',
     'end_time',
     'session_date',
+    'server_updated_at',
     'start_time',
     'tenant_id',
     'updated_at',
   ],
-  'student_attachments': ['created_at', 'tenant_id', 'updated_at'],
-  'finance_attachments': ['created_at', 'tenant_id', 'updated_at'],
+  'student_attachments': ['created_at', 'server_updated_at', 'tenant_id', 'updated_at'],
+  'finance_attachments': ['created_at', 'server_updated_at', 'tenant_id', 'updated_at'],
   'students': [
     'academic_discount_applied',
     'academic_discount_rate',
@@ -514,9 +529,13 @@ const nonTextColumns = <String, List<String>>{
     'guardian_declaration',
     'initial_rating',
     'seat_reservation_discounted',
+    'plan_discount_from',
+    'plan_discount_value',
     'seat_reservation_paid',
+    'server_updated_at',
     'tenant_id',
     'updated_at',
+    'uses_custom_plan',
   ],
   'academic_years': [
     'created_at',
@@ -536,7 +555,7 @@ const nonTextColumns = <String, List<String>>{
     'tenant_id',
     'updated_at',
   ],
-  'subjects': ['created_at', 'tenant_id', 'updated_at'],
+  'subjects': ['created_at', 'grade_levels', 'tenant_id', 'updated_at'],
   'teacher_payouts': [
     'amount',
     'created_at',
@@ -689,12 +708,9 @@ bool tableHasUpdatedAt(String table) =>
 
 /// عمود التصالح عند الرفع لكل جدول يختلف مفتاحه الطبيعي عن `id`.
 ///
-/// `attendance` عليه `UNIQUE (tenant_id, session_id, student_id)`: صفٌّ بمعرّف
-/// جديد لنفس الطالب في نفس الجلسة كان يُرفض بـ «معرّف مكرّر» ويعلق في الطابور.
-/// التصالح على المفتاح الطبيعي يدمجه في الصف القائم بدل أن يفشل.
-const tableConflictTarget = <String, String>{
-  'attendance': 'tenant_id,session_id,student_id',
-};
+/// بعد المعرّفات الحتمية للحضور (`att_<session>_<student>`) يُتصالح على `id`
+/// كبقية الجداول — التصالح على المفتاح الطبيعي كان يكتب فوق `id` القائم.
+const tableConflictTarget = <String, String>{};
 
 const maxSyncRetries = 5;
 const pushChunk = 50;
@@ -757,15 +773,23 @@ Map<String, dynamic> sanitizePayload(
   final nonText = nonTextColumns[tableName];
   if (nonText != null) {
     for (final key in nonText) {
+      // عمود غائب عن الحمولة يُترك لقيمته الافتراضية — تصفيره يفشل NOT NULL
+      if (!clean.containsKey(key)) continue;
       final v = clean[key];
       if (v == '' || v == null) {
-        if (key == 'created_at' || key == 'updated_at') {
+        if (key == 'created_at' || key == 'updated_at' || key == 'server_updated_at') {
           clean.remove(key);
         } else {
           clean[key] = null;
         }
       }
     }
+  }
+
+  // كشف الشعبة اليومي بلا أوقات: العمودان إلزاميان في قواعد قديمة
+  if (tableName == 'sessions') {
+    if ('${clean['start_time'] ?? ''}'.isEmpty) clean['start_time'] = '00:00';
+    if ('${clean['end_time'] ?? ''}'.isEmpty) clean['end_time'] = '23:59';
   }
 
   clean['tenant_id'] = tenantId;
@@ -808,6 +832,10 @@ void queuePendingSync(
     }
 
     existing.payload = {...?existing.payload, ...?payload, 'id': recordId};
+    // حذف معلّق ثم إعادة إنشاء بنفس المعرّف (أقساط/حصص حتمية): الكتابة تحلّ محل الحذف
+    if (existing.action == 'DELETE') {
+      existing.action = 'INSERT';
+    }
     existing.createdAt = now;
     existing.retryCount = 0;
     existing.lastError = null;
@@ -1552,7 +1580,7 @@ class SyncService {
         try {
           await _deleteIds(tableName, tenantId, ids);
           pushed += chunk.length;
-          local.pendingSyncs.removeWhere((p) => chunk.any((c) => c.id == p.id));
+          _completeActions(chunk, markSynced: false);
         } catch (err) {
           failed += chunk.length;
           _markFailed(
@@ -1582,10 +1610,15 @@ class SyncService {
           } else {
             fullRecord = {...fullRecord, 'id': recordId};
           }
-          // جلسة بلا مجموعة تنتهك قيود السحابة ولن تُقبل مهما أُعيدت
+          // حصة بلا مجموعة ولا شعبة لا مكان لها في السحابة — تبقى ظاهرة كفاشلة
           if (tableName == 'sessions' &&
-              '${fullRecord['group_id'] ?? ''}'.isEmpty) {
-            local.pendingSyncs.removeWhere((p) => p.id == action.id);
+              '${fullRecord['group_id'] ?? ''}'.isEmpty &&
+              '${fullRecord['room_id'] ?? ''}'.isEmpty) {
+            failed += 1;
+            _markFailed(
+              [action],
+              'الحصص والحضور: حصة بلا مادة ولا شعبة.',
+            );
             continue;
           }
 
@@ -1597,10 +1630,7 @@ class SyncService {
         try {
           await _upsert(tableName, rows);
           pushed += kept.length;
-          local.pendingSyncs.removeWhere((p) => kept.any((c) => c.id == p.id));
-          for (final a in kept) {
-            local.markSynced(tableName, a.recordId);
-          }
+          _completeActions(kept, markSynced: true);
         } catch (err) {
           // الشبكة مقطوعة: إعادة المحاولة صفاً صفاً تعني 50 نداءً فاشلاً بلا
           // فائدة. نُسجّل السبب بلا استهلاك محاولات ونتوقف — الطابور سليم
@@ -1624,8 +1654,7 @@ class SyncService {
             try {
               await _upsert(tableName, [rows[k]]);
               pushed++;
-              local.pendingSyncs.removeWhere((p) => p.id == kept[k].id);
-              local.markSynced(tableName, kept[k].recordId);
+              _completeActions([kept[k]], markSynced: true);
             } catch (rowErr) {
               // سندان برقم واحد صدرا من جهازين بلا اتصال: يُمنح هذا السند رقماً
               // متاحاً ويُحفظ رقمه الورقي في بيانه، بدل انتظار تدخل يدوي من المدير
@@ -1667,11 +1696,27 @@ class SyncService {
       await _upsert('payments', [
         sanitizePayload('payments', updated, tenantId),
       ]);
-      local.pendingSyncs.removeWhere((p) => p.id == action.id);
-      local.markSynced('payments', action.recordId);
+      // رقم جديد غيّر الطابور: أكمل الصف الحالي لا اللقطة القديمة
+      final current = local.pendingSyncs.where((p) => p.id == action.id).firstOrNull;
+      if (current != null) _completeActions([current], markSynced: true);
       return true;
     } catch (_) {
       return false;
+    }
+  }
+
+  /// إنهاء عمليات رُفعت بنجاح — لا يُحذف صف الطابور إن تغيّر أثناء الانتظار.
+  void _completeActions(List<PendingSync> actions, {required bool markSynced}) {
+    for (final a in actions) {
+      final current = local.pendingSyncs.where((p) => p.id == a.id).firstOrNull;
+      final unchanged =
+          current != null && current.createdAt == a.createdAt && current.action == a.action;
+      if (unchanged) {
+        local.pendingSyncs.removeWhere((p) => p.id == a.id);
+      }
+      if (markSynced && unchanged) {
+        local.markSynced(a.tableName, a.recordId);
+      }
     }
   }
 
@@ -1686,9 +1731,12 @@ class SyncService {
   }) {
     final now = DateTime.now().toUtc().toIso8601String();
     for (final a in actions) {
-      if (!transient) a.retryCount = a.retryCount + 1;
-      a.lastError = message;
-      a.lastAttemptAt = now;
+      final current = local.pendingSyncs.where((p) => p.id == a.id).firstOrNull;
+      // تعديل جديد وصل أثناء الرفع صفّر العداد عمداً: لا يُحمَّل فشل الحمولة القديمة
+      if (current == null || current.createdAt != a.createdAt) continue;
+      if (!transient) current.retryCount = current.retryCount + 1;
+      current.lastError = message;
+      current.lastAttemptAt = now;
     }
   }
 

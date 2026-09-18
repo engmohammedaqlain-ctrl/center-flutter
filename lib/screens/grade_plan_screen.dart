@@ -209,55 +209,46 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
           children: [
-            const FormSection(icon: Icons.auto_awesome_outlined, title: 'توليد جدول'),
-            if (planLocked)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'الخطة محفوظة: عدّل الأقساط يدوياً أو أضف قسطاً — إعادة التوليد تغيّر المعرّفات فتزدوج أقساط الطلاب.',
-                  style: TextStyle(color: AppColors.muted, fontSize: 11, height: 1.35),
-                ),
+            if (!planLocked) ...[
+              const FormSection(icon: Icons.auto_awesome_outlined, title: 'توليد جدول'),
+              FieldPair(
+                start: [
+                  const FieldLabel('عدد الأقساط'),
+                  TextField(
+                    controller: countCtl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(hintText: '10'),
+                  ),
+                ],
+                end: [
+                  const FieldLabel('قيمة القسط (₪)'),
+                  TextField(
+                    controller: amountCtl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(hintText: '0'),
+                  ),
+                ],
               ),
-            FieldPair(
-              start: [
-                const FieldLabel('عدد الأقساط'),
-                TextField(
-                  controller: countCtl,
-                  enabled: !planLocked,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(hintText: '10'),
-                ),
-              ],
-              end: [
-                const FieldLabel('قيمة القسط (₪)'),
-                TextField(
-                  controller: amountCtl,
-                  enabled: !planLocked,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(hintText: '0'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            FieldPair(
-              start: [
-                const FieldLabel('كل كم شهر'),
-                TextField(
-                  controller: everyCtl,
-                  enabled: !planLocked,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(hintText: '1'),
-                ),
-              ],
-              end: [
-                const FieldLabel(' '),
-                GhostButton(
-                  label: 'توليد',
-                  icon: Icons.auto_awesome,
-                  onPressed: busy || planLocked ? null : _generate,
-                ),
-              ],
-            ),
+              const SizedBox(height: 12),
+              FieldPair(
+                start: [
+                  const FieldLabel('كل كم شهر'),
+                  TextField(
+                    controller: everyCtl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(hintText: '1'),
+                  ),
+                ],
+                end: [
+                  const FieldLabel(' '),
+                  GhostButton(
+                    label: 'توليد',
+                    icon: Icons.auto_awesome,
+                    onPressed: busy ? null : _generate,
+                  ),
+                ],
+              ),
+            ],
 
             FormSection(
               icon: Icons.playlist_add_check_outlined,

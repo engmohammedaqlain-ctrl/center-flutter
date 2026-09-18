@@ -44,12 +44,13 @@ const guardianRelations = [
   'أخرى',
 ];
 
+/// مطابق لـ StudentForm.tsx — القيم القديمة تبقى ظاهرة إن وُجدت في السجل.
 const referralSources = [
-  'سوشيال ميديا (فيسبوك / انستغرام / تيك توك)',
+  'وسائل التواصل الاجتماعي',
   'صديق أو زميل',
-  'إعلانات ممولة',
-  'لافتة أو مقر المركز',
-  'زيارة سابقة / طالب قديم',
+  'إعلانات',
+  'مقر المؤسسة',
+  'طالب سابق',
   'أخرى',
 ];
 
@@ -72,16 +73,40 @@ const paymentMethodNames = {
   'other': 'أخرى',
 };
 
+/// تسميات أغراض السندات — مطابق لـ `PAYMENT_PURPOSE_NAMES` في types/payment.ts.
 const paymentPurposeNames = {
-  'monthly_fee': 'رسوم شهرية',
-  'installment': 'سداد دفعة قسط مجدول',
-  'seat_reservation': 'حجز مقعد',
-  'extra_sessions': 'حصص ومجموعات إضافية',
-  'refund': 'رد مبلغ لولي الأمر',
+  'monthly_fee': 'رسوم دراسية',
+  'installment': 'دفعة قسط مجدول',
+  'seat_reservation': 'رسم حجز مقعد',
+  'extra_sessions': 'حصص إضافية',
+  'monthly_reward': 'خصم تفوق',
+  'other_income': 'إيراد آخر',
+  'refund': 'رد مبلغ',
+  'reversal': 'عكس سند',
+  // توافق قراءات قديمة قبل مطابقة أغراض الويب
   'payment_reversal': 'عكس سند',
-  'general_income': 'إيراد عام',
-  'other': 'أخرى',
+  'general_income': 'إيراد آخر',
+  'other': 'رسوم دراسية',
 };
+
+/// الغرض الفارغ أو غير المعروف يُعرض «رسوم دراسية» كالويب.
+String paymentPurposeLabel(String? purpose) {
+  final key = (purpose ?? '').trim();
+  if (key.isEmpty) return 'رسوم دراسية';
+  return paymentPurposeNames[key] ?? key;
+}
+
+/// قبض من غير طالب — مطابق لـ `GENERAL_INCOME_PURPOSE`.
+const generalIncomePurpose = 'other_income';
+
+/// عكس سند من يوم سابق — مطابق لـ `REVERSAL_PURPOSE`.
+const reversalPurpose = 'reversal';
+
+bool isGeneralIncomePurpose(String purpose) =>
+    purpose == generalIncomePurpose || purpose == 'general_income';
+
+bool isReversalPurpose(String purpose) =>
+    purpose == reversalPurpose || purpose == 'payment_reversal';
 
 /// مطابق لـ Teacher.payment_type في types/common.ts
 const teacherPaymentTypes = {
@@ -140,6 +165,7 @@ const studentStatusLabels = {
   'pending': 'بانتظار التأكيد',
   'withdrawn': 'منسحب',
   'archived': 'مؤرشف',
+  'completed': 'أنهى السنة',
 };
 
 /// لون الحالة كما في النسخة المكتبية.
@@ -148,6 +174,7 @@ const studentStatusColors = {
   'pending': 0xFFEAB308,
   'withdrawn': 0xFF737A68,
   'archived': 0xFF94A3B8,
+  'completed': 0xFF0F766E,
 };
 
 /// الحالة القديمة `inactive` تُقرأ «منسحب» حتى تُرحَّل سجلاتها.
@@ -353,6 +380,8 @@ class AcademicYear {
 }
 
 /// لقطة وضع الطالب في عام منتهٍ — يبقى سجله الحالي حراً للترقية للعام التالي.
+String studentYearRecordId(String studentId, String yearId) => 'sy_${studentId}_$yearId';
+
 class StudentYear {
   StudentYear({
     required this.id,
@@ -997,45 +1026,80 @@ class SubjectItem {
     required this.name,
     required this.code,
     this.gradeLevel = 'عام / كل المراحل',
+    List<String>? gradeLevels,
     this.description = '',
     this.academicYearId = '',
     this.syncStatus = 'synced',
     this.createdAt,
     this.updatedAt,
-  });
+  }) : gradeLevels = List<String>.from(gradeLevels ?? const []);
 
   final String id;
   String name;
   String code;
+
+  /// عمود قديم لجهاز لم يُحدَّث — أول مرحلة أو «عام / كل المراحل».
   String gradeLevel;
+
+  /// المراحل التي تُدرَّس فيها المادة؛ فارغة = كل المراحل.
+  List<String> gradeLevels;
   String description;
   String academicYearId;
   String syncStatus;
   String? createdAt;
   String? updatedAt;
 
-  Map<String, dynamic> toCloud() => {
-    'id': id,
-    'name': name,
-    'code': code,
-    'grade_level': gradeLevel,
-    'description': description,
-    'academic_year_id': academicYearId.isEmpty ? null : academicYearId,
-    'created_at': createdAt,
-    'updated_at': updatedAt,
-  };
+  Map<String, dynamic> toCloud() {
+    final grades = [
+      for (final g in gradeLevels)
+        if (g.trim().isNotEmpty && g.trim() != 'عام / كل المراحل') g.trim(),
+    ];
+    // بلا تكرار مع الإبقاء على الترتيب
+    final seen = <String>{};
+    final unique = <String>[];
+    for (final g in grades) {
+      final key = g.toLowerCase();
+      if (seen.add(key)) unique.add(g);
+    }
+    return {
+      'id': id,
+      'name': name,
+      'code': code,
+      'grade_level': unique.isEmpty ? 'عام / كل المراحل' : unique.first,
+      'grade_levels': unique,
+      'description': description,
+      'academic_year_id': academicYearId.isEmpty ? null : academicYearId,
+      'created_at': createdAt,
+      'updated_at': updatedAt,
+    };
+  }
 
-  factory SubjectItem.fromCloud(Map<String, dynamic> m) => SubjectItem(
-    id: '${m['id']}',
-    name: '${m['name'] ?? ''}',
-    code: '${m['code'] ?? ''}',
-    gradeLevel: '${m['grade_level'] ?? 'عام / كل المراحل'}',
-    description: '${m['description'] ?? ''}',
-    academicYearId: '${m['academic_year_id'] ?? ''}',
-    syncStatus: '${m['sync_status'] ?? 'synced'}',
-    createdAt: m['created_at']?.toString(),
-    updatedAt: m['updated_at']?.toString(),
-  );
+  factory SubjectItem.fromCloud(Map<String, dynamic> m) {
+    final rawLevels = m['grade_levels'];
+    final fromList = <String>[];
+    if (rawLevels is List) {
+      for (final e in rawLevels) {
+        final g = '$e'.trim();
+        if (g.isNotEmpty && g != 'عام / كل المراحل') fromList.add(g);
+      }
+    }
+    final legacy = '${m['grade_level'] ?? ''}'.trim();
+    final grades = fromList.isNotEmpty
+        ? fromList
+        : (legacy.isEmpty || legacy == 'عام / كل المراحل' ? <String>[] : [legacy]);
+    return SubjectItem(
+      id: '${m['id']}',
+      name: '${m['name'] ?? ''}',
+      code: '${m['code'] ?? ''}',
+      gradeLevel: grades.isEmpty ? 'عام / كل المراحل' : grades.first,
+      gradeLevels: grades,
+      description: '${m['description'] ?? ''}',
+      academicYearId: '${m['academic_year_id'] ?? ''}',
+      syncStatus: '${m['sync_status'] ?? 'synced'}',
+      createdAt: m['created_at']?.toString(),
+      updatedAt: m['updated_at']?.toString(),
+    );
+  }
 }
 
 /// قسط في خطة مرحلة — `PlanItem`. الطالب يأخذ نسخته الخاصة منه عند تسجيله.
@@ -1369,6 +1433,39 @@ class GeneralIncome {
     cancelled: p.cancelled || p.reversedByPaymentId != null,
   );
 }
+
+/// تسميات أنواع الطلبات المالية — `FINANCE_REQUEST_LABELS`.
+const financeRequestLabels = <String, String>{
+  'installment_discount': 'خصم أو إعفاء على قسط',
+  'installment_remove': 'حذف رسم',
+  'student_discount': 'خصم للطالب',
+  'refund': 'رد مبلغ',
+  'payment_cancel': 'إلغاء أو عكس سند',
+};
+
+/// تسميات حركات سجل الرقابة — `AUDIT_ACTION_LABELS`.
+const financeAuditActionLabels = <String, String>{
+  'payment_cancel': 'إلغاء سند',
+  'payment_reverse': 'عكس سند',
+  'payment_discount': 'خصم عند القبض',
+  'installment_discount': 'خصم على قسط',
+  'installment_exempt': 'إعفاء من قسط',
+  'installment_discount_removed': 'إزالة خصم قسط',
+  'installment_removed': 'حذف رسم',
+  'extra_charge': 'رسم خاص',
+  'student_discount': 'خصم للطالب',
+  'student_discount_removed': 'إزالة خصم الطالب',
+  'refund': 'رد مبلغ',
+  'credit_forfeit': 'إسقاط رصيد',
+  'request_submitted': 'طلب موافقة',
+  'request_approved': 'موافقة على طلب',
+  'request_rejected': 'رفض طلب',
+};
+
+String financeRequestLabel(String kind) => financeRequestLabels[kind] ?? kind;
+
+String financeAuditActionLabel(String action) =>
+    financeAuditActionLabels[action] ?? action;
 
 /// طلب موافقة مالية قادم من أجهزة المنشأة.
 class FinanceRequest {

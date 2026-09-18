@@ -11,8 +11,10 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/custom_plan_rows.dart';
 import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
+import 'return_to_grade_plan_sheet.dart';
 
 class StudentFormScreen extends StatefulWidget {
   const StudentFormScreen({super.key, this.student});
@@ -63,18 +65,13 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
 
   /// مصدر أقساط التسجيل: خطة المرحلة أو خطة مخصصة — كويب `planSource`.
   String planSource = 'grade'; // grade | custom
-  final customCount = TextEditingController(text: '10');
-  final customAmount = TextEditingController(text: '');
-  final customEvery = TextEditingController(text: '1');
-  late String customFirstDue = isoDate(DateTime.now());
+  final customRows = <CustomPlanRow>[];
   final scrollCtl = ScrollController();
 
-  /// `percentage` نسبة من رسم المرحلة، `fixed` مبلغ يُحسم منه، `custom_fee` رسم
-  /// شهري محدد يحلّ محلّه.
+  /// `percentage` نسبة، `fixed` مبلغ مقطوع — كالويب (بلا «رسم محدد»).
   late String discountType;
   final discountRate = TextEditingController(text: '10');
   final discountFixed = TextEditingController(text: '20');
-  final customMonthlyFee = TextEditingController();
   final discountReason = TextEditingController();
   late String relation;
   late String neighborhood;
@@ -114,17 +111,20 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     // `inactive` القديمة تُقرأ «منسحب» كما بعد ترقية v9
     status = s == null ? 'active' : (s.status == 'inactive' ? 'withdrawn' : s.status);
 
-    // الخصم القائم يُقرأ كما يقرأه سطح المكتب: نسبةٌ محفوظة تعني «نسبة مئوية»،
-    // ورسمٌ شهري محفوظ بلا نسبة يعني «رسم محدد»
-    hasDiscount = s != null && (s.academicDiscountApplied || (s.customMonthlyFee ?? 0) > 0);
-    discountType = (s?.academicDiscountRate ?? 0) > 0
-        ? 'percentage'
-        : (s?.customMonthlyFee ?? 0) > 0
-            ? 'custom_fee'
-            : 'percentage';
-    if ((s?.academicDiscountRate ?? 0) > 0) discountRate.text = trimNum(s!.academicDiscountRate);
-    if ((s?.customMonthlyFee ?? 0) > 0) customMonthlyFee.text = trimNum(s!.customMonthlyFee!);
-    discountReason.text = s?.exceptionReason ?? '';
+    // الخصم القائم يُقرأ للعرض فقط: عند التعديل الحقول معطّلة كالويب
+    hasDiscount = s != null && (s.academicDiscountApplied || s.planDiscountValue > 0 || (s.customMonthlyFee ?? 0) > 0);
+    if (s?.planDiscountType == 'fixed') {
+      discountType = 'fixed';
+      if (s!.planDiscountValue > 0) discountFixed.text = trimNum(s.planDiscountValue);
+    } else {
+      discountType = 'percentage';
+      final rate = (s?.academicDiscountRate ?? 0) > 0
+          ? s!.academicDiscountRate
+          : (s?.planDiscountType == 'percentage' ? s!.planDiscountValue : 0.0);
+      if (rate > 0) discountRate.text = trimNum(rate);
+    }
+    discountReason.text =
+        (s?.planDiscountReason.isNotEmpty == true ? s!.planDiscountReason : s?.exceptionReason) ?? '';
 
     relation = s?.relation ?? '';
     neighborhood = (s?.neighborhood ?? '').isNotEmpty && neighborhoods.contains(s!.neighborhood) ? s.neighborhood : ((s?.neighborhood ?? '').isNotEmpty ? 'أخرى' : '');
@@ -165,11 +165,12 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
         notes.text, detailedAddress.text, customNeighborhood.text, birthPlace.text, nationality.text,
         previousSchool.text, gpa.text, originalArea.text, medicalCondition.text, parentJob.text,
         email.text, sectionCtl.text, parentSecondaryNumber.text, phoneCtl.text, parentPhoneCtl.text,
-        discountRate.text, discountFixed.text, customMonthlyFee.text, discountReason.text,
+        discountRate.text, discountFixed.text, discountReason.text,
         grade, status, relation, neighborhood, gender, referral, housing, health,
         '$hasDiscount', discountType, '$initialRating', '$guardianDeclaration',
         isoDate(enrollmentDate), birthDate == null ? '' : isoDate(birthDate!),
         phonePrefix, parentPhonePrefix, secondaryPrefix, studentIdPhoto, birthCertificate,
+        planSource, customRows.map((r) => '${r.title}:${r.amount}:${r.dueDate}').join(';'),
       ].join('|');
 
   bool get _hasChanges => _snapshot() != _initial;
@@ -229,11 +230,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     parentPhoneCtl.dispose();
     discountRate.dispose();
     discountFixed.dispose();
-    customMonthlyFee.dispose();
     discountReason.dispose();
-    customCount.dispose();
-    customAmount.dispose();
-    customEvery.dispose();
     scrollCtl.dispose();
     super.dispose();
   }
@@ -326,12 +323,15 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     final top = scrollCtl.hasClients ? scrollCtl.offset : 0.0;
     setState(() {
       planSource = next;
-      if (next == 'custom') {
-        customFirstDue = isoDate(enrollmentDate);
+      if (next == 'custom' && customRows.isEmpty) {
         final fee = _gradeFeeOf(context);
-        if (customAmount.text.trim().isEmpty && fee > 0) {
-          customAmount.text = trimNum(fee);
-        }
+        customRows.add(
+          CustomPlanRow(
+            title: 'قسط 1',
+            amount: fee > 0 ? trimNum(fee) : '',
+            dueDate: isoDate(enrollmentDate),
+          ),
+        );
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -339,22 +339,43 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     });
   }
 
+  /// بنود الخطة المخصصة من صفوف المحرّر — للحفظ والمعاينة.
   List<PlanItem>? _customPlanSchedule() {
     if (planSource != 'custom' || widget.student != null) return null;
-    final count = int.tryParse(customCount.text.trim()) ?? 0;
-    final amount = double.tryParse(customAmount.text.trim()) ?? -1;
-    if (count <= 0 || amount < 0 || customFirstDue.isEmpty) return null;
-    var n = 0;
-    return generatePlanItems(
-      count: count,
-      amount: amount,
-      firstDueDate: customFirstDue,
-      everyMonths: int.tryParse(customEvery.text.trim()) ?? 1,
-      newId: () {
-        n++;
-        return 'slot_$n';
-      },
-      titlePrefix: 'قسط مخصص',
+    if (customRows.isEmpty) return null;
+    return [
+      for (var i = 0; i < customRows.length; i++)
+        if (customRows[i].dueDate.trim().isNotEmpty)
+          PlanItem(
+            id: 'slot_${i + 1}',
+            title: customRows[i].title.trim().isEmpty ? 'قسط ${i + 1}' : customRows[i].title.trim(),
+            amount: customRows[i].amountValue,
+            dueDate: customRows[i].dueDate.trim(),
+          ),
+    ];
+  }
+
+  /// معاينة الأقساط قبل التسجيل — `planPreview` في StudentForm.tsx.
+  List<StudentPlanRow> _planPreview(BuildContext context) {
+    if (widget.student != null) return const [];
+    final store = StoreScope.of(context);
+    final custom = _customPlanSchedule();
+    final List<PlanItem> source;
+    if (planSource == 'custom') {
+      source = custom ?? const [];
+    } else {
+      source = store.planItemsOf(store.feeFor(grade));
+    }
+    if (source.isEmpty) return const [];
+    return buildStudentPlan(
+      source,
+      'preview',
+      seatFee: store.seatReservationFee,
+      deductSeat: store.deductsSeatFee,
+      discount: _planDiscountOf(_gradeFeeOf(context)),
+      enrollmentDate: isoDate(enrollmentDate),
+      enrollmentMode: planSource == 'custom' ? EnrollmentPlanMode.full : enrollmentMode,
+      customIds: planSource == 'custom',
     );
   }
 
@@ -425,13 +446,21 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           parentPhoneNumber.trim().isNotEmpty && !isPhoneComplete(parentPhoneNumber, parentPhonePrefix),
           'الرقم غير مكتمل: يجب إدخال ${phoneTargetLength(parentPhonePrefix)} أرقام بعد المقدمة ($parentPhonePrefix)',
         );
+      final parentCode = parentPortalCode.text.trim();
+      final studentCode = portalCode.text.trim();
+      errors.check(
+        'parentCode',
+        parentCode.isNotEmpty && parentCode == studentCode,
+        'كلمة مرور ولي الأمر يجب أن تختلف عن كلمة مرور الطالب',
+      );
       if (widget.student == null && planSource == 'custom') {
-        final count = int.tryParse(customCount.text.trim()) ?? 0;
-        final amount = double.tryParse(customAmount.text.trim());
         errors
-          ..check('customPlan', count <= 0, 'أدخل عدد أقساط الخطة المخصصة')
-          ..check('customPlan', amount == null || amount < 0, 'أدخل مبلغ القسط المخصص')
-          ..check('customPlan', customFirstDue.isEmpty, 'حدّد أول استحقاق للخطة المخصصة');
+          ..check('customPlan', customRows.isEmpty, 'خطة مخصصة: أضف قسطاً واحداً على الأقل')
+          ..check(
+            'customPlan',
+            customRows.isNotEmpty && customRows.any((r) => r.dueDate.trim().isEmpty),
+            'خطة مخصصة: حدّد تاريخ استحقاق لكل قسط',
+          );
       }
     });
     // حقل ناقص تحت «بيانات إضافية» يُفتح قسمه قبل التمرير إليه
@@ -463,75 +492,131 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     final finalGrade = grade.trim();
     final existing = widget.student;
     final id = existing?.id ?? store.newId();
-    final customSchedule = _customPlanSchedule();
+    final gradeFee = _gradeFeeOf(context);
+    final customSchedule = () {
+      final raw = _customPlanSchedule();
+      if (raw == null) return null;
+      final discount = _planDiscountOf(gradeFee);
+      if (discount == null || discount.value <= 0) return raw;
+      // كالويب `planRowsForSave`: الخصم يُطبَّق على البنود قبل الحفظ
+      final discounted = applyPlanDiscount(
+        [for (final i in raw) StudentPlanRow(id: i.id, title: i.title, amount: i.amount, dueDate: i.dueDate)],
+        discount,
+      );
+      return [
+        for (final r in discounted) PlanItem(id: r.id, title: r.title, amount: r.amount, dueDate: r.dueDate),
+      ];
+    }();
 
     try {
-      final gradeFee = _gradeFeeOf(context);
+      final isNew = existing == null;
+      // الخصم يُطبَّق عند بناء الأقساط للتسجيل الجديد فقط — كالويب
+      final applyDiscount = isNew && hasDiscount;
+      final planDiscount = isNew ? _planDiscountOf(gradeFee) : null;
+      final oldGrade = existing?.gradeLevel.trim() ?? '';
+      final gradeChanged =
+          !isNew && oldGrade.isNotEmpty && finalGrade.isNotEmpty && oldGrade.toLowerCase() != finalGrade.toLowerCase();
+
+      final draft = Student(
+        id: id,
+        firstName: firstName,
+        lastName: lastName,
+        fullName: trimmedFullName,
+        gradeLevel: finalGrade,
+        section: sectionCtl.text.trim(),
+        phone: combinePhoneAndPrefix(phoneNumber, phonePrefix),
+        phonePrefix: phonePrefix,
+        parentName: parentName.text.trim(),
+        parentPhone: combinePhoneAndPrefix(parentPhoneNumber, parentPhonePrefix),
+        parentPhonePrefix: parentPhonePrefix,
+        nationalId: cleanNatId,
+        portalCode: portalCode.text.trim(),
+        parentPortalCode: parentPortalCode.text.trim(),
+        neighborhood: selectedNeighborhood,
+        relation: relation,
+        gender: gender,
+        notes: notes.text.trim(),
+        balance: existing?.balance ?? 0,
+        enrolledAt: enrollmentDate,
+        detailedAddress: detailedAddress.text.trim(),
+        referralSource: referral,
+        schoolName: previousSchool.text.trim().isNotEmpty ? previousSchool.text.trim() : (existing?.schoolName ?? ''),
+        status: status,
+        birthDate: birthDate == null ? '' : isoDate(birthDate!),
+        birthPlace: birthPlace.text.trim(),
+        nationality: nationality.text.trim(),
+        previousSchool: previousSchool.text.trim(),
+        gpa: gpa.text.trim(),
+        housingStatus: housing,
+        originalArea: originalArea.text.trim(),
+        healthStatus: health,
+        medicalCondition: health == 'مريض' ? medicalCondition.text.trim() : '',
+        parentJob: parentJob.text.trim(),
+        parentSecondaryPhone: combinePhoneAndPrefix(parentSecondaryNumber.text.trim(), secondaryPrefix),
+        email: email.text.trim(),
+        guardianDeclaration: guardianDeclaration,
+        initialRating: initialRating,
+        seatReservationPaid: existing?.seatReservationPaid ?? false,
+        seatReservationDiscounted: existing?.seatReservationDiscounted ?? false,
+        paymentPlan: existing?.paymentPlan ?? 'full',
+        paymentStatus: existing?.paymentStatus ?? 'unpaid',
+        academicDiscountApplied: isNew ? applyDiscount : existing.academicDiscountApplied,
+        academicDiscountRate: isNew
+            ? (applyDiscount && discountType == 'percentage' ? _discountRateValue : 0)
+            : existing.academicDiscountRate,
+        hasException: existing?.hasException ?? false,
+        exceptionReason: customSchedule != null
+            ? 'خطة مخصصة'
+            : (isNew
+                ? (applyDiscount ? discountReason.text.trim() : '')
+                : existing.exceptionReason),
+        customMonthlyFee: existing?.customMonthlyFee,
+        planDiscountType: isNew ? null : existing.planDiscountType,
+        planDiscountValue: isNew ? 0 : existing.planDiscountValue,
+        planDiscountReason: isNew ? '' : existing.planDiscountReason,
+        planDiscountFrom: isNew ? '' : existing.planDiscountFrom,
+        usesCustomPlan: customSchedule != null || (existing?.usesCustomPlan ?? false),
+        academicYearId: existing?.academicYearId ?? '',
+        createdAt: existing?.createdAt,
+      );
+
+      final attachments = attachmentsLoaded
+          ? StudentAttachments(
+              id: id,
+              studentIdPhoto: studentIdPhoto,
+              birthCertificate: birthCertificate,
+            )
+          : null;
+
+      // تغيّر المرحلة عند التعديل: حفظ البيانات ثم نقل مالي بنطاق الخطة (SD-R03 / ST-19)
+      if (gradeChanged) {
+        final transferred = await showReturnToGradePlanSheet(
+          context: context,
+          studentIds: [id],
+          studentGrades: [finalGrade],
+          mode: ReturnToGradePlanMode.transfer,
+          fixedGradeName: finalGrade,
+          onPrepare: () async {
+            store.upsertStudent(
+              draft,
+              isNew: false,
+              allowDuplicatePhone: phoneDuplicateError != null,
+              attachments: attachments,
+            );
+          },
+        );
+        if (transferred && mounted) Navigator.pop(context);
+        return;
+      }
+
       store.upsertStudent(
-        Student(
-          id: id,
-          firstName: firstName,
-          lastName: lastName,
-          fullName: trimmedFullName,
-          gradeLevel: finalGrade,
-          section: sectionCtl.text.trim(),
-          phone: combinePhoneAndPrefix(phoneNumber, phonePrefix),
-          phonePrefix: phonePrefix,
-          parentName: parentName.text.trim(),
-          parentPhone: combinePhoneAndPrefix(parentPhoneNumber, parentPhonePrefix),
-          parentPhonePrefix: parentPhonePrefix,
-          nationalId: cleanNatId,
-          portalCode: portalCode.text.trim(),
-          parentPortalCode: parentPortalCode.text.trim(),
-          neighborhood: selectedNeighborhood,
-          relation: relation,
-          gender: gender,
-          notes: notes.text.trim(),
-          balance: existing?.balance ?? 0,
-          enrolledAt: enrollmentDate,
-          detailedAddress: detailedAddress.text.trim(),
-          referralSource: referral,
-          schoolName: previousSchool.text.trim().isNotEmpty ? previousSchool.text.trim() : (existing?.schoolName ?? ''),
-          status: status,
-          birthDate: birthDate == null ? '' : isoDate(birthDate!),
-          birthPlace: birthPlace.text.trim(),
-          nationality: nationality.text.trim(),
-          previousSchool: previousSchool.text.trim(),
-          gpa: gpa.text.trim(),
-          housingStatus: housing,
-          originalArea: originalArea.text.trim(),
-          healthStatus: health,
-          medicalCondition: health == 'مريض' ? medicalCondition.text.trim() : '',
-          parentJob: parentJob.text.trim(),
-          parentSecondaryPhone: combinePhoneAndPrefix(parentSecondaryNumber.text.trim(), secondaryPrefix),
-          email: email.text.trim(),
-          guardianDeclaration: guardianDeclaration,
-          initialRating: initialRating,
-          seatReservationPaid: existing?.seatReservationPaid ?? false,
-          seatReservationDiscounted: existing?.seatReservationDiscounted ?? false,
-          paymentPlan: existing?.paymentPlan ?? 'full',
-          paymentStatus: existing?.paymentStatus ?? 'unpaid',
-          academicDiscountApplied: hasDiscount,
-          academicDiscountRate: hasDiscount && discountType == 'percentage' ? _discountRateValue : 0,
-          hasException: existing?.hasException ?? false,
-          exceptionReason: customSchedule != null
-              ? 'خطة مخصصة'
-              : (hasDiscount ? discountReason.text.trim() : (existing?.exceptionReason ?? '')),
-          customMonthlyFee: hasDiscount ? _netMonthlyFee(gradeFee) : null,
-          usesCustomPlan: customSchedule != null || (existing?.usesCustomPlan ?? false),
-        ),
-        isNew: existing == null,
-        discount: existing == null && customSchedule == null ? _planDiscountOf(gradeFee) : null,
-        enrollmentMode: existing == null && planSource == 'grade' ? enrollmentMode : EnrollmentPlanMode.full,
+        draft,
+        isNew: isNew,
+        discount: planDiscount,
+        enrollmentMode: isNew && planSource == 'grade' ? enrollmentMode : EnrollmentPlanMode.full,
         allowDuplicatePhone: phoneDuplicateError != null,
         customPlanItems: customSchedule,
-        attachments: attachmentsLoaded
-            ? StudentAttachments(
-                id: id,
-                studentIdPhoto: studentIdPhoto,
-                birthCertificate: birthCertificate,
-              )
-            : null,
+        attachments: attachments,
       );
       if (mounted) Navigator.pop(context);
     } on StoreException catch (e) {
@@ -560,7 +645,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     final fullStudentPhone = combinePhoneAndPrefix(phoneNumber, phonePrefix);
     final grades = _gradeOptions(store);
     // شعب المرحلة المختارة وحدها، ومعها شعبة الطالب القائمة إن لم تعد موجودة
-    final matchingSections = store.rooms.where((r) => isSameGrade(r.gradeLevel, grade)).toList();
+    final matchingSections = store.roomsInViewedYear.where((r) => isSameGrade(r.gradeLevel, grade)).toList();
     final sectionNames = <String>[
       for (final r in matchingSections)
         if (r.name.trim().isNotEmpty) r.name,
@@ -631,7 +716,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                     grade = v ?? grade;
                     errors.clear('grade');
                     // شعبة المرحلة السابقة لا تبقى تحت مرحلة لا تملكها
-                    final kept = store.rooms.any((r) => isSameGrade(r.gradeLevel, grade) && r.name == sectionCtl.text);
+                    final kept = store.roomsInViewedYear.any((r) => isSameGrade(r.gradeLevel, grade) && r.name == sectionCtl.text);
                     if (!kept) sectionCtl.text = '';
                   }),
                 ),
@@ -699,11 +784,18 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
               [
                 const FieldLabel('من أين عرفتنا؟'),
                 AppDropdown<String>(
-                  value: referralSources.contains(referral) ? referral : null,
+                  value: referral.trim().isEmpty ? null : referral,
                   hint: 'اختر',
-                  items: referralSources
-                      .map((r) => DropdownMenuItem(value: r, child: Text(r, overflow: TextOverflow.ellipsis)))
-                      .toList(),
+                  items: [
+                    // قيمة قديمة خارج القائمة تبقى ظاهرة حتى لا تنقسم الإحصائيات بصمت
+                    if (referral.trim().isNotEmpty && !referralSources.contains(referral))
+                      DropdownMenuItem(
+                        value: referral,
+                        child: Text(referral, overflow: TextOverflow.ellipsis),
+                      ),
+                    for (final r in referralSources)
+                      DropdownMenuItem(value: r, child: Text(r, overflow: TextOverflow.ellipsis)),
+                  ],
                   onChanged: (v) => setState(() => referral = v ?? referral),
                 ),
               ],
@@ -712,9 +804,9 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                 AppDropdown<String>(
                   value: status,
                   items: [
-                    // «بانتظار التأكيد» يضعها الترفيع السنوي، فلا تُعرض إلا لمن هو فيها
+                    // «بانتظار التأكيد» و«أنهى السنة» يضعهما النظام، فلا تُعرض إلا لمن هو فيها
                     for (final e in studentStatusLabels.entries)
-                      if (e.key != 'pending' || status == 'pending')
+                      if ((e.key != 'pending' && e.key != 'completed') || status == e.key)
                         DropdownMenuItem(value: e.key, child: Text(e.value, overflow: TextOverflow.ellipsis)),
                   ],
                   onChanged: (v) => setState(() => status = v ?? status),
@@ -755,11 +847,9 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                 ],
               ),
               const SizedBox(height: 6),
-              // ارتفاع محجوز يمنع قفز النموذج عند إظهار/إخفاء بناء الخطة المخصصة
               if (planSource == 'custom') ...[
                 Text(
-                  errors['customPlan'] ??
-                      'الافتراضي: مسافة شهر بين كل قسط والذي يليه.',
+                  errors['customPlan'] ?? 'لكل قسط اسمه ومبلغه وموعده — أضف أو احذف كما يلزم.',
                   style: TextStyle(
                     color: errors['customPlan'] != null ? AppColors.danger : AppColors.muted,
                     fontSize: 11.5,
@@ -767,52 +857,37 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                   ),
                 ),
                 _gap,
-                FieldPair(
-                  start: [
-                    const FieldLabel('عدد الأقساط'),
-                    TextField(
-                      controller: customCount,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(hintText: '10'),
-                    ),
-                  ],
-                  end: [
-                    const FieldLabel('المبلغ (₪)'),
-                    TextField(
-                      controller: customAmount,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(hintText: '0'),
-                    ),
-                  ],
-                ),
-                _gap,
-                FieldPair(
-                  start: [
-                    const FieldLabel('أول استحقاق'),
-                    SelectField(
-                      text: customFirstDue.isEmpty ? 'اختر' : customFirstDue,
-                      icon: Icons.calendar_today_outlined,
-                      placeholder: customFirstDue.isEmpty,
-                      onTap: () async {
-                        final initial = parseIsoDate(customFirstDue) ?? enrollmentDate;
-                        final picked = await showDatePicker(
-                          context: context,
-                          initialDate: initial,
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime(2035),
-                        );
-                        if (picked != null) setState(() => customFirstDue = isoDate(picked));
-                      },
-                    ),
-                  ],
-                  end: [
-                    const FieldLabel('كل (شهر)'),
-                    TextField(
-                      controller: customEvery,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(hintText: '1'),
-                    ),
-                  ],
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.bg,
+                    borderRadius: BorderRadius.circular(Corner.box),
+                    border: Border.all(color: AppColors.line),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            'أقساط الطالب المخصصة',
+                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: AppColors.navy),
+                          ),
+                          const Spacer(),
+                          const Text(
+                            'لكل قسط اسمه ومبلغه وموعده',
+                            style: TextStyle(fontSize: 10.5, color: AppColors.muted),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      CustomPlanRowsEditor(
+                        rows: customRows,
+                        fallbackDue: isoDate(enrollmentDate),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ],
+                  ),
                 ),
               ] else
                 const SizedBox(height: 8),
@@ -832,7 +907,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: _toggle(
-                        'من تاريخ الالتحاق',
+                        'من شهر التسجيل',
                         enrollmentMode == EnrollmentPlanMode.fromEnrollment,
                         AppColors.amber,
                         () => setState(() => enrollmentMode = EnrollmentPlanMode.fromEnrollment),
@@ -843,7 +918,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                 const SizedBox(height: 6),
                 Text(
                   enrollmentMode == EnrollmentPlanMode.fromEnrollment
-                      ? 'يُستبعد أي قسط تاريخه قبل يوم التسجيل — لا يظهر دين سابق.'
+                      ? 'لن تُحتسب أقساط الأشهر السابقة لشهر التسجيل (${isoDate(enrollmentDate).substring(0, 7)}).'
                       : 'كل أقساط الخطة بتواريخها كما هي معرّفة للمرحلة.',
                   style: const TextStyle(color: AppColors.muted, fontSize: 11.5, height: 1.4),
                 ),
@@ -851,6 +926,10 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
               _gap,
             ],
             ..._discountSection(context),
+            if (widget.student == null) ...[
+              _gap,
+              _planPreviewSection(context),
+            ],
 
             // ── ٥. بيانات إضافية (اختيارية) ──────────────────────────────────
             _extraHeader(),
@@ -862,18 +941,18 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     );
   }
 
-  /// خصم الرسوم الشهرية — المقابل لقسم «تطبيق خصم شهري» في StudentForm.tsx.
+  /// خصم على الأقساط — المقابل لقسم الخصم في StudentForm.tsx.
   ///
-  /// اقتراح لا إلزام: النظام يحسب الصافي ويعرضه، والرقم المحفوظ هو الصافي نفسه
-  /// (`custom_monthly_fee`) كي تقرأه النسخة المكتبية كما كتبته.
+  /// للطالب القائم: القسم معطّل (يُعدَّل من ملفه). عند التسجيل: نسبة أو مبلغ مقطوع فقط.
   List<Widget> _discountSection(BuildContext context) {
     final store = StoreScope.of(context);
+    final canDiscount = store.can('finance.discount');
+    final editing = widget.student != null;
     final gradeFee = _gradeFeeOf(context);
     final rules = store.discountRules;
-    final discount = _discountAmount(gradeFee);
-    final net = _netMonthlyFee(gradeFee);
     final gpaValue = double.tryParse(gpa.text.trim()) ?? 0;
-    final suggestExcellence = rules.autoSuggestExcellence && !hasDiscount && gpaValue >= rules.excellenceMinGpa;
+    final suggestExcellence =
+        !editing && canDiscount && rules.autoSuggestExcellence && !hasDiscount && gpaValue >= rules.excellenceMinGpa;
 
     return [
       _section(
@@ -885,17 +964,35 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
         children: [
           Expanded(
             child: Text(
-              'تطبيق خصم شهري',
+              'خصم على الأقساط',
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: AppColors.heading),
             ),
           ),
           Switch.adaptive(
-            value: hasDiscount,
+            value: hasDiscount && (editing || canDiscount),
             activeThumbColor: AppColors.amber,
-            onChanged: (v) => setState(() => hasDiscount = v),
+            onChanged: editing || !canDiscount
+                ? null
+                : (v) => setState(() => hasDiscount = v),
           ),
         ],
       ),
+      if (editing)
+        const Padding(
+          padding: EdgeInsets.only(bottom: 8),
+          child: Text(
+            '— لتعديل الخصم استخدم «خصم للطالب» من ملفه',
+            style: TextStyle(fontSize: 11.5, color: AppColors.muted, fontWeight: FontWeight.w600),
+          ),
+        )
+      else if (!canDiscount)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            '— لا تملك صلاحية الخصم: سجّل الطالب ثم اطلب الخصم من ملفه',
+            style: TextStyle(fontSize: 11.5, color: AppColors.amber, fontWeight: FontWeight.w600),
+          ),
+        ),
       if (suggestExcellence)
         Padding(
           padding: const EdgeInsets.only(bottom: 4),
@@ -910,24 +1007,19 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
             }),
           ),
         ),
-      if (hasDiscount) ...[
+      if (hasDiscount && !editing && canDiscount) ...[
         _gap,
         const FieldLabel('نوع الخصم'),
         Row(
           children: [
             Expanded(
-              child: _toggle('نسبة %', discountType == 'percentage', AppColors.amber,
+              child: _toggle('نسبة مئوية (%)', discountType == 'percentage', AppColors.amber,
                   () => setState(() => discountType = 'percentage')),
             ),
             const SizedBox(width: 6),
             Expanded(
-              child: _toggle('مبلغ مقطوع', discountType == 'fixed', AppColors.amber,
+              child: _toggle('مبلغ مقطوع (شيكل)', discountType == 'fixed', AppColors.amber,
                   () => setState(() => discountType = 'fixed')),
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: _toggle('رسم محدد', discountType == 'custom_fee', AppColors.amber,
-                  () => setState(() => discountType = 'custom_fee')),
             ),
           ],
         ),
@@ -953,7 +1045,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                 ),
             ],
           ),
-        ] else if (discountType == 'fixed') ...[
+        ] else ...[
           FieldLabel('مبلغ الخصم ($currency)'),
           TextField(
             controller: discountFixed,
@@ -962,14 +1054,10 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
             onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(hintText: '20'),
           ),
-        ] else ...[
-          FieldLabel('الرسم الشهري بعد الخصم ($currency)'),
-          TextField(
-            controller: customMonthlyFee,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            style: const TextStyle(fontFamily: 'monospace'),
-            onChanged: (_) => setState(() {}),
-            decoration: InputDecoration(hintText: trimNum(gradeFee)),
+          const SizedBox(height: 4),
+          const Text(
+            'يُخصم هذا المبلغ من كل قسط بنفس القيمة (مثال: 20 ← كل قسط ينقص 20 شيكل)',
+            style: TextStyle(fontSize: 10.5, color: AppColors.muted, height: 1.35),
           ),
         ],
         _gap,
@@ -990,33 +1078,146 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
               ),
           ],
         ),
-        if (gradeFee > 0) ...[
-          _gap,
+      ],
+    ];
+  }
+
+  /// معاينة أقساط التسجيل قبل الحفظ — SF-05 / `planPreview` في الويب.
+  Widget _planPreviewSection(BuildContext context) {
+    final store = StoreScope.of(context);
+    final preview = _planPreview(context);
+    final gradeItems = store.planItemsOf(store.feeFor(grade));
+
+    if (planSource == 'grade' && grade.trim().isEmpty) {
+      return const Text(
+        'اختر المرحلة لعرض أقساطها',
+        style: TextStyle(fontSize: 11.5, color: AppColors.muted),
+      );
+    }
+    if (planSource == 'grade' && gradeItems.isEmpty && preview.isEmpty) {
+      return const Text(
+        'لا أقساط لهذه المرحلة بعد — عرّفها من الإعدادات ← المراحل والرسوم',
+        style: TextStyle(fontSize: 11.5, color: AppColors.muted, height: 1.4),
+      );
+    }
+    if (planSource == 'custom' && preview.isEmpty) {
+      return const Text(
+        'أضف أقساطاً أعلاه لمعاينتها قبل الحفظ',
+        style: TextStyle(fontSize: 11.5, color: AppColors.muted, height: 1.4),
+      );
+    }
+    if (planSource == 'grade' && gradeItems.isNotEmpty && preview.isEmpty) {
+      return const Text(
+        'لا أقساط تُحتسب بوضع التسجيل الحالي — جرّب «الخطة كاملة» أو غيّر تاريخ التسجيل',
+        style: TextStyle(fontSize: 11.5, color: AppColors.muted, height: 1.4),
+      );
+    }
+    if (preview.isEmpty) return const SizedBox.shrink();
+
+    final discountSum = preview.fold<double>(0, (sum, row) {
+      final orig = row.originalAmount;
+      if (orig == null || !(orig > row.amount)) return sum;
+      return sum + (orig - row.amount);
+    });
+    final total = planTotal([
+      for (final r in preview) PlanItem(id: r.id, title: r.title, amount: r.amount, dueDate: r.dueDate),
+    ]);
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(Corner.box),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: AppColors.amberSoft,
-              borderRadius: BorderRadius.circular(Corner.box),
-              border: Border.all(color: AppColors.amberBorder),
+              color: AppColors.bg,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(Corner.box)),
             ),
             child: Row(
               children: [
                 Expanded(
                   child: Text(
-                    'الأساسي ${money(gradeFee)}  ·  الخصم -${money(discount)}',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.muted),
+                    planSource == 'custom'
+                        ? (hasDiscount ? 'بعد الخصم (${preview.length})' : 'أقساط مخصصة (${preview.length})')
+                        : 'أقساط المرحلة (${preview.length})',
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: AppColors.heading),
                   ),
                 ),
+                if (discountSum > 0.004) ...[
+                  Text(
+                    'خصم ${money(discountSum)}',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, fontFamily: 'monospace', color: AppColors.amber),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 Text(
-                  'الصافي: ${money(net)}',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: AppColors.success),
+                  'المطلوب ${money(total)}',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, fontFamily: 'monospace', color: AppColors.heading),
                 ),
               ],
             ),
           ),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 180),
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: EdgeInsets.zero,
+              itemCount: preview.length,
+              separatorBuilder: (_, _) => const Divider(height: 1, color: Color(0xFFF1F5F9)),
+              itemBuilder: (_, i) {
+                final row = preview[i];
+                final orig = row.originalAmount;
+                final struck = orig != null && orig != row.amount;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          row.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      if (struck) ...[
+                        Text(
+                          money(orig),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontFamily: 'monospace',
+                            color: AppColors.muted,
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      Text(
+                        money(row.amount),
+                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, fontFamily: 'monospace'),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 88,
+                        child: Text(
+                          row.dueDate,
+                          textAlign: TextAlign.left,
+                          style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: AppColors.muted),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
         ],
-      ],
-    ];
+      ),
+    );
   }
 
   List<Widget> _extraFields() {
@@ -1052,6 +1253,18 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
             keyboardType: TextInputType.number,
             maxLength: 10,
             style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+            onChanged: (_) {
+              setState(() {
+                errors.clear('parentCode');
+                final parent = parentPortalCode.text.trim();
+                final student = portalCode.text.trim();
+                errors.check(
+                  'parentCode',
+                  parent.isNotEmpty && parent == student,
+                  'لا تطابق كلمة مرور الطالب',
+                );
+              });
+            },
             decoration: InputDecoration(
               hintText: '6 أرقام',
               counterText: '',
@@ -1343,21 +1556,6 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     return store.feeFor(grade)?.monthlyFee ?? 0;
   }
 
-  /// المبلغ المخصوم من رسم المرحلة — مطابق لـ `calculatedDiscountAmount`.
-  double _discountAmount(double gradeFee) {
-    if (!hasDiscount || gradeFee <= 0) return 0;
-    switch (discountType) {
-      case 'percentage':
-        return (gradeFee * _discountRateValue / 100).roundToDouble();
-      case 'fixed':
-        return double.tryParse(discountFixed.text.trim()) ?? 0;
-      default:
-        final custom = double.tryParse(customMonthlyFee.text.trim()) ?? gradeFee;
-        final diff = gradeFee - custom;
-        return diff < 0 ? 0 : diff;
-    }
-  }
-
   /// خصم خطة الأقساط عند التسجيل — مطابق لما يمرّره `StudentForm` إلى `buildStudentPlan`.
   PlanDiscount? _planDiscountOf(double gradeFee) {
     if (!hasDiscount) return null;
@@ -1369,26 +1567,9 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
       case 'fixed':
         final fixed = double.tryParse(discountFixed.text.trim()) ?? 0;
         return fixed > 0 ? PlanDiscount.fixed(fixed, reason: reason) : null;
-      case 'custom_fee':
-        // رسم محدد = نسبة من رسم المرحلة تُطبَّق على مجموع الخطة، كما في الويب
-        // عندما لا يكون النوع «مقطوع».
-        if (gradeFee <= 0) return null;
-        final cut = _discountAmount(gradeFee);
-        if (cut <= 0) return null;
-        return PlanDiscount.percent((cut / gradeFee) * 100, reason: reason);
       default:
         return null;
     }
-  }
-
-  /// الرسم الشهري بعد الخصم — مطابق لـ `calculatedNetMonthlyFee`.
-  double _netMonthlyFee(double gradeFee) {
-    if (!hasDiscount || gradeFee <= 0) return gradeFee;
-    if (discountType == 'custom_fee') {
-      return double.tryParse(customMonthlyFee.text.trim()) ?? gradeFee;
-    }
-    final net = gradeFee - _discountAmount(gradeFee);
-    return net < 0 ? 0 : net;
   }
 
   Widget _extraHeader() {

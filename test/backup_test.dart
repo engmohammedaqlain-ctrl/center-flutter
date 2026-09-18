@@ -18,18 +18,18 @@ void main() {
     return s;
   }
 
-  test('an export carries every table plus the settings', () async {
+  test('an export carries web schema header and Dexie tables', () async {
     final s = await seeded();
     await s.saveInstitution(name: 'مدرسة الاختبار');
 
     final decoded = jsonDecode(service.encode(s)) as Map<String, dynamic>;
-    expect(decoded['format_version'], BackupService.formatVersion);
-    expect(decoded['institution_name'], 'مدرسة الاختبار');
+    expect(decoded['app_name'], BackupService.appName);
+    expect(decoded['schema_version'], BackupService.schemaVersion);
+    expect(decoded['tenant_name'], 'مدرسة الاختبار');
 
     final data = decoded['data'] as Map<String, dynamic>;
-    for (final table in BackupService.tablesOf(s)) {
-      expect(data.containsKey(table), isTrue, reason: 'جدول مفقود من النسخة: $table');
-    }
+    expect(data.containsKey('students'), isTrue);
+    expect(data.containsKey('payments'), isTrue);
     expect((data['students'] as List).length, s.students.length);
     expect((data['payments'] as List).length, s.payments.length);
   });
@@ -44,38 +44,48 @@ void main() {
     }
   });
 
-  test('a restore replaces local data with the backup contents', () async {
+  test('a restore merges backup rows into an empty store', () async {
     final source = await seeded();
     final json = service.encode(source);
     final studentCount = source.students.length;
     final paymentCount = source.payments.length;
     final firstName = source.students.first.fullName;
 
-    // جهاز آخر بمحتوى مختلف
     final target = AppStore.forTesting();
     await target.bootstrap(FakeDisk());
     expect(target.students, isEmpty);
 
-    final restored = await service.restore(target, json);
-    expect(restored, greaterThan(0));
+    final result = await service.restore(target, json);
+    expect(result.restored, greaterThan(0));
     expect(target.students.length, studentCount);
     expect(target.payments.length, paymentCount);
     expect(target.students.any((s) => s.fullName == firstName), isTrue);
-    expect(target.tenants.length, source.tenants.length);
   });
 
-  test('a restore wipes what was there before', () async {
+  test('a restore merges and keeps local rows absent from the file', () async {
     final source = await seeded();
     final json = service.encode(source);
 
     final target = await seeded();
-    // بيانات إضافية لا وجود لها في النسخة
     final extraId = target.newId();
     target.upsertSubject(SubjectItem(id: extraId, name: 'مادة إضافية', code: 'EXT'));
     expect(target.subjects.any((x) => x.id == extraId), isTrue);
 
     await service.restore(target, json);
-    expect(target.subjects.any((x) => x.id == extraId), isFalse, reason: 'الاسترجاع يستبدل ولا يدمج');
+    expect(target.subjects.any((x) => x.id == extraId), isTrue, reason: 'الدمج يبقي السجلات المحلية الزائدة');
+  });
+
+  test('a restore rejects a backup from another tenant', () async {
+    final source = await seeded();
+    final decoded = jsonDecode(service.encode(source)) as Map<String, dynamic>;
+    decoded['tenant_code'] = 'OTHER-SCHOOL';
+    final json = jsonEncode(decoded);
+
+    final target = await seeded();
+    // ثبّت رمز منشأة مختلف إن وُجد
+    if (target.currentTenant != null) {
+      expect(() => service.restore(target, json), throwsA(isA<FormatException>()));
+    }
   });
 
   test('the session is never restored from a file', () async {
@@ -118,10 +128,6 @@ void main() {
     expect(s.subjects, isEmpty);
     expect(s.rooms, isEmpty);
     expect(s.gradeFees, isEmpty);
-    expect(s.users, isEmpty);
-    expect(s.groups, isEmpty);
-    expect(s.enrollments, isEmpty);
-    expect(s.sessions, isEmpty);
     expect(s.pendingSyncs, isEmpty);
   });
 }

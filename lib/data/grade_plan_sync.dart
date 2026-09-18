@@ -205,16 +205,14 @@ class GradePlanSync {
         if (planItemIdOf(i.id, student.id) != null) return false;
         if (i.id.startsWith(AppStore.feeIdPrefix)) return false;
         if (isExtraChargeId(i.id)) return false;
-        if (isCustomInstallmentId(i.id)) return false;
         if (i.title == seatTitle) return false;
         return true;
       }).toList();
 
       final returning = own.any((i) => !_inYear(i, yearId));
+      // كـ gradePlanSync.ts: لا يُسقط الحجز بعلم «دفع الحجز» — السند أو وجود القسط يمنع التكرار
       double seatFeeFor(bool hasSeat) =>
-          (hasSeat || returning || student.seatReservationPaid)
-          ? 0.0
-          : store.seatReservationFee;
+          (hasSeat || returning) ? 0.0 : store.seatReservationFee;
 
       final toDelete = <({Installment inst, bool paid})>[];
       final toUpdate =

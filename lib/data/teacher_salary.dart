@@ -20,6 +20,20 @@ String monthLabel(String month) =>
 
 String monthKeyOf(DateTime date) => '${date.year}-${date.month.toString().padLeft(2, '0')}';
 
+/// بيان سند الراتب كما في الويب: «راتب/سلفة/مكافأة + الاسم + MM/YYYY».
+String payoutDescription(TeacherPayout p, {String fallbackName = ''}) {
+  final type = payoutTypeNames[p.payoutType] ?? 'راتب';
+  final name = p.teacherName.trim().isNotEmpty
+      ? p.teacherName.trim()
+      : fallbackName.trim();
+  final month = monthLabel(salaryMonthOf(p));
+  if (name.isEmpty) return '$type $month';
+  return '$type $name $month';
+}
+
+/// تصنيف سندات أجور المعلمين في السجل والوصل — مطابق لـ Finance.tsx.
+const payoutExpenseCategory = 'رواتب';
+
 /// آخر يوم في شهر بصيغة `YYYY-MM` — نهاية المدة التي يُنسب لها السند.
 String monthEnd(String month) {
   final parts = month.split('-');
@@ -36,16 +50,19 @@ String salaryMonthOf(TeacherPayout p) {
 }
 
 /// ما صُرف لمعلم عن شهر، مفصولاً بنوعه — `paidInMonth`.
+///
+/// [teacherIds] يشمل نسخ المعلم في الأعوام السابقة ([linkedTeacherIds]) فلا
+/// يُقترح صرف راتب صُرف قبل إغلاق العام لنسخة أخرى.
 ({double salary, double advance, double bonus, double total}) paidInMonth(
   Iterable<TeacherPayout> payouts,
-  String teacherId,
+  Set<String> teacherIds,
   String month,
 ) {
   var salary = 0.0;
   var advance = 0.0;
   var bonus = 0.0;
   for (final p in payouts) {
-    if (p.teacherId != teacherId || salaryMonthOf(p) != month) continue;
+    if (!teacherIds.contains(p.teacherId) || salaryMonthOf(p) != month) continue;
     switch (p.payoutType) {
       case 'advance':
         advance += p.amount;

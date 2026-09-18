@@ -440,7 +440,7 @@ class NoAccess extends StatelessWidget {
                 color: AppColors.amberSoft,
                 border: Border.all(color: AppColors.amberBorder),
               ),
-              child: const Text('🔒', style: TextStyle(fontSize: 22)),
+              child: Icon(Icons.lock_outline, size: 22, color: AppColors.amberDark),
             ),
             const SizedBox(height: 12),
             Text(

@@ -50,6 +50,7 @@ Future<YearStructureCloneResult> cloneYearStructure(
       name: old.name,
       code: old.code,
       gradeLevel: old.gradeLevel,
+      gradeLevels: [...old.gradeLevels],
       description: old.description,
       academicYearId: toYearId,
       syncStatus: 'pending',

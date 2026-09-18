@@ -16,7 +16,14 @@ BoxDecoration tileDecoration({bool white = false}) => BoxDecoration(
 
 /// رقم إحصائي في بطاقة مستقلة: عنوان صغير فوق قيمة بارزة بلونها، في المنتصف.
 class StatCard extends StatelessWidget {
-  const StatCard({super.key, required this.label, required this.value, required this.color, this.caption});
+  const StatCard({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.color,
+    this.caption,
+    this.compact = false,
+  });
 
   final String label;
   final String value;
@@ -25,10 +32,13 @@ class StatCard extends StatelessWidget {
   /// سطر صغير تحت القيمة — كعدد السندات.
   final String? caption;
 
+  /// تباعد وخط أصغر — لصفحات مكتظّة كالمالية.
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+      padding: EdgeInsets.symmetric(horizontal: 8, vertical: compact ? 8 : 12),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -36,11 +46,14 @@ class StatCard extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-          const SizedBox(height: 4),
+              style: TextStyle(color: AppColors.muted, fontSize: compact ? 10 : 11)),
+          SizedBox(height: compact ? 2 : 4),
           FittedBox(
             fit: BoxFit.scaleDown,
-            child: Text(value, style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 17)),
+            child: Text(
+              value,
+              style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: compact ? 15 : 17),
+            ),
           ),
           if (caption != null) ...[
             const SizedBox(height: 2),
@@ -48,7 +61,7 @@ class StatCard extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
+                style: TextStyle(color: AppColors.faint, fontSize: compact ? 9.5 : 10.5)),
           ],
         ],
       ),

@@ -36,15 +36,60 @@ bool isInstallmentDue(Installment installment, [DateTime? today]) {
   return !due.isAfter(day);
 }
 
+double unpaidOf(Installment i) => math.max(0.0, chargeableAmount(i) - i.paidAmount);
+
 /// المستحق فعلياً لكل طالب له أقساط؛ صاحب الخطة يظهر ولو كان مستحقه صفراً.
 Map<String, double> overdueByStudent(Iterable<Installment> installments, [DateTime? today]) {
   final day = today ?? startOfToday();
   final due = <String, double>{};
   for (final i in installments) {
-    final unpaid = isInstallmentDue(i, day) ? math.max(0.0, chargeableAmount(i) - i.paidAmount) : 0.0;
+    final unpaid = isInstallmentDue(i, day) ? unpaidOf(i) : 0.0;
     due[i.studentId] = (due[i.studentId] ?? 0) + unpaid;
   }
   return due;
+}
+
+/// المستحق الحالّ والمجدول — مطابق لـ `dueAndScheduled`.
+({double due, double scheduled}) dueAndScheduled(
+  Iterable<Installment> installments, {
+  double? fallbackBalance,
+  DateTime? today,
+}) {
+  final list = installments.toList();
+  if (list.isEmpty) {
+    return (due: math.max(0.0, -(fallbackBalance ?? 0)), scheduled: 0);
+  }
+  final day = today ?? startOfToday();
+  var due = 0.0;
+  var scheduled = 0.0;
+  for (final i in list) {
+    if (isInstallmentDue(i, day)) {
+      due += unpaidOf(i);
+    } else {
+      scheduled += unpaidOf(i);
+    }
+  }
+  return (due: due, scheduled: scheduled);
+}
+
+/// يفصل لكل طالب: ما حلّ موعده وما بقي مجدولاً — `installmentBucketsByStudent`.
+({Map<String, double> due, Map<String, double> scheduled}) installmentBucketsByStudent(
+  Iterable<Installment> installments, [
+  DateTime? today,
+]) {
+  final day = today ?? startOfToday();
+  final due = <String, double>{};
+  final scheduled = <String, double>{};
+  for (final i in installments) {
+    due.putIfAbsent(i.studentId, () => 0);
+    scheduled.putIfAbsent(i.studentId, () => 0);
+    if (isInstallmentDue(i, day)) {
+      due[i.studentId] = due[i.studentId]! + unpaidOf(i);
+    } else {
+      scheduled[i.studentId] = scheduled[i.studentId]! + unpaidOf(i);
+    }
+  }
+  return (due: due, scheduled: scheduled);
 }
 
 /// ما زاد في الدفعة عن المستحق وقت دفعها: رصيد مقدَّم للطالب — `getPaymentAdvance`.
@@ -65,6 +110,9 @@ int compareInstallments(Installment a, Installment b) {
 }
 
 /// توزيع ما دفعه الطالب على أقساطه — مطابق لـ `allocatePaymentsToInstallments`.
+///
+/// سند خارج (رد/عكس) يُفك أولاً من القسط الذي سدّده السند الأصلي، والباقي من
+/// المجمّع؛ وما رُدّ أكثر من المال الحر يُفك من أحدث الأقساط المسددة.
 Map<String, double> allocatePaymentsToInstallments(
   Iterable<Installment> installments,
   Iterable<Payment> payments,
@@ -73,7 +121,9 @@ Map<String, double> allocatePaymentsToInstallments(
   final remaining = {for (final i in ordered) i.id: math.max(0.0, chargeableAmount(i))};
   final paid = {for (final i in ordered) i.id: 0.0};
 
-  final active = payments.where((p) => !p.cancelled).toList()
+  final all = [...payments];
+  final byId = {for (final p in all) p.id: p};
+  final active = all.where((p) => !p.cancelled).toList()
     ..sort((a, b) {
       final byCreated = (a.createdAt ?? '').compareTo(b.createdAt ?? '');
       return byCreated != 0 ? byCreated : a.id.compareTo(b.id);
@@ -82,6 +132,22 @@ Map<String, double> allocatePaymentsToInstallments(
   var pool = 0.0;
   for (final p in active) {
     var credit = p.amount + p.discountAmount;
+
+    // سند خارج (رد أو عكس): يُفك من القسط الذي سدّده السند الأصلي أولاً
+    if (credit < 0) {
+      final originId = p.reversesPaymentId;
+      final origin = originId == null ? null : byId[originId];
+      final back = p.installmentId ?? origin?.installmentId;
+      if (back != null && paid.containsKey(back)) {
+        final give = math.min(-credit, paid[back]!);
+        paid[back] = paid[back]! - give;
+        remaining[back] = remaining[back]! + give;
+        credit += give;
+      }
+      pool += credit;
+      continue;
+    }
+
     final target = p.installmentId;
     if (target != null && remaining.containsKey(target)) {
       final take = math.min(credit, remaining[target]!);
@@ -99,6 +165,15 @@ Map<String, double> allocatePaymentsToInstallments(
     remaining[i.id] = remaining[i.id]! - take;
     paid[i.id] = paid[i.id]! + take;
     pool -= take;
+  }
+
+  // ما رُدّ أكثر من المال الحر يُفك من أحدث الأقساط المسددة
+  for (final i in ordered.reversed) {
+    if (pool >= -cent) break;
+    final give = math.min(-pool, paid[i.id]!);
+    paid[i.id] = paid[i.id]! - give;
+    remaining[i.id] = remaining[i.id]! + give;
+    pool += give;
   }
 
   return paid;

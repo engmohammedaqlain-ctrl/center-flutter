@@ -7,6 +7,8 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/widgets.dart';
 
+const _creditReasonChips = ['دفع مكرر بالخطأ', 'انسحاب الطالب', 'تخرج وله رصيد'];
+
 Future<Payment?> showStudentCreditSheet(
   BuildContext context,
   AppStore store,
@@ -17,9 +19,12 @@ Future<Payment?> showStudentCreditSheet(
   final credit = store.studentCredit(student.id);
   final refundable = store.studentRefundable(student.id);
   amount.text = credit > 0 ? trimNum(credit) : '';
+  final methods = store.activePaymentMethods.isNotEmpty
+      ? store.activePaymentMethods
+      : store.paymentMethods;
   var method =
-      store.paymentMethods.where((m) => m.isDefault).firstOrNull?.id ??
-      store.paymentMethods.firstOrNull?.id ??
+      methods.where((m) => m.isDefault).firstOrNull?.id ??
+      methods.firstOrNull?.id ??
       'cash';
   var forfeit = false;
   var busy = false;
@@ -36,6 +41,8 @@ Future<Payment?> showStudentCreditSheet(
         final value = double.tryParse(amount.text) ?? 0;
         final viaRequest = !store.can('finance.refund');
         final reopens = (value - credit).clamp(0, double.infinity);
+        final canSubmit = reason.text.trim().isNotEmpty &&
+            (forfeit || (value > 0 && value <= refundable + cent));
 
         Future<void> submit() async {
           if (reason.text.trim().isEmpty) {
@@ -104,6 +111,17 @@ Future<Payment?> showStudentCreditSheet(
                       fontSize: 15,
                     ),
                   ),
+                  if (student.status == 'active') ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'طالب نشط يريد استرداد أقساط لم يحن وقتها؟ غيّر حالته إلى «منسحب» من ملفه أولاً.',
+                      style: TextStyle(
+                        color: AppColors.amberDark,
+                        fontSize: 11,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   Row(
                     children: [
@@ -186,11 +204,18 @@ Future<Payment?> showStudentCreditSheet(
                         labelText: 'طريقة الرد',
                       ),
                       items: [
-                        for (final m in store.paymentMethods)
+                        for (final m in methods)
                           DropdownMenuItem(value: m.id, child: Text(m.name)),
                       ],
                       onChanged: (v) =>
                           setSheetState(() => method = v ?? method),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        'يصدر «سند رد» بتاريخ اليوم ويُخصم من رصيد الطالب.',
+                        style: TextStyle(color: AppColors.muted, fontSize: 10.5),
+                      ),
                     ),
                     if (reopens > cent)
                       Padding(
@@ -204,13 +229,35 @@ Future<Payment?> showStudentCreditSheet(
                           ),
                         ),
                       ),
-                  ],
+                  ] else
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        'الإسقاط يلغي الرصيد الزائد دون صرف نقدي — لا سند رد.',
+                        style: TextStyle(color: AppColors.muted, fontSize: 10.5),
+                      ),
+                    ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: reason,
+                    onChanged: (_) => setSheetState(() {}),
                     decoration: const InputDecoration(
                       labelText: 'السبب (إجباري)',
                     ),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      for (final r in _creditReasonChips)
+                        ActionChip(
+                          label: Text(r, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                          onPressed: () => setSheetState(() => reason.text = r),
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                    ],
                   ),
                   if (viaRequest)
                     Padding(
@@ -233,7 +280,7 @@ Future<Payment?> showStudentCreditSheet(
                         ? 'إرسال للمدير'
                         : 'رد وإصدار السند',
                     color: forfeit ? AppColors.danger : AppColors.navy,
-                    onPressed: busy ? null : submit,
+                    onPressed: busy || !canSubmit ? null : submit,
                   ),
                 ],
               ),

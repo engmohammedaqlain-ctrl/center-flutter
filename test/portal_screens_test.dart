@@ -259,7 +259,7 @@ void main() {
       expect(find.text('الشعبة الحالية:'), findsOneWidget);
       expect(find.text('إضافة وحدة / قسم'), findsOneWidget);
       expect(find.text('الفصل الأول'), findsOneWidget);
-      expect(find.text('لا توجد وحدات أو أقسام مضافة لهذه الشعبة في هذا الفصل'), findsOneWidget);
+      expect(find.text('لا توجد وحدات مضافة لهذه المادة في هذا الفصل'), findsOneWidget);
     });
 
     testWidgets('مودل المعلم: الوحدات المخفية تظهر له بإجراءاتها بلا طفح — عرض ${width.toInt()}', (tester) async {
@@ -352,7 +352,7 @@ void main() {
       expect(find.text('إجمالي المسدد'), findsOneWidget);
       expect(find.text('إجمالي الرسوم'), findsOneWidget);
       expect(find.text('مسدد'), findsOneWidget);
-      expect(find.text('قسط قادم'), findsOneWidget, reason: 'القسط الذي لم يحن موعده ليس مطلوباً الآن');
+      expect(find.text('مجدول'), findsOneWidget, reason: 'القسط الذي لم يحن موعده ليس مطلوباً الآن');
       await tester.scrollUntilVisible(find.text('عرض الوصل'), 200, scrollable: find.byType(Scrollable).last);
       expect(find.text('سند #2026/1062'), findsOneWidget);
       expect(find.text('محفظة بال بي'), findsOneWidget);

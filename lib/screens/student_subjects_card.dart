@@ -28,7 +28,7 @@ class _StudentSubjectsCardState extends State<StudentSubjectsCard> {
     // التسجيل المنتهي (شعبة سابقة أو مادة أُلغيت) يبقى لأجل درجاته، لكنه ليس
     // من مواد الطالب الحالية — كما في `StudentDetail.tsx`
     final mine = store.enrollmentsOf(widget.student.id).where((e) => e.status != 'withdrawn').toList();
-    if (mine.isEmpty && store.groups.isEmpty) return const SizedBox.shrink();
+    if (mine.isEmpty && store.groupsInViewedYear.isEmpty) return const SizedBox.shrink();
 
     return AppCard(
       padding: const EdgeInsets.all(12),

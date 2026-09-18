@@ -15,6 +15,7 @@ import 'grade_plan_sync.dart';
 import 'grading.dart';
 import 'institution.dart';
 import 'local_db.dart';
+import 'monthly_averages.dart';
 import 'payment_methods.dart';
 import 'permissions.dart';
 import 'system_features.dart';
@@ -418,6 +419,14 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     putRows(table, rows);
   }
 
+  /// تسجيل صف مسترجَع من نسخة للرفع — بلا [putRowsFromBackup] يبقى محلياً ويمحوه السحب.
+  void queueBackupSync(String table, String recordId, Map<String, dynamic> payload) {
+    _queue(table, recordId, 'UPDATE', payload);
+  }
+
+  @override
+  void notifySync() => notifyListeners();
+
   /// تحميل كل ما على القرص إلى الذاكرة، ثم استعادة الجلسة.
   Future<void> bootstrap(Persistence persistence) async {
     db = persistence;
@@ -455,7 +464,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     } finally {
       _loading = false;
     }
-    await ensureCurrentAcademicYear();
+    await settleAcademicYears();
     await _resolveSetupGate();
     ready = true;
     notifyListeners();
@@ -469,9 +478,15 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   static const _kReceiptLabel = 'device_receipt_label';
   static const _kLastUsername = 'last_entered_username';
   static const _kReceiptCounter = 'receipt_counter';
+  static const _kDeviceUid = 'device_uid';
+  static const _kDeviceCode = 'receipt_device_code';
+  static const _kDeviceCodeRegistered = 'receipt_device_code_registered';
   static const _kCustomUser = 'custom_app_username';
   static const _kCustomPass = 'custom_app_password';
   static const _kViewedAcademicYear = 'nun_active_academic_year_id';
+
+  /// حروف لا تلتبس ببعضها ولا بالأرقام (لا I ولا O) — مطابق لـ `CODE_LETTERS`.
+  static const _receiptCodeLetters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 
   String get _academicYearTenantId => tenantId ?? db.settings[_kDbTenant] ?? db.settings[_kTenantId] ?? 'local';
 
@@ -570,10 +585,35 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     notifyListeners();
   }
 
-  void _backfillUnscopedToYear(String yearId) {
+  /// يثبّت أعوام المنشأة بعد الدخول وبعد كل سحب.
+  ///
+  /// قبل الدخول لا منشأة، فلا يُنشأ عام: الإقلاع الأول على جهاز فارغ كان يُنشئ
+  /// عاماً مؤقتاً `ay_local_…` حالياً، فيبقى هو المعروض بعد السحب الأولي
+  /// وتُفلتر به كل الشاشات فتظهر فارغة رغم وصول البيانات. العام المؤقت يُحذف
+  /// هنا، وما خُتم به ينتقل إلى العام الحالي للمنشأة.
+  Future<void> settleAcademicYears() async {
+    if (tenantId == null || isMasterAdmin) return;
+    final placeholders = academicYears.where((y) => y.id.startsWith('ay_local_')).map((y) => y.id).toSet();
+    if (placeholders.isNotEmpty) {
+      academicYears.removeWhere((y) => placeholders.contains(y.id));
+      for (final id in placeholders) {
+        _queue('academic_years', id, 'DELETE', null);
+      }
+      markDirty('academic_years');
+    }
+    final current = await ensureCurrentAcademicYear();
+    if (placeholders.isNotEmpty) {
+      _moveRowsToYear((id) => placeholders.contains(id), current.id);
+      notifyListeners();
+    }
+  }
+
+  void _backfillUnscopedToYear(String yearId) => _moveRowsToYear((id) => id.isEmpty, yearId);
+
+  void _moveRowsToYear(bool Function(String yearId) matches, String yearId) {
     final now = _nowIso();
     void stamp(String table, Iterable<dynamic> rows, Map<String, dynamic> Function(dynamic) cloud) {
-      for (final row in rows.where((e) => e.academicYearId.isEmpty)) {
+      for (final row in rows.where((e) => matches(e.academicYearId as String))) {
         row.academicYearId = yearId;
         row.updatedAt = now;
         row.syncStatus = 'pending';
@@ -654,14 +694,64 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }).toList();
   }
 
-  List<Student> get studentsInViewedYear => filterByYear(students);
+  /// طلاب العام المعروض بلقطاتهم — مطابق لـ `StudentsService.forDisplayYear`.
+  ///
+  /// من سنته الحالية هي العام المعروض يظهر بسجله. ومن أنهى هذا العام وانتقل
+  /// يظهر بلقطته (صف/شعبة/حالة) فلا يختفي المُرقّى من السنة المغلقة.
+  List<Student> get studentsInViewedYear {
+    final yearId = viewedAcademicYearId;
+    final snapshotOf = {
+      for (final y in studentYears.where((y) => y.academicYearId == yearId)) y.studentId: y,
+    };
+    final result = <Student>[];
+    for (final s in students) {
+      if (s.academicYearId.isEmpty || s.academicYearId == yearId) {
+        result.add(s);
+        continue;
+      }
+      final snap = snapshotOf[s.id];
+      if (snap == null) continue;
+      result.add(Student.fromCloud({
+        ...s.toCloud(),
+        'grade_level': snap.gradeLevel,
+        'section': snap.section,
+        'status': snap.status,
+      }));
+    }
+    return result;
+  }
+
   List<Installment> get installmentsInViewedYear => filterByYear(installments);
   List<Payment> get paymentsInViewedYear => filterByYear(payments);
+  List<Classroom> get roomsInViewedYear => filterByYear(rooms);
+  List<Teacher> get teachersInViewedYear => filterByYear(teachers);
+  List<SubjectItem> get subjectsInViewedYear => filterByYear(subjects);
+  List<GradeFee> get gradeFeesInViewedYear => filterByYear(gradeFees);
+  List<Group> get groupsInViewedYear => filterByYear(groups);
 
-  /// إيرادات غير مرتبطة بطالب في العام المعروض — وهي سندات `general_income`.
+  /// سجلات المعلم نفسه عبر الأعوام — `linkedTeacherIds` في Finance.tsx.
+  ///
+  /// بعد إغلاق عام يصير للمعلم نسختان؛ سندات الرواتب موزّعة عليها. الربط
+  /// بالهوية، وإلا بالاسم والهاتف معاً.
+  Set<String> linkedTeacherIds(String teacherId) {
+    final t = teacherById(teacherId);
+    if (t == null) return {teacherId};
+    final nid = t.nationalId.trim();
+    return {
+      for (final x in teachers)
+        if (x.id == t.id ||
+            (nid.isNotEmpty ? x.nationalId.trim() == nid : x.name == t.name && x.phone == t.phone))
+          x.id,
+    };
+  }
+
+  /// إيرادات غير مرتبطة بطالب في العام المعروض — سندات `other_income`.
   List<GeneralIncome> get generalIncomes {
     final out = payments
-        .where((p) => p.studentId.isEmpty && p.purpose == 'general_income' && (p.academicYearId == viewedAcademicYearId || p.academicYearId.isEmpty))
+        .where((p) =>
+            p.studentId.isEmpty &&
+            isGeneralIncomePurpose(p.purpose) &&
+            (p.academicYearId == viewedAcademicYearId || p.academicYearId.isEmpty))
         .map(GeneralIncome.fromPayment)
         .toList();
     out.sort((a, b) => b.date.compareTo(a.date));
@@ -945,7 +1035,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// مراحل المنشأة كما أضافتها في «المراحل والرسوم» وحدها: مدرسةٌ جديدة لم
   /// تُضف مراحل لا تُعرض عليها «عاشر» و«حادي عشر» كأنها مراحلها.
   List<String> get gradeOptions {
-    final fees = [...gradeFees]..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
+    final fees = [...gradeFeesInViewedYear]..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
     final names = <String>[];
     for (final f in fees) {
       final name = f.gradeName.trim();
@@ -1215,9 +1305,55 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   Map<String, dynamic> get _storedSettingsMap => _decodeMap(db.settings[institutionSettingsKey]);
 
-  /// كتابة ما تغيّر وحده؛ ما لا تعرفه هذه النسخة يبقى كما وصل.
-  Future<void> _writeSettings(AppSettings next) async {
-    await db.setSetting(institutionSettingsKey, jsonEncode(next.toMap()));
+  /// إعدادات السحابة الآن؛ `null` بلا اتصال أو عند التعذّر (مهلة قصيرة).
+  ///
+  /// تعديل محلي لم يُرفع بعد أحدث من السحابة — لا تُجلب فوقه.
+  Future<Map<String, dynamic>?> _latestCloudSettingsMap() async {
+    final tid = tenantId;
+    if (tid == null || !networkEnabled || !SupabaseAuth.signedIn) return null;
+    if (pendingSyncs.any((p) => p.tableName == 'institution_settings' && p.recordId == tid)) {
+      return null;
+    }
+    try {
+      final rows = await supabaseSelect(
+        'institution_settings',
+        filters: {'id': 'eq.$tid'},
+        columns: 'settings',
+        limit: 1,
+      ).timeout(const Duration(seconds: 3), onTimeout: () => null);
+      final settings = rows?.firstOrNull?['settings'];
+      return settings is Map ? Map<String, dynamic>.from(settings) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// كتابة ما تغيّر وحده بعد دمجه مع أحدث نسخة في السحابة — كـ `writeSettings` في الويب.
+  ///
+  /// جهاز يعدّل رسم الحجز وآخر يعدّل العلامات: كلٌّ يبني تعديله على نسخة السحابة
+  /// كي لا يكتب نسخته القديمة من الآخر فوقه. مفاتيح لا تعرفها هذه النسخة تبقى.
+  Future<void> _writeSettings(AppSettings Function(AppSettings prev) update) async {
+    final localMap = _storedSettingsMap;
+    final cloud = await _latestCloudSettingsMap();
+    final prev = AppSettings.fromMap({
+      ...localMap,
+      if (cloud != null) ...cloud,
+    });
+    final next = update(prev);
+    final nextMap = next.toMap();
+    final prevByYear = prev.gradingByYear;
+    final nextByYear = next.gradingByYear;
+    final byYear = <String, dynamic>{
+      for (final e in prevByYear.entries) e.key: e.value.toMap(),
+      for (final e in nextByYear.entries) e.key: e.value.toMap(),
+    };
+    final mergedMap = <String, dynamic>{
+      ...prev.toMap(),
+      ...nextMap,
+      if (byYear.isNotEmpty) 'grading_by_year': byYear,
+    };
+    final merged = AppSettings.fromMap(mergedMap);
+    await db.setSetting(institutionSettingsKey, jsonEncode(merged.toMap()));
     _persistInstitutionRow();
     notifyListeners();
   }
@@ -1238,7 +1374,12 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   Future<void> setSeatReservationFee(double value, {bool? deduct}) async {
     final fee = value < 0 ? 0.0 : value;
-    await _writeSettings(settings.copyWith(seatFee: fee, seatFeeMode: deduct == null ? null : (deduct ? seatFeeModeDeduct : seatFeeModeSeparate)));
+    await _writeSettings(
+      (prev) => prev.copyWith(
+        seatFee: fee,
+        seatFeeMode: deduct == null ? null : (deduct ? seatFeeModeDeduct : seatFeeModeSeparate),
+      ),
+    );
   }
 
   /// مفاتيح إعدادات المنشأة داخل كائن الألوان المتزامن — مطابقة للنسخة المكتبية.
@@ -1290,7 +1431,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final rows = buildStudentPlan(
       items,
       student.id,
-      seatFee: student.seatReservationPaid ? 0 : seatReservationFee,
+      seatFee: seatReservationFee,
       deductSeat: deductsSeatFee,
       discount: discount,
       enrollmentDate: isoDate(student.enrollmentDate),
@@ -1394,7 +1535,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// المعلّق بعد الترقية يحتاج شعبة، ومن في شعبة أخرى يُنقل منها؛ ومن بلا شعبة
   /// يتصدّر لأنه بلا مكان أصلاً.
   List<Student> sectionCandidates(Classroom room) {
-    final list = students.where((s) {
+    final list = studentsInViewedYear.where((s) {
       if (s.status != 'active' && s.status != 'pending') return false;
       if (isSameSectionName(s.section, room.name)) return false;
       // مطابقة تامة كـ `isSameGrade`: شعبةٌ بلا مرحلة كانت تعرض طلاب كل المراحل
@@ -1432,7 +1573,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
       if (movingYear) {
         final snapshot = StudentYear(
-          id: 'sy_${student.id}_$sourceYearId',
+          id: studentYearRecordId(student.id, sourceYearId),
           studentId: student.id,
           academicYearId: sourceYearId,
           gradeLevel: student.gradeLevel,
@@ -1589,38 +1730,213 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     notifyListeners();
   }
 
+  /// نظام الرصد من `settings.grading` مع ترحيل المخطط القديم.
+  GradingSettings get gradingSettings {
+    final fromSettings = settings.grading;
+    if (!fromSettings.scheme.isEmpty || fromSettings.mode == 'monthly') return fromSettings;
+    final legacy = _legacyGradingScheme;
+    if (legacy.isEmpty) return fromSettings;
+    return fromSettings.copyWith(scheme: legacy);
+  }
+
+  /// نظام العام المعروض: لقطة العام المغلق إن وُجدت، وإلا النظام الحالي.
+  ///
+  /// مطابق لـ `grading_by_year[year]` في StudentDetail على الويب (EV-03).
+  GradingSettings get gradingForViewedYear {
+    final year = viewedAcademicYear;
+    if (year != null && year.status == 'closed') {
+      final snap = settings.gradingByYear[year.id];
+      if (snap != null) return snap;
+    }
+    return gradingSettings;
+  }
+
+  /// مرادف لـ [gradingForViewedYear] — أسماء قديمة في الحساب والحفظ.
+  GradingSettings get effectiveGradingSettings => gradingForViewedYear;
+
   /// مخطط علامات المدرسة — مكوّنات كل فصل وأوزانها.
   ///
-  /// يُقرأ من إعداد الجهاز، فإن لم يوجد فمن كائن المنشأة المتزامن: هو طريق وصول
-  /// ما ضبطه سطح المكتب إلى الجوال وإلى بوابتي الطالب وولي الأمر.
+  /// المصدر: `settings.grading.scheme`، ثم إعداد الجهاز، ثم `__grading_scheme` القديم.
   static const gradingSchemeKey = 'grading_scheme';
   static const gradingSchemeColorKey = '__grading_scheme';
 
-  GradingScheme get gradingScheme {
+  GradingScheme get _legacyGradingScheme {
     final local = db.settings[gradingSchemeKey];
     if (local != null && local.trim().isNotEmpty) return GradingScheme.decode(local);
     final synced = _storedColorsMap[gradingSchemeColorKey];
     return synced is Map ? GradingScheme.fromMap(Map<String, dynamic>.from(synced)) : GradingScheme.empty;
   }
 
+  GradingScheme get gradingScheme {
+    final fromGrading = effectiveGradingSettings.scheme;
+    if (!fromGrading.isEmpty) return fromGrading;
+    return _legacyGradingScheme;
+  }
+
   Future<void> saveGradingScheme(GradingScheme scheme) async {
     requireSection('settings');
     await db.setSetting(gradingSchemeKey, scheme.isEmpty ? null : scheme.encode());
+    await _writeSettings((prev) {
+      final base = prev.grading.scheme.isEmpty ? gradingSettings : prev.grading;
+      return prev.copyWith(grading: base.copyWith(scheme: scheme));
+    });
+    // توافق أجهزة قديمة ما زالت تقرأ من colors
     await _syncInstitutionSetting(gradingSchemeColorKey, scheme.toMap());
-    notifyListeners();
+  }
+
+  Future<void> saveGradingSettings(GradingSettings grading) async {
+    requireSection('settings');
+    await _writeSettings((prev) => prev.copyWith(grading: grading));
+    await db.setSetting(gradingSchemeKey, grading.scheme.isEmpty ? null : grading.scheme.encode());
+    await _syncInstitutionSetting(gradingSchemeColorKey, grading.scheme.toMap());
   }
 
   /// معدل الطالب في فصل لمادة واحدة — لا يخلط مواداً مختلفة.
-  TermGrade termGradeOf(String studentId, String term, {String? subjectId}) {
+  TermGrade termGradeOf(String studentId, String term, {String? subjectId, String? gradeLevel}) {
     final evals = evaluationsOfStudent(studentId).where((e) {
       if (subjectId == null) return true;
       return e.subjectId == subjectId;
     });
-    return computeTermGrade(evals, gradingScheme, term);
+    final student = studentById(studentId);
+    final grade = gradeLevel ?? student?.gradeLevel ?? '';
+    final sid = subjectId ?? '';
+    final g = effectiveGradingSettings;
+    final scheme = sid.isEmpty ? gradingScheme : g.schemeForSubject(grade, sid);
+    final fullMark = sid.isEmpty ? defaultFullMark : g.fullMarkForSubject(grade, sid);
+    return computeTermGrade(evals, scheme, term, fullMark: fullMark);
   }
 
   /// ملخص علامات لكل مادة — مطابق لـ StudentDetail / StudentPortal على الويب.
-  List<SubjectGradeSummary> subjectGradesOf(String studentId) => subjectGradeSummaries(evaluationsOfStudent(studentId), gradingScheme, subjectName);
+  List<SubjectGradeSummary> subjectGradesOf(String studentId) {
+    final student = studentById(studentId);
+    final grade = student?.gradeLevel ?? '';
+    final g = effectiveGradingSettings;
+    return subjectGradeSummaries(
+      evaluationsOfStudent(studentId),
+      g.scheme.isEmpty ? gradingScheme : g.scheme,
+      subjectName,
+      grading: g,
+      gradeLevel: grade,
+    );
+  }
+
+  /// يحفظ معدلات الشهر: يعدّل الموجود ويضيف الناقص، والخانة الفارغة تحذف معدلها.
+  int saveMonthlyAverages(String month, List<({String studentId, double? score})> entries) {
+    requireSection('evaluations');
+    final now = _nowIso();
+    final allRows = monthlyRowsByStudent(evaluations, month);
+    final existing = loadMonthlyAverages(evaluations, month);
+    final bucket = extraCloud.putIfAbsent('student_evaluations', () => <Map<String, dynamic>>[]);
+    var changed = 0;
+
+    for (final entry in entries) {
+      final current = existing[entry.studentId];
+      final duplicates = (allRows[entry.studentId] ?? []).where((r) => r.id != current?.id);
+      for (final dup in duplicates) {
+        bucket.removeWhere((e) => '${e['id']}' == dup.id);
+        _queue('student_evaluations', dup.id, 'DELETE', null);
+      }
+
+      if (entry.score == null) {
+        if (current == null) continue;
+        bucket.removeWhere((e) => '${e['id']}' == current.id);
+        _queue('student_evaluations', current.id, 'DELETE', null);
+        changed++;
+        continue;
+      }
+
+      final score = entry.score!.clamp(0, 100).toDouble();
+      if (current != null && current.score == score) continue;
+
+      final record = Evaluation(
+        id: current?.id ?? monthlyAverageId(entry.studentId, month),
+        studentId: entry.studentId,
+        title: 'معدل ${month.length >= 7 ? '${month.substring(5, 7)}/${month.substring(0, 4)}' : month}',
+        score: score,
+        maxScore: 100,
+        evaluationDate: monthDate(month),
+        type: 'monthly',
+        createdAt: current?.createdAt ?? now,
+        updatedAt: now,
+        syncStatus: 'pending',
+      );
+      final row = record.toCloud();
+      final idx = bucket.indexWhere((e) => '${e['id']}' == record.id);
+      if (idx >= 0) {
+        bucket[idx] = row;
+        _queue('student_evaluations', record.id, 'UPDATE', row);
+      } else {
+        bucket.add(row);
+        _queue('student_evaluations', record.id, current != null ? 'UPDATE' : 'INSERT', row);
+      }
+      changed++;
+    }
+
+    if (changed > 0) {
+      markDirty('student_evaluations');
+      notifyListeners();
+    }
+    return changed;
+  }
+
+  /// يقيّد خصم الشهر لمستحقيه على قسطهم القادم — سند خصم بمبلغ صفر.
+  ({int applied, int already, int noInstallment}) applyMonthlyRewards(
+    String month, {
+    List<String>? studentIds,
+  }) {
+    requireFinanceAction('finance.discount');
+    final rules = effectiveGradingSettings.monthlyDiscountRules;
+    var applied = 0;
+    var already = 0;
+    var noInstallment = 0;
+    final averages = loadMonthlyAverages(evaluations, month);
+    final label = month.length >= 7 ? '${month.substring(5, 7)}/${month.substring(0, 4)}' : month;
+
+    for (final entry in averages.entries) {
+      final studentId = entry.key;
+      if (studentIds != null && !studentIds.contains(studentId)) continue;
+      final percent = rewardPercent(entry.value.score, rules);
+      if (percent <= 0) continue;
+
+      final student = studentById(studentId);
+      if (student == null || student.status != 'active') continue;
+      if (hasReward(payments, studentId, month)) {
+        already++;
+        continue;
+      }
+
+      final open = installments
+          .where((i) => i.studentId == studentId && chargeableAmount(i) - i.paidAmount > cent)
+          .toList()
+        ..sort(compareInstallments);
+      final target = open.where((i) => !isInstallmentDue(i)).firstOrNull ?? open.firstOrNull;
+      if (target == null) {
+        noInstallment++;
+        continue;
+      }
+
+      final remaining = chargeableAmount(target) - target.paidAmount;
+      final discount =
+          ((math.min(remaining, (chargeableAmount(target) * percent) / 100) * 100).round() / 100);
+      if (discount <= 0) continue;
+
+      addPayment(
+        studentId: studentId,
+        amount: 0,
+        method: 'other',
+        date: DateTime.now(),
+        purpose: rewardPurpose,
+        reference: rewardReference(month),
+        installmentId: target.id,
+        discountAmount: discount,
+        discountReason: 'تفوق $label (${trimNum(entry.value.score)}%)',
+        originalAmount: discount,
+      );
+      applied++;
+    }
+
+    return (applied: applied, already: already, noInstallment: noInstallment);
+  }
 
   /// بادئة معرّف قسط الرسم الإضافي — `FEE_ID_PREFIX`.
   static const feeIdPrefix = 'fee_';
@@ -1642,7 +1958,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   Future<void> saveFeeItems(List<FeeItem> items) async {
     requireSection('settings');
-    await _writeSettings(settings.copyWith(feeItems: items));
+    await _writeSettings((prev) => prev.copyWith(feeItems: items));
   }
 
   /// يجعل الرسم مقيّداً على المستهدفين به بالضبط — `applyFeeItem`.
@@ -1914,6 +2230,24 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return made;
   }
 
+  /// توليد كلمة مرور بوابة واحدة فقط — طالب أو ولي أمر، دون المساس بالأخرى.
+  void generateStudentPortalCode(String studentId, {required bool forParent}) {
+    requireSection('students');
+    final s = studentById(studentId);
+    if (s == null) throw StoreException('الطالب غير موجود');
+    if (forParent) {
+      s.parentPortalCode = newDistinctPortalCode(s.portalCode);
+    } else {
+      s.portalCode = newDistinctPortalCode(s.parentPortalCode);
+    }
+    s.updatedAt = _nowIso();
+    s.syncStatus = 'pending';
+    queuePendingSync(pendingSyncs, tableName: 'students', recordId: s.id, action: 'UPDATE', payload: s.toCloud());
+    markRecord('students', s.id);
+    markDirty(_pendingTable);
+    notifyListeners();
+  }
+
   /// ضمان وجود رمز بوابة لمعلم.
   String ensureTeacherPortalCode(Teacher t) {
     if (t.portalCode.trim().isNotEmpty) return t.portalCode;
@@ -2027,9 +2361,17 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     await migrateEnrollmentRooms();
     await migrateWithdrawnStatus();
     dedupeAttendance();
+    await mergeDuplicateSchoolSubjectGroups();
     if (!networkEnabled) return;
+    // جلسة السحابة يجب أن تطابق المحلية؛ دون اتصال لا يُحكم
+    final matches = await authMatchesLocalSession();
+    if (matches == false) {
+      await logout();
+      return;
+    }
     // الاستماع أولاً: لا يتوقف على نجاح خطوات الشبكة التي تليه
     await startRealtime();
+    await deviceReceiptCode();
     await primeReceiptCounter();
     // مرفقٌ تعثّر رفعه على جهاز بلا اتصال يُعاد الآن، وإلا بقي على الجهاز وحده
     unawaited(retryPendingAttachments());
@@ -2037,6 +2379,25 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     // الدخول يرفع ما تراكم دون اتصال ويسحب ما فات، بلا فحصٍ كامل يسبقهما
     startAutoSync();
     notifyListeners();
+  }
+
+  /// هل جلسة الدخول السحابية تطابق الجلسة المحلية؟ — `authMatchesLocalSession`.
+  ///
+  /// `null` = تعذّر الحكم (دون اتصال أو خطأ): لا يُخرَج المستخدم إلا بـ `false`.
+  Future<bool?> authMatchesLocalSession() async {
+    if (!networkEnabled) return null;
+    try {
+      await SupabaseAuth.ensureFresh();
+      if (!SupabaseAuth.signedIn) return false;
+      if (isMasterAdmin) return SupabaseAuth.isDeveloper;
+      // المطور يدخل أي منشأة من لوحته
+      if (SupabaseAuth.isDeveloper) return true;
+      final tid = tenantId;
+      if (tid == null || tid.isEmpty) return false;
+      return SupabaseAuth.role == 'tenant_admin' && SupabaseAuth.tenantId == tid;
+    } catch (_) {
+      return null;
+    }
   }
 
   // ── التحديث اللحظي ─────────────────────────────────────────────────────────
@@ -2285,6 +2646,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _kDeviceUser,
     _kReceiptLabel,
     _kReceiptCounter,
+    _kDeviceUid,
+    _kDeviceCode,
+    _kDeviceCodeRegistered,
     _kSetupPending,
     _kCustomUser,
     _kCustomPass,
@@ -2672,23 +3036,39 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// الطالب بلا شعبة يُحسب على الشعبة فقط إن كانت الوحيدة لمرحلته، والمؤرشف
   /// خريجٌ لم يعد من طلاب أي شعبة.
   List<Student> studentsOf(Classroom room) {
-    return students.where((s) {
+    return studentsInViewedYear.where((s) {
       if (s.status == 'archived') return false;
       if (s.section.trim().isNotEmpty) return studentBelongsToRoom(s, room);
       if (room.gradeLevel.trim().isEmpty || s.gradeLevel.trim().isEmpty) return false;
-      final ofGrade = rooms.where((r) => isSameGrade(r.gradeLevel, s.gradeLevel)).toList();
+      final ofGrade = roomsInViewedYear.where((r) => isSameGrade(r.gradeLevel, s.gradeLevel)).toList();
       return ofGrade.length == 1 && ofGrade.first.id == room.id;
     }).toList();
   }
 
   /// طلاب الشعبة في الحضور — مطابق لـ `Attendance.tsx`.
   ///
-  /// من له شعبة يُرصد في شعبته وحدها، ومن لا شعبة له يبقى ضمن شعب مرحلته حتى
-  /// تُسنَد شعبته، فلا يغيب عن الرصد يوم تسجيله.
-  List<Student> attendanceRosterOf(Classroom room) {
-    return students.where((s) {
-      if (s.status == 'archived') return false;
-      return s.section.trim().isNotEmpty ? studentBelongsToRoom(s, room) : isSameGrade(s.gradeLevel, room.gradeLevel);
+  /// النشطون في الشعبة، ومن رُصد له حضور في هذا الأسبوع لهذه الشعبة ولو
+  /// انسحب أو أُرشف لاحقاً (الكشف سجل تاريخي).
+  List<Student> attendanceRosterOf(Classroom room, {Iterable<String>? weekDates}) {
+    final dates = (weekDates ?? schoolWeek().map((d) => d.dateStr)).toList();
+    bool belongs(Student s) {
+      if (s.section.trim().isNotEmpty) return studentBelongsToRoom(s, room);
+      if (room.gradeLevel.trim().isEmpty || s.gradeLevel.trim().isEmpty) return false;
+      final ofGrade = roomsInViewedYear.where((r) => isSameGrade(r.gradeLevel, s.gradeLevel)).toList();
+      return ofGrade.length == 1 && ofGrade.first.id == room.id;
+    }
+
+    bool markedThisWeek(Student s) {
+      for (final d in dates) {
+        if (markFor(room.id, s.id, d) != null) return true;
+      }
+      return false;
+    }
+
+    return studentsInViewedYear.where((s) {
+      if (markedThisWeek(s)) return true;
+      if (s.status != 'active') return false;
+      return belongs(s);
     }).toList();
   }
 
@@ -2759,7 +3139,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
     if (existing != null) {
       if (existing.status == status && (sessionId.isEmpty || existing.sessionId == sessionId)) {
-        return; // لا تغيير: لا داعي لإخطار الشاشات ولا لكتابة القرص
+        _completeSession(ownerId, date);
+        return; // لا تغيير في السجل؛ الحصة تُكمَّل إن لم تكن
       }
       existing.status = status;
       existing.markedByUserId = currentUserId;
@@ -2767,11 +3148,12 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       existing.updatedAt = _nowIso();
       existing.syncStatus = 'pending';
       _queue('attendance', existing.id, 'UPDATE', existing.toCloud());
+      _completeSession(ownerId, date);
       return;
     }
 
     final mark = AttendanceMark(
-      id: newId(),
+      id: attendanceIdFor(sessionId, studentId),
       studentId: studentId,
       date: date,
       status: status,
@@ -2783,6 +3165,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     );
     attendance.add(mark);
     _queue('attendance', mark.id, 'INSERT', mark.toCloud());
+    _completeSession(ownerId, date);
   }
 
   /// دورة النقر: غير مرصود ← غائب ← حاضر ← غير مرصود.
@@ -2829,7 +3212,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       }
 
       final mark = AttendanceMark(
-        id: newId(),
+        id: attendanceIdFor(sessionId, s.id),
         studentId: s.id,
         date: date,
         status: 'present',
@@ -2846,11 +3229,23 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       // الفهرس يسقط مع كل markRecord، فيُعاد بناؤه لطالب التالي
     }
 
+    _completeSession(ownerId, date);
     if (changed > 0) {
       markDirty(_pendingTable);
       notifyListeners();
     }
     return changed;
+  }
+
+  /// الحصة «مكتملة» بعد أي رصد — مطابق لـ `saveSessionAttendance`.
+  void _completeSession(String? ownerId, String date) {
+    if (ownerId == null || ownerId.isEmpty) return;
+    final session = sessionFor(ownerId, date);
+    if (session.status == 'completed') return;
+    session.status = 'completed';
+    session.updatedAt = _nowIso();
+    session.syncStatus = 'pending';
+    _queue('sessions', session.id, 'UPDATE', session.toCloud());
   }
 
   /// إزالة أي رصد مكرّر لنفس (الجلسة، الطالب) — القيد الفريد في السحابة.
@@ -2920,7 +3315,14 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     for (final s in students) {
       if (exclude != null && s.id == exclude) continue;
       final other = digitsOnly(combinePhoneAndPrefix(s.phone, s.phonePrefix));
-      if (other == digits) return s;
+      if (other.isEmpty) continue;
+      // مطابق لـ checkPhoneExists: تطابق كامل أو آخر 7+ أرقام (مقدمات مختلفة)
+      if (other == digits ||
+          (other.length >= 7 &&
+              digits.length >= 7 &&
+              (other.endsWith(digits) || digits.endsWith(other)))) {
+        return s;
+      }
     }
     return null;
   }
@@ -2965,6 +3367,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
 
     if (isNew && discount != null && discount.value > 0) {
+      requireFinanceAction('finance.discount');
       incoming.planDiscountType = discount.percentage ? 'percentage' : 'fixed';
       incoming.planDiscountValue = discount.value;
       incoming.planDiscountReason = discount.reason;
@@ -2978,6 +3381,25 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final i = students.indexWhere((e) => e.id == incoming.id);
     if (i >= 0) {
       final before = students[i];
+      // تعديل وأنت تعرض سنة سابقة: الصف/الشعبة/الحالة تُكتب في اللقطة لا فوق سنته الحالية
+      final viewingPast =
+          before.academicYearId.isNotEmpty && before.academicYearId != viewedAcademicYearId;
+      final snap = viewingPast
+          ? studentYears.where((y) => y.id == studentYearRecordId(before.id, viewedAcademicYearId)).firstOrNull
+          : null;
+      if (snap != null) {
+        snap
+          ..gradeLevel = incoming.gradeLevel
+          ..section = incoming.section
+          ..status = incoming.status
+          ..updatedAt = _nowIso()
+          ..syncStatus = 'pending';
+        _queue('student_years', snap.id, 'UPDATE', snap.toCloud());
+        markDirty('student_years');
+        incoming.gradeLevel = before.gradeLevel;
+        incoming.section = before.section;
+        incoming.status = before.status;
+      }
       final placementChanged = before.section != incoming.section || before.gradeLevel != incoming.gradeLevel || before.status != incoming.status;
       final leftActive = (incoming.status == 'withdrawn' || incoming.status == 'archived') && before.status != incoming.status;
       incoming.balance = before.balance;
@@ -2991,10 +3413,6 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     } else {
       incoming.createdAt ??= _nowIso();
       incoming.academicYearId = incoming.academicYearId.isEmpty ? (operationalAcademicYear?.id ?? viewedAcademicYearId) : incoming.academicYearId;
-      // من دفع رسم الحجز لا يُقيَّد عليه قسطٌ به: دفعه يزيد رصيده المقدَّم
-      if (incoming.seatReservationPaid) {
-        incoming.balance = incoming.balance + seatReservationFee;
-      }
       // رمز بوابة الطالب يُولَّد عند التسجيل، كما في StudentForm
       if (incoming.portalCode.trim().isEmpty) {
         incoming.portalCode = newPortalCode();
@@ -3002,24 +3420,33 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       students.insert(0, incoming);
       _queue('students', incoming.id, 'INSERT', incoming.toCloud());
 
-      // خطة مخصصة من نموذج التسجيل، أو نسخة من خطة المرحلة.
-      final items = useCustom ? customPlanItems! : planItemsOf(planForStudent(incoming));
-      if (items.isNotEmpty) {
-        for (final inst in _studentPlanInstallments(
-          incoming,
-          items: items,
-          discount: useCustom ? null : discount,
-          enrollmentMode: useCustom ? EnrollmentPlanMode.full : enrollmentMode,
-          customIds: useCustom,
-        )) {
-          installments.add(inst);
-          _queue('installments', inst.id, 'INSERT', inst.toCloud());
-        }
-        markDirty('installments');
-        _persistStudentLedger(incoming);
+      // خطة مخصصة أو نسخة من خطة المرحلة — تُبنى دائماً حتى لو بلا بنود
+      // فيُقيَّد رسم الحجز وحده (كـ buildStudentPlan على الويب).
+      final custom = customPlanItems;
+      final items = (useCustom && custom != null) ? custom : planItemsOf(planForStudent(incoming));
+      for (final inst in _studentPlanInstallments(
+        incoming,
+        items: items,
+        discount: useCustom ? null : discount,
+        enrollmentMode: useCustom ? EnrollmentPlanMode.full : enrollmentMode,
+        customIds: useCustom,
+      )) {
+        installments.add(inst);
+        _queue('installments', inst.id, 'INSERT', inst.toCloud());
       }
+      markDirty('installments');
+      _persistStudentLedger(incoming);
       // دفعة حجز سابقة بلا قسط: تُربط بأول قسط بعد إنشاء الخطة
       applySeatCreditToFirstInstallment(incoming.id);
+      if (discount != null && discount.value > 0) {
+        _recordFinanceAudit(
+          action: 'student_discount',
+          summary: 'خصم تسجيل ${discount.percentage ? '${discount.value}%' : money(discount.value)}',
+          studentId: incoming.id,
+          amount: discount.value,
+          reason: discount.reason,
+        );
+      }
     }
 
     if (attachments != null) {
@@ -3053,14 +3480,14 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// يعتمد على المستحق الحالّ لا على الرصيد الكامل (الذي يشمل الأقساط المجدولة).
   bool isSettledToDate(String studentId) => outstandingDue(studentId) <= cent;
 
-  /// عدد سندات القبض غير الملغاة — يمنع الحذف كما في StudentsService.delete.
-  int countActivePayments(String studentId) => payments.where((p) => p.studentId == studentId && !p.cancelled).length;
+  /// عدد كل سندات الطالب (مقبوضة وملغاة) — الملغى قيد في سجل القبض ويمنع الحذف.
+  int countActivePayments(String studentId) => payments.where((p) => p.studentId == studentId).length;
 
   /// إسقاط أقساط لم تحن ولم يُدفع منها شيء — `StudentsService.cancelFutureInstallments`.
   ///
   /// عند الانسحاب/الأرشفة: المستحق والمدفوع يبقيان؛ المجدول يُحذف حتى لا يظهر ديناً.
   int cancelFutureInstallments(String studentId) {
-    final victims = installments.where((i) => i.studentId == studentId && !isInstallmentDue(i) && i.paidAmount <= cent).toList();
+    final victims = installments.where((i) => i.studentId == studentId && !i.isExempt && !isInstallmentDue(i) && i.paidAmount <= cent).toList();
     if (victims.isEmpty) return 0;
 
     var removed = 0;
@@ -3092,14 +3519,14 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   /// حذف طالب مع كل ما يتبعه — مطابق لـ `StudentsService.delete`.
   ///
-  /// وجود سند قبض غير ملغى يمنع الحذف: السجل المالي لا يُمحى بحذف صاحبه.
+  /// أي سند قبض (ولو ملغى) يمنع الحذف: السجل المالي لا يُمحى بحذف صاحبه.
   void deleteStudent(String id) {
     requireSection('students');
-    final activePays = countActivePayments(id);
-    if (activePays > 0) {
+    final pays = countActivePayments(id);
+    if (pays > 0) {
       throw StoreException(
-        'لا يمكن حذف هذا الطالب لأن عليه $activePays سند قبض مسجَّل. '
-        'يمكنك تغيير حالته إلى «منسحب» للاحتفاظ بالسجل المالي، أو إلغاء السندات أولاً.',
+        'لا يمكن حذف هذا الطالب لأن له $pays سند قبض (مقبوض أو ملغى). '
+        'غيّر حالته إلى «منسحب» أو «مؤرشف» للاحتفاظ بالسجل المالي.',
       );
     }
 
@@ -3109,29 +3536,39 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     for (final a in attendance.where((a) => a.studentId == id)) {
       queuePendingSync(pendingSyncs, tableName: 'attendance', recordId: a.id, action: 'DELETE', payload: null);
     }
-    for (final p in payments.where((p) => p.studentId == id)) {
-      queuePendingSync(pendingSyncs, tableName: 'payments', recordId: p.id, action: 'DELETE', payload: null);
-    }
     for (final e in enrollmentsOf(id)) {
       queuePendingSync(pendingSyncs, tableName: 'enrollments', recordId: e.id, action: 'DELETE', payload: null);
     }
+    for (final e in evaluationsOfStudent(id)) {
+      queuePendingSync(pendingSyncs, tableName: 'student_evaluations', recordId: e.id, action: 'DELETE', payload: null);
+    }
+    final yearRows = studentYears.where((y) => y.studentId == id).toList();
+    for (final y in yearRows) {
+      queuePendingSync(pendingSyncs, tableName: 'student_years', recordId: y.id, action: 'DELETE', payload: null);
+    }
 
     students.removeWhere((s) => s.id == id);
-    payments.removeWhere((p) => p.studentId == id);
     installments.removeWhere((i) => i.studentId == id);
     attendance.removeWhere((a) => a.studentId == id);
     enrollments.removeWhere((e) => e.studentId == id);
+    studentYears.removeWhere((y) => y.studentId == id);
+    final evalBucket = extraCloud['student_evaluations'];
+    if (evalBucket != null) {
+      evalBucket.removeWhere((row) => '${(row as Map)['student_id'] ?? ''}' == id);
+    }
     final removedDocs = attachmentsByStudent.remove(id);
     if (removedDocs != null) {
       unawaited(_removeCloudAttachments(id, removedDocs.paths));
+      _queue('student_attachments', id, 'DELETE', null);
     }
     _queue('students', id, 'DELETE', null);
     markDirty('students');
-    markDirty('payments');
     markDirty('installments');
     markDirty('attendance');
-    markDirty('student_attachments');
     markDirty('enrollments');
+    markDirty('student_years');
+    markDirty('student_evaluations');
+    markDirty('student_attachments');
   }
 
   /// رسم حجز دُفع قبل وجود أقساط: يُربط بأول قسط مفتوح — `applySeatCreditToFirstInstallment`.
@@ -3154,42 +3591,118 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     markDirty('payments');
   }
 
-  /// أعلى رقم تسلسلي مستخدم لسنة معينة ضمن قائمة أرقام سندات.
+  /// أعلى رقم تسلسلي مستخدم لسنة معينة (ولرمز جهاز) ضمن قائمة أرقام سندات.
   /// مطابق لـ `FinanceService.maxSerialFor`.
-  static int maxSerialFor(int year, Iterable<String> receiptNumbers) {
+  static int maxSerialFor(int year, Iterable<String> receiptNumbers, [String? code]) {
     var max = 1000;
     for (final raw in receiptNumbers) {
-      final parts = raw.split('/');
-      if (parts.length == 2 && parts[0] == '$year') {
-        final serial = int.tryParse(parts[1]);
-        if (serial != null && serial > max) max = serial;
-      }
+      final parsed = parseReceiptNumber(raw);
+      if (parsed == null || parsed.year != year) continue;
+      if ((parsed.code ?? '') != (code ?? '')) continue;
+      if (parsed.serial > max) max = parsed.serial;
     }
     return max;
+  }
+
+  /// رقم السند مفككاً: رمز الجهاز (غائب في الأرقام القديمة) والسنة والتسلسل.
+  static ({String? code, int year, int serial})? parseReceiptNumber(String raw) {
+    final m = RegExp(r'^(?:([A-Z]{1,3})-)?(\d{4})\/(\d+)$').firstMatch(raw.trim());
+    if (m == null) return null;
+    return (code: m.group(1), year: int.parse(m.group(2)!), serial: int.parse(m.group(3)!));
   }
 
   /// آخر تسلسل رآه هذا الجهاز من السحابة، يُحدَّث قبل كل دفعة عند توفّر الاتصال.
   int _cloudSerialHint = 0;
 
-  /// استشارة السحابة عن أعلى رقم سند لهذه السنة.
+  String _deviceUid() {
+    var uid = db.settings[_kDeviceUid];
+    if (uid == null || uid.isEmpty) {
+      uid = newId();
+      unawaited(db.setSetting(_kDeviceUid, uid));
+    }
+    return uid;
+  }
+
+  /// رمز هذا الجهاز في أرقام السندات (`K-2026/1001`) — `deviceReceiptCode`.
   ///
-  /// الاعتماد على القاعدة المحلية وحدها كان يجعل جهازين يُصدران الرقم نفسه
-  /// لسندين مختلفين. القيد `UNIQUE(tenant_id, receipt_number)` هو خط الدفاع
-  /// الأخير، ويعالجه [addPayment] بإعادة التوليد عند التعارض.
+  /// جهازان بلا إنترنت كانا يُصدران الرقم نفسه؛ لكل جهاز تسلسله برمزه فلا يلتقيان.
+  Future<String> deviceReceiptCode() async {
+    final uid = _deviceUid();
+    final registry = Map<String, ReceiptDeviceEntry>.from(settings.receiptDevices);
+    var code = db.settings[_kDeviceCode] ?? '';
+    final takenByOther = code.isNotEmpty && registry[code] != null && registry[code]!.deviceId != uid;
+
+    if (code.isEmpty || takenByOther) {
+      final taken = <String>{...registry.keys};
+      for (final p in payments) {
+        final parsed = parseReceiptNumber(p.receiptNumber);
+        if (parsed?.code != null) taken.add(parsed!.code!);
+      }
+      final pool = <String>[];
+      for (var i = 0; i < _receiptCodeLetters.length; i++) {
+        pool.add(_receiptCodeLetters[i]);
+      }
+      for (var a = 0; a < _receiptCodeLetters.length; a++) {
+        for (var b = 0; b < _receiptCodeLetters.length; b++) {
+          pool.add('${_receiptCodeLetters[a]}${_receiptCodeLetters[b]}');
+        }
+      }
+      final free = pool.where((c) => !taken.contains(c)).toList();
+      final singles = free.where((c) => c.length == 1).toList();
+      final candidates = singles.isNotEmpty ? singles : free;
+      if (candidates.isEmpty) {
+        code = 'Z${_rand.nextInt(900) + 100}';
+      } else {
+        code = candidates[_rand.nextInt(candidates.length)];
+      }
+      await db.setSetting(_kDeviceCode, code);
+      await db.setSetting(_kDeviceCodeRegistered, null);
+    }
+
+    if (db.settings[_kDeviceCodeRegistered] != code) {
+      try {
+        await _writeSettings((prev) => prev.copyWith(
+          receiptDevices: {
+            ...registry,
+            code: ReceiptDeviceEntry(
+              deviceId: uid,
+              label: receiptReceiver,
+              registeredAt: _nowIso(),
+            ),
+          },
+        ));
+        await db.setSetting(_kDeviceCodeRegistered, code);
+      } catch (_) {
+        // يُعاد الحجز مع السند التالي
+      }
+    }
+    return code;
+  }
+
+  /// استشارة السحابة عن أعلى رقم سند لهذه السنة ولهذا الجهاز.
   Future<void> primeReceiptCounter() async {
     final tid = tenantId;
     if (tid == null || !networkEnabled) return;
     final year = DateTime.now().year;
-    final rows = await supabaseSelect(
-      'payments',
-      columns: 'receipt_number',
-      filters: {'tenant_id': 'eq.$tid', 'receipt_number': 'like.$year/%'},
-      order: 'receipt_number.desc',
-      limit: 200,
-    );
-    if (rows == null) return;
-    final cloudMax = maxSerialFor(year, rows.map((r) => '${r['receipt_number'] ?? ''}'));
-    if (cloudMax > _cloudSerialHint) _cloudSerialHint = cloudMax;
+    final code = await deviceReceiptCode();
+    final prefix = '$code-$year/';
+    const page = 1000;
+    var max = maxSerialFor(year, payments.map((p) => p.receiptNumber), code);
+    for (var from = 0;; from += page) {
+      final rows = await supabaseSelect(
+        'payments',
+        columns: 'receipt_number',
+        filters: {'tenant_id': 'eq.$tid', 'receipt_number': 'like.$prefix%'},
+        order: 'id.asc',
+        limit: page,
+        offset: from,
+      );
+      if (rows == null) break;
+      final cloudMax = maxSerialFor(year, rows.map((r) => '${r['receipt_number'] ?? ''}'), code);
+      if (cloudMax > max) max = cloudMax;
+      if (rows.length < page) break;
+    }
+    if (max > _cloudSerialHint) _cloudSerialHint = max;
   }
 
   /// منح سند رقماً جديداً بعد تعارض رقمه مع سند آخر صدر بلا اتصال.
@@ -3213,12 +3726,22 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   String _nextReceipt() {
     final year = DateTime.now().year;
-    var max = maxSerialFor(year, payments.map((p) => p.receiptNumber));
+    final code = db.settings[_kDeviceCode];
+    // بلا رمز مسجّل بعد: رقم قديم بلا بادئة حتى يُحجز الرمز عند أول اتصال
+    if (code == null || code.isEmpty) {
+      var max = maxSerialFor(year, payments.map((p) => p.receiptNumber));
+      if (_receipt > max) max = _receipt;
+      if (_cloudSerialHint > max) max = _cloudSerialHint;
+      _receipt = max + 1 < 1001 ? 1001 : max + 1;
+      unawaited(db.setSetting(_kReceiptCounter, '$_receipt'));
+      return '$year/$_receipt';
+    }
+    var max = maxSerialFor(year, payments.map((p) => p.receiptNumber), code);
     if (_receipt > max) max = _receipt;
     if (_cloudSerialHint > max) max = _cloudSerialHint;
     _receipt = max + 1 < 1001 ? 1001 : max + 1;
     unawaited(db.setSetting(_kReceiptCounter, '$_receipt'));
-    return '$year/$_receipt';
+    return '$code-$year/$_receipt';
   }
 
   /// توحيد صيغة أرقام السندات القديمة إلى `YYYY/NNNN`.
@@ -3247,44 +3770,102 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return changed;
   }
 
-  /// استبدال معرّفات الحضور النصية القديمة بمعرّفات UUID.
-  ///
-  /// كانت تُولَّد بصيغة `att-<studentId>-<date>`، وعمود `id` في السحابة من نوع
-  /// uuid فيرفضها بـ «invalid input syntax for type uuid». السجلات المكتوبة
-  /// بها تظل عالقة في طابور الرفع مهما أُعيدت المحاولة، فتُعاد كتابتها هنا
-  /// بمعرّف صالح مرة واحدة لكل جهاز.
+  /// ترحيل حصص كشف الشعبة القديمة: كانت تكتب معرّف الشعبة في `group_id`.
   Future<int> migrateAttendanceIds() async {
     if (db.settings[attendanceIdMigrationKey] == 'true') return 0;
 
-    final stale = attendance.where((a) => a.id.startsWith('att-')).toList();
-    for (final old in stale) {
-      // إسقاط أي عملية معلّقة تشير إلى المعرّف القديم: لن يقبله الخادم أبداً
-      pendingSyncs.removeWhere((p) => p.tableName == 'attendance' && p.recordId == old.id);
+    final roomIds = {for (final r in rooms) r.id};
+    var changed = 0;
+    final now = _nowIso();
 
-      final fresh = AttendanceMark(
-        id: newId(),
-        studentId: old.studentId,
-        date: old.date,
-        status: old.status,
-        sessionId: old.sessionId,
-        markedByUserId: old.markedByUserId,
-        notes: old.notes,
+    for (final s in [...sessions]) {
+      final looksLikeRoom =
+          s.groupId.isNotEmpty && roomIds.contains(s.groupId) && (s.roomId.isEmpty || s.roomId == s.groupId);
+      if (!looksLikeRoom) continue;
+
+      final roomId = s.groupId;
+      final wantedId = roomSessionIdFor(roomId, s.sessionDate);
+      final start = (s.startTime.trim().isEmpty || s.startTime == '08:00') ? '00:00' : s.startTime;
+      final end = (s.endTime.trim().isEmpty || s.endTime == '10:00') ? '23:59' : s.endTime;
+
+      if (s.id == wantedId) {
+        s.groupId = '';
+        s.roomId = roomId;
+        s.startTime = start;
+        s.endTime = end;
+        s.updatedAt = now;
+        s.syncStatus = 'pending';
+        _queue('sessions', s.id, 'UPDATE', s.toCloud());
+        changed++;
+        continue;
+      }
+
+      if (sessions.any((o) => o.id == wantedId && !identical(o, s))) {
+        // معرّف حتمي موجود مسبقاً: أصلح القديم فقط واترك الحتمي
+        s.groupId = '';
+        s.roomId = roomId;
+        s.startTime = start;
+        s.endTime = end;
+        s.updatedAt = now;
+        s.syncStatus = 'pending';
+        _queue('sessions', s.id, 'UPDATE', s.toCloud());
+        changed++;
+        continue;
+      }
+
+      final replacement = ClassSession(
+        id: wantedId,
+        groupId: '',
+        sessionDate: s.sessionDate,
+        startTime: start,
+        endTime: end,
+        teacherId: s.teacherId,
+        roomId: roomId,
+        status: s.status,
+        substituteTeacherId: s.substituteTeacherId,
+        notes: s.notes,
         syncStatus: 'pending',
-        createdAt: old.createdAt ?? _nowIso(),
-        updatedAt: _nowIso(),
+        createdAt: s.createdAt ?? now,
+        updatedAt: now,
       );
-      final i = attendance.indexOf(old);
-      attendance[i] = fresh;
-      queuePendingSync(pendingSyncs, tableName: 'attendance', recordId: fresh.id, action: 'INSERT', payload: fresh.toCloud());
+
+      for (final a in attendance.where((a) => a.sessionId == s.id).toList()) {
+        final newAttId = attendanceIdFor(wantedId, a.studentId);
+        pendingSyncs.removeWhere((p) => p.tableName == 'attendance' && p.recordId == a.id);
+        final fresh = AttendanceMark(
+          id: attendance.every((x) => x.id != newAttId) ? newAttId : a.id,
+          studentId: a.studentId,
+          date: a.date,
+          status: a.status,
+          sessionId: wantedId,
+          markedByUserId: a.markedByUserId,
+          notes: a.notes,
+          syncStatus: 'pending',
+          createdAt: a.createdAt ?? now,
+          updatedAt: now,
+        );
+        final ai = attendance.indexOf(a);
+        if (ai >= 0) attendance[ai] = fresh;
+        _queue('attendance', fresh.id, 'INSERT', fresh.toCloud());
+        if (a.id != fresh.id) _queue('attendance', a.id, 'DELETE', null);
+      }
+
+      pendingSyncs.removeWhere((p) => p.tableName == 'sessions' && p.recordId == s.id);
+      sessions.removeWhere((x) => x.id == s.id);
+      sessions.add(replacement);
+      _queue('sessions', s.id, 'DELETE', null);
+      _queue('sessions', wantedId, 'INSERT', replacement.toCloud());
+      changed++;
     }
 
     await db.setSetting(attendanceIdMigrationKey, 'true');
-    if (stale.isNotEmpty) {
+    if (changed > 0) {
+      markDirty('sessions');
       markDirty('attendance');
       markDirty(_pendingTable);
       notifyListeners();
     }
-    return stale.length;
+    return changed;
   }
 
   /// مطابق لـ `migrateReceiptNumbers`.
@@ -3294,7 +3875,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final currentYear = DateTime.now().year;
     final recPattern = RegExp(r'^REC-(\d{4})-(\d+)$', caseSensitive: false);
     final plainPattern = RegExp(r'^(\d+)$');
-    final canonical = RegExp(r'^\d{4}/\d+$');
+    // الأرقام ذات رمز الجهاز (`K-2026/1001`) صحيحة ولا تُمس
+    final canonical = RegExp(r'^(?:[A-Z]{1,3}-)?\d{4}/\d+$');
     var changed = 0;
 
     for (final p in payments) {
@@ -3344,6 +3926,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     required DateTime date,
     String note = '',
     String method = 'cash',
+    String reference = '',
+    String senderName = '',
+    String channel = '',
   }) {
     requireFinanceAction('finance.collect');
     if (title.trim().isEmpty) throw StoreException('اكتب اسم الجهة أو الشخص');
@@ -3360,8 +3945,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       amount: amount,
       method: method,
       date: date,
-      purpose: 'general_income',
+      purpose: generalIncomePurpose,
       notes: note.trim(),
+      reference: reference.trim(),
+      senderName: senderName.trim(),
+      channel: channel.trim(),
       receivedByUserId: currentUserId,
       receivedByName: receiptReceiver,
       academicYearId: operationalAcademicYear?.id ?? viewedAcademicYearId,
@@ -3380,7 +3968,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   GeneralIncome updateGeneralIncome(GeneralIncome income) {
     requireFinanceAction('finance.collect');
     final payment = payments.where((p) => p.id == income.id).firstOrNull;
-    if (payment == null || payment.purpose != 'general_income') {
+    if (payment == null || !isGeneralIncomePurpose(payment.purpose)) {
       throw StoreException('سند الإيراد غير موجود');
     }
     if (payment.cancelled) throw StoreException('لا يمكن تعديل سند ملغى');
@@ -3404,7 +3992,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// الحذف المالي إبطالٌ لا إسقاط للسجل، حتى يبقى أثر السند في التقارير.
   Payment deleteGeneralIncome(String id, {required String reason}) {
     final payment = payments.where((p) => p.id == id).firstOrNull;
-    if (payment == null || payment.purpose != 'general_income') {
+    if (payment == null || !isGeneralIncomePurpose(payment.purpose)) {
       throw StoreException('سند الإيراد غير موجود');
     }
     return voidPayment(payment, reason);
@@ -3489,7 +4077,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       groupId: groupId,
       enrollmentId: enrollmentId,
       receivedByUserId: currentUserId,
-      remainingAfter: math.max(0.0, dueNow - totalSettled),
+      remainingAfter: 0,
       totalDueAtPayment: dueNow,
       academicYearId: operationalAcademicYear?.id ?? viewedAcademicYearId,
       syncStatus: 'pending',
@@ -3497,9 +4085,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       updatedAt: _nowIso(),
     );
     payments.insert(0, p);
-    // المتبقي بعد الحفظ = دين الرصيد الكامل السالب — كما في createPayment على الويب
-    final after = _persistStudentLedger(stu);
-    p.remainingAfter = after < 0 ? after.abs() : 0;
+    // المتبقي بنفس معيار «المطلوب وقت الدفع»: ما حلّ موعده — لا الرصيد الكامل
+    _persistStudentLedger(stu);
+    final dueInsts = installments.where((i) => i.studentId == studentId && isInstallmentDue(i));
+    p.remainingAfter = ((dueInsts.fold<double>(0, (s, i) => s + math.max(0.0, chargeableAmount(i) - i.paidAmount)) * 100).round() / 100);
     queuePendingSync(pendingSyncs, tableName: 'payments', recordId: p.id, action: 'INSERT', payload: p.toCloud());
     markDirty('payments');
     markDirty(_pendingTable);
@@ -3593,7 +4182,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       amount: -original.amount,
       method: original.method,
       date: DateTime.now(),
-      purpose: 'payment_reversal',
+      purpose: reversalPurpose,
       notes: 'عكس السند ${original.receiptNumber} — ${reason.trim()}',
       discountAmount: original.discountAmount > 0 ? -original.discountAmount : 0,
       discountReason: original.discountReason,
@@ -3692,7 +4281,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (credit <= cent) throw StoreException('لا رصيد للطالب');
     final now = _nowIso();
     final installment = Installment(
-      id: 'extra-${newId()}',
+      id: '$extraIdPrefix${newId()}',
       studentId: studentId,
       title: 'إسقاط رصيد غير مسترد — ${reason.trim()}',
       amount: credit,
@@ -3713,6 +4302,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       amount: credit,
       reason: reason,
     );
+    markDirty('installments');
     notifyListeners();
     return credit;
   }
@@ -4009,37 +4599,269 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return (added: added, removed: removed);
   }
 
-  /// إلغاء الخطة الخاصة وإعادة بناء خطة المرحلة؛ المدفوع من المخصصة يبقى كسجل.
-  GradePlanSyncResult returnToGradePlan(String studentId) {
-    requireFinanceAction('finance.discount');
+  /// نطاق اعتماد أقساط المرحلة — مطابق لـ `PlanReturnScope` في الويب.
+  ///
+  /// - [PlanReturnScope.all]: كل أقساط المرحلة (بما فيها ما فات).
+  /// - [PlanReturnScope.future]: من تاريخ اليوم فصاعداً.
+  /// - [PlanReturnScope.fromItem]: من قسط معيّن فما بعده.
+  static const _kPlanScopeAll = 'all';
+  static const _kPlanScopeFuture = 'future';
+  static const _kPlanScopeFromItem = 'from_item';
+
+  /// اعتماد خطة مرحلة على طلاب: إسقاط غير المدفوع حسب النمط، ثم إضافة بنود الخطة.
+  ///
+  /// مطابق لـ `StudentsService.adoptGradePlan`.
+  /// - `dropUnpaid: 'custom'`: إرجاع من مخصصة.
+  /// - `dropUnpaid: 'plans'`: نقل صف — يُزال غير المدفوع من المخصصة وأقساط المرحلة القديمة.
+  ({int students, int removed, int added}) adoptGradePlan({
+    required Iterable<String> studentIds,
+    required String gradeName,
+    bool setGradeLevel = false,
+    String planScope = _kPlanScopeAll,
+    String? fromPlanItemId,
+    String? fromDueDate,
+    String dropUnpaid = 'custom',
+    bool onlyCustomPlanStudents = false,
+    bool apply = false,
+  }) {
+    final drop = dropUnpaid == 'plans' ? 'plans' : 'custom';
+    if (apply) {
+      if (drop == 'plans') {
+        // نقل صف من نموذج الطالب: صلاحية الطلاب تكفي (كالويب)
+        requireSection('students', const ['finance.discount']);
+      } else {
+        requireFinanceAction('finance.discount');
+      }
+    }
+
+    final planGrade = gradeName.trim();
+    if (planGrade.isEmpty) throw StoreException('حدّد المرحلة');
+
+    var scope = planScope;
+    if (fromDueDate != null && fromDueDate.trim().isNotEmpty && scope != _kPlanScopeFromItem) {
+      scope = _kPlanScopeFromItem;
+    }
+    if (scope == _kPlanScopeFromItem &&
+        (fromPlanItemId == null || fromPlanItemId.trim().isEmpty) &&
+        (fromDueDate == null || fromDueDate.trim().isEmpty)) {
+      throw StoreException('حدّد القسط الذي يبدأ منه الاحتساب');
+    }
+
+    final today = isoDate(DateTime.now());
+    final now = _nowIso();
+    final plans = gradePlans();
+    final fee = plans[planGrade.toLowerCase()];
+    final items = [...planItemsOf(fee)]
+      ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+
+    List<PlanItem> scoped;
+    if (scope == _kPlanScopeFuture) {
+      scoped = [
+        for (final i in items)
+          if ((i.dueDate.length >= 10 ? i.dueDate.substring(0, 10) : i.dueDate).compareTo(today) >= 0) i,
+      ];
+    } else if (scope == _kPlanScopeFromItem) {
+      var startIdx = -1;
+      final fromId = fromPlanItemId?.trim() ?? '';
+      if (fromId.isNotEmpty) {
+        startIdx = items.indexWhere((i) => i.id == fromId);
+      }
+      if (startIdx < 0 && fromDueDate != null && fromDueDate.trim().isNotEmpty) {
+        final from = fromDueDate.trim().length >= 10 ? fromDueDate.trim().substring(0, 10) : fromDueDate.trim();
+        startIdx = items.indexWhere((i) {
+          final due = i.dueDate.length >= 10 ? i.dueDate.substring(0, 10) : i.dueDate;
+          return due.compareTo(from) >= 0;
+        });
+      }
+      if (startIdx < 0) throw StoreException('القسط المختار غير موجود في خطة هذه المرحلة');
+      scoped = items.sublist(startIdx);
+    } else {
+      scoped = items;
+    }
+
+    final idFilter = studentIds.toSet();
+    final candidates = students.where((s) {
+      if (!idFilter.contains(s.id)) return false;
+      if (s.status == 'archived' || s.status == 'withdrawn') return false;
+      if (onlyCustomPlanStudents && !s.usesCustomPlan) return false;
+      return true;
+    }).toList();
+
+    var resultStudents = 0;
+    var resultRemoved = 0;
+    var resultAdded = 0;
+    final yearId = operationalAcademicYear?.id ?? viewedAcademicYearId;
+
+    for (final student in candidates) {
+      final own = installments.where((i) => i.studentId == student.id).toList();
+      final byId = {for (final i in own) i.id: i};
+
+      final toRemove = <Installment>[];
+      for (final row in own) {
+        if (row.paidAmount > cent || row.isExempt) continue;
+        final dropCustom = isCustomInstallmentId(row.id);
+        final dropStage = drop == 'plans' && isStagePlanInstallmentId(row.id);
+        if (!dropCustom && !dropStage) continue;
+        toRemove.add(row);
+      }
+
+      final toAdd = [
+        for (final item in scoped)
+          if (!byId.containsKey(planInstallmentId(item.id, student.id))) item,
+      ];
+      final needsFlagClear = student.usesCustomPlan;
+      final needsGrade = setGradeLevel && student.gradeLevel.trim().toLowerCase() != planGrade.toLowerCase();
+
+      if (toRemove.isEmpty && toAdd.isEmpty && !needsFlagClear && !needsGrade) continue;
+
+      resultStudents++;
+      resultRemoved += toRemove.length;
+      resultAdded += toAdd.length;
+      if (!apply) continue;
+
+      final discount = studentDiscountOf(student);
+      final addRows = toInstallments(
+        [
+          for (final item in toAdd)
+            StudentPlanRow(
+              id: planInstallmentId(item.id, student.id),
+              title: item.title,
+              amount: planInstallmentAmount(item.amount, item.dueDate, discount),
+              dueDate: item.dueDate,
+              originalAmount: item.amount,
+            ),
+        ],
+        student.id,
+        now,
+        academicYearId: yearId,
+      );
+
+      for (final row in toRemove) {
+        if (payments.any((p) => !p.cancelled && p.installmentId == row.id)) {
+          resultRemoved--;
+          continue;
+        }
+        unlinkAndDeleteInstallment(row, now);
+      }
+
+      for (final row in addRows) {
+        installments.add(row);
+        _queue('installments', row.id, 'INSERT', row.toCloud());
+      }
+
+      student
+        ..usesCustomPlan = false
+        ..updatedAt = now
+        ..syncStatus = 'pending';
+      if (setGradeLevel) student.gradeLevel = planGrade;
+      _queue('students', student.id, 'UPDATE', student.toCloud());
+      _persistStudentLedger(student);
+    }
+
+    if (apply && resultStudents > 0) {
+      markDirty('students');
+      markDirty('installments');
+      notifyListeners();
+    }
+    return (students: resultStudents, removed: resultRemoved, added: resultAdded);
+  }
+
+  /// إرجاع طلاب الخطة المخصصة لاعتماد خطة مرحلتهم — `returnCustomStudentsToGradePlan`.
+  ({int students, int removed, int added}) returnCustomStudentsToGradePlan({
+    Iterable<String>? studentIds,
+    String? gradeName,
+    String? fromDueDate,
+    String planScope = _kPlanScopeFuture,
+    String? fromPlanItemId,
+    bool apply = false,
+  }) {
+    final ids = studentIds?.toList() ??
+        [
+          for (final s in students)
+            if (s.status == 'active' && s.usesCustomPlan) s.id,
+        ];
+    if (ids.isEmpty) return (students: 0, removed: 0, added: 0);
+
+    final explicitGrade = gradeName?.trim() ?? '';
+    if (explicitGrade.isEmpty) {
+      final byGrade = <String, List<String>>{};
+      for (final id in ids) {
+        final s = studentById(id);
+        if (s == null || !s.usesCustomPlan) continue;
+        final g = s.gradeLevel.trim();
+        if (g.isEmpty) continue;
+        (byGrade[g] ??= []).add(id);
+      }
+      var totalStudents = 0;
+      var totalRemoved = 0;
+      var totalAdded = 0;
+      for (final entry in byGrade.entries) {
+        final part = adoptGradePlan(
+          studentIds: entry.value,
+          gradeName: entry.key,
+          planScope: planScope,
+          fromPlanItemId: fromPlanItemId,
+          fromDueDate: fromDueDate,
+          dropUnpaid: 'custom',
+          onlyCustomPlanStudents: true,
+          apply: apply,
+        );
+        totalStudents += part.students;
+        totalRemoved += part.removed;
+        totalAdded += part.added;
+      }
+      return (students: totalStudents, removed: totalRemoved, added: totalAdded);
+    }
+
+    return adoptGradePlan(
+      studentIds: ids,
+      gradeName: explicitGrade,
+      planScope: planScope,
+      fromPlanItemId: fromPlanItemId,
+      fromDueDate: fromDueDate,
+      dropUnpaid: 'custom',
+      onlyCustomPlanStudents: true,
+      apply: apply,
+    );
+  }
+
+  /// نقل طالب لمرحلة أخرى مالياً — `transferStudentsToGrade`.
+  ({int students, int removed, int added}) transferStudentsToGrade({
+    required Iterable<String> studentIds,
+    required String newGradeName,
+    String planScope = _kPlanScopeFuture,
+    String? fromPlanItemId,
+    bool apply = false,
+  }) =>
+      adoptGradePlan(
+        studentIds: studentIds,
+        gradeName: newGradeName,
+        setGradeLevel: true,
+        planScope: planScope,
+        fromPlanItemId: fromPlanItemId,
+        dropUnpaid: 'plans',
+        onlyCustomPlanStudents: false,
+        apply: apply,
+      );
+
+  /// إلغاء الخطة الخاصة واعتماد خطة المرحلة (نطاق مستقبلي افتراضياً كالويب).
+  ({int students, int removed, int added}) returnToGradePlan(
+    String studentId, {
+    String planScope = _kPlanScopeFuture,
+    String? fromPlanItemId,
+    bool apply = true,
+  }) {
     final student = studentById(studentId);
     if (student == null) throw StoreException('الطالب غير موجود');
-    if (!student.usesCustomPlan) return GradePlanSyncResult();
-    if (student.gradeLevel.trim().isEmpty) {
-      throw StoreException('الطالب بلا مرحلة');
-    }
-    final now = _nowIso();
-    final removable = installments.where((row) {
-      if (row.studentId != studentId || !isCustomInstallmentId(row.id)) {
-        return false;
-      }
-      if (row.paidAmount > cent || row.isExempt) return false;
-      return !payments.any((p) => !p.cancelled && p.installmentId == row.id);
-    }).toList();
-    for (final row in removable) {
-      unlinkAndDeleteInstallment(row, now);
-    }
-    student
-      ..usesCustomPlan = false
-      ..updatedAt = now
-      ..syncStatus = 'pending';
-    _queue('students', student.id, 'UPDATE', student.toCloud());
-    final result = GradePlanSync.run(this, student.gradeLevel, opts: GradePlanSyncOptions(apply: true, studentIds: {studentId}, checkPermission: false));
-    _persistStudentLedger(student);
-    markDirty('students');
-    markDirty('installments');
-    notifyListeners();
-    return result;
+    if (!student.usesCustomPlan) return (students: 0, removed: 0, added: 0);
+    if (student.gradeLevel.trim().isEmpty) throw StoreException('الطالب بلا مرحلة');
+    return returnCustomStudentsToGradePlan(
+      studentIds: [studentId],
+      gradeName: planScope == _kPlanScopeFromItem ? student.gradeLevel : null,
+      planScope: planScope,
+      fromPlanItemId: fromPlanItemId,
+      apply: apply,
+    );
   }
 
   /// رصيد الطالب محسوباً من سجلاته الفعلية — المقابل لـ `computeStudentBalance`.
@@ -4162,12 +4984,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     markDirty(table);
   }
 
-  /// يحفظ مخطط العلامات الحالي كلقطة للعام المغلق.
+  /// يحفظ نظام العلامات الحالي كلقطة للعام المغلق.
   Future<void> snapshotGradingForYear(String yearId) async {
-    const key = 'grading_scheme_by_year';
-    final raw = _decodeMap(db.settings[key]);
-    raw[yearId] = gradingScheme.toMap();
-    await db.setSetting(key, jsonEncode(raw));
+    await _writeSettings((prev) {
+      final next = Map<String, GradingSettings>.from(prev.gradingByYear);
+      next[yearId] = gradingSettings;
+      return prev.copyWith(gradingByYear: next);
+    });
   }
 
   void unlinkAndDeleteInstallment(Installment inst, String now) {
@@ -4202,31 +5025,42 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   List<DueItem> _computeDueItems() {
     final today = dateOnly(DateTime.now());
     final list = <DueItem>[];
-    final withInst = <String>{};
+    // صاحب الخطة يظهر ولو أقساطه كلها مسددة أو مجدولة — لا يُضاف له سطر «رسوم مستحقة»
+    final studentsWithPlan = {
+      for (final i in installmentsInViewedYear) i.studentId,
+    };
 
     for (final inst in installmentsInViewedYear) {
-      if (inst.isPaid) continue;
+      if (!isInstallmentDue(inst)) continue;
+      final unpaid = math.max(0.0, chargeableAmount(inst) - inst.paidAmount);
+      if (unpaid <= cent) continue;
       final student = studentById(inst.studentId);
       if (student == null) continue;
-      withInst.add(student.id);
       final due = dateOnly(inst.dueDate);
       list.add(
         DueItem(
           id: inst.id,
           student: student,
           title: inst.title,
-          amount: inst.remaining,
+          amount: unpaid,
           dueDate: inst.dueDate,
           late: due.isBefore(today),
-          scheduled: due.isAfter(today),
+          scheduled: false,
           installmentId: inst.id,
         ),
       );
     }
 
     for (final s in studentsInViewedYear) {
-      if (s.balance >= 0 || withInst.contains(s.id)) continue;
-      list.add(DueItem(id: 'debt-${s.id}', student: s, title: 'رسوم شهرية مستحقة', amount: s.balance.abs(), dueDate: today, late: DateTime.now().day > 10));
+      if (s.balance >= 0 || studentsWithPlan.contains(s.id)) continue;
+      list.add(DueItem(
+        id: 'debt-${s.id}',
+        student: s,
+        title: 'رسوم مستحقة',
+        amount: s.balance.abs(),
+        dueDate: today,
+        late: false,
+      ));
     }
 
     list.sort((a, b) => a.dueDate.compareTo(b.dueDate));
@@ -4268,17 +5102,141 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final clash = findConflict(g);
     if (clash != null) throw StoreException(clash);
 
+    if (g.academicYearId.isEmpty) g.academicYearId = viewedAcademicYearId;
     g.updatedAt = _nowIso();
     g.syncStatus = 'pending';
     final i = groups.indexWhere((e) => e.id == g.id);
     if (i >= 0) {
       g.createdAt = groups[i].createdAt;
+      if (g.academicYearId.isEmpty) g.academicYearId = groups[i].academicYearId;
       groups[i] = g;
       _queue('groups', g.id, 'UPDATE', g.toCloud());
     } else {
       g.createdAt = _nowIso();
       groups.add(g);
       _queue('groups', g.id, 'INSERT', g.toCloud());
+    }
+  }
+
+  /// دمج مجموعات المدرسة المكررة — `SettingsService.mergeDuplicateSchoolSubjectGroups`.
+  ///
+  /// كان كل أستاذ يدرّس نفس المادة لأكثر من شعبة يحصل على سجل مستقل لكل شعبة.
+  /// تُدمج في الأقدم، وتُنقل التسجيلات والدرجات، وتُؤرشف المكررات.
+  Future<void> mergeDuplicateSchoolSubjectGroups() async {
+    try {
+      final schoolGroups = groups.where((g) => g.isActive && g.isSchoolGroup).toList();
+      final buckets = <String, List<Group>>{};
+      for (final g in schoolGroups) {
+        final key = '${g.subjectId}|${g.teacherId}|${normalizeAcademicText(g.gradeLevel)}';
+        (buckets[key] ??= []).add(g);
+      }
+
+      final now = _nowIso();
+      final tid = tenantId;
+      final online = networkEnabled && tid != null;
+
+      for (final bucket in buckets.values) {
+        if (bucket.length < 2) continue;
+        bucket.sort((a, b) => (a.createdAt ?? '').compareTo(b.createdAt ?? ''));
+        final primary = bucket.first;
+        final duplicates = bucket.skip(1);
+        final roomIds = {...primary.allRoomIds};
+
+        for (final dup in duplicates) {
+          if (online) {
+            try {
+              await Future.wait([
+                supabaseUpdate(
+                  'course_sections',
+                  {'tenant_id': 'eq.$tid', 'group_id': 'eq.${dup.id}'},
+                  {'group_id': primary.id},
+                ),
+                supabaseUpdate(
+                  'course_items',
+                  {'tenant_id': 'eq.$tid', 'group_id': 'eq.${dup.id}'},
+                  {'group_id': primary.id},
+                ),
+              ]);
+            } catch (_) {}
+          }
+
+          roomIds.addAll(dup.allRoomIds);
+
+          for (final e in enrollments.where((e) => e.groupId == dup.id).toList()) {
+            final already = enrollments.any((pe) => pe.groupId == primary.id && pe.studentId == e.studentId);
+            if (already) {
+              enrollments.remove(e);
+              _queue('enrollments', e.id, 'DELETE', null);
+            } else {
+              final moved = StudentEnrollment(
+                id: e.id,
+                studentId: e.studentId,
+                groupId: primary.id,
+                roomId: e.roomId,
+                enrolledAt: e.enrolledAt,
+                status: e.status,
+                customPrice: e.customPrice,
+                appliedPrice: e.appliedPrice,
+                discountReason: e.discountReason,
+                syncStatus: 'pending',
+                createdAt: e.createdAt,
+                updatedAt: now,
+              );
+              final ei = enrollments.indexOf(e);
+              if (ei >= 0) enrollments[ei] = moved;
+              _queue('enrollments', moved.id, 'UPDATE', moved.toCloud());
+            }
+          }
+
+          final evalBucket = extraCloud['student_evaluations'];
+          if (evalBucket != null) {
+            for (var i = 0; i < evalBucket.length; i++) {
+              final row = evalBucket[i];
+              if ('${row['group_id']}' != dup.id) continue;
+              row['group_id'] = primary.id;
+              row['updated_at'] = now;
+              _queue('student_evaluations', '${row['id']}', 'UPDATE', {
+                'id': row['id'],
+                'group_id': primary.id,
+                'updated_at': now,
+              });
+            }
+          }
+
+          dup.status = 'archived';
+          dup.roomIds = [];
+          dup.roomId = '';
+          dup.updatedAt = now;
+          dup.syncStatus = 'pending';
+          _queue('groups', dup.id, 'UPDATE', {
+            'id': dup.id,
+            'status': 'archived',
+            'room_ids': <String>[],
+            'updated_at': now,
+          });
+        }
+
+        final roomIdsArr = roomIds.toList();
+        final primaryRoomId =
+            primary.roomId.isNotEmpty && roomIdsArr.contains(primary.roomId) ? primary.roomId : (roomIdsArr.isEmpty ? '' : roomIdsArr.first);
+        final subject = subjectById(primary.subjectId);
+        final teacher = teacherById(primary.teacherId);
+        primary
+          ..roomId = primaryRoomId
+          ..roomIds = roomIdsArr
+          ..name = '${subject?.name ?? 'مادة'} - ${teacher?.name ?? 'معلم'}'
+          ..updatedAt = now
+          ..syncStatus = 'pending';
+        _queue('groups', primary.id, 'UPDATE', {
+          'id': primary.id,
+          'room_id': primaryRoomId.isEmpty ? null : primaryRoomId,
+          'room_ids': roomIdsArr,
+          'name': primary.name,
+          'updated_at': now,
+        });
+      }
+    } catch (_) {
+      // صيانة عند الإقلاع: فشلها لا يمنع الدخول
     }
   }
 
@@ -4347,7 +5305,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// المواد التي تنطبق على مرحلة — مطابق لـ `getGradeApplicableSubjects`.
   /// المادة العامة تنطبق على الجميع، والمرحلة تُطابَق تماماً: كان «حادي عشر»
   /// يطابق «حادي عشر علمي» فتُعرض مواد الفرع الآخر.
-  List<SubjectItem> gradeApplicableSubjects(String? gradeLevel) => subjects.where((s) => subjectAppliesToGrade(s.gradeLevel, gradeLevel)).toList();
+  List<SubjectItem> gradeApplicableSubjects(String? gradeLevel) =>
+      subjects.where((s) => subjectCoversGrade(s, gradeLevel)).toList();
 
   /// معلمو الشعبة: مربّيها ومعلمو موادها بلا تكرار.
   Set<String> sectionTeacherIds(Classroom room) {
@@ -4653,17 +5612,44 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   // ── الجلسات (المقابل لـ attendance.service.ts) ──────────────────────────────
 
-  /// إيجاد جلسة لتاريخ ومجموعة/قاعة، أو إنشاؤها.
+  /// معرّف حتمي لحصة مادة — `AttendanceService.sessionIdFor`.
+  static String sessionIdFor(String groupId, String dateStr) => 'ses_${groupId}_$dateStr';
+
+  /// معرّف حتمي لكشف الشعبة اليومي — `AttendanceService.roomSessionIdFor`.
+  static String roomSessionIdFor(String roomId, String dateStr) => 'ses_room_${roomId}_$dateStr';
+
+  /// معرّف حضور حتمي — `AttendanceService.attendanceIdFor`.
+  static String attendanceIdFor(String sessionId, String studentId) => 'att_${sessionId}_$studentId';
+
+  /// إيجاد جلسة كشف شعبة لتاريخ، أو إنشاؤها بالصيغة الصحيحة (شعبة في `room_id`).
   ClassSession sessionFor(String roomId, String dateStr) {
-    final found = sessions.where((s) => s.sessionDate == dateStr && (s.groupId == roomId || s.roomId == roomId)).firstOrNull;
-    if (found != null) return found;
+    final wantedId = roomSessionIdFor(roomId, dateStr);
+    final found = sessions.where((s) {
+      if (s.id == wantedId) return true;
+      if (s.sessionDate != dateStr) return false;
+      // الحديثة: room_id؛ القديمة الخاطئة: group_id = معرّف الشعبة
+      return s.roomId == roomId || s.groupId == roomId;
+    }).firstOrNull;
+    if (found != null) {
+      // ترحيل صامت للصيغة القديمة إن وُجدت
+      if (found.groupId == roomId && (found.roomId.isEmpty || found.roomId == roomId)) {
+        found.groupId = '';
+        found.roomId = roomId;
+        if (found.startTime.trim().isEmpty) found.startTime = '00:00';
+        if (found.endTime.trim().isEmpty) found.endTime = '23:59';
+        found.updatedAt = _nowIso();
+        found.syncStatus = 'pending';
+        _queue('sessions', found.id, 'UPDATE', found.toCloud());
+      }
+      return found;
+    }
 
     final created = ClassSession(
-      id: newId(),
-      groupId: roomId,
+      id: wantedId,
+      groupId: '',
       sessionDate: dateStr,
-      startTime: '08:00',
-      endTime: '10:00',
+      startTime: '00:00',
+      endTime: '23:59',
       teacherId: '',
       roomId: roomId,
       status: 'scheduled',
@@ -4679,11 +5665,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   void upsertTeacher(Teacher t) {
     requireSection('settings');
     if (t.name.trim().isEmpty) throw StoreException('يرجى إدخال اسم المعلم');
+    if (t.academicYearId.isEmpty) t.academicYearId = viewedAcademicYearId;
     t.updatedAt = _nowIso();
     t.syncStatus = 'pending';
     final i = teachers.indexWhere((e) => e.id == t.id);
     if (i >= 0) {
       t.createdAt = teachers[i].createdAt;
+      if (t.academicYearId.isEmpty) t.academicYearId = teachers[i].academicYearId;
       teachers[i] = t;
       _queue('teachers', t.id, 'UPDATE', t.toCloud());
     } else {
@@ -4726,11 +5714,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   void upsertSubject(SubjectItem s) {
     requireSection('settings');
     if (s.name.trim().isEmpty) throw StoreException('يرجى إدخال اسم المادة');
+    if (s.academicYearId.isEmpty) s.academicYearId = viewedAcademicYearId;
     s.updatedAt = _nowIso();
     s.syncStatus = 'pending';
     final i = subjects.indexWhere((e) => e.id == s.id);
     if (i >= 0) {
       s.createdAt = subjects[i].createdAt;
+      if (s.academicYearId.isEmpty) s.academicYearId = subjects[i].academicYearId;
       subjects[i] = s;
       _queue('subjects', s.id, 'UPDATE', s.toCloud());
     } else {
@@ -4766,16 +5756,18 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (r.name.trim().isEmpty) throw StoreException('يرجى إدخال اسم الصف / الشعبة');
     // المرحلة في حقلها: تكرارها داخل اسم الشعبة يُنتج «ثاني عشر علمي (ثاني عشر علمي أ)»
     r.name = r.gradeLevel.trim().isEmpty ? r.name.trim() : sanitizeSectionName(r.name, r.gradeLevel);
+    if (r.academicYearId.isEmpty) r.academicYearId = viewedAcademicYearId;
     r.updatedAt = _nowIso();
     r.syncStatus = 'pending';
     final i = rooms.indexWhere((e) => e.id == r.id);
     if (i >= 0) {
       final oldName = rooms[i].name.trim();
       r.createdAt = rooms[i].createdAt;
+      if (r.academicYearId.isEmpty) r.academicYearId = rooms[i].academicYearId;
       rooms[i] = r;
       _queue('rooms', r.id, 'UPDATE', r.toCloud());
       // شعبة الطلاب تتبع اسم الصف: إبقاؤها على الاسم القديم كان يُفرغ الصف من طلابه
-      if (oldName.isNotEmpty && oldName != r.name) _renameStudentSection(oldName, r.name);
+      if (oldName.isNotEmpty && oldName != r.name) _renameStudentSection(rooms[i], r.name);
     } else {
       r.createdAt = _nowIso();
       rooms.add(r);
@@ -4783,10 +5775,16 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
   }
 
-  /// نقل طلاب شعبة إلى اسمها الجديد بعد تغييره.
-  void _renameStudentSection(String oldName, String newName) {
-    for (final s in students) {
-      if (s.section.trim() != oldName) continue;
+  /// طلاب شعبة بعينها: الاسم والمرحلة والعام معاً — `studentsOfRoom` في الويب.
+  List<Student> studentsOfRoom(Classroom room) => students.where((s) {
+        if (!studentBelongsToRoom(s, room)) return false;
+        if (room.academicYearId.isEmpty || s.academicYearId.isEmpty) return true;
+        return s.academicYearId == room.academicYearId;
+      }).toList();
+
+  /// نقل طلاب شعبة إلى اسمها الجديد بعد تغييره — فقط طلاب تلك المرحلة/العام.
+  void _renameStudentSection(Classroom room, String newName) {
+    for (final s in studentsOfRoom(room)) {
       s.section = newName;
       s.updatedAt = _nowIso();
       s.syncStatus = 'pending';
@@ -4851,7 +5849,14 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       r.updatedAt = _nowIso();
       r.syncStatus = 'pending';
       queuePendingSync(pendingSyncs, tableName: 'rooms', recordId: r.id, action: 'UPDATE', payload: r.toCloud());
-      _renameStudentSection(oldName, clean);
+      final oldRoom = Classroom(
+        id: r.id,
+        name: oldName,
+        gradeLevel: r.gradeLevel,
+        teacherId: r.teacherId,
+        academicYearId: r.academicYearId,
+      );
+      _renameStudentSection(oldRoom, clean);
       changed++;
     }
 
@@ -4884,7 +5889,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final now = _nowIso();
 
     if (room != null && room.name.trim().isNotEmpty) {
-      for (final s in students.where((s) => s.section.trim() == room.name.trim())) {
+      for (final s in studentsOfRoom(room)) {
         s.section = '';
         s.updatedAt = now;
         s.syncStatus = 'pending';
@@ -4918,6 +5923,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final i = gradeFees.indexWhere((e) => e.id == f.id);
     if (i >= 0) {
       f.createdAt = gradeFees[i].createdAt;
+      if (f.academicYearId.isEmpty) f.academicYearId = gradeFees[i].academicYearId;
       gradeFees[i] = f;
     }
     _queue('grade_fees', f.id, 'UPDATE', f.toCloud());
@@ -4927,13 +5933,22 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     requireSection('settings');
     if (f.gradeName.trim().isEmpty) throw StoreException('يرجى إدخال اسم المرحلة أو الصف');
     if (f.monthlyFee < 0) throw StoreException('يرجى إدخال رسم شهري صحيح');
+    if (f.academicYearId.isEmpty) f.academicYearId = viewedAcademicYearId;
     f.createdAt = _nowIso();
     f.updatedAt = _nowIso();
     f.syncStatus = 'pending';
     gradeFees.add(f);
     _queue('grade_fees', f.id, 'INSERT', f.toCloud());
     if (initialSection.trim().isNotEmpty) {
-      upsertRoom(Classroom(id: newId(), name: initialSection.trim(), gradeLevel: f.gradeName, teacherId: '', capacity: 25, tier: f.tier));
+      upsertRoom(Classroom(
+        id: newId(),
+        name: initialSection.trim(),
+        gradeLevel: f.gradeName,
+        teacherId: '',
+        capacity: 25,
+        tier: f.tier,
+        academicYearId: f.academicYearId,
+      ));
     }
   }
 
@@ -4953,18 +5968,43 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     requireSection('settings.users');
     final i = users.indexWhere((e) => e.id == u.id);
     if (i < 0) return;
+    final before = users[i];
+    final hadUsersAccess = _userCanManageUsers(before);
+    final keepsUsersAccess = _userCanManageUsers(u);
+    if (hadUsersAccess && !keepsUsersAccess) {
+      final others = users.where((x) => x.id != u.id && _userCanManageUsers(x)).length;
+      if (others == 0) {
+        throw StoreException(
+          'هذا آخر حساب يدير المستخدمين والصلاحيات. امنح الصلاحية لحساب آخر أولاً.',
+        );
+      }
+    }
     u.updatedAt = _nowIso();
     u.syncStatus = 'pending';
-    u.createdAt = users[i].createdAt;
+    u.createdAt = before.createdAt;
     users[i] = u;
     _queue('users', u.id, 'UPDATE', u.toCloud());
   }
 
   void deleteUser(String id) {
     requireSection('settings.users');
+    final target = users.where((u) => u.id == id).firstOrNull;
+    if (target != null &&
+        normalizeRole(target.role) == 'admin' &&
+        target.isActive) {
+      final admins = users.where((u) => normalizeRole(u.role) == 'admin' && u.isActive).length;
+      if (admins <= 1) {
+        throw StoreException('لا يمكن حذف آخر حساب مدير في النظام. عيّن مديراً آخر أولاً.');
+      }
+    }
     if (users.length <= 1) throw StoreException('لا يمكن حذف المستخدم الوحيد في النظام');
     users.removeWhere((u) => u.id == id);
     _queue('users', id, 'DELETE', null);
+  }
+
+  bool _userCanManageUsers(AppUser u) {
+    if (!u.isActive) return false;
+    return effectiveSections(u.capabilities, u.role).contains('settings.users');
   }
 
   String? deviceUserId;
@@ -5068,6 +6108,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final res = await sync.pullFromCloud(tid);
     cleanLocalDemoUsers();
     await hydrateInstitution();
+    await settleAcademicYears();
     notifyListeners();
     return res.pulled;
   }
@@ -5554,10 +6595,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   @override
-  void notifySync() => notifyListeners();
-
-  @override
-  Future<void> onPulled() => hydrateInstitution();
+  Future<void> onPulled() async {
+    await hydrateInstitution();
+    await settleAcademicYears();
+  }
 }
 
 class StoreScope extends InheritedNotifier<AppStore> {

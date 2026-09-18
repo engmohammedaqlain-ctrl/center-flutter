@@ -361,12 +361,14 @@ Future<List<Map<String, dynamic>>?> supabaseSelect(
   String columns = '*',
   String? order,
   int? limit,
+  int? offset,
   Map<String, String> extraHeaders = const {},
 }) async {
   await SupabaseAuth.ensureFresh();
   final params = <String, String>{'select': columns, ...filters};
   if (order != null) params['order'] = order;
   if (limit != null) params['limit'] = '$limit';
+  if (offset != null) params['offset'] = '$offset';
   final uri = Uri.parse('${SupabaseConfig.url}/rest/v1/$table').replace(queryParameters: params);
   try {
     final res = await http.get(uri, headers: {...SupabaseConfig.headers, ...extraHeaders});

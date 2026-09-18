@@ -39,8 +39,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('مأذون'), findsWidgets);
-    expect(find.text('حاضر ✓'), findsWidgets);
-    expect(find.text('غائب ✗'), findsWidgets);
+    expect(find.text('حاضر'), findsWidgets);
+    expect(find.text('غائب'), findsWidgets);
     expect(find.textContaining('• مأذون'), findsOneWidget, reason: 'العدد يظهر ولو كان صفراً');
     expect(tester.takeException(), isNull);
 

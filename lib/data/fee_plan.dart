@@ -165,28 +165,33 @@ class StudentPlanRow {
   );
 }
 
-/// توزيع خصم على الأقساط بنسبة قيمة كل قسط، والكسر المتبقي يُصحَّح على آخر قسط
-/// حتى يساوي مجموعُ المخصوم قيمةَ الخصم بالضبط.
+/// تطبيق خصم على الأقساط — مطابق حرفياً لـ `applyPlanDiscount` في الويب:
+/// - نسبة مئوية: تُخصم نفس النسبة من كل قسط.
+/// - مبلغ مقطوع: يُخصم نفس المبلغ من كل قسط (لا يتجاوز قيمة القسط).
 List<StudentPlanRow> applyPlanDiscount(List<StudentPlanRow> items, PlanDiscount? discount) {
   if (discount == null || discount.value <= 0 || items.isEmpty) return items;
 
-  var total = 0.0;
-  for (final i in items) {
-    total += i.amount;
+  if (discount.percentage) {
+    final rate = (discount.value < 100 ? discount.value : 100) / 100;
+    if (rate <= 0) return items;
+    return [
+      for (final item in items)
+        () {
+          final amount = item.amount;
+          final share = _round2(amount * rate);
+          return item.copyWith(amount: _round2(amount - share), originalAmount: amount);
+        }(),
+    ];
   }
-  if (total <= 0) return items;
 
-  final cut = discount.percentage ? (total * (discount.value < 100 ? discount.value : 100)) / 100 : (discount.value < total ? discount.value : total);
-  if (cut <= 0) return items;
-
-  var taken = 0.0;
+  // مبلغ مقطوع: نفس القيمة من كل قسط — لا يُوزَّع على المجموع
+  final perInstallment = discount.value;
   return [
-    for (var index = 0; index < items.length; index++)
+    for (final item in items)
       () {
-        final item = items[index];
-        final share = index == items.length - 1 ? _round2(cut - taken) : _round2((item.amount / total) * cut);
-        taken = _round2(taken + share);
-        return item.copyWith(amount: _round2(item.amount - share), originalAmount: item.amount);
+        final amount = item.amount;
+        final share = _round2(amount < perInstallment ? amount : perInstallment);
+        return item.copyWith(amount: _round2(amount - share), originalAmount: amount);
       }(),
   ];
 }
@@ -214,13 +219,15 @@ enum EnrollmentPlanMode {
   fromEnrollment,
 }
 
-/// يُبقي بنود الخطة التي يستحقّها الملتحق المتأخر: تواريخ ≥ يوم التسجيل.
+/// يُبقي بنود الخطة التي يستحقّها الملتحق المتأخر: أقساط **شهر** تسجيله فما بعد.
+///
+/// المقارنة بالشهر لا باليوم — مطابق لـ `filterPlanFromEnrollment` في الويب.
 List<PlanItem> filterPlanFromEnrollment(List<PlanItem> items, String enrollmentDate) {
-  final from = enrollmentDate.length >= 10 ? enrollmentDate.substring(0, 10) : enrollmentDate;
-  if (from.isEmpty) return items;
+  final fromMonth = enrollmentDate.length >= 7 ? enrollmentDate.substring(0, 7) : enrollmentDate;
+  if (fromMonth.isEmpty) return items;
   return items.where((i) {
-    final due = i.dueDate.length >= 10 ? i.dueDate.substring(0, 10) : i.dueDate;
-    return due.compareTo(from) >= 0;
+    final dueMonth = i.dueDate.length >= 7 ? i.dueDate.substring(0, 7) : i.dueDate;
+    return dueMonth.compareTo(fromMonth) >= 0;
   }).toList();
 }
 

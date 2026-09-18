@@ -10,6 +10,9 @@ library;
 import '../models/models.dart';
 
 /// قيمة المرحلة التي تعني «تصلح لكل المراحل» في نموذج المادة الدراسية.
+///
+/// تُكتب في العمود القديم `grade_level` حين لا تُحدَّد للمادة مرحلة، فيفهمها
+/// نظام الويب كما كان قبل أن تصير المادة تحمل أكثر من مرحلة.
 const generalGradeLabel = 'عام / كل المراحل';
 
 final _diacriticsAndTatweel = RegExp('[ً-ْٰـ]');
@@ -51,18 +54,58 @@ bool isSameSectionName(String? a, String? b) {
   return na.isNotEmpty && na == normalizeAcademicText(b);
 }
 
-/// مادة عامة: بلا مرحلة محددة، أو موسومة صراحةً بأنها لكل المراحل.
-bool isGeneralSubject(String? subjectGrade) {
-  final g = normalizeAcademicText(subjectGrade);
-  return g.isEmpty || g == normalizeAcademicText(generalGradeLabel);
+/// مراحل المادة كما تُخزَّن: بلا فراغٍ ولا تكرار، والقيمة العامة تُحذف.
+///
+/// «كل المراحل» هو ألا تُذكر مرحلة، لا أن تُعدّ المراحل الموجودة اليوم: مرحلةٌ
+/// تُضاف بعد شهر تنطبق عليها المادة العامة بلا أن يفتحها أحد ويعلّمها.
+List<String> normalizeSubjectGrades(Iterable<String> grades) {
+  final general = normalizeAcademicText(generalGradeLabel);
+  final seen = <String>{};
+  final kept = <String>[];
+  for (final grade in grades) {
+    final key = normalizeAcademicText(grade);
+    if (key.isEmpty || key == general) continue;
+    if (seen.add(key)) kept.add(grade.trim());
+  }
+  return kept;
 }
 
+/// مادة عامة: بلا مرحلة محددة، أو موسومة صراحةً بأنها لكل المراحل.
+bool isGeneralSubject(Iterable<String> subjectGrades) => normalizeSubjectGrades(subjectGrades).isEmpty;
+
 /// هل تُدرَّس هذه المادة في هذه المرحلة؟ شعبة بلا مرحلة تقبل كل المواد.
-bool subjectAppliesToGrade(String? subjectGrade, String? gradeLevel) {
+///
+/// المادة تحمل مراحلها كلها — الفيزياء للعاشر والحادي عشر والثاني عشر — فتكفي
+/// مطابقة واحدةٍ منها.
+bool subjectAppliesToGrade(Iterable<String> subjectGrades, String? gradeLevel) {
   if (normalizeAcademicText(gradeLevel).isEmpty) return true;
-  if (isGeneralSubject(subjectGrade)) return true;
-  return isSameGrade(subjectGrade, gradeLevel);
+  if (isGeneralSubject(subjectGrades)) return true;
+  return subjectGrades.any((g) => isSameGrade(g, gradeLevel));
 }
+
+/// مراحل المادة كما يراها المستخدم؛ القائمة الفارغة تعني «كل المراحل».
+List<String> subjectGrades(SubjectItem subject) {
+  final fromList = normalizeSubjectGrades(subject.gradeLevels);
+  if (fromList.isNotEmpty) return fromList;
+  return normalizeSubjectGrades([subject.gradeLevel]);
+}
+
+/// مراحل المادة كما تُعرض في سطرٍ واحد — `subjectGradesLabel` في الويب.
+String subjectGradesLabel(SubjectItem subject) {
+  final grades = subjectGrades(subject);
+  return grades.isEmpty ? 'كل المراحل' : grades.join(' · ');
+}
+
+/// هل تُدرَّس المادة في المرحلة؟ — `subjectCoversGrade`.
+bool subjectCoversGrade(SubjectItem subject, String? gradeLevel) =>
+    subjectAppliesToGrade(subjectGrades(subject), gradeLevel);
+
+/// تصفية المواد على مرحلة واحدة — `filterSubjectsForGrade`.
+List<T> filterSubjectsForGrade<T extends SubjectItem>(
+  Iterable<T> subjects,
+  String? gradeLevel,
+) =>
+    subjects.where((s) => subjectCoversGrade(s, gradeLevel)).toList();
 
 /// هل ينتمي الطالب لهذه الشعبة بحسب اسم شعبته ومرحلته؟
 ///

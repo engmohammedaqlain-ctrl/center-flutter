@@ -22,7 +22,7 @@ const seatReservationFeeKey = 'seat_reservation_fee';
 /// الرسوم الإضافية التي تحددها الإدارة — مطابق لـ `FEE_ITEMS_KEY`.
 const feeItemsKey = 'fee_items';
 const receiptMigrationKey = 'receipt_numbers_migrated_v1';
-const attendanceIdMigrationKey = 'attendance_ids_migrated_v1';
+const attendanceIdMigrationKey = 'room_sessions_migrated_v2';
 
 /// علامة إتمام التهيئة الأولية لهذا الجهاز — المقابل لـ `initial_setup_done_<tenantId>`.
 String initialSetupKey(String tenantId) => 'initial_setup_done_$tenantId';

@@ -32,7 +32,7 @@ class _PromotionSheet extends StatefulWidget {
 }
 
 class _PromotionSheetState extends State<_PromotionSheet> {
-  late final List<GradeFee> grades = widget.store.gradeFees;
+  late final List<GradeFee> grades = widget.store.gradeFeesInViewedYear;
   late final Map<String, int> counts = _countByGrade();
   late final Map<String, String> targets = _initialTargets();
 
@@ -43,7 +43,7 @@ class _PromotionSheetState extends State<_PromotionSheet> {
 
   Map<String, int> _countByGrade() {
     final map = <String, int>{};
-    for (final s in widget.store.students.where((s) => s.status == 'active')) {
+    for (final s in widget.store.studentsInViewedYear.where((s) => s.status == 'active')) {
       final key = _key(s.gradeLevel);
       map[key] = (map[key] ?? 0) + 1;
     }
@@ -61,7 +61,7 @@ class _PromotionSheetState extends State<_PromotionSheet> {
 
   int get unknownGradeCount {
     final known = grades.map((g) => _key(g.gradeName)).toSet();
-    return widget.store.students
+    return widget.store.studentsInViewedYear
         .where((s) => s.status == 'active' && !known.contains(_key(s.gradeLevel)))
         .length;
   }
@@ -69,9 +69,9 @@ class _PromotionSheetState extends State<_PromotionSheet> {
   Future<void> _run() async {
     final ok = await confirmSheet(
       context,
-      title: 'ترقية الطلاب',
+      title: 'مراجعة توزيع الترقية',
       message: 'كل صف ينتقل لما اخترته له، والطالب يصير «بانتظار التأكيد».',
-      confirmLabel: 'تنفيذ',
+      confirmLabel: 'تنفيذ الترقية',
     );
     if (!ok || !mounted) return;
 
@@ -104,7 +104,7 @@ class _PromotionSheetState extends State<_PromotionSheet> {
               children: [
                 Expanded(
                   child: Text(
-                    'ترقية الطلاب',
+                    'ترقية طلاب العام المعروض',
                     style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
                   ),
                 ),
@@ -160,7 +160,8 @@ class _PromotionSheetState extends State<_PromotionSheet> {
                                   ],
                                 ),
                               ),
-                              const Icon(Icons.arrow_back, size: 14, color: AppColors.faint),
+                              // اتجاه ثابت لليسار: المصدر يمين والهدف يسار في العربية
+                              const Icon(Icons.arrow_back, size: 14, color: AppColors.faint, textDirection: TextDirection.ltr),
                               const SizedBox(width: 6),
                               Expanded(
                                 flex: 5,
@@ -187,7 +188,7 @@ class _PromotionSheetState extends State<_PromotionSheet> {
               ),
               const SizedBox(height: 4),
               const Text(
-                'ديونه تبقى كما هي.',
+                '١. راجع الصف التالي لكل مرحلة · ٢. الديون تبقى كما هي.',
                 style: TextStyle(fontSize: 10.5, color: AppColors.muted, fontWeight: FontWeight.w600),
               ),
               if (unknownGradeCount > 0)

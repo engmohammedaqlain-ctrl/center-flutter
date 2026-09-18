@@ -14,6 +14,19 @@ Future<void> printWeeklyAttendance(
   required List<Student> students,
   required String ownerId,
 }) async {
+  final room = store.roomById(ownerId);
+  final period = week.length >= 2
+      ? 'الفترة: من ${week.first.dayName} ${week.first.shortDate} إلى ${week.last.dayName} ${week.last.shortDate}'
+      : 'الفترة: ${week.first.dayName} ${week.first.shortDate}';
+  final extracted = isoDate(DateTime.now());
+  final subtitle = [
+    period,
+    if (room?.gradeLevel.trim().isNotEmpty ?? false) 'المرحلة: ${room!.gradeLevel.trim()}',
+    if (title.trim().isNotEmpty) 'الشعبة: $title',
+    'إجمالي الطلاب: ${students.length}',
+    'تاريخ الاستخراج: $extracted',
+  ].join('   ·   ');
+
   final rows = <List<String>>[];
   for (var i = 0; i < students.length; i++) {
     final s = students[i];
@@ -23,39 +36,53 @@ Future<void> printWeeklyAttendance(
       final status = store.attendanceInSession(ownerId, s.id, d.dateStr);
       if (status == 'absent') absences++;
       cells.add(switch (status) {
-        'present' => '✓',
-        'absent' => '✗',
+        'present' => '✔',
+        'absent' => 'غ',
         'excused' => 'م',
         _ => '',
       });
     }
+    final parentPhone = s.parentPhone.trim().isEmpty ? s.phone : s.parentPhone;
     cells.add('$absences');
+    cells.add(parentPhone);
+    cells.add('');
     rows.add(cells);
   }
 
+  final dayFlex = List<int>.filled(week.length, 2);
   final bytes = await PdfKit.build(
-    title: 'كشف الحضور والغياب الأسبوعي — $title',
+    title: 'سجل التفقد والدوام الأسبوعي الرسمي',
     institutionName: store.institutionName,
     logoBase64: store.institutionLogo,
-    subtitle: 'الأسبوع من ${week.first.shortDate} إلى ${week.last.shortDate}',
+    subtitle: subtitle,
     landscape: true,
     body: (ctx) => [
+      pw.Text('كشف الحضور والغياب', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+      pw.SizedBox(height: 8),
       PdfKit.table(
-        headers: ['#', 'اسم الطالب', ...week.map((d) => '${d.dayName}\n${d.shortDate}'), 'الغياب'],
+        headers: [
+          '#',
+          'اسم الطالب',
+          ...week.map((d) => '${d.dayName}\n${d.shortDate}'),
+          'الغياب',
+          'ولي الأمر',
+          'ملاحظات',
+        ],
         rows: rows,
-        flex: [1, 6, 2, 2, 2, 2, 2, 2, 2],
+        flex: [1, 5, ...dayFlex, 2, 3, 3],
       ),
       pw.SizedBox(height: 18),
       pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
-          pw.Text('توقيع المربي: ....................', style: const pw.TextStyle(fontSize: 9)),
-          pw.Text('توقيع الإدارة: ....................', style: const pw.TextStyle(fontSize: 9)),
+          pw.Text('المعلم / مربي الصف: ....................', style: const pw.TextStyle(fontSize: 9)),
+          pw.Text('المشرف الإداري: ....................', style: const pw.TextStyle(fontSize: 9)),
+          pw.Text('مدير المركز / الختم الرسمي: ....................', style: const pw.TextStyle(fontSize: 9)),
         ],
       ),
       pw.SizedBox(height: 8),
       pw.Text(
-        'الرموز: ✓ حاضر · ✗ غائب · م مأذون',
+        'الرموز: ✔ حاضر · غ غائب · م مأذون',
         style: const pw.TextStyle(fontSize: 8),
       ),
     ],

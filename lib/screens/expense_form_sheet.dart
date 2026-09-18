@@ -84,7 +84,12 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
   /// اختيار صورة الإشعار وضغطها — الحدّ ٢ ميجابايت كما في حاوية الإشعارات.
   Future<void> _pickNotice() async {
     try {
-      final file = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 70, maxWidth: 1600);
+      final file = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 50,
+        maxWidth: 900,
+        maxHeight: 900,
+      );
       if (file == null) return;
       final bytes = await file.readAsBytes();
       if (bytes.length > 2 * 1024 * 1024) {
@@ -183,7 +188,7 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final teachers = widget.store.teachers;
+    final teachers = widget.store.teachersInViewedYear;
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: SingleChildScrollView(

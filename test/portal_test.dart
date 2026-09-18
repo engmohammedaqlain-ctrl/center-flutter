@@ -114,7 +114,7 @@ void main() {
   group('مالية الطالب — مطابقة لـ getStudentPortalData', () {
     final today = DateTime(2026, 9, 12);
 
-    test('الإجمالي مجموع الأقساط، والمسدَّد يستبعد الملغى', () {
+    test('الإجمالي من الأقساط الحالّة، والمسدَّد يستبعد الملغى', () {
       final f = PortalFinance.compute(
         studentBalance: 0,
         installments: [
@@ -126,46 +126,54 @@ void main() {
         payments: [_pay('a', 230), _pay('b', 200), _pay('c', 47), _pay('x', 999, cancelled: true)],
         today: today,
       );
-      expect(f.totalDue, 920);
+      expect(f.totalDue, 230, reason: 'قسط آب وحده حالّ في 12/9');
       expect(f.totalPaid, 477);
-      expect(f.remainingBalance, 443);
+      expect(f.currentDue, 230);
+      expect(f.scheduledRemaining, 690);
+      expect(f.remainingBalance, f.scheduledRemaining);
       expect(f.payments.any((p) => p.cancelled), isFalse);
     });
 
-    test('المستحق حالياً هو دين الطالب المسجَّل حين يكون عليه دين', () {
+    test('بلا أقساط: المستحق من الرصيد السالب عبر dueAndScheduled', () {
       final f = PortalFinance.compute(
         studentBalance: -443,
-        installments: [_inst('1', 920, DateTime(2026, 12, 1))],
+        installments: const [],
         payments: [_pay('a', 477)],
         today: today,
       );
       expect(f.currentDue, 443);
+      expect(f.scheduledRemaining, 0);
     });
 
-    test('بلا دين مسجَّل: ما حلّ موعده ناقص المسدَّد، والقادم لا يُطلب', () {
+    test('يفصل الحالّ عن المجدول بـ isInstallmentDue؛ يوم الاستحقاق مطلوب', () {
       final f = PortalFinance.compute(
         studentBalance: 0,
         installments: [
-          _inst('1', 230, DateTime(2026, 8, 23)),
+          _inst('1', 230, DateTime(2026, 8, 23), paid: 230),
           _inst('2', 230, DateTime(2026, 9, 12)),
           _inst('3', 230, DateTime(2026, 10, 22)),
         ],
-        payments: [_pay('a', 300)],
+        payments: [_pay('a', 230)],
         today: today,
       );
-      expect(f.currentDue, 160, reason: 'قسطا 23/8 و12/9 (460) ناقص 300');
-      expect(f.installments[1].isDueNow, isTrue, reason: 'يوم الاستحقاق نفسه مطلوب');
+      expect(f.currentDue, 230, reason: 'قسط 12/9 غير المسدَّد');
+      expect(f.scheduledRemaining, 230);
+      expect(f.totalDue, 460, reason: 'قسطا آب وأيلول الحالّان');
+      expect(f.installments[1].isDueNow, isTrue);
+      expect(f.installments[1].isScheduled, isFalse);
       expect(f.installments[2].isDueNow, isFalse);
+      expect(f.installments[2].isScheduled, isTrue);
     });
 
-    test('المستحق حالياً لا يتجاوز المتبقي ولا ينزل تحت الصفر', () {
+    test('المستحق والمدفوع الزائد لا ينزلان تحت الصفر', () {
       final f = PortalFinance.compute(
         studentBalance: 0,
-        installments: [_inst('1', 200, DateTime(2026, 8, 1))],
+        installments: [_inst('1', 200, DateTime(2026, 8, 1), paid: 200)],
         payments: [_pay('a', 500)],
         today: today,
       );
       expect(f.currentDue, 0);
+      expect(f.scheduledRemaining, 0);
       expect(f.remainingBalance, 0);
     });
 
@@ -182,6 +190,8 @@ void main() {
       expect(f.installments.map((i) => i.id), ['early', 'late']);
       expect(f.installments.last.status, 'unpaid');
       expect(f.installments.first.status, 'paid');
+      expect(f.installments.first.isDueNow, isTrue);
+      expect(f.installments.last.isScheduled, isTrue);
     });
   });
 
