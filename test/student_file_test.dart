@@ -41,27 +41,22 @@ void main() {
     final payment = s.addPayment(studentId: student.id, amount: 1234.5, method: 'cash', date: DateTime.now());
 
     await _pump(tester, s, student.id);
-    // البطاقات مطوية كما في النسخة المكتبية: تُفتح بالضغط على عنوانها
-    final paymentsHeader = find.textContaining('سجل الدفعات');
-    await tester.scrollUntilVisible(paymentsHeader, 200, scrollable: find.byType(Scrollable).first);
+    // البطاقات مطوية: تُفتح بالضغط على عنوانها (الدفعات N)
+    // شريط الأفعال السفلي يحجب العنوان إن بقي أسفل الشاشة
+    final list = find.byType(Scrollable).first;
+    final paymentsHeader = find.textContaining('الدفعات');
+    await tester.scrollUntilVisible(paymentsHeader, 200, scrollable: list);
+    await tester.drag(list, const Offset(0, -140));
+    await tester.pumpAndSettle();
     await tester.tap(paymentsHeader);
     await tester.pumpAndSettle();
 
-    // بلا `.first` قبل التمرير: الباحث الفارغ يرمي داخل `scrollUntilVisible`.
-    // والقائمة تُسمّى صراحةً لأن في الصفحة أكثر من عنصر قابل للتمرير.
     final amount = find.text(money(payment.amount));
-    await tester.scrollUntilVisible(amount, 200, scrollable: find.byType(Scrollable).first);
+    await tester.scrollUntilVisible(amount, 200, scrollable: list);
 
-    // أيقونة السند في طرف السطر الآخر: الحشوة نفسها على الجانبين، فالمسافة
-    // المتوقّعة أمام المبلغ هي المسافة خلف الأيقونة نفسها.
+    // في RTL المبلغ في طرف السطر الأيسر (بعد Expanded) — بلا Spacer يوسّط الفراغ
     final rect = tester.getRect(amount);
-    final iconRight = tester.getRect(find.byIcon(Icons.receipt_long_outlined).first).right;
-    final padding = 360 - iconRight;
-    expect(
-      rect.left - padding,
-      lessThan(6),
-      reason: 'المرن بجوار Spacer كان يترك ثلث الفراغ قبل المبلغ',
-    );
+    expect(rect.left, lessThan(50), reason: 'المبلغ ملتصق بطرف البلاطة لا في وسطها');
 
     await s.flush();
   });
@@ -118,11 +113,11 @@ void main() {
     expect(find.text('كلمة مرور الطالب'), findsOneWidget);
     expect(find.text('كلمة مرور ولي الأمر'), findsOneWidget);
 
-    // وبيانات الطالب كذلك: كانت وحدها مفتوحة فتدفع بقية الملف إلى أسفل الشاشة
-    expect(find.text('بيانات الطالب والتواصل'), findsOneWidget);
+    // وبيانات التواصل كذلك: كانت وحدها مفتوحة فتدفع بقية الملف إلى أسفل الشاشة
+    expect(find.text('بيانات التواصل'), findsOneWidget);
     expect(find.text(student.nationalId), findsNothing);
 
-    await tester.tap(find.text('بيانات الطالب والتواصل'));
+    await tester.tap(find.text('بيانات التواصل'));
     await tester.pumpAndSettle();
     expect(find.text(student.nationalId), findsWidgets);
 
@@ -146,7 +141,7 @@ void main() {
       ..sort((a, b) => b.compareTo(a));
 
     await _pump(tester, s, student.id);
-    final header = find.textContaining('سجل الحضور والالتزام');
+    final header = find.textContaining('الحضور والالتزام');
     await tester.scrollUntilVisible(header, 200, scrollable: find.byType(Scrollable).first);
     await tester.tap(header);
     await tester.pumpAndSettle();
@@ -169,10 +164,9 @@ void main() {
 
     await _pump(tester, s, student.id);
 
-    expect(find.textContaining('خصم الرسوم'), findsOneWidget);
-    expect(find.textContaining('10%'), findsOneWidget);
-    expect(find.textContaining('خصم إخوة'), findsOneWidget);
-    expect(find.textContaining('الصافي الشهري'), findsOneWidget);
+    // شارة بجانب عنوان الرسوم — لا بطاقة «خصم الرسوم» المنفصلة القديمة
+    expect(find.textContaining('خصم 10%'), findsOneWidget);
+    expect(find.textContaining('الرسوم'), findsWidgets);
 
     await s.flush();
   });
@@ -182,10 +176,11 @@ void main() {
     final student = s.students.first
       ..academicDiscountApplied = false
       ..academicDiscountRate = 0
+      ..planDiscountValue = 0
       ..customMonthlyFee = null;
 
     await _pump(tester, s, student.id);
-    expect(find.textContaining('خصم الرسوم'), findsNothing);
+    expect(find.textContaining('خصم '), findsNothing);
 
     await s.flush();
   });

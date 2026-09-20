@@ -695,7 +695,9 @@ bool tableHasUpdatedAt(String table) =>
 ///
 /// بعد المعرّفات الحتمية للحضور (`att_<session>_<student>`) يُتصالح على `id`
 /// كبقية الجداول — التصالح على المفتاح الطبيعي كان يكتب فوق `id` القائم.
-const tableConflictTarget = <String, String>{};
+const tableConflictTarget = <String, String>{
+  'attendance': 'tenant_id,session_id,student_id',
+};
 
 const maxSyncRetries = 5;
 const pushChunk = 50;

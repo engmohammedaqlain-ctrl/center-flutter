@@ -226,7 +226,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                               title: groupTitle(page[i]),
                               group: store.groupById(page[i]),
                               evaluations: byGroup[page[i]]!,
-                              onDelete: store.can('evaluations') ? (e) => _delete(context, store, e) : null,
+                              onDelete: store.canEditGrades ? (e) => _delete(context, store, e) : null,
                             ),
                           );
                         },

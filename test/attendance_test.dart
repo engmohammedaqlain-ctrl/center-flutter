@@ -6,8 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'persistence_test.dart' show FakeDisk;
 
-final _uuid = RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');
-
 Future<AppStore> school() async {
   final s = AppStore.forTesting();
   await s.bootstrap(FakeDisk());
@@ -17,20 +15,26 @@ Future<AppStore> school() async {
 }
 
 void main() {
-  test('every attendance id is a uuid the cloud will accept', () async {
+  test('admin and teacher produce the same deterministic attendance id', () async {
     final s = await school();
     final room = s.rooms.first;
-    final student = s.studentsOf(room).first;
-    final date = isoDate(DateTime.now());
+    final list = s.studentsOf(room);
+    // يوم بلا رصد تجريبي حتى يُنشأ الصف بالمعرّف الحتمي لا يُحدَّث صف قديم
+    const date = '2026-06-15';
+    s.attendance.removeWhere((a) => a.date == date);
+
+    final session = s.sessionFor(room.id, date);
+    final student = list.first;
+    final expected = AppStore.attendanceIdFor(session.id, student.id);
 
     s.setAttendance(student.id, date, 'present', ownerId: room.id);
-    final mark = s.attendanceRecord(student.id, date)!;
-    expect(_uuid.hasMatch(mark.id), isTrue, reason: 'المعرّف ${mark.id} ليس uuid');
+    expect(s.attendanceRecord(student.id, date)!.id, expected, reason: 'الإدارة تكتب المعرّف الحتمي');
+    // بوابة المعلم تستخدم نفس الدالة — نفس الصف في السحابة
+    expect(AppStore.attendanceIdFor(session.id, student.id), expected);
 
-    // والرصد الجماعي كذلك
-    s.markAllPresent(date, s.studentsOf(room), ownerId: room.id);
-    for (final a in s.attendance) {
-      expect(_uuid.hasMatch(a.id), isTrue, reason: 'المعرّف ${a.id} ليس uuid');
+    s.markAllPresent(date, list, ownerId: room.id);
+    for (final a in s.attendance.where((a) => a.sessionId == session.id)) {
+      expect(a.id, AppStore.attendanceIdFor(session.id, a.studentId));
     }
   });
 
@@ -118,37 +122,46 @@ void main() {
     );
   });
 
-  test('old text ids are rewritten as uuids and their stuck queue entries dropped', () async {
+  test('legacy room sessions with group_id are migrated to room_id shape', () async {
     // بلا تسجيل دخول: الترحيل يجري تلقائياً بعده، فيسبق ما يريده الاختبار
     final s = AppStore.forTesting();
     await s.bootstrap(FakeDisk());
     injectDemoData(s);
     final room = s.rooms.first;
-    final student = s.studentsOf(room).first;
-    final date = isoDate(DateTime.now());
+    const date = '2026-05-01';
+    final wantedId = AppStore.roomSessionIdFor(room.id, date);
 
-    // سجل من إصدار سابق: معرّف نصي ترفضه السحابة، وعملية عالقة تشير إليه
-    const staleId = 'att-abc-2026-09-09';
-    s.attendance.add(
-      AttendanceMark(id: staleId, studentId: student.id, date: date, status: 'present'),
-    );
-    queuePendingSync(
-      s.pendingSyncs,
-      tableName: 'attendance',
-      recordId: staleId,
-      action: 'INSERT',
-      payload: {'id': staleId},
-    );
+    // شكل قديم: معرّف الشعبة في group_id بدل room_id
+    s.sessions.add(ClassSession(
+      id: 'legacy-room-session',
+      groupId: room.id,
+      sessionDate: date,
+      startTime: '08:00',
+      endTime: '10:00',
+      teacherId: '',
+      roomId: room.id,
+      status: 'scheduled',
+    ));
+    final student = s.studentsOf(room).first;
+    s.attendance.add(AttendanceMark(
+      id: 'att-legacy-1',
+      studentId: student.id,
+      date: date,
+      status: 'present',
+      sessionId: 'legacy-room-session',
+    ));
 
     final moved = await s.migrateAttendanceIds();
-    expect(moved, 1);
-    expect(s.attendance.any((a) => a.id == staleId), isFalse);
-    expect(s.pendingSyncs.any((p) => p.recordId == staleId), isFalse);
+    expect(moved, greaterThan(0));
+    expect(s.sessions.any((x) => x.id == 'legacy-room-session'), isFalse);
+    final migrated = s.sessions.firstWhere((x) => x.id == wantedId);
+    expect(migrated.groupId, '');
+    expect(migrated.roomId, room.id);
 
-    final fresh = s.attendanceRecord(student.id, date)!;
-    expect(_uuid.hasMatch(fresh.id), isTrue);
-    expect(fresh.status, 'present', reason: 'الحالة تُنقل كما هي');
-    expect(s.pendingSyncs.any((p) => p.recordId == fresh.id), isTrue);
+    final mark = s.attendance.firstWhere((a) => a.studentId == student.id && a.date == date);
+    expect(mark.sessionId, wantedId);
+    expect(mark.id, AppStore.attendanceIdFor(wantedId, student.id));
+    expect(mark.status, 'present');
 
     // لا تُعاد مرة ثانية على نفس الجهاز
     expect(await s.migrateAttendanceIds(), 0);
@@ -164,7 +177,7 @@ void main() {
     final s = await school();
     final room = s.rooms.first;
     final session = s.sessionFor(room.id, isoDate(DateTime.now()));
-    expect(session.groupId, room.id);
+    expect(session.groupId, '');
     expect(session.roomId, room.id);
   });
 

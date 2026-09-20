@@ -1,5 +1,5 @@
 name: center_mobile
-description: "نظام الإدارة المدرسي — تطبيق الجوال"
+description: "النظام المدرسي — تطبيق الجوال"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -32,7 +32,6 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
-  google_fonts: ^6.3.2
   url_launcher: ^6.3.2
   http: ^1.4.0
   shared_preferences: ^2.5.3

@@ -304,38 +304,131 @@ class _ReceiptSheet extends StatelessWidget {
         ? (generalIncome ? 'سند إيراد' : 'سند قبض مالي')
         : (reversal ? 'سند عكس' : 'سند رد مبلغ');
     final absAmount = payment.amount.abs();
-    final rows = <List<String>>[
-      [outgoing ? (reversal ? 'عكس لحساب' : 'رُدّ إلى ولي أمر') : 'وصلنا من', _payerName(payment, student)],
-      if (student != null) ['المرحلة الدراسية', student.gradeLevel],
-      if (generalIncome && payment.incomeCategory.trim().isNotEmpty) ['نوع الإيراد', payment.incomeCategory],
-      [outgoing ? 'المبلغ المردود' : 'المبلغ المقبوض', money(absAmount)],
-      ['وقدره كتابةً', amountInArabicWords(absAmount)],
-      if (payment.discountAmount.abs() > 0) ...[
-        ['الأصلي', money((payment.originalAmount ?? (payment.amount + payment.discountAmount)).abs())],
-        [
-          'الخصم',
-          '-${money(payment.discountAmount.abs())}${payment.discountReason.isEmpty ? '' : ' (${payment.discountReason})'}',
-        ],
-      ],
-      ['طريقة السداد', [
-        store.paymentMethodLabel(payment.method),
-        if (payment.channel.trim().isNotEmpty) '(${payment.channel.trim()})',
-      ].join(' ')],
-      ['وذلك عن', _statementLine(payment)],
-      if (payment.senderName.isNotEmpty) ['اسم المحول منه', payment.senderName],
-      if (payment.reference.isNotEmpty) ['الرقم المرجعي', payment.reference],
-    ];
-
+    final methodLine = [
+      store.paymentMethodLabel(payment.method),
+      if (payment.channel.trim().isNotEmpty) '(${payment.channel.trim()})',
+    ].join(' ');
     final stamp = PdfKit.decodeImage(store.institutionStamp);
+    final noticeRaw = payment.method == 'cash' ? null : await store.loadNoticeImage(payment.id);
+    final notice = PdfKit.decodeImage(noticeRaw);
+
+    pw.Widget dottedRow(String label, pw.Widget value) => pw.Container(
+          padding: const pw.EdgeInsets.only(bottom: 6),
+          margin: const pw.EdgeInsets.only(bottom: 4),
+          decoration: const pw.BoxDecoration(
+            border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey400, style: pw.BorderStyle.dotted)),
+          ),
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text('$label:', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(width: 6),
+              pw.Expanded(child: value),
+            ],
+          ),
+        );
+
     final bytes = await PdfKit.build(
-      title: '$sheetTitle رقم ${payment.receiptNumber}',
+      title: sheetTitle,
       institutionName: store.institutionName.isEmpty ? appName : store.institutionName,
       logoBase64: store.institutionLogo,
       subtitle: 'التاريخ: ${formatDate(payment.date)}',
       body: (ctx) => [
-        PdfKit.table(headers: const ['البيان', 'التفاصيل'], rows: rows, flex: [3, 8]),
+        // شارة الاعتماد ورقم الوصل — كالويب ReceiptModal
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Container(
+              padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.grey700),
+                color: PdfColors.grey100,
+              ),
+              child: pw.Text('وصل مالي معتمد', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
+              children: [
+                pw.Row(
+                  children: [
+                    pw.Text('رقم الوصل: ', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                    ltr(payment.receiptNumber, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                  ],
+                ),
+                pw.Text(formatDate(payment.date), style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+              ],
+            ),
+          ],
+        ),
+        pw.SizedBox(height: 10),
+        pw.Container(
+          padding: const pw.EdgeInsets.all(8),
+          decoration: pw.BoxDecoration(
+            color: PdfColors.grey100,
+            border: pw.Border.all(color: PdfColors.grey400),
+          ),
+          child: pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(outgoing ? 'المبلغ المردود:' : 'المبلغ المقبوض:', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+                  ltr(money(absAmount), style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+                ],
+              ),
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.end,
+                children: [
+                  pw.Text('طريقة السداد:', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+                  pw.Text(methodLine, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                ],
+              ),
+            ],
+          ),
+        ),
+        if (payment.discountAmount.abs() > 0) ...[
+          pw.SizedBox(height: 6),
+          pw.Text(
+            'الأصلي: ${money((payment.originalAmount ?? (payment.amount + payment.discountAmount)).abs())}'
+            '   ·   الخصم: -${money(payment.discountAmount.abs())}'
+            '${payment.discountReason.isEmpty ? '' : ' (${payment.discountReason})'}',
+            style: const pw.TextStyle(fontSize: 8.5),
+          ),
+        ],
+        pw.SizedBox(height: 10),
+        dottedRow(
+          outgoing ? (reversal ? 'عكس لحساب' : 'رُدّ إلى ولي أمر') : 'وصلنا من',
+          pw.Text(
+            [
+              _payerName(payment, student),
+              if (student != null && student.gradeLevel.trim().isNotEmpty) '(${student.gradeLevel})',
+            ].join(' '),
+            style: pw.TextStyle(fontSize: 9.5, fontWeight: pw.FontWeight.bold),
+          ),
+        ),
+        if (payment.senderName.isNotEmpty)
+          dottedRow('اسم المحول منه', pw.Text(payment.senderName, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
+        dottedRow('وقدره كتابة', pw.Text(amountInArabicWords(absAmount), style: const pw.TextStyle(fontSize: 9))),
+        dottedRow('وذلك عن', pw.Text(_statementLine(payment), style: const pw.TextStyle(fontSize: 9))),
+        if (payment.reference.isNotEmpty)
+          dottedRow('الرقم المرجعي', ltr(payment.reference, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
+        if (payment.channel.trim().isNotEmpty)
+          dottedRow('جهة التحويل', pw.Text(payment.channel.trim(), style: const pw.TextStyle(fontSize: 9))),
+        if (notice != null) ...[
+          pw.SizedBox(height: 8),
+          pw.Text('إشعار التحويل المرفق:', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 4),
+          pw.Center(
+            child: pw.Container(
+              constraints: const pw.BoxConstraints(maxHeight: 140),
+              decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey400)),
+              child: pw.Image(notice, fit: pw.BoxFit.contain, height: 140),
+            ),
+          ),
+        ],
         if (!outgoing && !generalIncome) ...[
-          pw.SizedBox(height: 12),
+          pw.SizedBox(height: 10),
           PdfKit.table(
             headers: [
               'المبلغ المسدد',
@@ -366,16 +459,27 @@ class _ReceiptSheet extends StatelessWidget {
             ),
           ),
         ],
-        pw.SizedBox(height: 26),
+        pw.SizedBox(height: 22),
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text('المستلم: ${_receiverName(payment, store)}', style: const pw.TextStyle(fontSize: 9)),
-            // الختم المطبوع كما يظهر على الشاشة، وإلا فسطر التوقيع
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text('المستلم: ${_receiverName(payment, store)}', style: const pw.TextStyle(fontSize: 9)),
+                pw.SizedBox(height: 14),
+                pw.Container(
+                  width: 100,
+                  decoration: const pw.BoxDecoration(
+                    border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey500)),
+                  ),
+                ),
+              ],
+            ),
             if (stamp != null)
               pw.SizedBox(width: 90, height: 42, child: pw.Image(stamp, fit: pw.BoxFit.contain))
             else
-              pw.Text('التوقيع: ....................', style: const pw.TextStyle(fontSize: 9)),
+              pw.Text('الختم الرسمي', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey500)),
           ],
         ),
       ],

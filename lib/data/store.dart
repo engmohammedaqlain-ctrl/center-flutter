@@ -1214,7 +1214,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   void deleteEvaluation(String id) {
-    requireSection('evaluations');
+    // تعديل/حذف علامة مرصودة — `userCanEditGrades` على الويب
+    if (!canEditGrades) {
+      throw StoreException('لا صلاحية لك على «${sectionLabel('evaluations.edit')}»');
+    }
     final bucket = extraCloud['student_evaluations'];
     if (bucket == null) return;
     final before = bucket.length;
@@ -6392,6 +6395,15 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   /// هل يرى مستخدم هذا الجهاز هذا التبويب؟ — `userCanAccess`.
   bool can(String section) => mySections.contains(resolveSection(section) ?? section);
+
+  /// تعديل علامة مرصودة أو حذفها — `userCanEditGrades`: المدير دائماً، ولمن مُنح `evaluations.edit`.
+  bool get canEditGrades {
+    final me = deviceUser;
+    if (me == null) return true;
+    if (!me.isActive) return false;
+    if (normalizeRole(me.role) == 'admin') return true;
+    return can('evaluations.edit');
+  }
 
   /// هل يستطيع فتح هذا القسم؟ القسم غير المعروف لا يُحرس.
   bool canOpenSection(String section) {

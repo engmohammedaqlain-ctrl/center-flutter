@@ -111,9 +111,9 @@ void main() {
       await pumpDetail(tester, s, debtor);
 
       expect(find.text('تسديد دفعة'), findsNothing);
-      expect(find.textContaining('سجل الدفعات'), findsNothing);
-      expect(find.text('الرصيد المالي الحالي:'), findsNothing);
-      expect(find.text('تعديل البيانات'), findsOneWidget);
+      expect(find.textContaining('الدفعات'), findsNothing);
+      expect(find.text('مقبوض'), findsNothing, reason: 'شريط المالية للصلاحية المالية');
+      expect(find.text('تعديل'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await s.flush();
     });
@@ -124,8 +124,8 @@ void main() {
       await pumpDetail(tester, s, debtor);
 
       expect(find.text('تسديد دفعة'), findsOneWidget);
-      expect(find.textContaining('سجل الدفعات'), findsOneWidget);
-      expect(find.text('تعديل البيانات'), findsOneWidget);
+      expect(find.textContaining('الدفعات'), findsOneWidget);
+      expect(find.text('تعديل'), findsOneWidget);
       await s.flush();
     });
 
@@ -133,8 +133,8 @@ void main() {
       final s = await clerkDevice(sections: ['finance']);
       await pumpDetail(tester, s, s.students.first);
 
-      expect(find.text('تعديل البيانات'), findsNothing);
-      expect(find.textContaining('سجل الدفعات'), findsNothing);
+      expect(find.text('تعديل'), findsNothing);
+      expect(find.textContaining('الدفعات'), findsNothing);
       expect(find.text(s.students.first.fullName), findsNothing);
       await s.flush();
     });

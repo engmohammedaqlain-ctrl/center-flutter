@@ -36,7 +36,7 @@ Future<void> printEvaluations(
   ];
 
   final bytes = await PdfKit.build(
-    title: 'كشف الدرجات والتقييمات الأكاديمية',
+    title: 'كشف العلامات',
     institutionName: store.institutionName,
     logoBase64: store.institutionLogo,
     subtitle: [
@@ -54,9 +54,9 @@ Future<void> printEvaluations(
       pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
-          pw.Text('معلم المادة: ....................', style: const pw.TextStyle(fontSize: 9)),
-          pw.Text('المشرف الأكاديمي: ....................', style: const pw.TextStyle(fontSize: 9)),
-          pw.Text('اعتماد الإدارة: ....................', style: const pw.TextStyle(fontSize: 9)),
+          pw.Text('المعلم: ....................', style: const pw.TextStyle(fontSize: 9)),
+          pw.Text('المشرف: ....................', style: const pw.TextStyle(fontSize: 9)),
+          pw.Text('الإدارة: ....................', style: const pw.TextStyle(fontSize: 9)),
         ],
       ),
     ],
@@ -64,5 +64,5 @@ Future<void> printEvaluations(
 
   if (!context.mounted) return;
   final suffix = groupName.trim().isEmpty ? '' : ' ${groupName.trim()}';
-  await PdfKit.preview(bytes, PdfKit.fileName('كشف الدرجات والتقييمات$suffix'));
+  await PdfKit.preview(bytes, PdfKit.fileName('كشف العلامات$suffix'));
 }

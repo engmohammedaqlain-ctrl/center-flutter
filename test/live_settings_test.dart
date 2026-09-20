@@ -22,14 +22,17 @@ Future<AppStore> _openFees(WidgetTester tester) async {
   await tester.pumpWidget(StoreScope(
     store: s,
     child: const MaterialApp(
-      home: Directionality(textDirection: TextDirection.rtl, child: Scaffold(body: SettingsScreen())),
+      home: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Scaffold(body: SettingsScreen(initialTab: 'grade_fees')),
+      ),
     ),
   ));
   await tester.pump(const Duration(milliseconds: 300));
-  await tester.tap(find.text('المراحل والرسوم'));
+  // القسم مطويّ: يُفتح لظهور بطاقة رسم الحجز
+  await tester.tap(find.text('الرسوم المحددة والخصومات'));
   await tester.pumpAndSettle();
-  await tester.tap(find.text('رسم حجز المقعد').first);
-  await tester.pumpAndSettle();
+  expect(find.text('رسم حجز المقعد'), findsOneWidget);
   return s;
 }
 

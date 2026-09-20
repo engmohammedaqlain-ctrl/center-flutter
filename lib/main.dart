@@ -105,7 +105,7 @@ class _CenterAppState extends State<CenterApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'نظام الإدارة المدرسي',
+      title: appName,
       debugShowCheckedModeBanner: false,
       theme: _theme,
       locale: const Locale('ar'),
@@ -331,49 +331,55 @@ class _LoginScreenState extends State<LoginScreen> {
 
   /// استعادة جلسة بوابة محفوظة جارية — تبقى شاشة الإقلاع ظاهرة حتى تنتهي،
   /// فلا يرى الطالب نموذج الدخول يومض قبل أن تُفتح بوابته.
-  late bool restoring = AppStore.instance.portalSession != null;
+  bool restoring = false;
+
+  /// المخزن من محيط الشاشة، لا المفرد العام: هكذا تُفتح الشاشة في الاختبارات
+  /// بمخزن مستقلّ، ويبقى في التشغيل هو المفرد نفسه.
+  late final AppStore _appStore =
+      context.getInheritedWidgetOfExactType<StoreScope>()?.notifier ?? AppStore.instance;
 
   @override
   void initState() {
     super.initState();
     // آخر اسم مستخدم أُدخل على هذا الجهاز — مطابق لسلوك LandingPage
-    user.text = AppStore.instance.lastUsername;
-    portalId.text = AppStore.instance.lastPortalNationalId;
+    user.text = _appStore.lastUsername;
+    portalId.text = _appStore.lastPortalNationalId;
+    restoring = _appStore.portalSession != null;
     unawaited(_restorePortal());
   }
 
   /// جلسة بوابة محفوظة: يُعاد التحقق بها بصمت فتُفتح البوابة مباشرةً.
-  /// الرمز قد يكون غُيّر أو الحساب أُوقف، فالفشل يترك شاشة الدخول كما هي.
+  ///
+  /// الفشل نوعان لا واحد: رفضٌ من السيرفر (رمز غُيّر أو حساب أُوقف) فتُنهى
+  /// الجلسة، وتعذّرُ وصولٍ إليه فتُفتح البوابة بالحساب المحفوظ على الجهاز.
+  /// خلطهما كان يُخرج المعلم من حسابه لمجرد فتحه التطبيق بلا إنترنت.
   Future<void> _restorePortal() async {
-    final saved = AppStore.instance.portalSession;
+    final saved = _appStore.portalSession;
     if (saved == null) return;
+
+    PortalLoginResult result;
     try {
-      final result = await const PortalService().login(saved.nationalId, saved.code);
-      if (!mounted) return;
-      final account = result.ok
-          ? (result.users.where((u) => u.id == saved.userId).firstOrNull ??
-              (result.users.length == 1 ? result.users.first : null))
-          : null;
-      setState(() => restoring = false);
-      if (account == null) {
-        if (!result.ok) await AppStore.instance.clearPortalSession();
-        return;
-      }
-      portalId.text = saved.nationalId;
-      portalCode.text = saved.code;
-      _openPortal(account, code: saved.code);
+      result = await const PortalService().login(saved.nationalId, saved.code);
     } catch (_) {
-      // بلا اتصال: تُفتح البوابة بالحساب المحفوظ على الجهاز، كما تفتح واجهة
-      // الإدارة على قاعدتها. التحقق يمرّ على السيرفر، فانتظاره يعني أن معلماً
-      // بلا شبكة لا يصل إلى كشوف صفوفه وهي محفوظة أمامه.
-      if (!mounted) return;
-      setState(() => restoring = false);
-      final cached = saved.user;
-      if (cached == null) return;
-      portalId.text = saved.nationalId;
-      portalCode.text = saved.code;
-      _openPortal(cached, code: saved.code);
+      result = const PortalLoginResult(error: 'offline', offline: true);
     }
+    if (!mounted) return;
+
+    final account = result.ok
+        ? (result.users.where((u) => u.id == saved.userId).firstOrNull ??
+            (result.users.length == 1 ? result.users.first : null))
+        : (result.offline ? saved.user : null);
+
+    if (account == null) {
+      // لم يصل ردّ ولا يوجد حساب محفوظ: تبقى الجلسة لمحاولة لاحقة
+      if (!result.ok && !result.offline) await _appStore.clearPortalSession();
+      setState(() => restoring = false);
+      return;
+    }
+
+    portalId.text = saved.nationalId;
+    portalCode.text = saved.code;
+    _openPortal(account, code: saved.code, restored: true);
   }
 
   Future<void> _portalSubmit() async {
@@ -395,7 +401,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    await AppStore.instance.rememberPortalNationalId(portalId.text);
+    await _appStore.rememberPortalNationalId(portalId.text);
 
     // حساب واحد: فُتحت جلسته فندخل مباشرةً. أكثر من واحد: يختار المستخدم
     // منشأته أو دوره، ثم يُعاد التحقق بالخيار لتُفتح جلسته هو
@@ -428,9 +434,12 @@ class _LoginScreenState extends State<LoginScreen> {
     _openPortal(result.users.first);
   }
 
-  void _openPortal(PortalUser account, {String? code}) {
+  /// [restored] جلسة محفوظة تُفتح عند الإقلاع: بلا حركة انتقال، وشاشة الإقلاع
+  /// تبقى تحتها حتى يخرج المستخدم. بغير ذلك تنزلق البوابة فوق نموذج الدخول
+  /// فيراه المستخدم ثانيةً كاملة بعد الشعار وكأنه مطالَب بالدخول من جديد.
+  void _openPortal(PortalUser account, {String? code, bool restored = false}) {
     // الجلسة تبقى بعد إغلاق التطبيق، كجلسة الإدارة
-    unawaited(AppStore.instance.savePortalSession(
+    unawaited(_appStore.savePortalSession(
       nationalId: account.nationalId.isEmpty ? portalId.text : account.nationalId,
       code: code ?? portalCode.text,
       userId: account.id,
@@ -439,20 +448,29 @@ class _LoginScreenState extends State<LoginScreen> {
 
     // الخروج يُنهي جلسة البوابة: لا تبقى صلاحيات طالب أو ولي أمر على الجهاز
     Future<void> exit() async {
-      await AppStore.instance.clearPortalSession();
+      await _appStore.clearPortalSession();
       // ولا تبقى كشوف صفوفه معروضة لمن يدخل بعده
-      await PortalOffline(AppStore.instance.db).clear();
+      await PortalOffline(_appStore.db).clear();
       await supabaseSignOut();
       if (mounted) Navigator.of(context).pop();
     }
 
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => account.isTeacher
-            ? TeacherPortalScreen(user: account, onExit: exit)
-            : StudentPortalScreen(user: account, onExit: exit),
-      ),
-    );
+    Widget page(BuildContext _) => account.isTeacher
+        ? TeacherPortalScreen(user: account, onExit: exit)
+        : StudentPortalScreen(user: account, onExit: exit);
+
+    final route = restored
+        ? PageRouteBuilder<void>(
+            pageBuilder: (context, _, _) => page(context),
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+          )
+        : MaterialPageRoute<void>(builder: page);
+
+    // شاشة الإقلاع تُطفأ بعد الخروج من البوابة لا قبل فتحها
+    Navigator.of(context).push(route).then((_) {
+      if (mounted && restoring) setState(() => restoring = false);
+    });
   }
 
   Future<void> _submit() async {
@@ -473,7 +491,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final store = AppStore.instance;
+    final store = _appStore;
     // جلسة محفوظة قيد الاستعادة: شاشة الإقلاع نفسها تبقى حتى تُفتح البوابة
     if (restoring) return const SplashScreen();
     return AuthFrame(

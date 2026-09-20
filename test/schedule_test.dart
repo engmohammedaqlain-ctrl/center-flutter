@@ -212,7 +212,18 @@ void main() {
       final s = seeded();
       final g = makeGroup(s);
       s.upsertGroup(g);
-      s.sessionFor(g.id, isoDate(DateTime.now()));
+      // حصة مادة مرتبطة بالمجموعة — sessionFor ينشئ كشف شعبة بـ groupId فارغ
+      final date = isoDate(DateTime.now());
+      s.sessions.add(ClassSession(
+        id: AppStore.sessionIdFor(g.id, date),
+        groupId: g.id,
+        sessionDate: date,
+        startTime: '16:00',
+        endTime: '18:00',
+        teacherId: g.teacherId,
+        roomId: g.roomId,
+        status: 'scheduled',
+      ));
 
       expect(s.deleteGroup(g.id), isFalse);
       expect(s.groupById(g.id)?.status, 'archived');

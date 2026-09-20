@@ -22,23 +22,16 @@ Future<AppStore> _pump(WidgetTester tester) async {
   return s;
 }
 
-/// زر تصفية المراحل (الأول) — يوجد زر ثانٍ لحالة الطالب.
-Finder _gradeFilter() => find.byType(FilterButton).at(0);
+Finder _filterIcon() => find.byIcon(Icons.tune_rounded);
 
 void main() {
   testWidgets('البحث والتصفية والعدد في سطر واحد بلا طفح', (tester) async {
     final s = await _pump(tester);
 
     final search = tester.getRect(find.byType(SearchField));
-    final gradeFilter = tester.getRect(_gradeFilter());
-    final statusFilter = tester.getRect(find.byType(FilterButton).at(1));
-    expect(gradeFilter.center.dy, closeTo(search.center.dy, 1), reason: 'في السطر نفسه');
-    expect(statusFilter.center.dy, closeTo(search.center.dy, 1), reason: 'فلتر الحالة في السطر نفسه');
-    // الحقل والزرّان متجاوران فيجب أن يتساوى ارتفاع البحث مع زر المرحلة
-    final searchBox = tester.getRect(find.descendant(of: find.byType(SearchField), matching: find.byType(InputDecorator)));
-    expect(searchBox.height, closeTo(gradeFilter.height, 0.5), reason: 'ارتفاع حقل البحث = ارتفاع زر التصفية');
-    expect(find.byType(FilterButton), findsNWidgets(2));
-    expect(search.width, greaterThan(40), reason: 'البحث يبقى مرئياً بجانب الفلترين');
+    final filter = tester.getRect(_filterIcon());
+    expect(filter.center.dy, closeTo(search.center.dy, 1), reason: 'أيقونة التصفية بجانب البحث');
+    expect(search.width, greaterThan(40), reason: 'البحث يبقى مرئياً بجانب أيقونة التصفية');
 
     // العدد داخل حقل البحث لا في سطر مستقل (قد يظهر مرئي/كل عند إخفاء المؤرشفين)
     final visible = s.students.where((x) => x.status != 'archived').length;
@@ -48,6 +41,7 @@ void main() {
     );
     expect(count, findsOneWidget);
     expect(find.text('جميع المراحل الدراسية'), findsNothing);
+    expect(find.text('كل المراحل'), findsNothing, reason: 'خيارات المرحلة في ورقة التصفية لا في الرأس');
     expect(tester.takeException(), isNull);
 
     await s.flush();
@@ -56,21 +50,27 @@ void main() {
   testWidgets('اختيار مرحلة يصفّي ويُظهر العدد من الكل', (tester) async {
     final s = await _pump(tester);
     final grade = s.students.first.gradeLevel.trim();
-    final expected = s.students.where((x) => x.gradeLevel.trim() == grade && x.status != 'archived').length;
+    final yearStudents = s.studentsInViewedYear;
+    final expected = yearStudents.where((x) => x.gradeLevel.trim() == grade && x.status != 'archived').length;
+    final denom = yearStudents.where((x) => x.status != 'archived').length;
 
-    await tester.tap(_gradeFilter());
+    await tester.tap(_filterIcon());
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(PopupMenuItem<String>, grade));
+    expect(find.text('تصفية القائمة'), findsOneWidget);
+    await tester.tap(find.text(grade));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('تطبيق التصفية'));
     await tester.pumpAndSettle();
 
     expect(
       find.descendant(
         of: find.byType(SearchField),
-        matching: find.text('$expected/${s.students.length}', findRichText: true),
+        matching: find.text('$expected/$denom', findRichText: true),
       ),
       findsOneWidget,
     );
-    expect(find.descendant(of: _gradeFilter(), matching: find.text(grade)), findsOneWidget);
+    // شريحة الفلتر النشط تحت البحث
+    expect(find.text(grade), findsOneWidget);
 
     await s.flush();
   });

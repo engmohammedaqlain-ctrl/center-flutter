@@ -3,8 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('amount in Arabic words (tafqeet)', () {
-    test('handles zero and the single units', () {
-      expect(amountInArabicWords(0), 'فقط صفر شيكلاً لا غير');
+    test('handles zero like web ReceiptModal', () {
+      expect(amountInArabicWords(0), 'صفر شيكل');
+      expect(amountInArabicWords(0), isNot(contains('فقط')));
       expect(amountInArabicWords(1), 'فقط واحد شيكلاً لا غير');
       expect(amountInArabicWords(9), 'فقط تسعة شيكلاً لا غير');
     });
@@ -15,9 +16,10 @@ void main() {
       expect(amountInArabicWords(45), 'فقط خمسة وأربعون شيكلاً لا غير');
     });
 
-    test('handles hundreds with مائة', () {
+    test('handles hundreds with مئتان spelling like web', () {
       expect(amountInArabicWords(100), 'فقط مائة شيكلاً لا غير');
-      expect(amountInArabicWords(250), 'فقط مائتان وخمسون شيكلاً لا غير');
+      expect(amountInArabicWords(250), 'فقط مئتان وخمسون شيكلاً لا غير');
+      expect(amountInArabicWords(250), isNot(contains('مائتان')));
       expect(amountInArabicWords(350), 'فقط ثلاثمائة وخمسون شيكلاً لا غير');
       expect(amountInArabicWords(999), 'فقط تسعمائة وتسعة وتسعون شيكلاً لا غير');
     });

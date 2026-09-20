@@ -96,11 +96,11 @@ void main() {
     await s.flush();
   });
 
-  testWidgets('طالب بلا أقساط: رسوم شهرية، وحجز مقعد إن لم يُسدَّد', (tester) async {
+  testWidgets('طالب بلا أقساط: رسوم دراسية، وحجز مقعد إن لم يُسدَّد', (tester) async {
     final s = await _store(tester, withInstallments: false, seatFee: 50);
     await _pump(tester, s);
 
-    await tester.tap(find.text('رسوم شهرية').last);
+    await tester.tap(find.text('رسوم دراسية').last);
     await tester.pumpAndSettle();
     expect(find.text('حجز مقعد'), findsWidgets);
 

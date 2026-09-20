@@ -4,7 +4,6 @@ import 'package:center_mobile/data/store.dart';
 import 'package:center_mobile/screens/classes_screen.dart';
 import 'package:center_mobile/screens/room_form_screen.dart';
 import 'package:center_mobile/widgets/form_layout.dart';
-import 'package:center_mobile/widgets/panels.dart';
 import 'package:center_mobile/widgets/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -38,10 +37,12 @@ void main() {
       final s = await _store();
       await _pump(tester, s, const Scaffold(body: ClassesScreen()), width: width);
 
-      expect(find.byType(StatCard), findsNWidgets(3));
+      // شريط المراحل بدل بطاقات StatCard القديمة
+      expect(find.textContaining('الكل'), findsOneWidget);
       final add = find.text('صف جديد');
       expect(add, findsOneWidget);
       expect(tester.getRect(add).center.dy, greaterThan(740 * 0.75), reason: 'أسفل الشاشة قرب الإبهام، لا في رأسها');
+      expect(tester.takeException(), isNull);
 
       await s.flush();
     });

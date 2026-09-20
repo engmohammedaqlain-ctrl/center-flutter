@@ -43,14 +43,17 @@ Student _cleanStudent(AppStore s, {String grade = 'عاشر', bool seatPaid = fa
   return student;
 }
 
-Future<void> _pumpSettings(WidgetTester tester, AppStore s) async {
+Future<void> _pumpFees(WidgetTester tester, AppStore s) async {
   tester.view.physicalSize = const Size(390, 900);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(StoreScope(
     store: s,
     child: const MaterialApp(
-      home: Directionality(textDirection: TextDirection.rtl, child: Scaffold(body: SettingsScreen())),
+      home: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Scaffold(body: SettingsScreen(initialTab: 'grade_fees')),
+      ),
     ),
   ));
   await tester.pump(const Duration(milliseconds: 300));
@@ -184,13 +187,26 @@ void main() {
       final s = _seeded();
       _plan(s, 'عاشر');
       await s.setSeatReservationFee(50);
-      final student = _cleanStudent(s, seatPaid: true);
+      final student = _cleanStudent(s);
+      // كويب: علم seatReservationPaid وحده لا يسقط الحجز — وجود قسط الحجز يمنع التكرار
+      s.installments.add(Installment(
+        id: s.newId(),
+        studentId: student.id,
+        title: AppStore.seatInstallmentTitle,
+        amount: 50,
+        dueDate: DateTime(2026, 9, 1),
+        paidAmount: 50,
+      ));
 
       s.applyGradePlan('عاشر');
-      final own = s.installments.where((i) => i.studentId == student.id);
+      final own = s.installments.where((i) => i.studentId == student.id).toList();
 
-      expect(own.any((i) => i.title == AppStore.seatInstallmentTitle), isFalse);
-      expect(own.map((i) => i.amount), everyElement(100), reason: 'دفعه يزيد رصيده لا يخصم من أقساطه');
+      expect(own.where((i) => i.title == AppStore.seatInstallmentTitle).length, 1);
+      expect(
+        own.where((i) => i.title != AppStore.seatInstallmentTitle).map((i) => i.amount),
+        everyElement(100),
+        reason: 'أقساط الخطة كاملة بلا اقتطاع حجز مكرر',
+      );
     });
   });
 
@@ -216,17 +232,14 @@ void main() {
     testWidgets('تعرض رسم الحجز وطريقته وزر الترقية', (tester) async {
       final s = _seeded();
       await s.login('amal', 'amal2026');
-      await _pumpSettings(tester, s);
-      // الشاشة تفتح على «المعلمون»: ننتقل إلى تبويب المراحل والرسوم
-      await tester.tap(find.text('المراحل والرسوم'));
-      await tester.pumpAndSettle();
+      await _pumpFees(tester, s);
 
-      // أقسام التبويب مطوية: تُفتح بعناوينها
-      await tester.tap(find.text('رسم حجز المقعد').first);
+      // قسم الرسوم مطويّ: يُفتح لظهور بطاقة الحجز
+      await tester.tap(find.text('الرسوم المحددة والخصومات'));
       await tester.pumpAndSettle();
+      expect(find.text('رسم حجز المقعد'), findsOneWidget);
       expect(find.text('يُدفع مرة واحدة ويُخصم من أول الأقساط'), findsOneWidget);
-      await tester.tap(find.text('الترقية'));
-      await tester.pumpAndSettle();
+      // زر الترقية في رأس التبويب مباشرة
       expect(find.text('ترقية الطلاب'), findsOneWidget);
 
       await s.flush();
@@ -235,18 +248,19 @@ void main() {
     testWidgets('اعتماد رسم الحجز مستقلاً يُحفظ في الإعدادات المشتركة', (tester) async {
       final s = _seeded();
       await s.login('amal', 'amal2026');
-      await _pumpSettings(tester, s);
-      await tester.tap(find.text('المراحل والرسوم'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('رسم حجز المقعد').first);
+      await _pumpFees(tester, s);
+      await tester.tap(find.text('الرسوم المحددة والخصومات'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byType(Switch).first);
       await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField).last, '40');
+      final amountField = find.byWidgetPredicate(
+        (w) => w is TextField && w.decoration?.hintText == '0 $currency',
+      );
+      await tester.enterText(amountField, '40');
       await tester.tap(find.text('رسم مستقل فوقها'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('حفظ'));
+      await tester.tap(find.text('حفظ').first);
       await tester.pumpAndSettle();
 
       expect(s.seatReservationFee, 40);

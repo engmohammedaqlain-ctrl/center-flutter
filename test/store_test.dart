@@ -143,7 +143,7 @@ void main() {
     await s.setSeatReservationFee(50);
     final b = newStudent(s, nationalId: '222222222', phone: '0599111444')..seatReservationPaid = true;
     s.upsertStudent(b, isNew: true);
-    expect(b.balance, 50);
+    expect(b.balance, -50, reason: 'رسم الحجز مديونية على الطالب');
   });
 
   test('deleting a student with an active receipt is refused', () {
@@ -154,17 +154,17 @@ void main() {
     expect(s.studentById(student.id), isNotNull);
   });
 
-  test('deleting a student is allowed once receipts are cancelled', () {
+  test('deleting a student is refused while any receipt exists, even cancelled', () {
     final s = seeded();
     final student = s.students.firstWhere((e) => e.balance < 0);
-    // شرط الحذف كويب: بلا سندات فعّالة — الأقساط وحدها لا تمنع
+    // كويب: أي سند (مقبوض أو ملغى) يمنع الحذف — الأرشفة تحتفظ بالسجل المالي
     for (final p in s.payments.where((p) => p.studentId == student.id).toList()) {
       p.cancelled = true;
     }
-    s.deleteStudent(student.id);
-    expect(s.studentById(student.id), isNull);
-    expect(s.installmentsOf(student.id), isEmpty);
-    expect(s.attendanceOf(student.id, isoDate(DateTime.now())), isNull);
+    expect(() => s.deleteStudent(student.id), throwsA(isA<StoreException>()));
+    expect(s.studentById(student.id), isNotNull);
+    s.archiveStudent(student.id);
+    expect(s.studentById(student.id)?.status, 'archived');
   });
 
   test('archiving drops unpaid future installments', () {

@@ -31,7 +31,7 @@ void main() {
   tearDownAll(AppColors.reset);
 
   test('the palette follows the institution colours', () {
-    expect(AppColors.amber, const Color(0xFFE88C15));
+    expect(AppColors.amber, const Color(0xFF0EA5E9));
 
     AppColors.apply(_red);
     expect(AppColors.amber, const Color(0xFFB91C1C), reason: 'لون الإجراء');
@@ -61,7 +61,7 @@ void main() {
 
   test('اسم المنشأة في الترويسة رمادي ثابت لا يتبع لون الهوية', () {
     AppColors.apply(_red);
-    expect(AppColors.headerMuted, const Color(0xFF94A3B8));
+    expect(AppColors.headerMuted, const Color(0xFF9FADBC));
     expect(AppColors.headerMuted, isNot(AppColors.accent));
     // رمادي يُقرأ على الشريط الداكن: ما دون هذه الدرجة يذوب في الخلفية
     expect(
@@ -104,15 +104,15 @@ void main() {
 
   test('semantic colours never move', () {
     AppColors.apply(_red);
-    expect(AppColors.success, const Color(0xFF16A34A));
-    expect(AppColors.danger, const Color(0xFFDC2626));
-    expect(AppColors.muted, const Color(0xFF64748B));
+    expect(AppColors.success, const Color(0xFF1F845A));
+    expect(AppColors.danger, const Color(0xFFC9372C));
+    expect(AppColors.muted, const Color(0xFF44546F));
   });
 
   test('a bad colour value falls back instead of blanking the screen', () {
     AppColors.apply(const InstitutionColors(sidebarBg: 'not-a-colour', actionButton: '#ZZZZZZ'));
-    expect(AppColors.navy, const Color(0xFF0B2545));
-    expect(AppColors.amber, const Color(0xFFE88C15));
+    expect(AppColors.navy, const Color(0xFF0F172A));
+    expect(AppColors.amber, const Color(0xFF0EA5E9));
   });
 
   test('saving the identity repaints and reaches the cloud row', () async {
@@ -157,7 +157,7 @@ void main() {
 
   test('colours arriving from another device are applied on pull', () async {
     final s = await school(FakeDisk());
-    expect(AppColors.amber, const Color(0xFFE88C15));
+    expect(AppColors.amber, const Color(0xFF0EA5E9));
 
     // صف الهوية كما يصل من السحابة بعد تغييره على سطح المكتب
     s.putRows('institution_settings', [

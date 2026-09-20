@@ -112,10 +112,8 @@ void main() {
     test('حذف الطالب يحذف معه أقساطه وحضوره وتسجيلاته إن لم يكن عليه سند', () {
       final s = _seeded();
       final student = s.students.first;
-      // بلا سندات فعّالة — شرط الحذف كويب
-      for (final p in s.payments.where((p) => p.studentId == student.id).toList()) {
-        p.cancelled = true;
-      }
+      // كويب / store_test: أي سند (مقبوض أو ملغى) يمنع الحذف — أزل السندات كلها
+      s.payments.removeWhere((p) => p.studentId == student.id);
       final instIds = s.installments.where((i) => i.studentId == student.id).map((i) => i.id).toList();
 
       s.deleteStudent(student.id);

@@ -209,6 +209,12 @@ typedef SignInResult = ({Map<String, dynamic>? claims, String? error});
 const _invalidCredentials = 'اسم المستخدم أو كلمة المرور غير صحيحة';
 const _offlineMessage = 'هذه العملية تحتاج اتصالاً بالإنترنت';
 
+/// علامة تُرفق بخطأ انقطاع الشبكة في ردّ [supabaseInvoke].
+///
+/// تعذّرُ الوصول إلى السيرفر ليس رفضاً لبيانات الدخول: الأول يُعالَج بالعمل من
+/// نسخة الجهاز، والثاني يُنهي الجلسة. تمييزهما بنصّ الرسالة هشّ، فيُرفع علماً.
+const kOfflineFlag = 'offline';
+
 /// دخول الإدارة أو المطور — المقابل لـ `signInWithUsername`.
 Future<SignInResult> supabaseSignIn(String username, String password) async {
   if (!SupabaseAuth.isValidUsername(username) || password.isEmpty) {
@@ -301,10 +307,11 @@ Future<Map<String, dynamic>> supabaseInvoke(
     }
     return data;
   } on http.ClientException catch (e) {
-    return {'error': '$_offlineMessage (${e.message})'};
+    return {'error': '$_offlineMessage (${e.message})', kOfflineFlag: true};
   } catch (e) {
-    // خطأ ليس انقطاع شبكة: يُعرض كما هو بدل نسبته إلى الإنترنت
-    return {'error': 'تعذّر تنفيذ الطلب: $e'};
+    // السبب يُعرض كما هو بدل نسبته إلى الإنترنت، لكنه يبقى «بلا ردّ من السيرفر»:
+    // لم يرفض أحدٌ بيانات الدخول، فلا تُتلف جلسة محفوظة لأجله
+    return {'error': 'تعذّر تنفيذ الطلب: $e', kOfflineFlag: true};
   }
 }
 

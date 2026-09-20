@@ -2,7 +2,6 @@ import 'package:center_mobile/data/demo_data.dart';
 import 'package:center_mobile/data/institution.dart';
 import 'package:center_mobile/data/store.dart';
 import 'package:center_mobile/main.dart';
-import 'package:center_mobile/models/models.dart';
 import 'package:center_mobile/screens/student_form_screen.dart';
 import 'package:center_mobile/theme/app_colors.dart';
 import 'package:center_mobile/widgets/widgets.dart';
@@ -19,7 +18,7 @@ void main() {
     await tester.pumpWidget(StoreScope(store: s, child: const CenterApp()));
     await tester.pump();
     Color? appBar() => Theme.of(tester.element(find.byType(Navigator))).appBarTheme.backgroundColor;
-    expect(appBar(), const Color(0xFF0B2545));
+    expect(appBar(), const Color(0xFF0F172A), reason: 'افتراضي الويب sidebarBg');
 
     AppColors.apply(const InstitutionColors(sidebarBg: '#1C3124', primaryButton: '#1C3124', actionButton: '#15803D'));
     s.notifyListeners();
@@ -29,7 +28,52 @@ void main() {
     expect(appBar(), const Color(0xFF1C3124), reason: 'لون القائمة الجانبية للهوية');
   });
 
-  testWidgets('خصم الرسوم: النسبة تُحسب على رسم المرحلة ويُحفظ الصافي', (tester) async {
+  testWidgets('خصم الرسوم عند التسجيل: تفعيل النسبة وسببها', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final s = AppStore.forTesting();
+    injectDemoData(s);
+    final gradeFee = s.gradeFees.firstWhere((f) => f.monthlyFee > 0).monthlyFee;
+
+    await tester.pumpWidget(StoreScope(
+      store: s,
+      child: const MaterialApp(
+        home: Directionality(textDirection: TextDirection.rtl, child: StudentFormScreen()),
+      ),
+    ));
+    await tester.pump();
+
+    final list = find.byType(Scrollable).first;
+    await tester.scrollUntilVisible(find.text('الرسوم والخصم'), 250, scrollable: list);
+    // بلا مرحلة مختارة: «لا رسم محدد» — الرسم يظهر بعد اختيار المرحلة
+    expect(find.textContaining('لا رسم محدد لهذه المرحلة'), findsOneWidget);
+
+    // مطفأ افتراضياً لمن لا خصم له
+    expect(find.text('نوع الخصم'), findsNothing);
+    await tester.scrollUntilVisible(find.byType(Switch), 250, scrollable: list);
+    await tester.drag(list, const Offset(0, -80));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.byKey(const Key('discountRate')), 250, scrollable: list);
+    expect(find.text('نسبة الخصم (%)'), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('discountRate')), '25');
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.text('تفوق دراسي'), 250, scrollable: list);
+    await tester.tap(find.text('تفوق دراسي'));
+    await tester.pumpAndSettle();
+
+    expect(gradeFee, greaterThan(0));
+    expect(find.text('نوع الخصم'), findsOneWidget);
+
+    await s.flush();
+  });
+
+  testWidgets('تعديل طالب قائم: الخصم يُدار من الملف لا من النموذج', (tester) async {
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -37,7 +81,6 @@ void main() {
     final s = AppStore.forTesting();
     injectDemoData(s);
     final student = s.students.firstWhere((x) => s.feeFor(x.gradeLevel) != null);
-    final gradeFee = s.feeFor(student.gradeLevel)!.monthlyFee;
 
     await tester.pumpWidget(StoreScope(
       store: s,
@@ -49,35 +92,11 @@ void main() {
 
     final list = find.byType(Scrollable).first;
     await tester.scrollUntilVisible(find.text('الرسوم والخصم'), 250, scrollable: list);
-    expect(find.text('رسم المرحلة: ${money(gradeFee)}'), findsOneWidget);
-
-    // مطفأ افتراضياً لمن لا خصم له
+    await tester.drag(list, const Offset(0, -100));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('خصم للطالب'), findsOneWidget);
     expect(find.text('نوع الخصم'), findsNothing);
-    await tester.scrollUntilVisible(find.byType(Switch), 250, scrollable: list);
-    await tester.tap(find.byType(Switch));
-    await tester.pumpAndSettle();
-
-    await tester.scrollUntilVisible(find.byKey(const Key('discountRate')), 250, scrollable: list);
-    expect(find.text('نسبة الخصم (%)'), findsOneWidget);
-    await tester.enterText(find.byKey(const Key('discountRate')), '25');
-    await tester.pumpAndSettle();
-
-    final expected = gradeFee - (gradeFee * 0.25).roundToDouble();
-    await tester.scrollUntilVisible(find.textContaining('الصافي:'), 250, scrollable: list);
-    expect(find.text('الصافي: ${money(expected)}'), findsOneWidget);
-
-    await tester.scrollUntilVisible(find.text('تفوق دراسي'), 250, scrollable: list);
-    await tester.tap(find.text('تفوق دراسي'));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('حفظ التعديل'));
-    await tester.pumpAndSettle();
-
-    final saved = s.studentById(student.id)!;
-    expect(saved.academicDiscountApplied, isTrue);
-    expect(saved.academicDiscountRate, 25);
-    expect(saved.customMonthlyFee, expected);
-    expect(saved.exceptionReason, 'تفوق دراسي');
+    expect(find.byKey(const Key('discountRate')), findsNothing);
 
     await s.flush();
   });

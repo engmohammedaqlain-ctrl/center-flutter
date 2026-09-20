@@ -12,8 +12,27 @@ void main() {
       }
     });
 
+    test('تعديل العلامات فرع من التقييمات ولا يُمنح في قوالب المحاسب والسكرتير', () {
+      expect(sectionDef('evaluations.edit')?.parent, 'evaluations');
+      expect(roleCanAccess('accountant', 'evaluations.edit'), isFalse);
+      expect(roleCanAccess('receptionist', 'evaluations.edit'), isFalse);
+      expect(roleCanAccess('admin', 'evaluations.edit'), isTrue);
+    });
+
     test('المحاسب: المالية بمصروفاتها والطلاب والصفوف فقط', () {
-      expect(roles['accountant']!.sections.toSet(), {'classes', 'finance', 'finance.expenses', 'students'});
+      expect(
+        roles['accountant']!.sections.toSet(),
+        {
+          'classes',
+          'finance',
+          'finance.expenses',
+          'finance.collect',
+          'finance.cancel',
+          'finance.discount',
+          'finance.refund',
+          'students',
+        },
+      );
     });
 
     test('السكرتير يرى الحضور ولا يرى المصروفات — رواتب الموظفين لا تخصه', () {
@@ -69,7 +88,7 @@ void main() {
     test('القدرات القديمة تُترجم إلى تبويباتها فلا يفقد حساب قائم وصوله', () {
       expect(
         normalizeSections(['students.view', 'students.edit', 'finance.view', 'finance.collect']),
-        ['students', 'finance'],
+        ['students', 'finance', 'finance.collect'],
       );
     });
 
@@ -89,7 +108,7 @@ void main() {
     });
 
     test('من كان يملك المالية دون المصروفات يبقى كذلك بعد الترقية', () {
-      expect(normalizeSections(['finance.view', 'finance.collect']), ['finance']);
+      expect(normalizeSections(['finance.view', 'finance.collect']), ['finance', 'finance.collect']);
     });
 
     test('صلاحيات المزامنة القديمة لا تقابل تبويباً فتسقط بلا أثر', () {

@@ -528,10 +528,16 @@ class TeacherPortalData {
 
 /// نتيجة محاولة دخول: إما حساب واحد، أو عدّة حسابات يختار منها المستخدم.
 class PortalLoginResult {
-  const PortalLoginResult({this.users = const [], this.error});
+  const PortalLoginResult({this.users = const [], this.error, this.offline = false});
 
   final List<PortalUser> users;
   final String? error;
+
+  /// لم يصل ردّ من السيرفر أصلاً — لا رفضَ لبيانات الدخول.
+  ///
+  /// جلسة محفوظة لا تُتلف لأجل انقطاع شبكة: المعلم يفتح التطبيق بلا نت فيجد
+  /// نفسه مخرَجاً، ولا يستطيع الدخول من جديد لأن الدخول نفسه يحتاج شبكة.
+  final bool offline;
 
   bool get ok => error == null && users.isNotEmpty;
 }
@@ -788,7 +794,9 @@ class PortalService {
     );
 
     final error = data['error'];
-    if (error != null) return PortalLoginResult(error: '$error');
+    if (error != null) {
+      return PortalLoginResult(error: '$error', offline: data[kOfflineFlag] == true);
+    }
 
     final choices = [
       for (final c in (data['choices'] as List? ?? const []))

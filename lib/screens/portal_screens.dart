@@ -3127,7 +3127,8 @@ class _NewItemSheetState extends State<_NewItemSheet> {
       if (mounted) {
         setState(() {
           busy = false;
-          error = 'فشل إضافة العنصر';
+          // رفع بايتات الملف لا يمكن تأجيله، بخلاف بقية الأنواع
+          error = type == 'file' ? 'رفع الملف يحتاج اتصالاً بالإنترنت' : 'فشل إضافة العنصر';
         });
       }
     }

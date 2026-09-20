@@ -37,7 +37,7 @@ void main() {
     expect(income.academicYearId, yearId);
     final payment = store.payments.singleWhere((p) => p.id == income.id);
     expect(payment.studentId, isEmpty);
-    expect(payment.purpose, 'general_income');
+    expect(payment.purpose, 'other_income');
     expect(payment.payerName, 'جمعية الأمل');
     expect(
       store.pendingSyncs.singleWhere((p) => p.recordId == income.id).tableName,
