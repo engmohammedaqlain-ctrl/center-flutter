@@ -12,14 +12,45 @@ import '../theme/app_theme.dart';
 
 final _r = BorderRadius.circular(Corner.field);
 
+/// سهم «فتح / التالي» — `chevron_right` مع انعكاس تلقائي في العربية فيصير «‹».
+class AppChevron extends StatelessWidget {
+  const AppChevron({
+    super.key,
+    this.size = 20,
+    this.color = AppColors.faint,
+  });
+
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    // IconData نفسه يحمل matchTextDirection فيتقلب تلقائياً في العربية → «‹»
+    return Icon(
+      Icons.chevron_right_rounded,
+      size: size,
+      color: color,
+    );
+  }
+}
+
 class AppCard extends StatelessWidget {
-  const AppCard({super.key, required this.child, this.padding, this.onTap, this.color, this.margin});
+  const AppCard({
+    super.key,
+    required this.child,
+    this.padding,
+    this.onTap,
+    this.color,
+    this.margin,
+    this.selected = false,
+  });
 
   final Widget child;
   final EdgeInsetsGeometry? padding;
   final VoidCallback? onTap;
   final Color? color;
   final EdgeInsetsGeometry? margin;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +62,9 @@ class AppCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: color ?? AppColors.surface,
         borderRadius: shape,
-        border: Border.all(color: AppColors.line),
+        border: Border.all(
+          color: selected ? AppColors.accent.withValues(alpha: 0.35) : AppColors.line,
+        ),
         boxShadow: cardShadow,
       ),
       child: child,
@@ -55,36 +88,36 @@ class StatusChip extends StatelessWidget {
 
   factory StatusChip.success(String label) => StatusChip(
         label: label,
-        fg: const Color(0xFF166534),
+        fg: const Color(0xFF216E4E),
         bg: AppColors.successSoft,
         border: AppColors.successBorder,
       );
 
   factory StatusChip.danger(String label) => StatusChip(
         label: label,
-        fg: const Color(0xFF991B1B),
+        fg: const Color(0xFFAE2A19),
         bg: AppColors.dangerSoft,
         border: AppColors.dangerBorder,
       );
 
   factory StatusChip.muted(String label) => StatusChip(
         label: label,
-        fg: const Color(0xFF475569),
-        bg: const Color(0xFFF1F5F9),
-        border: AppColors.line,
+        fg: AppColors.muted,
+        bg: AppColors.hover,
+        border: AppColors.lineStrong,
       );
 
   factory StatusChip.amber(String label) => StatusChip(
         label: label,
-        fg: AppColors.amber, // `text-[#9A4F05]` يُحال إلى لون العمليات
-        bg: AppColors.amberSoft,
-        border: AppColors.amberBorder,
+        fg: AppColors.warn,
+        bg: AppColors.warnSoft,
+        border: const Color(0xFFF5CD47),
       );
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(Corner.chip),
@@ -92,7 +125,14 @@ class StatusChip extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(color: fg, fontSize: 10.5, fontWeight: FontWeight.w800, height: 1.3),
+        style: TextStyle(
+          fontFamily: AppText.family,
+          color: fg,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          height: 1.2,
+          letterSpacing: 0.2,
+        ),
       ),
     );
   }
@@ -111,7 +151,7 @@ class MoneyChip extends StatelessWidget {
 }
 
 /// ارتفاع موحّد لأدوات السطر الواحد (بحث، تصفية) كي تتساوى متجاورة.
-const controlHeight = 42.0;
+const controlHeight = 44.0;
 
 class SearchField extends StatelessWidget {
   const SearchField({super.key, required this.controller, required this.hint, this.onChanged, this.trailing});
@@ -137,34 +177,41 @@ class SearchField extends StatelessWidget {
             },
           );
 
-    return SizedBox(
-      height: controlHeight,
-      child: TextField(
-        controller: controller,
-        onChanged: onChanged,
-        style: const TextStyle(fontSize: 12.5),
-        textInputAction: TextInputAction.search,
-        textAlignVertical: TextAlignVertical.center,
-        // الحقل يملأ ارتفاعه كاملاً فيُرسم إطاره بالارتفاع نفسه لزر التصفية.
-        // بدونها يلتفّ الإطار حول سطر النص فيقصر عن جاره أو يطول بحسب الخط.
-        expands: true,
-        maxLines: null,
-        minLines: null,
-        decoration: InputDecoration(
-          hintText: hint,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-          prefixIcon: const Icon(Icons.search, size: 16, color: AppColors.faint),
-          prefixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          suffixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          suffixIcon: trailing == null
-              ? clear
-              : Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Padding(padding: const EdgeInsetsDirectional.only(end: 8), child: trailing),
-                    ?clear,
-                  ],
-                ),
+    return Material(
+      type: MaterialType.canvas,
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(Corner.input),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        height: controlHeight,
+        child: TextField(
+          controller: controller,
+          onChanged: onChanged,
+          style: const TextStyle(fontSize: 12.5),
+          textInputAction: TextInputAction.search,
+          textAlignVertical: TextAlignVertical.center,
+          // الحقل يملأ ارتفاعه كاملاً فيُرسم إطاره بالارتفاع نفسه لزر التصفية.
+          // بدونها يلتفّ الإطار حول سطر النص فيقصر عن جاره أو يطول بحسب الخط.
+          expands: true,
+          maxLines: null,
+          minLines: null,
+          decoration: InputDecoration(
+            hintText: hint,
+            filled: false,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+            prefixIcon: const Icon(Icons.search, size: 16, color: AppColors.faint),
+            prefixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            suffixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            suffixIcon: trailing == null
+                ? clear
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(padding: const EdgeInsetsDirectional.only(end: 8), child: trailing),
+                      ?clear,
+                    ],
+                  ),
+          ),
         ),
       ),
     );
@@ -267,7 +314,7 @@ class PrimaryButton extends StatelessWidget {
     this.expand = false,
     this.color,
     this.busy = false,
-    this.height = 40,
+    this.height = 44,
   });
 
   final String label;
@@ -293,7 +340,7 @@ class PrimaryButton extends StatelessWidget {
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           shape: RoundedRectangleBorder(borderRadius: _r),
-          textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+          textStyle: const TextStyle(fontFamily: AppText.family, fontWeight: FontWeight.w700, fontSize: 13.5),
         ),
         child: busy
             ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
@@ -525,20 +572,23 @@ class AppDropdown<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selected = items.any((e) => e.value == value) ? value : null;
-    return DropdownButtonFormField<T>(
-      key: ValueKey(selected),
-      initialValue: selected,
-      items: items,
-      onChanged: onChanged,
-      isExpanded: true,
-      dropdownColor: Colors.white,
-      decoration: InputDecoration(
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        errorText: errorText,
+    return Material(
+      type: MaterialType.transparency,
+      child: DropdownButtonFormField<T>(
+        key: ValueKey(selected),
+        initialValue: selected,
+        items: items,
+        onChanged: onChanged,
+        isExpanded: true,
+        dropdownColor: Colors.white,
+        decoration: InputDecoration(
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          errorText: errorText,
+        ),
+        hint: hint == null ? null : Text(hint!, style: const TextStyle(fontSize: 12, color: AppColors.faint)),
+        style: const TextStyle(fontSize: 12, color: AppColors.text, fontWeight: FontWeight.w600),
       ),
-      hint: hint == null ? null : Text(hint!, style: const TextStyle(fontSize: 12, color: AppColors.faint)),
-      style: const TextStyle(fontSize: 12, color: AppColors.text, fontWeight: FontWeight.w600),
     );
   }
 }

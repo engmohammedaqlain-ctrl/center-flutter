@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -162,7 +162,7 @@ Future<bool> showGeneralIncomeSheet(
                   const SizedBox(height: 10),
                   FieldPair(
                     start: [
-                      const FieldLabel('المبلغ (₪) *'),
+                      const FieldLabel('المبلغ (شيكل) *'),
                       TextField(
                         controller: amount,
                         keyboardType: const TextInputType.numberWithOptions(

@@ -233,10 +233,15 @@ class _ReceiptSheet extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             // إلغاء السند من سجل المقبوضات وحده: زرٌّ أحمر بجانب «تم» في نافذة
             // السند كان دعوةً للخطأ بعد قبض ناجح
-            PrimaryButton(label: 'تم', onPressed: () => Navigator.pop(context)),
+            PrimaryButton(
+              label: 'تم',
+              expand: true,
+              height: 48,
+              onPressed: () => Navigator.pop(context),
+            ),
           ],
         ),
       ),
@@ -267,7 +272,7 @@ class _ReceiptSheet extends StatelessWidget {
         if (paymentAdvance(p) > 0)
           cell('رصيد مقدم', money(paymentAdvance(p)), color: AppColors.amber)
         else
-          cell('المتبقي المستحق', p.remainingAfter <= 0 ? '0 ₪' : money(p.remainingAfter),
+          cell('المتبقي المستحق', p.remainingAfter <= 0 ? '0 شيكل' : money(p.remainingAfter),
               color: p.remainingAfter <= 0 ? AppColors.success : AppColors.danger),
         const SizedBox(width: 4),
         cell('الحالة', p.cancelled ? 'ملغى' : (p.remainingAfter <= 0 ? 'مسدد بالكامل' : 'مستمر'),
@@ -342,7 +347,7 @@ class _ReceiptSheet extends StatelessWidget {
                 money(absAmount),
                 paymentAdvance(payment) > 0
                     ? money(paymentAdvance(payment))
-                    : (payment.remainingAfter <= 0 ? '0 ₪ (مسدد بالكامل)' : money(payment.remainingAfter)),
+                    : (payment.remainingAfter <= 0 ? '0 شيكل (مسدد بالكامل)' : money(payment.remainingAfter)),
                 payment.cancelled
                     ? 'ملغى'
                     : (payment.remainingAfter <= 0 ? 'مسدد بالكامل' : 'مستمر'),

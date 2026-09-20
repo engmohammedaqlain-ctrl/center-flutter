@@ -1,6 +1,6 @@
 import '../data/phone.dart';
 
-const currency = '₪';
+const currency = 'شيكل';
 const appName = 'نظام الإدارة المدرسي';
 const appVersion = '1.5';
 
@@ -111,9 +111,9 @@ bool isReversalPurpose(String purpose) =>
 /// مطابق لـ Teacher.payment_type في types/common.ts
 const teacherPaymentTypes = {
   'percentage': 'نسبة مئوية (%)',
-  'per_student': 'مبلغ ثابت لكل طالب (₪)',
-  'per_hour': 'أجر بالساعة (₪)',
-  'fixed_monthly': 'راتب شهري مقطوع (₪)',
+  'per_student': 'مبلغ ثابت لكل طالب (شيكل)',
+  'per_hour': 'أجر بالساعة (شيكل)',
+  'fixed_monthly': 'راتب شهري مقطوع (شيكل)',
 };
 
 const educationalStageTiers = {
@@ -2324,11 +2324,6 @@ class Group {
     'room_id': roomId.isEmpty ? null : roomId,
     'room_ids': roomIds,
     'grade_level': gradeLevel,
-    'price_per_month': pricePerMonth,
-    'max_students': maxStudents,
-    'days': days,
-    'start_time': startTime,
-    'end_time': endTime,
     'status': status,
     'academic_year_id': academicYearId.isEmpty ? null : academicYearId,
     'created_at': createdAt,
@@ -2417,9 +2412,6 @@ class StudentEnrollment {
     'room_id': roomId.isEmpty ? null : roomId,
     'enrolled_at': enrolledAt.toUtc().toIso8601String(),
     'status': status,
-    'custom_price': customPrice,
-    'applied_price': appliedPrice,
-    'discount_reason': discountReason,
     'created_at': createdAt,
     'updated_at': updatedAt,
   };

@@ -4,6 +4,7 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/list_paging.dart';
 import '../widgets/widgets.dart';
 
 /// إضافة طلاب إلى شعبة — المقابل لـ `AddSectionStudentsModal`.
@@ -32,6 +33,7 @@ class _SectionStudentsSheetState extends State<_SectionStudentsSheet> {
   final search = TextEditingController();
   final selected = <String>{};
   bool saving = false;
+  int visibleCount = kListPageSize;
 
   @override
   void dispose() {
@@ -98,7 +100,7 @@ class _SectionStudentsSheetState extends State<_SectionStudentsSheet> {
               SearchField(
                 controller: search,
                 hint: 'ابحث بالاسم أو رقم الهوية...',
-                onChanged: (_) => setState(() {}),
+                onChanged: (_) => setState(() => visibleCount = kListPageSize),
                 trailing: Text(
                   '${candidates.length}',
                   style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.muted),
@@ -119,9 +121,18 @@ class _SectionStudentsSheetState extends State<_SectionStudentsSheet> {
                 Flexible(
                   child: ListView.builder(
                     shrinkWrap: true,
-                    itemCount: candidates.length,
+                    itemCount: listPage(candidates, visibleCount).length +
+                        (visibleCount < candidates.length ? 1 : 0),
                     itemBuilder: (context, i) {
-                      final s = candidates[i];
+                      final page = listPage(candidates, visibleCount);
+                      if (i >= page.length) {
+                        return LoadMoreButton(
+                          shown: page.length,
+                          total: candidates.length,
+                          onMore: () => setState(() => visibleCount += kListPageSize),
+                        );
+                      }
+                      final s = page[i];
                       final on = selected.contains(s.id);
                       final current = s.section.trim();
                       return Padding(

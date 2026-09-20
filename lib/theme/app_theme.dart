@@ -1,64 +1,101 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'app_colors.dart';
 
-/// مقياس النص — قيمة واحدة لكل دور، لا أرقام متناثرة في الشاشات.
-///
-/// المقاسات مأخوذة من واجهة الهاتف في Center: العناوين 13، والنص 12،
-/// والثانوي 11.5، والتسميات 10.5. اختلافها من شاشة لأخرى كان يجعل
-/// البطاقات تبدو غير منتمية لبعضها.
+/// مقياس النص — ثمانية سانس + أدوار ثابتة (قريب من سلم Jira).
 abstract final class AppText {
+  static const family = 'ThmanyahSans';
+
   /// عنوان شاشة أو قسم.
-  static TextStyle get title => TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.heading, height: 1.35);
+  static TextStyle get title => TextStyle(
+        fontFamily: family,
+        fontSize: 17,
+        fontWeight: FontWeight.w700,
+        color: AppColors.heading,
+        height: 1.3,
+        letterSpacing: -0.2,
+      );
 
   /// عنوان بطاقة أو صف في قائمة.
-  static TextStyle get cardTitle => TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.heading, height: 1.3);
+  static TextStyle get cardTitle => TextStyle(
+        fontFamily: family,
+        fontSize: 15,
+        fontWeight: FontWeight.w700,
+        color: AppColors.heading,
+        height: 1.35,
+      );
 
   /// نص أساسي.
-  static const body = TextStyle(fontSize: 12.5, color: AppColors.text, height: 1.5);
+  static TextStyle get body => TextStyle(
+        fontFamily: family,
+        fontSize: 14,
+        fontWeight: FontWeight.w400,
+        color: AppColors.text,
+        height: 1.5,
+      );
 
   /// نص ثانوي وشروح.
-  static const muted = TextStyle(fontSize: 11.5, color: AppColors.muted, height: 1.5);
+  static TextStyle get muted => TextStyle(
+        fontFamily: family,
+        fontSize: 13,
+        fontWeight: FontWeight.w400,
+        color: AppColors.muted,
+        height: 1.45,
+      );
 
   /// تسمية حقل أو شارة.
-  static const label = TextStyle(fontSize: 10.5, color: AppColors.muted, height: 1.35, fontWeight: FontWeight.w600);
+  static TextStyle get label => TextStyle(
+        fontFamily: family,
+        fontSize: 11.5,
+        fontWeight: FontWeight.w600,
+        color: AppColors.muted,
+        height: 1.35,
+        letterSpacing: 0.2,
+      );
 
-  /// رقم بارز.
-  static TextStyle get figure => TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: AppColors.heading, height: 1.2);
+  /// رقم بارز — أرقام جدولية حيث يدعمها الخط.
+  static TextStyle get figure => TextStyle(
+        fontFamily: family,
+        fontSize: 18,
+        fontWeight: FontWeight.w900,
+        color: AppColors.heading,
+        height: 1.2,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      );
 }
 
-/// مقياس المسافات — مضاعفات ثابتة بدل قيم عشوائية.
+/// مقياس المسافات — تنفّس أوضح؛ العناصر لا تتكدّس.
 abstract final class Gap {
   static const xs = 4.0;
-  static const sm = 7.0;
-  static const md = 10.0;
-  static const lg = 14.0;
-  static const xl = 18.0;
+  static const sm = 8.0;
+  static const md = 12.0;
+  static const lg = 16.0;
+  static const xl = 24.0;
 
   /// الهامش الأفقي الموحّد لمحتوى الشاشات.
-  static const screen = EdgeInsets.symmetric(horizontal: 14);
+  static const screen = EdgeInsets.symmetric(horizontal: 16);
+
+  /// فراغ رأسي بين أقسام الصفحة.
+  static const section = 20.0;
 }
 
-/// نصف قطر الزوايا — تدوير هادئ بقدر العنصر: عصري دون أن يفقد الطابع الرسمي.
-///
-/// كل زاوية في التطبيق تُؤخذ من هنا، فلا أرقام متناثرة في الشاشات.
+/// زوايا بهوية Atlassian/Jira: لوزنجات ناعمة وبطاقات 8.
 abstract final class Corner {
-  /// الشارات وحبوب الحالة — كـ `rounded-btn` في النسخة المكتبية.
-  static const chip = 6.0;
+  /// الشارات (lozenge).
+  static const chip = 3.0;
 
   /// الأزرار.
-  static const field = 6.0;
+  static const field = 8.0;
 
-  /// الحقول النصية — `rounded-base`.
-  static const input = 4.0;
+  /// الحقول النصية.
+  static const input = 6.0;
 
-  /// الصناديق الداخلية والبلاطات داخل البطاقات.
-  static const box = 4.0;
+  /// الصناديق الداخلية.
+  static const box = 6.0;
 
   /// البطاقات.
-  static const card = 4.0;
+  static const card = 8.0;
 
   /// النوافذ الحوارية.
   static const dialog = 12.0;
@@ -67,28 +104,38 @@ abstract final class Corner {
   static const sheet = 16.0;
 }
 
-/// ظل خفيف يفصل البطاقة عن الخلفية بلا ثقل — بديل التدوير في إعطاء العمق.
-/// البطاقات بلا ظل: حدّ رفيع وحده يفصلها عن الخلفية البيضاء.
-const cardShadow = <BoxShadow>[];
+/// ظل بطاقة خفيف جداً — عمق بلا حدود غامقة.
+final cardShadow = <BoxShadow>[
+  BoxShadow(
+    color: const Color(0xFF091E42).withValues(alpha: 0.04),
+    blurRadius: 10,
+    offset: const Offset(0, 2),
+  ),
+];
 
 abstract final class AppTheme {
-  /// حدّ الحقول النصية — أهدأ من الأزرار بدرجة، كما في النسخة المكتبية.
   static final radius = BorderRadius.circular(Corner.input);
 
   static ThemeData build() {
-    final base = GoogleFonts.ibmPlexSansArabicTextTheme();
     OutlineInputBorder border([Color c = AppColors.line, double w = 1]) => OutlineInputBorder(
           borderRadius: radius,
           borderSide: BorderSide(color: c, width: w),
         );
 
+    final base = ThemeData(useMaterial3: true, fontFamily: AppText.family).textTheme.apply(
+          fontFamily: AppText.family,
+          bodyColor: AppColors.text,
+          displayColor: AppColors.heading,
+        );
+
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
-      scaffoldBackgroundColor: Colors.white,
-      canvasColor: Colors.white,
+      fontFamily: AppText.family,
+      scaffoldBackgroundColor: AppColors.bg,
+      canvasColor: AppColors.bg,
       colorScheme: ColorScheme.light(
-        primary: AppColors.amber,
+        primary: AppColors.accent,
         onPrimary: Colors.white,
         secondary: AppColors.navy,
         onSecondary: Colors.white,
@@ -96,47 +143,92 @@ abstract final class AppTheme {
         onSurface: AppColors.text,
         error: AppColors.danger,
       ),
-      textTheme: base.apply(bodyColor: AppColors.text, displayColor: AppColors.heading),
+      textTheme: base,
       appBarTheme: AppBarTheme(
         elevation: 0,
         scrolledUnderElevation: 0,
         backgroundColor: AppColors.navy,
         foregroundColor: Colors.white,
         systemOverlayStyle: SystemUiOverlayStyle.light,
+        iconTheme: const IconThemeData(color: Colors.white, size: 22),
+        actionsIconTheme: const IconThemeData(color: Colors.white, size: 22),
+        titleTextStyle: TextStyle(
+          fontFamily: AppText.family,
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+          fontSize: 16,
+        ),
+      ),
+      // رجوع بأسلوب أحدث (سهم iOS الرفيع) بدل سهم Material العريض — لكل AppBar تلقائياً
+      actionIconTheme: ActionIconThemeData(
+        backButtonIconBuilder: (context) => Icon(
+          Icons.arrow_back_ios_new_rounded,
+          size: 18,
+          color: IconTheme.of(context).color ?? Colors.white,
+        ),
       ),
       dividerColor: AppColors.line,
       splashFactory: NoSplash.splashFactory,
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: Colors.white,
+        fillColor: AppColors.surface,
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
-        hintStyle: const TextStyle(color: AppColors.faint, fontSize: 12),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        hintStyle: TextStyle(fontFamily: AppText.family, color: AppColors.faint, fontSize: 13),
         labelStyle: AppText.muted,
         border: border(),
         enabledBorder: border(),
-        focusedBorder: border(AppColors.amber, 1.4),
-        // الحقل الناقص يُلوَّن نفسه وتظهر رسالته تحته
+        focusedBorder: border(AppColors.accent, 1.5),
         errorBorder: border(AppColors.danger),
-        focusedErrorBorder: border(AppColors.danger, 1.4),
-        errorStyle: const TextStyle(color: AppColors.danger, fontSize: 11.5, fontWeight: FontWeight.w600, height: 1.3),
+        focusedErrorBorder: border(AppColors.danger, 1.5),
+        errorStyle: TextStyle(
+          fontFamily: AppText.family,
+          color: AppColors.danger,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          height: 1.3,
+        ),
         errorMaxLines: 2,
       ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          elevation: 0,
+          minimumSize: const Size(48, 44),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Corner.field)),
+          textStyle: const TextStyle(fontFamily: AppText.family, fontWeight: FontWeight.w700, fontSize: 14),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          minimumSize: const Size(44, 44),
+          textStyle: const TextStyle(fontFamily: AppText.family, fontWeight: FontWeight.w700, fontSize: 13),
+        ),
+      ),
       dialogTheme: DialogThemeData(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
+        backgroundColor: AppColors.surface,
+        surfaceTintColor: AppColors.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Corner.dialog)),
       ),
       popupMenuTheme: PopupMenuThemeData(
-        color: Colors.white,
-        surfaceTintColor: Colors.white,
+        color: AppColors.surface,
+        surfaceTintColor: AppColors.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Corner.card)),
       ),
-      bottomSheetTheme: const BottomSheetThemeData(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        shape: RoundedRectangleBorder(
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: AppColors.surface,
+        surfaceTintColor: AppColors.surface,
+        shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet)),
+        ),
+      ),
+      cardTheme: CardThemeData(
+        color: AppColors.surface,
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Corner.card),
+          side: const BorderSide(color: AppColors.line),
         ),
       ),
     );

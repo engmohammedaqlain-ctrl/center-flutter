@@ -237,7 +237,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
     final due = _dueNow(selected, open);
     final cash = settled - disc;
     final discountNote = disc > 0
-        ? '(خصم: -${trimNum(disc)} ₪${discountReason.text.trim().isEmpty ? '' : ' [${discountReason.text.trim()}]'})'
+        ? '(خصم: -${trimNum(disc)} شيكل${discountReason.text.trim().isEmpty ? '' : ' [${discountReason.text.trim()}]'})'
         : '';
     final baseNotes = notes.text.trim();
     final finalNotes = [
@@ -468,7 +468,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                 FieldPair(
                   start: [
                     FieldLabel(
-                      'المبلغ المقبوض (₪)',
+                      'المبلغ المقبوض (شيكل)',
                       key: errors.key('amount'),
                       requiredField: true,
                     ),
@@ -689,7 +689,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                       FieldLabel(
                         discountType == 'percentage'
                             ? 'نسبة الخصم (%)'
-                            : 'مبلغ الخصم (₪)',
+                            : 'مبلغ الخصم (شيكل)',
                       ),
                       TextField(
                         controller: discountVal,
@@ -986,8 +986,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
               ),
             ),
             const SizedBox(width: 2),
-            // «التالي» ينعكس مع الاتجاه فيُرسم «<»
-            const Icon(Icons.chevron_right, size: 18, color: AppColors.faint),
+            const AppChevron(size: 18),
           ],
         ),
       ),

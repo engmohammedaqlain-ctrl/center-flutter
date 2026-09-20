@@ -1,36 +1,41 @@
 import 'package:flutter/material.dart';
 
 import '../data/grading.dart';
+import '../data/academic_matching.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/form_layout.dart';
+import '../widgets/list_paging.dart';
 import '../widgets/widgets.dart';
 
-/// نافذة «رصد درجات جديدة» — المقابل لـ `isRecordModalOpen` في Evaluations.tsx.
+/// صفحة «رصد درجات» — المقابل لـ `isRecordModalOpen` في Evaluations.tsx.
 ///
-/// تُعيد عدد الدرجات المرصودة (صفر إن أُلغيت).
+/// تُفتح صفحة كاملة (لا ورقة) لأن كشف الطلاب قد يطول، وتُعيد عدد الدرجات
+/// المرصودة (صفر إن أُلغيت).
 Future<int> showEvaluationSheet(BuildContext context, AppStore store) async {
-  final result = await showModalBottomSheet<int>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.white,
-    builder: (_) => _EvaluationSheet(store: store),
+  final result = await Navigator.of(context).push<int>(
+    MaterialPageRoute(
+      builder: (_) => EvaluationFormScreen(store: store),
+    ),
   );
   return result ?? 0;
 }
 
-class _EvaluationSheet extends StatefulWidget {
-  const _EvaluationSheet({required this.store});
+class EvaluationFormScreen extends StatefulWidget {
+  const EvaluationFormScreen({super.key, required this.store});
   final AppStore store;
 
   @override
-  State<_EvaluationSheet> createState() => _EvaluationSheetState();
+  State<EvaluationFormScreen> createState() => _EvaluationFormScreenState();
 }
 
-class _EvaluationSheetState extends State<_EvaluationSheet> {
-  String groupId = '';
+class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
+  /// تسلسل الويب نفسه: الصف ← الشعبة ← المادة، ومنه تتحدد المجموعة وطلابها.
+  String grade = '';
+  String roomId = '';
+  String subjectId = '';
   String type = 'quiz';
 
   /// الفصل والمكوّن من مخطط المدرسة — فارغان بلا ربط بفصل.
@@ -49,6 +54,16 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
   bool submitting = false;
   String? error;
   final errors = FieldErrors();
+  int rosterVisible = kListPageSize;
+
+  @override
+  void initState() {
+    super.initState();
+    // الفصل من تاريخ الرصد كما في الويب — لا يُسأل عنه في كل مرة عند النمط الموزون
+    if (widget.store.gradingForViewedYear.mode != 'monthly') {
+      term = termForDate(date, term2Start: widget.store.viewedAcademicYear?.term2Start);
+    }
+  }
 
   @override
   void dispose() {
@@ -60,41 +75,129 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
     super.dispose();
   }
 
-  void _fillMaxFromGroup(String id) {
-    final g = widget.store.groupById(id);
+  /// شعب الصف المختار.
+  List<Classroom> get _rooms => grade.isEmpty
+      ? widget.store.roomsInViewedYear
+      : widget.store.roomsInViewedYear.where((r) => isSameGrade(r.gradeLevel, grade)).toList();
+
+  /// مجموعات الصف والشعبة المختارين — منها تُشتق المواد المتاحة.
+  List<Group> get _scopeGroups => widget.store.groupsInViewedYear.where((g) {
+        if (grade.isNotEmpty && g.gradeLevel.trim().isNotEmpty && !isSameGrade(g.gradeLevel, grade)) return false;
+        if (roomId.isNotEmpty && g.allRoomIds.isNotEmpty && !g.includesRoom(roomId)) return false;
+        return true;
+      }).toList();
+
+  /// مواد الشعبة المختارة بلا تكرار.
+  List<({String id, String name})> get _subjects {
+    final seen = <String, String>{};
+    for (final g in _scopeGroups) {
+      seen.putIfAbsent(g.subjectId, () {
+        final name = widget.store.subjectName(g.subjectId);
+        return name.isEmpty || name == 'غير محدد' ? g.name : name;
+      });
+    }
+    return [for (final e in seen.entries) (id: e.key, name: e.value)];
+  }
+
+  /// المجموعة التي يحفظ إليها الرصد: الصف والشعبة والمادة تحددها.
+  Group? get _group {
+    if (roomId.isEmpty || subjectId.isEmpty) return null;
+    return _scopeGroups.where((g) => g.subjectId == subjectId).firstOrNull;
+  }
+
+  String get groupId => _group?.id ?? '';
+
+  /// طلاب الرصد: طلاب الشعبة المختارة.
+  ///
+  /// المصدر هو الشعبة نفسها لا تسجيلات المادة: المدرسة تُسند المادة للشعبة،
+  /// وربط كل طالب بالمادة تسجيلاً قد لا يكون تمّ بعد — فكان الكشف يظهر فارغاً
+  /// رغم وجود طلاب في الشعبة. التسجيلات تُستعمل حين تضيف طلاباً من خارجها.
+  List<Student> get _roster {
+    final g = _group;
+    final room = widget.store.roomById(roomId);
+    if (g == null || room == null) return const [];
+
+    final ofRoom = widget.store.studentsOf(room);
+    final seen = {for (final s in ofRoom) s.id};
+    final extra = [
+      for (final s in widget.store.studentsInGroup(g.id))
+        if (!seen.contains(s.id) && (g.allRoomIds.length <= 1 || studentBelongsToRoom(s, room))) s,
+    ];
+    return [...ofRoom, ...extra];
+  }
+
+  void _fillMaxFromGroup() {
+    final g = _group;
     if (g == null) return;
     final mark = widget.store.gradingForViewedYear.fullMarkForSubject(g.gradeLevel, g.subjectId);
     maxScore.text = trimNum(mark);
   }
 
-  void _selectGroup(String? id) {
+  /// كل تبديل في التسلسل يعيد بناء كشف الطلاب.
+  void _rebuildRoster() {
+    for (final c in [...scores.values, ...notes.values]) {
+      c.dispose();
+    }
+    scores.clear();
+    notes.clear();
+    for (final s in _roster) {
+      scores[s.id] = TextEditingController();
+      notes[s.id] = TextEditingController();
+    }
+    if (_group != null) _fillMaxFromGroup();
+    rosterVisible = kListPageSize;
+  }
+
+  void _selectGrade(String? value) {
     setState(() {
-      groupId = id ?? '';
+      grade = value ?? '';
       error = null;
       errors.reset();
-      for (final c in [...scores.values, ...notes.values]) {
-        c.dispose();
+      // صفٌّ بشعبة واحدة يختارها تلقائياً، وكذلك المادة الوحيدة
+      final rooms = _rooms;
+      roomId = rooms.length == 1 ? rooms.first.id : '';
+      final subs = _subjects;
+      subjectId = roomId.isNotEmpty && subs.length == 1 ? subs.first.id : '';
+      _rebuildRoster();
+    });
+  }
+
+  void _selectRoom(String? value) {
+    setState(() {
+      roomId = value ?? '';
+      error = null;
+      errors.reset();
+      final subs = _subjects;
+      if (!subs.any((x) => x.id == subjectId)) {
+        subjectId = subs.length == 1 ? subs.first.id : '';
       }
-      scores.clear();
-      notes.clear();
-      for (final s in widget.store.studentsInGroup(groupId)) {
-        scores[s.id] = TextEditingController();
-        notes[s.id] = TextEditingController();
-      }
-      if (groupId.isNotEmpty) _fillMaxFromGroup(groupId);
+      _rebuildRoster();
+    });
+  }
+
+  void _selectSubject(String? value) {
+    setState(() {
+      subjectId = value ?? '';
+      error = null;
+      errors.reset();
+      _rebuildRoster();
     });
   }
 
   void _selectComponent(String? id) {
     setState(() {
       componentId = id ?? '';
-      if (componentId.isEmpty) return;
-      final c = widget.store.gradingScheme.of(term).where((x) => x.id == componentId).firstOrNull;
+      final c = _components.where((x) => x.id == componentId).firstOrNull;
       if (c == null) return;
-      if (title.text.trim().isEmpty) title.text = c.name;
-      if (errors.clear('title')) {
-        // أُزيل خطأ العنوان إن وُجد
-      }
+      title.text = c.name;
+      final g = _group;
+      final full = g == null
+          ? defaultFullMark
+          : widget.store.gradingForViewedYear.fullMarkForSubject(g.gradeLevel, g.subjectId);
+      final mark = componentMark(c, full);
+      maxScore.text = trimNum(mark > 0 ? mark : full);
+      type = evaluationTypeForComponent(c.name);
+      errors.clear('title');
     });
   }
 
@@ -106,16 +209,47 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
       firstDate: DateTime(current.year - 5),
       lastDate: DateTime(current.year + 5),
     );
-    if (picked != null) setState(() => date = isoDate(picked));
+    if (picked == null) return;
+    setState(() {
+      date = isoDate(picked);
+      if (_isWeighted) {
+        term = termForDate(date, term2Start: widget.store.viewedAcademicYear?.term2Start);
+        if (!_components.any((c) => c.id == componentId)) {
+          componentId = '';
+          title.clear();
+        }
+      }
+    });
   }
+
+  bool get _isWeighted => widget.store.gradingForViewedYear.mode != 'monthly';
+
+  GradingScheme get _recordingScheme {
+    if (!_isWeighted) return GradingScheme.empty;
+    final g = _group;
+    if (g == null) {
+      return withDefaultTerms(widget.store.gradingForViewedYear.scheme);
+    }
+    return widget.store.gradingForViewedYear.recordingSchemeForSubject(g.gradeLevel, g.subjectId);
+  }
+
+  List<GradingComponent> get _components => term.isEmpty ? const [] : _recordingScheme.of(term);
+
+  bool get _useComponents => term.isNotEmpty && _components.isNotEmpty;
 
   void _save() {
     final parsedMax = double.tryParse(maxScore.text.trim());
     final max = parsedMax ?? 100;
 
     errors.reset();
-    errors.check('group', groupId.isEmpty, 'يرجى اختيار الشعبة');
-    errors.check('title', title.text.trim().isEmpty, 'يرجى تحديد عنوان التقييم');
+    errors.check('grade', grade.isEmpty, 'يرجى اختيار الصف');
+    errors.check('room', roomId.isEmpty, 'يرجى اختيار الشعبة');
+    errors.check('subject', subjectId.isEmpty || groupId.isEmpty, 'يرجى اختيار المادة');
+    errors.check(
+      'title',
+      _useComponents ? componentId.isEmpty : title.text.trim().isEmpty,
+      _useComponents ? 'يرجى اختيار التقييم' : 'يرجى تحديد عنوان التقييم',
+    );
     errors.check('max', parsedMax == null || parsedMax <= 0, 'درجة قصوى غير صالحة');
 
     final entered = <String, double>{};
@@ -147,13 +281,15 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
       final saved = widget.store.saveEvaluationBatch(
         groupId: groupId,
         title: title.text,
-        type: type,
+        type: componentId.isNotEmpty
+            ? evaluationTypeForComponent(_components.where((c) => c.id == componentId).firstOrNull?.name)
+            : type,
         maxScore: max,
         evaluationDate: date,
         scores: entered,
         notes: {for (final e in notes.entries) e.key: e.value.text},
-        term: componentId.isEmpty ? '' : term,
-        componentId: componentId,
+        term: term,
+        componentId: term.isNotEmpty && componentId.isNotEmpty ? componentId : '',
       );
       if (mounted) Navigator.pop(context, saved);
     } on StoreException catch (e) {
@@ -166,144 +302,100 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
   @override
   Widget build(BuildContext context) {
     final store = widget.store;
-    final roster = store.studentsInGroup(groupId);
-    final hasScheme = !store.gradingScheme.isEmpty;
-    final showType = !hasScheme || term.isEmpty;
+    // طلاب الشعبة المختارة وحدهم — لا كل مسجّلي المجموعة
+    final roster = _roster;
+    final visibleRoster = listPage(roster, rosterVisible);
+    final useComponents = _useComponents;
+    final fullMark = _group == null
+        ? defaultFullMark
+        : store.gradingForViewedYear.fullMarkForSubject(_group!.gradeLevel, _group!.subjectId);
 
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.9,
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        titleSpacing: 0,
+        title: const Text(
+          'رصد درجات',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'رصد درجات جديدة',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                        color: AppColors.heading,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        children: [
+                  FieldLabel('الصف', key: errors.key('grade'), requiredField: true),
+                  AppDropdown<String>(
+                    value: grade.isEmpty ? null : grade,
+                    hint: 'اختر الصف',
+                    errorText: errors['grade'],
+                    items: [
+                      for (final g in {
+                        for (final r in store.roomsInViewedYear)
+                          if (r.gradeLevel.trim().isNotEmpty) r.gradeLevel.trim(),
+                      }.toList()
+                        ..sort())
+                        DropdownMenuItem(value: g, child: Text(g, overflow: TextOverflow.ellipsis)),
+                    ],
+                    onChanged: _selectGrade,
+                  ),
+                  const SizedBox(height: 10),
+                  FieldLabel('الشعبة', key: errors.key('room'), requiredField: true),
+                  AppDropdown<String>(
+                    value: roomId.isEmpty ? null : roomId,
+                    hint: grade.isEmpty ? 'اختر الصف أولاً' : 'اختر الشعبة',
+                    errorText: errors['room'],
+                    items: [
+                      for (final r in _rooms)
+                        DropdownMenuItem(value: r.id, child: Text(r.name, overflow: TextOverflow.ellipsis)),
+                    ],
+                    onChanged: (v) {
+                      if (grade.isNotEmpty) _selectRoom(v);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  FieldLabel('المادة', key: errors.key('subject'), requiredField: true),
+                  AppDropdown<String>(
+                    value: subjectId.isEmpty ? null : subjectId,
+                    hint: roomId.isEmpty ? 'اختر الشعبة أولاً' : 'اختر المادة',
+                    errorText: errors['subject'],
+                    items: [
+                      for (final sub in _subjects)
+                        DropdownMenuItem(value: sub.id, child: Text(sub.name, overflow: TextOverflow.ellipsis)),
+                    ],
+                    onChanged: (v) {
+                      if (roomId.isNotEmpty) _selectSubject(v);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  FieldLabel('عنوان التقييم / الاختبار', key: errors.key('title'), requiredField: true),
+                  if (useComponents)
+                    AppDropdown<String>(
+                      value: componentId.isEmpty ? null : componentId,
+                      hint: 'اختر التقييم',
+                      errorText: errors['title'],
+                      items: [
+                        for (final c in _components)
+                          DropdownMenuItem(
+                            value: c.id,
+                            child: Text(
+                              '${c.name} (من ${trimNum(componentMark(c, fullMark))})',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: _selectComponent,
+                    )
+                  else
+                    TextField(
+                      controller: title,
+                      onChanged: (_) {
+                        if (errors.clear('title')) setState(() {});
+                      },
+                      decoration: InputDecoration(
+                        hintText: 'مثلاً: اختبار الشهر الأول، نشاط عملي...',
+                        errorText: errors['title'],
                       ),
                     ),
-                  ),
-                  SquareIconButton(
-                    icon: Icons.close,
-                    onTap: () => Navigator.pop(context, 0),
-                  ),
-                ],
-              ),
-            ),
-            Flexible(
-              child: ListView(
-                shrinkWrap: true,
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                children: [
-                  FieldLabel('الشعبة المستهدفة', key: errors.key('group'), requiredField: true),
-                  AppDropdown<String>(
-                    value: groupId.isEmpty ? null : groupId,
-                    hint: 'اختر الشعبة',
-                    errorText: errors['group'],
-                    items: [
-                      for (final g in store.groupsInViewedYear)
-                        DropdownMenuItem(
-                          value: g.id,
-                          child: Text(
-                            [
-                              store.subjectName(g.subjectId),
-                              if (g.gradeLevel.trim().isNotEmpty) g.gradeLevel.trim(),
-                            ].where((x) => x.isNotEmpty && x != 'غير محدد').join(' — '),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                    ],
-                    onChanged: _selectGroup,
-                  ),
                   const SizedBox(height: 10),
-
-                  FieldLabel('عنوان التقييم / الاختبار', key: errors.key('title'), requiredField: true),
-                  TextField(
-                    controller: title,
-                    onChanged: (_) {
-                      if (errors.clear('title')) setState(() {});
-                    },
-                    decoration: InputDecoration(
-                      hintText: 'مثلاً: اختبار الشهر الأول، نشاط عملي...',
-                      errorText: errors['title'],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-
-                  if (showType) ...[
-                    const FieldLabel('نوع التقييم'),
-                    AppDropdown<String>(
-                      value: type,
-                      items: [
-                        for (final e in evaluationTypeNames.entries)
-                          DropdownMenuItem(value: e.key, child: Text(e.value)),
-                      ],
-                      onChanged: (v) => setState(() => type = v ?? type),
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-
-                  // مخطط العلامات إن عُرّف: الفصل ومكوّنه يجعلان للتقييم وزناً
-                  // في المعدل بدل متوسط بسيط يساوي بين النهائي والواجب
-                  if (hasScheme) ...[
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const FieldLabel('الفصل الدراسي'),
-                              AppDropdown<String>(
-                                value: term,
-                                items: [
-                                  const DropdownMenuItem(value: '', child: Text('بدون ربط بفصل')),
-                                  for (final e in gradingTermLabels.entries)
-                                    DropdownMenuItem(value: e.key, child: Text(e.value)),
-                                ],
-                                onChanged: (v) => setState(() {
-                                  term = v ?? '';
-                                  componentId = '';
-                                }),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const FieldLabel('مكوّن العلامة'),
-                              AppDropdown<String>(
-                                value: componentId.isEmpty ? null : componentId,
-                                hint: 'بلا وزن',
-                                items: [
-                                  for (final c in store.gradingScheme.of(term))
-                                    DropdownMenuItem(value: c.id, child: Text('${c.name} (${trimNum(c.weight)}%)')),
-                                ],
-                                onChanged: term.isEmpty
-                                    ? (_) {}
-                                    : _selectComponent,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -311,16 +403,19 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            FieldLabel('الدرجة القصوى', key: errors.key('max')),
-                            TextField(
-                              controller: maxScore,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              style: const TextStyle(fontFamily: 'monospace'),
-                              onChanged: (_) => setState(() => errors.clear('max')),
-                              decoration: InputDecoration(errorText: errors['max']),
+                            const FieldLabel('الفصل'),
+                            AppDropdown<String>(
+                              value: term.isEmpty && _isWeighted ? 'term_1' : term,
+                              items: [
+                                if (!_isWeighted) const DropdownMenuItem(value: '', child: Text('بدون فصل')),
+                                for (final e in gradingTermLabels.entries)
+                                  DropdownMenuItem(value: e.key, child: Text(e.value)),
+                              ],
+                              onChanged: (v) => setState(() {
+                                term = v ?? '';
+                                componentId = '';
+                                title.clear();
+                              }),
                             ),
                           ],
                         ),
@@ -336,9 +431,7 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                               child: Container(
                                 height: 42,
                                 alignment: AlignmentDirectional.centerStart,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 10),
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(Corner.box),
                                   color: AppColors.bg,
@@ -346,19 +439,9 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                                 ),
                                 child: Row(
                                   children: [
-                                    const Icon(
-                                      Icons.event,
-                                      size: 15,
-                                      color: AppColors.muted,
-                                    ),
+                                    const Icon(Icons.event, size: 15, color: AppColors.muted),
                                     const SizedBox(width: 6),
-                                    Text(
-                                      date,
-                                      style: const TextStyle(
-                                        fontSize: 12.5,
-                                        fontFamily: 'monospace',
-                                      ),
-                                    ),
+                                    Text(date, style: const TextStyle(fontSize: 12.5, fontFamily: 'monospace')),
                                   ],
                                 ),
                               ),
@@ -368,102 +451,132 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 10),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (!useComponents) ...[
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const FieldLabel('نوع التقييم'),
+                              AppDropdown<String>(
+                                value: type,
+                                items: [
+                                  for (final e in evaluationTypeNames.entries)
+                                    DropdownMenuItem(value: e.key, child: Text(e.value)),
+                                ],
+                                onChanged: (v) => setState(() => type = v ?? type),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            FieldLabel('الدرجة القصوى', key: errors.key('max')),
+                            TextField(
+                              controller: maxScore,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              style: const TextStyle(fontFamily: 'monospace'),
+                              onChanged: (_) => setState(() => errors.clear('max')),
+                              decoration: InputDecoration(errorText: errors['max']),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 12),
-
                   if (groupId.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 12),
-                      child: EmptyState(
-                        message: 'اختر الشعبة لعرض طلابها ورصد درجاتهم.',
-                      ),
+                      child: EmptyState(message: 'اختر الصف والشعبة والمادة لعرض الطلاب'),
                     )
                   else if (roster.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 12),
-                      child: EmptyState(
-                        message: 'لا يوجد طلاب مسجلون في هذه الشعبة.',
-                      ),
+                      child: EmptyState(message: 'لا يوجد طلاب مسجلون في هذه الشعبة.'),
                     )
                   else ...[
-                    KeyedSubtree(key: errors.key('scores'), child: SectionTitle('طلاب الشعبة (${roster.length})')),
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 6),
-                      child: Text(
-                        'الفارغ لا يُحفظ صفراً.',
-                        style: TextStyle(
-                          color: AppColors.faint,
-                          fontSize: 10.5,
-                        ),
+                    KeyedSubtree(
+                      key: errors.key('scores'),
+                      child: Row(
+                        children: [
+                          Expanded(child: SectionTitle('الطلاب (${roster.length})')),
+                          const Text(
+                            'اترك الدرجة فارغة لمن لم يختبر',
+                            style: TextStyle(color: AppColors.faint, fontSize: 10.5),
+                          ),
+                        ],
                       ),
                     ),
+                    const SizedBox(height: 6),
                     if (errors['scores'] != null)
                       Padding(padding: const EdgeInsets.only(bottom: 8), child: FormErrorText(errors['scores'])),
-                    for (final s in roster)
+                    for (final s in visibleRoster)
                       Padding(
                         key: errors.key('score:${s.id}'),
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
                           children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    s.fullName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 12),
-                                  ),
+                            Expanded(
+                              child: Text(
+                                s.fullName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: AppColors.text,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
                                 ),
-                                const SizedBox(width: 8),
-                                SizedBox(
-                                  width: 90,
-                                  child: TextField(
-                                    controller: scores[s.id],
-                                    onChanged: (_) {
-                                      if (errors.clear('score:${s.id}')) setState(() {});
-                                    },
-                                    keyboardType:
-                                        const TextInputType.numberWithOptions(
-                                          decimal: true,
-                                        ),
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      fontFamily: 'monospace',
-                                      fontSize: 12.5,
-                                    ),
-                                    decoration: InputDecoration(
-                                      isDense: true,
-                                      errorText: errors['score:${s.id}'],
-                                      hintText:
-                                          'من ${trimNum(double.tryParse(maxScore.text.trim()) ?? 100)}',
-                                      hintStyle: const TextStyle(
-                                        fontSize: 11,
-                                        color: AppColors.faint,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
-                            const SizedBox(height: 4),
-                            TextField(
-                              controller: notes[s.id],
-                              style: const TextStyle(fontSize: 11.5),
-                              decoration: const InputDecoration(
-                                isDense: true,
-                                hintText: 'ملاحظات (اختياري)',
-                                hintStyle: TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.faint,
+                            const SizedBox(width: 8),
+                            SizedBox(
+                              width: 88,
+                              child: TextField(
+                                controller: scores[s.id],
+                                onChanged: (_) {
+                                  if (errors.clear('score:${s.id}')) setState(() {});
+                                },
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5),
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  errorText: errors['score:${s.id}'],
+                                  hintText: 'من ${trimNum(double.tryParse(maxScore.text.trim()) ?? 100)}',
+                                  hintStyle: const TextStyle(fontSize: 11, color: AppColors.faint),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            SizedBox(
+                              width: 110,
+                              child: TextField(
+                                controller: notes[s.id],
+                                style: const TextStyle(fontSize: 11.5),
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  hintText: 'ملاحظات (اختياري)',
+                                  hintStyle: TextStyle(fontSize: 11, color: AppColors.faint),
                                 ),
                               ),
                             ),
                           ],
                         ),
                       ),
+                    LoadMoreButton(
+                      shown: visibleRoster.length,
+                      total: roster.length,
+                      onMore: () => setState(() => rosterVisible += kListPageSize),
+                    ),
                   ],
-
                   if (error != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
@@ -477,37 +590,12 @@ class _EvaluationSheetState extends State<_EvaluationSheet> {
                       ),
                     ),
                 ],
-              ),
-            ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                12,
-                16,
-                14 + MediaQuery.paddingOf(context).bottom,
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: GhostButton(
-                      label: 'إلغاء',
-                      onPressed: () => Navigator.pop(context, 0),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: PrimaryButton(
-                      label: submitting ? 'جاري الحفظ...' : 'حفظ الدرجات',
-                      color: AppColors.navy,
-                      busy: submitting,
-                      onPressed: submitting ? null : _save,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+      ),
+      bottomNavigationBar: FormActionBar(
+        label: submitting ? 'جاري الحفظ...' : 'حفظ الدرجات',
+        busy: submitting,
+        onSave: submitting ? null : _save,
+        onCancel: () => Navigator.pop(context, 0),
       ),
     );
   }

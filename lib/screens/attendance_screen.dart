@@ -5,9 +5,10 @@ import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
+import '../widgets/list_paging.dart';
+import '../widgets/attendance_view.dart';
 import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
-import 'attendance_period_sheet.dart';
 import 'attendance_print.dart';
 
 /// كشف الحضور — مطابق لعرض الهاتف في `Attendance.tsx`:
@@ -60,6 +61,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   int weekOffset = 0;
   String? grade;
   String? ownerId;
+  int visibleCount = kListPageSize;
+
+  /// فُتحت الشاشة من صفحة صف: الصف معروف في العنوان فلا تُعرض قوائم الاختيار.
+  bool get _fixedClass => widget.initialOwnerId?.trim().isNotEmpty ?? false;
 
   @override
   void initState() {
@@ -70,6 +75,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   /// اليوم المعروض في الشريط. يبدأ من اليوم الحالي.
   String selectedDate = isoDate(DateTime.now());
+
+  void _resetPage() => visibleCount = kListPageSize;
 
   @override
   Widget build(BuildContext context) {
@@ -98,6 +105,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         final list = room == null
             ? <Student>[]
             : store.attendanceRosterOf(room, weekDates: week.map((d) => d.dateStr));
+        final visible = listPage(list, visibleCount);
         final ownerName = room?.name ?? '';
 
         // اليوم المختار داخل الأسبوع المعروض، وإلا اليوم الحالي أو أوله
@@ -120,6 +128,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           }
         }
 
+        // اكتمال رصد كل يوم في الشريط: نقطة خضراء للمكتمل وبلون المأذون للجزئي
+        final dayProgress = <String, double>{
+          for (final d in week)
+            d.dateStr: list.isEmpty
+                ? 0
+                : list.where((s) => store.attendanceInSession(currentOwner, s.id, d.dateStr) != null).length /
+                    list.length,
+        };
+
         return ThumbActionLayer(
           action: canEdit
               ? ThumbAction(
@@ -136,21 +153,26 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               : null,
           child: Column(
             children: [
-              _pickers(
+              _controls(
                 store,
                 grades: grades,
                 currentGrade: currentGrade,
                 owners: owners,
                 currentOwner: currentOwner,
-                onCalendar: () => _openPeriod(
-                  store,
-                  ownerId: currentOwner,
-                  ownerName: ownerName,
-                  students: list,
-                  day: day.date,
-                ),
+                week: week,
+                day: day,
+                dayProgress: dayProgress,
+                onPrint: currentOwner.isEmpty
+                    ? null
+                    : () => printWeeklyAttendance(
+                          context,
+                          store: store,
+                          title: ownerName,
+                          week: week,
+                          students: list,
+                          ownerId: currentOwner,
+                        ),
               ),
-              _dayStrip(week, day),
               Expanded(
                 child: list.isEmpty
                     ? const Padding(
@@ -160,61 +182,66 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     // بناء كسول: صفّ واحد لكل ما يظهر على الشاشة فقط.
                     // بناء القائمة كاملةً كان يُنشئ مئات الصفوف عند كل تعديل،
                     // فيتأخر التبديل بين الأيام والصفوف تأخراً محسوساً.
-                    : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(14, 0, 14, thumbActionClearance),
-                        itemCount: list.length + 2,
-                        itemBuilder: (context, i) {
-                          if (i == 0) {
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: _dayStats(
-                                list: list,
+                    : CustomScrollView(
+                        slivers: [
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+                            sliver: SliverToBoxAdapter(
+                              child: AttendanceDaySummary(
+                                day: day,
+                                total: list.length,
                                 present: present,
                                 absent: absent,
                                 excused: excused,
                                 unmarked: unmarked,
                               ),
-                            );
-                          }
-                          if (i == list.length + 1) {
-                            return Padding(
-                              padding: const EdgeInsets.only(top: 5),
-                              child: GhostButton(
-                                label: 'تنزيل كشف الأسبوع',
-                                icon: Icons.print_outlined,
-                                onPressed: currentOwner.isEmpty
-                                    ? null
-                                    : () => printWeeklyAttendance(
-                                          context,
-                                          store: store,
-                                          title: ownerName,
-                                          week: week,
-                                          students: list,
-                                          ownerId: currentOwner,
-                                        ),
+                            ),
+                          ),
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
+                            // كشف واحد بإطار رفيع، صف لكل طالب — كما في صفحة الصف
+                            sliver: DecoratedSliver(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(Corner.card),
+                                border: Border.all(color: AppColors.line),
+                                boxShadow: cardShadow,
                               ),
-                            );
-                          }
-                          final student = list[i - 1];
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 7),
-                            child: _StudentRow(
-                              // مفتاح يشمل اليوم والحالة: الصف يُعاد بناؤه عند
-                              // تغيّر رصده وحده، لا مع كل إخطار من المخزن
-                              key: ValueKey('${student.id}|${day.dateStr}'),
-                              index: i,
-                              student: student,
-                              status: store.attendanceInSession(currentOwner, student.id, day.dateStr),
-                              canEdit: canEdit,
-                              onSet: (status) => store.setAttendance(
-                                student.id,
-                                day.dateStr,
-                                status,
-                                ownerId: currentOwner,
+                              sliver: SliverList.builder(
+                                itemCount: visible.length,
+                                itemBuilder: (context, i) {
+                                  final student = visible[i];
+                                  return AttendanceStudentRow(
+                                    // مفتاح يشمل اليوم والحالة: الصف يُعاد بناؤه عند
+                                    // تغيّر رصده وحده، لا مع كل إخطار من المخزن
+                                    key: ValueKey('${student.id}|${day.dateStr}'),
+                                    index: i + 1,
+                                    student: student,
+                                    status: store.attendanceInSession(currentOwner, student.id, day.dateStr),
+                                    canEdit: canEdit,
+                                    last: i == visible.length - 1,
+                                    onSet: (status) => store.setAttendance(
+                                      student.id,
+                                      day.dateStr,
+                                      status,
+                                      ownerId: currentOwner,
+                                    ),
+                                  );
+                                },
                               ),
                             ),
-                          );
-                        },
+                          ),
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(14, 4, 14, thumbActionClearance),
+                              child: LoadMoreButton(
+                                shown: visible.length,
+                                total: list.length,
+                                onMore: () => setState(() => visibleCount += kListPageSize),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
               ),
             ],
@@ -224,446 +251,319 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     );
   }
 
-  /// أسبوع الشريط هو أسبوع اليوم المختار: الانتقال إلى تاريخ بعيد يحرّك الشريط
-  /// معه بدل أن يبقى على أسبوع اليوم فلا يظهر ما اختير.
-  static int _weekOffsetOf(DateTime target) {
-    int saturdayOf(DateTime d) =>
-        dateOnly(d).subtract(Duration(days: (d.weekday + 1) % 7)).millisecondsSinceEpoch ~/ 86400000;
-    return ((saturdayOf(target) - saturdayOf(DateTime.now())) / 7).round();
-  }
-
-  Future<void> _openPeriod(
-    AppStore store, {
-    required String ownerId,
-    required String ownerName,
-    required List<Student> students,
-    required DateTime day,
-  }) async {
-    final jumpTo = await showAttendancePeriodSheet(
-      context,
-      store: store,
-      ownerId: ownerId,
-      ownerName: ownerName,
-      students: students,
-      initialDate: day,
+  /// ورقة إعدادات الحضور: تنزيل كشف الأسبوع.
+  Future<void> _openSettings(VoidCallback? onPrint) {
+    return showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+              child: Text('إعدادات الحضور', style: AppText.cardTitle),
+            ),
+            const Divider(height: 1, color: AppColors.line),
+            ListTile(
+              enabled: onPrint != null,
+              leading: Icon(Icons.print_outlined, color: AppColors.heading, size: 20),
+              title: const Text('تنزيل كشف الأسبوع', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+              onTap: () {
+                Navigator.pop(ctx);
+                onPrint?.call();
+              },
+            ),
+            const SizedBox(height: 6),
+          ],
+        ),
+      ),
     );
-    if (jumpTo == null || !mounted) return;
-    setState(() {
-      weekOffset = _weekOffsetOf(jumpTo);
-      selectedDate = isoDate(jumpTo);
-    });
   }
 
-  Widget _pickers(
+  /// لوحة التحكم العليا — عنصر واحد لكل سؤال: أي صف، أي أسبوع، أي يوم.
+  /// اختيار الصف زرّ واحد بدل قائمتين، والأدوات أيقونات بلا إطارات.
+  Widget _controls(
     AppStore store, {
     required List<String> grades,
     required String? currentGrade,
     required List<Classroom> owners,
     required String currentOwner,
-    required VoidCallback onCalendar,
+    required List<SchoolDay> week,
+    required SchoolDay day,
+    required Map<String, double> dayProgress,
+    required VoidCallback? onPrint,
   }) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-      child: Row(
-        children: [
-          ...[
-            Expanded(
-              child: AppDropdown<String>(
-                value: currentGrade,
-                hint: 'المرحلة',
-                items: grades.map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
-                onChanged: (v) => setState(() {
-                  grade = v;
-                  ownerId = null;
-                }),
-              ),
-            ),
-            const SizedBox(width: 8),
-          ],
-          Expanded(
-            child: AppDropdown<String>(
-              value: currentOwner.isEmpty ? null : currentOwner,
-              hint: 'الشعبة',
-              items: [
-                for (final o in owners) DropdownMenuItem(value: o.id, child: Text(o.name)),
-              ],
-              onChanged: (v) => setState(() => ownerId = v),
-            ),
-          ),
-          const SizedBox(width: 8),
-          // التقويم: حضور فترة كاملة، والانتقال إلى يوم خارج الأسبوع المعروض
-          PressableScale(
-            onTap: onCalendar,
-            child: Container(
-              width: 40,
-              height: 40,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(Corner.box),
-                border: Border.all(color: AppColors.line),
-              ),
-              child: Icon(Icons.calendar_month_outlined, size: 18, color: AppColors.heading),
-            ),
-          ),
-        ],
+    final room = store.roomById(currentOwner);
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: AppColors.line)),
       ),
-    );
-  }
-
-  /// شريط أيام الأسبوع المدرسي مع التنقّل بين الأسابيع.
-  Widget _dayStrip(List<SchoolDay> week, SchoolDay selected) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _weekArrow(Icons.chevron_left, () => setState(() => weekOffset--)),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Row(
-              children: [
-                for (final d in week)
+          Row(
+            children: [
+              Expanded(
+                // الصف حين يُختار من هنا، ومدى الأسبوع حين يكون الصف معروفاً
+                child: _fixedClass
+                    ? Text(
+                        _weekRange(week),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: AppText.family,
+                          color: AppColors.heading,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      )
+                    : _ClassButton(
+                        label: room == null
+                            ? 'اختر الصف'
+                            : [if (room.gradeLevel.trim().isNotEmpty) room.gradeLevel.trim(), room.name]
+                                .join('  ·  '),
+                        onTap: () =>
+                            _pickClass(store, grades: grades, currentGrade: currentGrade, currentOwner: currentOwner),
+                      ),
+              ),
+              const SizedBox(width: 6),
+              _plainIcon(Icons.settings_outlined, () => _openSettings(onPrint), tooltip: 'إعدادات الحضور'),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // الأيام بين سهمي الأسبوع، والسحب عليها ينقل بين الأسابيع أيضاً
+          GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onHorizontalDragEnd: (d) {
+              final v = d.primaryVelocity ?? 0;
+              if (v.abs() < 200) return;
+              // في العربية الأسبوع التالي على اليسار: السحب لليمين يُظهره
+              setState(() => weekOffset += v > 0 ? 1 : -1);
+            },
+            child: Directionality(
+              // الأسهم باتجاه ثابت (يسار/يمين الشاشة) لا ينعكس مع العربية
+              textDirection: TextDirection.ltr,
+              child: Row(
+                children: [
+                  _plainIcon(Icons.chevron_left, () => setState(() => weekOffset--), tooltip: 'الأسبوع السابق'),
                   Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 2),
-                      child: _DayChip(
-                        day: d,
-                        selected: d.dateStr == selected.dateStr,
-                        onTap: () => setState(() => selectedDate = d.dateStr),
+                    child: Directionality(
+                      textDirection: TextDirection.rtl,
+                      child: Row(
+                        children: [
+                          for (var i = 0; i < week.length; i++)
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 2),
+                                child: AttendanceDayChip(
+                                  day: week[i],
+                                  selected: week[i].dateStr == day.dateStr,
+                                  progress: dayProgress[week[i].dateStr] ?? 0,
+                                  onTap: () => setState(() => selectedDate = week[i].dateStr),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ),
-              ],
+                  _plainIcon(Icons.chevron_right, () => setState(() => weekOffset++), tooltip: 'الأسبوع التالي'),
+                ],
+              ),
             ),
           ),
-          const SizedBox(width: 6),
-          _weekArrow(Icons.chevron_right, () => setState(() => weekOffset++)),
         ],
       ),
     );
   }
 
-  Widget _weekArrow(IconData icon, VoidCallback onTap) {
+  /// مدى الأسبوع: «19 – 24 سبتمبر»، والشهران معاً إن تفرّق الأسبوع بينهما.
+  String _weekRange(List<SchoolDay> week) {
+    final first = week.first.date, last = week.last.date;
+    return first.month == last.month
+        ? '${first.day} – ${last.day} ${gregorianMonths[last.month - 1]}'
+        : '${first.day} ${gregorianMonths[first.month - 1]} – ${last.day} ${gregorianMonths[last.month - 1]}';
+  }
+
+  /// اختيار الصف في ورقة: المراحل شرائح، وشعب المرحلة المختارة تحتها.
+  Future<void> _pickClass(
+    AppStore store, {
+    required List<String> grades,
+    required String? currentGrade,
+    required String currentOwner,
+  }) async {
+    final picked = await showModalBottomSheet<(String?, String)>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
+      builder: (ctx) {
+        var g = currentGrade;
+        return StatefulBuilder(
+          builder: (ctx, setSheet) {
+            final rooms = store.roomsInViewedYear.where((r) => g == null || r.gradeLevel == g).toList();
+            return SafeArea(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.75),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+                      child: Text('المرحلة', style: AppText.cardTitle),
+                    ),
+                    SizedBox(
+                      height: 34,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        children: [
+                          for (final x in grades)
+                            Padding(
+                              padding: const EdgeInsetsDirectional.only(end: 6),
+                              child: _SheetPill(
+                                label: x,
+                                selected: x == g,
+                                onTap: () => setSheet(() => g = x),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 14, 16, 4),
+                      child: Divider(height: 1, color: AppColors.line),
+                    ),
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.only(bottom: 8),
+                        children: [
+                          for (final r in rooms)
+                            ListTile(
+                              dense: true,
+                              leading: Icon(
+                                r.id == currentOwner ? Icons.radio_button_checked : Icons.radio_button_off,
+                                size: 20,
+                                color: r.id == currentOwner ? AppColors.amber : AppColors.faint,
+                              ),
+                              title: Text(
+                                r.name,
+                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
+                              ),
+                              trailing: Text(
+                                '${store.studentsOf(r).length}',
+                                style: const TextStyle(color: AppColors.faint, fontSize: 12, fontWeight: FontWeight.w700),
+                              ),
+                              onTap: () => Navigator.pop(ctx, (g, r.id)),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      grade = picked.$1;
+      ownerId = picked.$2;
+      _resetPage();
+    });
+  }
+
+  Widget _plainIcon(IconData icon, VoidCallback? onTap, {required String tooltip}) {
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onTap,
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+      icon: Icon(icon, size: 20, color: onTap == null ? AppColors.faint : AppColors.muted),
+    );
+  }
+}
+
+/// زرّ الصف: المرحلة والشعبة في سطر، وسهم يفتح ورقة الاختيار.
+class _ClassButton extends StatelessWidget {
+  const _ClassButton({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
     return PressableScale(
       onTap: onTap,
       child: Container(
-        width: 32,
-        height: 46,
-        alignment: Alignment.center,
+        height: 40,
+        padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 8, 0),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(Corner.box),
-          border: Border.all(color: AppColors.line),
+          color: AppColors.sunken,
+          borderRadius: BorderRadius.circular(Corner.field),
         ),
-        child: Icon(icon, size: 17, color: AppColors.heading),
-      ),
-    );
-  }
-
-  Widget _dayStats({
-    required List<Student> list,
-    required int present,
-    required int absent,
-    required int excused,
-    required int unmarked,
-  }) {
-    return AppCard(
-      padding: const EdgeInsets.all(13),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // اليوم واسمه ظاهران في شريط الأيام فوقه: تكرارهما هنا حشو
-                Wrap(
-                  spacing: 9,
-                  runSpacing: 3,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text(
-                      'الطلاب: ${list.length}',
-                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
-                    ),
-                    _stat('حاضر', present, AppColors.success),
-                    _stat('غائب', absent, AppColors.danger),
-                    _stat('مأذون', excused, const Color(0xFFD97706)),
-                    if (unmarked > 0) _stat('غير مرصود', unmarked, AppColors.faint),
-                  ],
+        child: Row(
+          children: [
+            Icon(Icons.school_outlined, size: 18, color: AppColors.amberDark),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: AppText.family,
+                  color: AppColors.heading,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w800,
                 ),
-              ],
+              ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// نص واحد لا صفّ: الصفّ لا ينكسر، فكان يطفح بجوار زر «الكل حاضر» على
-  /// الشاشات الضيقة. العدد يبقى متحرّكاً داخل النص.
-  Widget _stat(String label, int value, Color color) {
-    return Text.rich(
-      TextSpan(
-        style: TextStyle(color: color, fontSize: 11.5, fontWeight: FontWeight.w800),
-        children: [
-          TextSpan(text: '• $label: '),
-          WidgetSpan(
-            alignment: PlaceholderAlignment.baseline,
-            baseline: TextBaseline.alphabetic,
-            child: AnimatedCount(
-              value,
-              duration: const Duration(milliseconds: 400),
-              style: TextStyle(color: color, fontSize: 11.5, fontWeight: FontWeight.w900),
-            ),
-          ),
-        ],
+            const Icon(Icons.expand_more_rounded, size: 20, color: AppColors.muted),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _DayChip extends StatelessWidget {
-  const _DayChip({required this.day, required this.selected, required this.onTap});
+class _SheetPill extends StatelessWidget {
+  const _SheetPill({required this.label, required this.selected, required this.onTap});
 
-  final SchoolDay day;
+  final String label;
   final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final Color bg, fg, border;
-    if (selected) {
-      bg = AppColors.amber;
-      fg = Colors.white;
-      border = AppColors.amber;
-    } else if (day.isToday) {
-      bg = AppColors.amberSoft;
-      fg = AppColors.amber;
-      border = AppColors.amberBorder;
-    } else {
-      bg = Colors.white;
-      fg = const Color(0xFF475569);
-      border = AppColors.line;
-    }
-
     return PressableScale(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        height: 46,
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(Corner.box),
-          border: Border.all(color: border),
-          boxShadow: selected
-              ? [BoxShadow(color: AppColors.amber.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 2))]
-              : null,
+          color: selected ? AppColors.amber : Colors.white,
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(color: selected ? AppColors.amber : AppColors.lineStrong),
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              day.dayName,
-              maxLines: 1,
-              style: TextStyle(
-                fontSize: 10,
-                height: 1.15,
-                color: fg,
-                fontWeight: selected || day.isToday ? FontWeight.w800 : FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              day.shortDate,
-              style: TextStyle(fontSize: 9, height: 1, color: fg.withValues(alpha: 0.85)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// صف الطالب: رقمه واسمه وهاتفه، وثلاثة أزرار رصد للّمس — حاضر وغائب ومأذون
-/// كما في «أزرار الرصد اللمسية» في Attendance.tsx.
-class _StudentRow extends StatefulWidget {
-  const _StudentRow({
-    super.key,
-    required this.index,
-    required this.student,
-    required this.status,
-    required this.canEdit,
-    required this.onSet,
-  });
-
-  final int index;
-  final Student student;
-  final String? status;
-  final bool canEdit;
-  final ValueChanged<String?> onSet;
-
-  @override
-  State<_StudentRow> createState() => _StudentRowState();
-}
-
-class _StudentRowState extends State<_StudentRow> {
-  /// الحالة المعروضة. تُضبط فور اللمس ثم يلحق بها المخزن، فلا ينتظر المستخدم
-  /// دورة إخطار وإعادة بناء ليرى أن ضغطته وصلت.
-  String? _shown;
-
-  String? get _status => _shown ?? widget.status;
-
-  @override
-  void didUpdateWidget(covariant _StudentRow old) {
-    super.didUpdateWidget(old);
-    // وصلت حالة المخزن: نتخلّى عن الحالة المتفائلة
-    if (old.status != widget.status) _shown = null;
-  }
-
-  void _tap(String? next) {
-    setState(() => _shown = next);
-    widget.onSet(next);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final student = widget.student;
-    final index = widget.index;
-    final canEdit = widget.canEdit;
-    final status = _status;
-    final present = status == 'present';
-    final absent = status == 'absent';
-    final excused = status == 'excused';
-
-    final info = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          children: [
-            Text(
-              '#$index',
-              style: const TextStyle(color: AppColors.faint, fontSize: 10, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                student.fullName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
-              ),
-            ),
-          ],
-        ),
-        if (student.phone.trim().isNotEmpty) ...[
-          const SizedBox(height: 3),
-          Text(
-            student.phone,
-            textDirection: TextDirection.ltr,
-            style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
-          ),
-        ],
-      ],
-    );
-
-    final buttons = [
-      _markButton(
-        label: 'حاضر',
-        on: present,
-        fg: AppColors.success,
-        softBg: const Color(0xFFF0FDF4),
-        softBorder: AppColors.successBorder,
-        onTap: canEdit ? () => _tap(present ? null : 'present') : null,
-      ),
-      _markButton(
-        label: 'غائب',
-        on: absent,
-        fg: AppColors.danger,
-        softBg: const Color(0xFFFEF2F2),
-        softBorder: AppColors.dangerBorder,
-        onTap: canEdit ? () => _tap(absent ? null : 'absent') : null,
-      ),
-      _markButton(
-        label: 'مأذون',
-        on: excused,
-        fg: const Color(0xFFD97706),
-        softBg: const Color(0xFFFFFBEB),
-        softBorder: const Color(0xFFFDE68A),
-        onTap: canEdit ? () => _tap(excused ? null : 'excused') : null,
-      ),
-    ];
-
-    return AppCard(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      child: LayoutBuilder(
-        builder: (context, box) {
-          // ثلاثة أزرار بجوار الاسم لا تفي بها شاشة هاتف: عند 360 بكسل كان
-          // الاسم يُسحق إلى 15 بكسل ويطفح رقم المقعد. دون 340 تنزل الأزرار
-          // تحته بعرض كامل، فتبقى أهداف اللمس كبيرة ويُقرأ الاسم كاملاً.
-          if (box.maxWidth < 340) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                info,
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    for (var i = 0; i < buttons.length; i++) ...[
-                      if (i > 0) const SizedBox(width: 6),
-                      Expanded(child: buttons[i]),
-                    ],
-                  ],
-                ),
-              ],
-            );
-          }
-          return Row(
-            children: [
-              Expanded(child: info),
-              const SizedBox(width: 8),
-              for (var i = 0; i < buttons.length; i++) ...[
-                if (i > 0) const SizedBox(width: 6),
-                buttons[i],
-              ],
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _markButton({
-    required String label,
-    required bool on,
-    required Color fg,
-    required Color softBg,
-    required Color softBorder,
-    VoidCallback? onTap,
-  }) {
-    return PressableScale(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        height: 34,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: on ? fg : softBg,
-          borderRadius: BorderRadius.circular(Corner.box),
-          border: Border.all(color: on ? fg : softBorder),
-          boxShadow: on ? [BoxShadow(color: fg.withValues(alpha: 0.3), blurRadius: 7, offset: const Offset(0, 2))] : null,
-        ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            label,
-            maxLines: 1,
-            style: TextStyle(color: on ? Colors.white : fg, fontSize: 12, fontWeight: FontWeight.w800),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontFamily: AppText.family,
+            color: selected ? Colors.white : AppColors.heading,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),

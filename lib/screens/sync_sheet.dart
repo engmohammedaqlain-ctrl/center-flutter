@@ -473,6 +473,14 @@ class _SyncConfirmState extends State<_SyncConfirm> {
     }
 
     lastPullAt = await sync.getLastPullAt();
+    if (!await widget.store.checkOnline()) {
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        result = SyncResult(success: false, message: 'لا يوجد اتصال بالإنترنت');
+      });
+      return;
+    }
     final remote = await sync.checkRemoteChanges();
     if (!mounted) return;
     setState(() {
@@ -489,6 +497,15 @@ class _SyncConfirmState extends State<_SyncConfirm> {
       result = null;
     });
     HapticFeedback.mediumImpact();
+
+    if (!await widget.store.checkOnline()) {
+      if (!mounted) return;
+      setState(() {
+        running = false;
+        result = SyncResult(success: false, message: 'لا يوجد اتصال بالإنترنت');
+      });
+      return;
+    }
 
     final res = _push ? await widget.store.sync.push() : await widget.store.sync.pull();
     if (!mounted) return;

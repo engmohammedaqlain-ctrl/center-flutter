@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -6,10 +8,19 @@ import 'package:uuid/uuid.dart';
 import '../data/grading.dart';
 import '../data/institution.dart';
 import '../data/portal.dart';
-import '../data/printing.dart';
+import '../data/portal_offline.dart';
+import '../data/store.dart';
+import '../data/academic_matching.dart';
+import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
+import '../widgets/attendance_view.dart';
+import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
+import '../widgets/list_paging.dart';
+import 'portal_chrome.dart';
+
+export 'student_portal_screen.dart' show StudentPortalScreen;
 
 // بوابتا المعلم والطالب — المقابل لـ `pages/TeacherPortal.tsx` و`pages/StudentPortal.tsx`.
 //
@@ -17,6 +28,106 @@ import '../widgets/widgets.dart';
 // المنشأة وزر خروج وردي، ثم شريط تبويبات بخط سفلي بلون التمييز، ثم بطاقات
 // بيضاء بزوايا مستديرة على خلفية رمادية فاتحة. الألوان الثابتة هي درجات
 // Tailwind نفسها المكتوبة في الصفحتين.
+
+/// أسماء الشعب الظاهرة للمعلم: من حقل الطالب ومن أسماء القاعات فقط.
+/// لا نأخذ اسم المجموعة/المادة — كان يظهر «اللغة الإنجليزية - أ. …» كشعبة بالخطأ.
+List<String> _teacherSectionsFor(Iterable<TeacherClass> classes, {String grade = ''}) {
+  final g = grade.trim();
+  final list = <String>{};
+  for (final c in classes) {
+    if (g.isNotEmpty && c.group.gradeLevel.trim().isNotEmpty && c.group.gradeLevel.trim() != g) {
+      continue;
+    }
+    for (final s in c.students) {
+      final sec = s.section.trim();
+      if (_isTeacherSectionLabel(sec, subjectName: c.subjectName)) list.add(sec);
+    }
+    for (final part in c.roomName.split(RegExp(r'\s*[،,]\s*'))) {
+      final name = part.trim();
+      if (_isTeacherSectionLabel(name, subjectName: c.subjectName)) list.add(name);
+    }
+  }
+  return list.toList()..sort();
+}
+
+/// هل النص اسم شعبة لا اسم مادة/معلم؟
+bool _isTeacherSectionLabel(String name, {String subjectName = ''}) {
+  final n = name.trim();
+  if (n.isEmpty) return false;
+  // «مادة - أ. فلان» أو شرطة طويلة — ليست شعبة
+  if (n.contains(' - ') || n.contains(' — ') || n.contains(' – ')) return false;
+  final sub = subjectName.trim();
+  if (sub.isNotEmpty) {
+    if (n == sub || n.startsWith('$sub ') || n.startsWith('$sub-') || n.startsWith('$sub—')) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/// هل النصّان يشيران لنفس الشعبة بعد نزع بادئة «شعبة» والأقواس.
+bool _sameSectionSoft(String? a, String? b) {
+  if (isSameSectionName(a, b)) return true;
+  final soft = RegExp(r'^شعبة\s*[\(]?\s*');
+  String strip(String? v) =>
+      (v ?? '').trim().replaceFirst(soft, '').replaceAll(RegExp(r'[)]'), '').trim();
+  final x = strip(a);
+  final y = strip(b);
+  return x.isNotEmpty && normalizeAcademicText(x) == normalizeAcademicText(y);
+}
+
+/// هل الطالب ضمن الشعبة المختارة (تطابق حقل شعبته مع الاختيار).
+bool _teacherStudentInSection(Student s, String section, String grade) {
+  final want = section.trim();
+  if (want.isEmpty) return true;
+  final have = s.section.trim();
+  if (have.isEmpty) return false;
+  if (have == want) return true;
+  if (belongsToSection(
+        section: have,
+        grade: s.gradeLevel,
+        roomName: want,
+        roomGrade: grade,
+      )) {
+    return true;
+  }
+  return _sameSectionSoft(have, want);
+}
+
+/// قاعات المجموعة كما تُعرض في [TeacherClass.roomName].
+List<String> _teacherRoomParts(TeacherClass c) => [
+      for (final part in c.roomName.split(RegExp(r'\s*[،,]\s*')))
+        if (_isTeacherSectionLabel(part.trim(), subjectName: c.subjectName)) part.trim(),
+    ];
+
+/// طلاب الرصد لهذه المادة والشعبة.
+///
+/// - بلا اختيار شعبة → كل مسجّلي المادة.
+/// - قاعة واحدة للمادة ولا حقول شعب عند الطلاب → كل المسجّلين.
+/// - عدة شعب أو طلاب لهم حقل شعبة → طلاب الشعبة المختارة فقط.
+List<Student> _teacherRosterStudents(
+  TeacherClass? current, {
+  required String sectionFilter,
+  required String grade,
+}) {
+  final all = current?.students ?? const <Student>[];
+  if (current == null || all.isEmpty) return all;
+  final sec = sectionFilter.trim();
+  if (sec.isEmpty) return all;
+
+  final rooms = _teacherRoomParts(current);
+  final hasStudentSections = all.any((s) => s.section.trim().isNotEmpty);
+  // مادة بقاعة واحدة وطلاب بلا حقل شعبة: لا معنى للتصفية
+  if (rooms.length <= 1 && !hasStudentSections) return all;
+
+  final g = grade.trim().isNotEmpty ? grade.trim() : current.group.gradeLevel;
+  return all.where((s) {
+    final have = s.section.trim();
+    // بلا شعبة مسجّلة: يظهر فقط إن كانت المادة بقاعة واحدة (شعبته هي قاعة المادة)
+    if (have.isEmpty) return rooms.length <= 1;
+    return _teacherStudentInSection(s, sec, g);
+  }).toList();
+}
 
 // ═══ ألوان البوابة (درجات Tailwind في الصفحتين) ═════════════════════════════
 
@@ -42,27 +153,14 @@ abstract final class _C {
   static const rose200 = Color(0xFFFECDD3);
   static const rose600 = Color(0xFFE11D48);
   static const rose700 = Color(0xFFBE123C);
-  static const rose800 = Color(0xFF9F1239);
 
-  static const amber50 = Color(0xFFFFFBEB);
   static const amber100 = Color(0xFFFEF3C7);
   static const amber200 = Color(0xFFFDE68A);
   static const amber600 = Color(0xFFD97706);
   static const amber700 = Color(0xFFB45309);
-  static const amber800 = Color(0xFF92400E);
 
-  static const green = Color(0xFF16A34A);
-  static const greenDark = Color(0xFF15803D);
-  static const greenSoft = Color(0xFFF0FDF4);
-  static const greenBorder = Color(0xFFBBF7D0);
-  static const greenText = Color(0xFF166534);
 
-  static const red = Color(0xFFDC2626);
-  static const redDark = Color(0xFFB91C1C);
-  static const redSoft = Color(0xFFFEF2F2);
-  static const redBorder = Color(0xFFFECACA);
 
-  static const orangeDark = Color(0xFFB45309);
 
   static const blue50 = Color(0xFFEFF6FF);
   static const blue600 = Color(0xFF2563EB);
@@ -91,158 +189,8 @@ TextStyle _base(BuildContext context) => Theme.of(context).textTheme.bodyMedium 
 
 // ═══ عناصر مشتركة ═══════════════════════════════════════════════════════════
 
-/// الترويسة: الشعار واسم المنشأة و«المعلم: …» مقابل زر خروج وردي.
-class _PortalHeader extends StatelessWidget {
-  const _PortalHeader({
-    required this.branding,
-    required this.role,
-    required this.userName,
-    required this.onExit,
-  });
 
-  final PortalBranding branding;
-  final String role;
-  final String userName;
-  final VoidCallback onExit;
 
-  @override
-  Widget build(BuildContext context) {
-    final brand = _Brand(branding);
-    return Container(
-      padding: EdgeInsets.fromLTRB(16, MediaQuery.paddingOf(context).top + 12, 16, 12),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: _C.line)),
-      ),
-      child: Row(
-        children: [
-          InstitutionBadge(logo: branding.logo, size: 40, radius: Corner.card, onDark: false),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  branding.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: brand.primary, fontSize: 12.5, fontWeight: FontWeight.w900, height: 1.25),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '$role: $userName',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: _C.muted, fontSize: 11, fontWeight: FontWeight.w700),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Material(
-            color: _C.rose50,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(Corner.field),
-              side: const BorderSide(color: _C.rose200),
-            ),
-            child: InkWell(
-              onTap: onExit,
-              borderRadius: BorderRadius.circular(Corner.field),
-              child: const SizedBox(
-                height: 32,
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 10),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.logout, size: 14, color: _C.rose700),
-                      SizedBox(width: 6),
-                      Text('خروج', style: TextStyle(color: _C.rose700, fontSize: 12, fontWeight: FontWeight.w800)),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TabSpec {
-  const _TabSpec(this.id, this.label, this.icon);
-  final String id;
-  final String label;
-  final IconData icon;
-}
-
-/// شريط التبويبات: أعمدة متساوية، والنشط نصه وخطه السفلي بلون التمييز.
-class _PortalTabs extends StatelessWidget {
-  const _PortalTabs({
-    required this.tabs,
-    required this.active,
-    required this.color,
-    required this.onSelect,
-    this.compact = false,
-  });
-
-  final List<_TabSpec> tabs;
-  final String active;
-  final Color color;
-  final ValueChanged<String> onSelect;
-
-  /// خمسة تبويبات للطالب: خط أصغر كي تتسع في عرض الهاتف.
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.fromLTRB(compact ? 8 : 16, compact ? 4 : 8, compact ? 8 : 16, 0),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: _C.line)),
-      ),
-      child: Row(
-        children: [
-          for (final t in tabs)
-            Expanded(
-              child: InkWell(
-                onTap: () => onSelect(t.id),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 9),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(color: t.id == active ? color : Colors.transparent, width: 2),
-                    ),
-                  ),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(t.icon, size: compact ? 14 : 16, color: t.id == active ? color : _C.muted),
-                        SizedBox(width: compact ? 4 : 6),
-                        Text(
-                          t.label,
-                          style: TextStyle(
-                            color: t.id == active ? color : _C.muted,
-                            fontSize: compact ? 11 : 12,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
 
 /// بطاقة البوابة: بيضاء بإطار رفيع وزوايا 16.
 class _Card extends StatelessWidget {
@@ -281,15 +229,24 @@ class _Label extends StatelessWidget {
 }
 
 class _Select<T> extends StatelessWidget {
-  const _Select({required this.value, required this.items, required this.onChanged, this.height = 40});
+  const _Select({
+    required this.value,
+    required this.items,
+    required this.onChanged,
+    this.height = 40,
+    this.hint,
+  });
 
   final T? value;
   final List<DropdownMenuItem<T>> items;
   final ValueChanged<T?>? onChanged;
   final double height;
+  final String? hint;
 
   @override
   Widget build(BuildContext context) {
+    // إن كانت القيمة الحالية ليست ضمن العناصر، لا نمرّرها — وإلا يتعطل الزر.
+    final safeValue = value != null && items.any((i) => i.value == value) ? value : null;
     return Container(
       height: height,
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -300,7 +257,13 @@ class _Select<T> extends StatelessWidget {
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<T>(
-          value: value,
+          value: safeValue,
+          hint: hint == null
+              ? null
+              : Text(
+                  hint!,
+                  style: _base(context).copyWith(color: _C.faint, fontSize: 12, fontWeight: FontWeight.w600),
+                ),
           items: items,
           onChanged: onChanged,
           isExpanded: true,
@@ -544,109 +507,14 @@ class _Soft extends StatelessWidget {
   }
 }
 
-/// مربع إحصاء ملوّن: العنوان فوق الرقم.
-class _Stat extends StatelessWidget {
-  const _Stat({
-    required this.label,
-    required this.value,
-    required this.bg,
-    required this.border,
-    required this.labelColor,
-    required this.valueColor,
-    this.radius = Corner.card,
-  });
-
-  final String label;
-  final String value;
-  final Color bg;
-  final Color border;
-  final Color labelColor;
-  final Color valueColor;
-  final double radius;
-
-  factory _Stat.plain(String label, String value, {Color valueColor = _C.navy, double radius = Corner.card}) => _Stat(
-        label: label,
-        value: value,
-        bg: Colors.white,
-        border: _C.line,
-        labelColor: _C.muted,
-        valueColor: valueColor,
-        radius: radius,
-      );
-
-  factory _Stat.green(String label, String value, {double radius = Corner.card}) => _Stat(
-        label: label,
-        value: value,
-        bg: _C.emerald50,
-        border: _C.emerald200,
-        labelColor: _C.emerald800,
-        valueColor: _C.emerald700,
-        radius: radius,
-      );
-
-  factory _Stat.red(String label, String value, {double radius = Corner.card}) => _Stat(
-        label: label,
-        value: value,
-        bg: _C.rose50,
-        border: _C.rose200,
-        labelColor: _C.rose800,
-        valueColor: _C.rose700,
-        radius: radius,
-      );
-
-  factory _Stat.amber(String label, String value, {double radius = Corner.card}) => _Stat(
-        label: label,
-        value: value,
-        bg: _C.amber50,
-        border: _C.amber200,
-        labelColor: _C.amber800,
-        valueColor: _C.amber700,
-        radius: radius,
-      );
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 9),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: border),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: labelColor, fontSize: 10.5, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 3),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              value,
-              style: TextStyle(color: valueColor, fontSize: 14, fontWeight: FontWeight.w900, fontFamily: _mono),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// شارة حالة بإطار.
 class _Badge extends StatelessWidget {
-  const _Badge(this.text, {required this.fg, required this.bg, this.border, this.icon, this.radius = Corner.chip, this.maxLines = 1});
+  const _Badge(this.text, {required this.fg, required this.bg, this.radius = Corner.chip});
 
   final String text;
   final Color fg;
   final Color bg;
-  final Color? border;
-  final IconData? icon;
   final double radius;
-  final int maxLines;
 
   @override
   Widget build(BuildContext context) {
@@ -655,16 +523,14 @@ class _Badge extends StatelessWidget {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(radius),
-        border: border == null ? null : Border.all(color: border!),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon != null) ...[Icon(icon, size: 12, color: fg), const SizedBox(width: 4)],
           Flexible(
             child: Text(
               text,
-              maxLines: maxLines,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(color: fg, fontSize: 10.5, fontWeight: FontWeight.w800),
             ),
@@ -886,18 +752,6 @@ Widget _errorView(String message, VoidCallback retry) => Center(
       ),
     );
 
-/// شريط حفظ ثابت أسفل الشاشة — «حفظ كشف الحضور الآن».
-Widget _saveBar(BuildContext context, {required String label, required Color color, required bool busy, required VoidCallback onTap}) {
-  return Container(
-    padding: EdgeInsets.fromLTRB(16, 10, 16, 10 + MediaQuery.paddingOf(context).bottom),
-    decoration: const BoxDecoration(
-      color: _C.bg,
-      border: Border(top: BorderSide(color: _C.line)),
-    ),
-    child: _Solid(label: busy ? 'جارِ الحفظ...' : label, icon: Icons.check, color: color, busy: busy, onTap: onTap),
-  );
-}
-
 // ══════════════════════════════════════════════════════════════════════════
 // بوابة المعلم
 // ══════════════════════════════════════════════════════════════════════════
@@ -908,6 +762,7 @@ class TeacherPortalScreen extends StatefulWidget {
     required this.user,
     required this.onExit,
     this.service = const PortalService(),
+    this.offline,
   });
 
   final PortalUser user;
@@ -916,13 +771,14 @@ class TeacherPortalScreen extends StatefulWidget {
   /// قابلة للاستبدال في الاختبارات كي لا تمسّ السحابة.
   final PortalService service;
 
+  /// مخزن العمل بلا إنترنت. يُستبدل في الاختبارات بقاعدة في الذاكرة.
+  final PortalOffline? offline;
+
   @override
   State<TeacherPortalScreen> createState() => _TeacherPortalScreenState();
 }
 
 class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
-  static const _uuid = Uuid();
-
   TeacherPortalData? data;
   String? error;
   bool loading = true;
@@ -930,27 +786,35 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   String tab = 'attendance';
   String groupId = '';
 
+  /// الرصد يمشي كالويب: الصف ← الشعبة ← المادة، لا اختيار مجموعة مباشرةً.
+  String gradeFilter = '';
+  String sectionFilter = '';
+
   // رصد الحضور
   String sessionDate = isoDate(DateTime.now());
-  Map<String, String> marks = {};
+
+  /// الأسبوع المعروض في شريط الأيام — صفر أسبوع اليوم.
+  int weekOffset = 0;
+  /// رصد الأسبوع المعروض: `{تاريخ: {معرّف الطالب: الحالة}}`.
+  Map<String, Map<String, String>> weekMarks = {};
   bool savingAttendance = false;
-  bool attendanceSaved = false;
   int _marksToken = 0;
 
-  // رصد الدرجات
-  final evalTitle = TextEditingController();
-  final evalMax = TextEditingController(text: '100');
-  String evalType = 'quiz';
-  String evalDate = isoDate(DateTime.now());
-  /// ربط بمخطط العلامات: فارغ = بلا فصل؛ `term_1` / `term_2` مع مكوّن اختياري.
-  String evalTerm = '';
-  String evalComponentId = '';
-  String? titleError;
-  final _scores = <String, TextEditingController>{};
-  final _notes = <String, TextEditingController>{};
-  bool savingEvaluations = false;
-  bool evaluationsSaved = false;
+  /// دفع الرصد إلى السحابة بعد سكون اللمس: المعلم يضغط عدة طلاب متتابعين
+  /// فيُرفع كشف اليوم مرة واحدة لا مرة لكل ضغطة.
+  Timer? _pushTimer;
+
+  /// كشف ينتظر دفعه بعد السكون — يُرفع فوراً إن غادر المعلم الشاشة قبله.
+  ({String roomId, String date, Map<String, String> statuses})? _duePush;
+
+  Map<String, String> get marks => weekMarks[sessionDate] ?? const {};
+
+  // رصد الدرجات — النموذج في صفحة منفصلة؛ هنا السجل فقط
   List<StudentEvaluation> recent = const [];
+  /// أسماء طلاب السجل — من كشف الشعب + جلب ناقص من السحابة.
+  Map<String, String> evalNames = const {};
+  int recentVisible = kListPageSize;
+  int attendanceVisible = kListPageSize;
 
   // المودل
   String term = 'term_1';
@@ -961,7 +825,94 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
 
   PortalService get _service => widget.service;
 
+  late final PortalOffline _offline = widget.offline ?? PortalOffline(AppStore.instance.db);
+
+  /// آخر محاولة اتصال فشلت: البوابة تعمل من نسخة الجهاز.
+  bool offline = false;
+
+  /// رصدٌ محفوظ على الجهاز ينتظر الرفع.
+  int pendingOps = 0;
+
   TeacherClass? get _current => data?.classes.where((c) => c.group.id == groupId).firstOrNull;
+
+  List<TeacherClass> get _classes => data?.classes ?? const <TeacherClass>[];
+
+  /// صفوف المعلم: مراحل شعبه المسندة.
+  List<String> _grades() {
+    final list = <String>{
+      for (final c in _classes)
+        if (c.group.gradeLevel.trim().isNotEmpty) c.group.gradeLevel.trim(),
+    }.toList()
+      ..sort();
+    return list;
+  }
+
+  /// شعب الصف المختار — لالمادة الحالية إن وُجدت، وإلا لكل مواد الصف.
+  List<String> _sections([String? grade]) {
+    final g = grade ?? gradeFilter;
+    final current = _current;
+    if (current != null) {
+      final local = _teacherSectionsFor([current], grade: g);
+      if (local.isNotEmpty) return local;
+    }
+    return _teacherSectionsFor(_classes, grade: g);
+  }
+
+  /// مواد المعلم في الصف المختار — الشعبة تُصفّي الطلاب لا قائمة المواد.
+  List<TeacherClass> _subjectClasses({String? grade, String? section}) {
+    final g = (grade ?? gradeFilter).trim();
+    return [
+      for (final c in _classes)
+        if (g.isEmpty || c.group.gradeLevel.trim().isEmpty || c.group.gradeLevel.trim() == g) c,
+    ];
+  }
+
+  /// طلاب الرصد: طلاب الشعبة المختارة من مسجّلي المادة.
+  List<Student> _students() {
+    // شعبة مطلوبة متى وُجدت شعب: كشف الحضور لشعبة واحدة لا لصفّ بأكمله
+    if (sectionFilter.trim().isEmpty && _sections().isNotEmpty) return const [];
+    return _teacherRosterStudents(_current, sectionFilter: sectionFilter, grade: gradeFilter);
+  }
+
+  /// اختيار الصف: يعيد ضبط الشعبة والمادة تحته، ويختار الوحيد منهما تلقائياً.
+  void _selectGrade(String value) {
+    setState(() {
+      gradeFilter = value;
+      sectionFilter = '';
+      final sections = _sections();
+      if (sections.isNotEmpty) sectionFilter = sections.first;
+      final subjects = _subjectClasses();
+      groupId = subjects.length == 1 ? subjects.first.group.id : '';
+      _resetRecording();
+    });
+    if (groupId.isNotEmpty) {
+      _loadMarks();
+      _loadEvaluations();
+    }
+  }
+
+  void _selectSection(String value) {
+    setState(() {
+      sectionFilter = value;
+      final subjects = _subjectClasses();
+      if (!subjects.any((c) => c.group.id == groupId)) {
+        groupId = subjects.length == 1 ? subjects.first.group.id : '';
+      }
+      _resetRecording();
+    });
+    if (groupId.isNotEmpty) {
+      _loadMarks();
+      _loadEvaluations();
+    }
+  }
+
+  /// تفريغ رصد الحضور عند تبديل النطاق.
+  void _resetRecording() {
+    weekMarks = {};
+    attendanceVisible = kListPageSize;
+    recentVisible = kListPageSize;
+    evalNames = const {};
+  }
 
   @override
   void initState() {
@@ -971,12 +922,30 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
 
   @override
   void dispose() {
-    evalTitle.dispose();
-    evalMax.dispose();
-    for (final c in [..._scores.values, ..._notes.values]) {
-      c.dispose();
-    }
+    // رصدٌ لُمس قبل أقلّ من ثانية ثم أُغلقت الشاشة: يُرسل أو يُصفّ، ولا يضيع
+    final due = _duePush;
+    _pushTimer?.cancel();
+    if (due != null) unawaited(_pushOnLeave(due));
     super.dispose();
+  }
+
+  /// رفع أخير بلا لمس الحالة — الشاشة لم تعد موجودة.
+  Future<void> _pushOnLeave(({String roomId, String date, Map<String, String> statuses}) due) async {
+    try {
+      await _service.saveAttendance(
+        roomId: due.roomId,
+        date: due.date,
+        statuses: due.statuses,
+        teacher: widget.user,
+      );
+    } catch (_) {
+      await _offline.queueAttendance(
+        roomId: due.roomId,
+        date: due.date,
+        statuses: due.statuses,
+        userId: widget.user.id,
+      );
+    }
   }
 
   Future<void> _load() async {
@@ -986,22 +955,103 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     });
     try {
       final result = await _service.teacherData(widget.user);
+      await _offline.saveTeacherData(result);
       if (!mounted) return;
       setState(() {
         data = result;
         loading = false;
+        offline = false;
         if (result.classes.every((c) => c.group.id != groupId)) {
           groupId = result.classes.isEmpty ? '' : result.classes.first.group.id;
         }
+        final current = result.classes.where((c) => c.group.id == groupId).firstOrNull;
+        if (current != null) {
+          final g = current.group.gradeLevel.trim();
+          if (g.isNotEmpty) gradeFilter = g;
+          // الحضور يُرصد لشعبة بعينها: صفٌّ بلا شعبة يخلط كشفين في واحد،
+          // فتُختار الأولى دائماً ويبدّلها المعلم من زر الصف
+          final secs = {
+            for (final s in current.students)
+              if (s.section.trim().isNotEmpty) s.section.trim(),
+          }.toList()
+            ..sort();
+          if (secs.isNotEmpty) sectionFilter = secs.first;
+        }
       });
       _refreshTab();
+      _flushPending();
     } catch (_) {
+      // سقط الاتصال: تُفتح البوابة من نسخة الجهاز كما تفعل واجهة الإدارة
+      final cached = _offline.loadTeacherData();
       if (!mounted) return;
+      if (cached == null) {
+        setState(() {
+          loading = false;
+          error = 'تعذّر الاتصال بالسحابة.';
+        });
+        return;
+      }
       setState(() {
+        data = cached;
         loading = false;
-        error = 'تعذّر الاتصال بالسحابة.';
+        offline = true;
+        pendingOps = _offline.pendingCountOf(widget.user.id);
+        if (cached.classes.every((c) => c.group.id != groupId)) {
+          groupId = cached.classes.isEmpty ? '' : cached.classes.first.group.id;
+        }
+        final current = cached.classes.where((c) => c.group.id == groupId).firstOrNull;
+        final g = current?.group.gradeLevel.trim() ?? '';
+        if (g.isNotEmpty) gradeFilter = g;
+        // شعبة أيضاً، كفرع الاتصال: بلا شعبة لا يُعرض كشف
+        final secs = {
+          for (final s in current?.students ?? const <Student>[])
+            if (s.section.trim().isNotEmpty) s.section.trim(),
+        }.toList()
+          ..sort();
+        if (secs.isNotEmpty) sectionFilter = secs.first;
       });
+      _refreshTab();
     }
+  }
+
+  /// عملية كتابة تعمل بلا شبكة: تُجرَّب على السحابة، وإن تعذّرت تُصفّ لتُرفع
+  /// لاحقاً. في الحالتين يُطبَّق أثرها على الشاشة، فلا ينتظر المعلم شبكة.
+  Future<bool> _writeOrQueue(Future<void> Function() send, Map<String, dynamic> op) async {
+    try {
+      await send();
+      if (mounted) setState(() => offline = false);
+      return true;
+    } catch (_) {
+      await _offline.queueOp(op, widget.user.id);
+      if (mounted) {
+        setState(() {
+          offline = true;
+          pendingOps = _offline.pendingCountOf(widget.user.id);
+        });
+      }
+      return false;
+    }
+  }
+
+  /// ضغطة زر المزامنة: يرفع ما انتظر ثم يجلب من جديد.
+  Future<void> _syncNow() async {
+    await _flushPending();
+    if (!mounted) return;
+    await _load();
+    if (!mounted) return;
+    if (!offline && pendingOps == 0) showAppSnack(context, 'كل شيء محدّث');
+  }
+
+  /// رفع ما رُصد بلا شبكة. يُستدعى كلما ثبت أن السحابة في المتناول.
+  Future<void> _flushPending() async {
+    if (_offline.pendingCountOf(widget.user.id) == 0) {
+      if (mounted && pendingOps != 0) setState(() => pendingOps = 0);
+      return;
+    }
+    final sent = await _offline.flush(_service, widget.user);
+    if (!mounted) return;
+    setState(() => pendingOps = _offline.pendingCountOf(widget.user.id));
+    if (sent > 0) showAppSnack(context, 'تمت مزامنة $sent من الرصد المحفوظ');
   }
 
   /// بيانات التبويب المفتوح للشعبة المختارة.
@@ -1020,12 +1070,20 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     if (id == null || id == groupId) return;
     setState(() {
       groupId = id;
-      marks = {};
+      final current = data?.classes.where((c) => c.group.id == id).firstOrNull;
+      if (current != null) {
+        final g = current.group.gradeLevel.trim();
+        if (g.isNotEmpty) gradeFilter = g;
+      }
+      sectionFilter = '';
+      final secs = _sections();
+      if (secs.isNotEmpty) sectionFilter = secs.first;
+      weekMarks = {};
       recent = const [];
+      evalNames = const {};
       sections = const [];
-      // علامة المادة الكاملة تُملأ تلقائياً — بوابة المعلم بلا تخصيص لكل مادة
-      evalMax.text = trimNum(defaultFullMark);
-      evalComponentId = '';
+      recentVisible = kListPageSize;
+      attendanceVisible = kListPageSize;
     });
     _refreshTab();
   }
@@ -1042,50 +1100,99 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     final c = _current;
     if (c == null) return;
     final token = ++_marksToken;
-    setState(() {
-      marks = {};
-      attendanceSaved = false;
-    });
+    final roomId = _attendanceRoomId;
+    final dates = [for (final d in _schoolWeek(weekOffset)) d.dateStr];
+
+    // النسخة المحفوظة تُعرض فوراً، ثم تُصحَّح من السحابة إن وصلت
+    final cached = _offline.loadWeekMarks(roomId, dates);
+    setState(() => weekMarks = cached);
+
     try {
-      final saved = await _service.sessionAttendance(c.group.id, sessionDate);
+      final saved = await _service.weekAttendance(roomId, dates);
+      if (!mounted || token != _marksToken) return;
+      for (final e in saved.entries) {
+        await _offline.saveMarks(roomId, e.key, e.value);
+      }
       if (!mounted || token != _marksToken) return;
       setState(() {
-        marks = {
-          for (final e in saved.entries)
-            e.key: const {'present', 'absent', 'excused'}.contains(e.value.status) ? e.value.status : 'absent',
-        };
+        weekMarks = {...cached, ...saved};
+        offline = false;
       });
+      _flushPending();
     } catch (_) {
-      // بلا اتصال: يبقى الكشف على افتراضه «حاضر»
+      if (!mounted || token != _marksToken) return;
+      setState(() {
+        offline = true;
+        pendingOps = _offline.pendingCountOf(widget.user.id);
+      });
     }
   }
 
-  String _statusOf(String studentId) => marks[studentId] ?? 'present';
-
-  Future<void> _saveAttendance() async {
+  /// الشعبة التي يُرصد حضورها: المختارة، أو شعبة المادة الوحيدة، وإلا قاعة
+  /// المجموعة نفسها — بيانات قديمة بلا قائمة شعب تبقى قابلة للرصد.
+  String get _attendanceRoomId {
     final c = _current;
-    if (c == null || savingAttendance) return;
-    setState(() => savingAttendance = true);
+    if (c == null) return '';
+    final matched = c.roomIdFor(sectionFilter);
+    return matched.isNotEmpty ? matched : c.group.roomId;
+  }
+
+  /// `null` تعني «لم يُرصد بعد» — لا «حاضر». الإدارة تعدّها كذلك، وعدّها حضوراً
+  /// يجعل صفاً لم يُفتح كشفه يبدو مكتمل الحضور.
+  String? _statusOf(String studentId) => marks[studentId];
+
+  /// لمسة الرصد تُثبت فوراً: على الجهاز أولاً، ثم إلى السحابة بعد سكون قصير.
+  /// لا زر حفظ — كشف الإدارة يعمل هكذا، والزر يوهم المعلم أن رصده لم يُسجَّل.
+  void _setMark(String studentId, String? status) {
+    final roomId = _attendanceRoomId;
+    if (roomId.isEmpty) return;
+
+    final day = {...marks};
+    if (status == null) {
+      day.remove(studentId);
+    } else {
+      day[studentId] = status;
+    }
+    setState(() => weekMarks = {...weekMarks, sessionDate: day});
+
+    unawaited(_offline.saveMarks(roomId, sessionDate, day));
+    _duePush = (roomId: roomId, date: sessionDate, statuses: day);
+    _pushTimer?.cancel();
+    _pushTimer = Timer(const Duration(milliseconds: 700), () {
+      _duePush = null;
+      _pushMarks(roomId, sessionDate, day);
+    });
+  }
+
+  /// رفع كشف يوم. ما لم يُرفع يُصفّ ليُرسل حين يعود الاتصال.
+  Future<void> _pushMarks(String roomId, String date, Map<String, String> statuses) async {
+    if (mounted) setState(() => savingAttendance = true);
     try {
-      // يُحفظ ما يراه المعلم: من لم يُلمس يُرصد «حاضراً» كما يظهر
       await _service.saveAttendance(
-        group: c.group,
-        date: sessionDate,
-        statuses: {for (final s in c.students) s.id: _statusOf(s.id)},
+        roomId: roomId,
+        date: date,
+        statuses: statuses,
         teacher: widget.user,
       );
       if (!mounted) return;
       setState(() {
         savingAttendance = false;
-        attendanceSaved = true;
+        offline = false;
       });
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted) setState(() => attendanceSaved = false);
-      });
+      _flushPending();
     } catch (_) {
+      await _offline.queueAttendance(
+        roomId: roomId,
+        date: date,
+        statuses: statuses,
+        userId: widget.user.id,
+      );
       if (!mounted) return;
-      setState(() => savingAttendance = false);
-      showAppSnack(context, 'تعذّر حفظ كشف الحضور', error: true);
+      setState(() {
+        savingAttendance = false;
+        offline = true;
+        pendingOps = _offline.pendingCountOf(widget.user.id);
+      });
     }
   }
 
@@ -1096,93 +1203,48 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     if (c == null) return;
     try {
       final list = await _service.groupEvaluations(c.group.id);
-      if (mounted && _current?.group.id == c.group.id) setState(() => recent = list);
-    } catch (_) {
-      // السجل السابق عرض إضافي؛ غيابه لا يمنع الرصد
-    }
-  }
+      await _offline.saveEvaluations(c.group.id, list);
+      if (!mounted || _current?.group.id != c.group.id) return;
 
-  TextEditingController _ctl(Map<String, TextEditingController> map, String id) =>
-      map.putIfAbsent(id, () => TextEditingController());
-
-  double get _maxScore {
-    final v = double.tryParse(evalMax.text.trim());
-    return v == null || v <= 0 ? 100 : v;
-  }
-
-  void _fullScoreForAll() {
-    final full = trimNum(_maxScore);
-    setState(() {
-      for (final s in _current?.students ?? const <Student>[]) {
-        _ctl(_scores, s.id).text = full;
+      // أسماء من كل شعب المعلم أولاً، ثم جلب الناقص من السحابة
+      final names = <String, String>{
+        for (final cl in _classes)
+          for (final s in cl.students)
+            if (s.fullName.trim().isNotEmpty) s.id: s.fullName.trim(),
+      };
+      final missing = {
+        for (final e in list)
+          if (e.studentId.isNotEmpty && !names.containsKey(e.studentId)) e.studentId,
+      };
+      if (missing.isNotEmpty) {
+        try {
+          names.addAll(await _service.studentNamesByIds(missing, widget.user.tenantId));
+        } catch (_) {}
       }
-    });
-  }
-
-  Future<void> _saveEvaluations() async {
-    final c = _current;
-    if (c == null || savingEvaluations) return;
-
-    final title = evalTitle.text.trim();
-    setState(() => titleError = title.isEmpty ? 'يرجى إدخال عنوان الاختبار أو التقييم' : null);
-    if (title.isEmpty) {
-      showAppSnack(context, 'يرجى تحديد عنوان التقييم واختيار المادة', error: true);
-      return;
-    }
-
-    final max = _maxScore;
-    final batch = <StudentEvaluation>[];
-    for (final s in c.students) {
-      final raw = _ctl(_scores, s.id).text.trim();
-      if (raw.isEmpty) continue;
-      final score = double.tryParse(raw);
-      if (score == null || score < 0 || score > max) {
-        showAppSnack(context, 'درجة غير صالحة للطالب ${s.fullName} (من 0 إلى ${trimNum(max)})', error: true);
-        return;
-      }
-      batch.add(StudentEvaluation(
-        id: _uuid.v4(),
-        studentId: s.id,
-        groupId: c.group.id,
-        subjectId: c.group.subjectId,
-        teacherId: widget.user.id,
-        title: title,
-        score: score,
-        maxScore: max,
-        evaluationDate: evalDate,
-        type: evalType,
-        notes: _ctl(_notes, s.id).text.trim(),
-        term: evalTerm,
-        componentId: evalTerm.isNotEmpty ? evalComponentId : '',
-      ));
-    }
-    if (batch.isEmpty) {
-      showAppSnack(context, 'يرجى إدخال درجة واحدة على الأقل', error: true);
-      return;
-    }
-
-    setState(() => savingEvaluations = true);
-    try {
-      await _service.saveEvaluations(batch, widget.user.tenantId);
-      if (!mounted) return;
+      if (!mounted || _current?.group.id != c.group.id) return;
       setState(() {
-        savingEvaluations = false;
-        evaluationsSaved = true;
-        evalTitle.clear();
-        evalComponentId = '';
-        // الدرجات تُمسح مع العنوان: بقاؤها يُعيد حفظها تحت عنوان الاختبار التالي
-        for (final ctl in [..._scores.values, ..._notes.values]) {
-          ctl.clear();
-        }
+        recent = list;
+        evalNames = names;
+        recentVisible = kListPageSize;
+        offline = false;
       });
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted) setState(() => evaluationsSaved = false);
-      });
-      _loadEvaluations();
     } catch (_) {
-      if (!mounted) return;
-      setState(() => savingEvaluations = false);
-      showAppSnack(context, 'حدث خطأ أثناء حفظ الدرجات', error: true);
+      // بلا اتصال: يُعرض آخر سجل وصل لهذه المادة
+      final cached = _offline.loadEvaluations(c.group.id);
+      if (!mounted || _current?.group.id != c.group.id) return;
+      setState(() {
+        if (cached != null) {
+          recent = cached;
+          evalNames = {
+            for (final cl in _classes)
+              for (final st in cl.students)
+                if (st.fullName.trim().isNotEmpty) st.id: st.fullName.trim(),
+          };
+          recentVisible = kListPageSize;
+        }
+        offline = true;
+        pendingOps = _offline.pendingCountOf(widget.user.id);
+      });
     }
   }
 
@@ -1194,12 +1256,27 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       confirmLabel: 'حذف',
     );
     if (!ok || !mounted) return;
-    try {
-      await _service.deleteEvaluation(e.id);
-      _loadEvaluations();
-    } catch (_) {
-      if (mounted) showAppSnack(context, 'فشل حذف التقييم', error: true);
-    }
+
+    // يُحذف من الشاشة ومن نسخة الجهاز فوراً، ويُرفع الحذف حين يتاح الاتصال
+    setState(() => recent = [for (final x in recent) if (x.id != e.id) x]);
+    if (e.groupId.isNotEmpty) await _offline.saveEvaluations(e.groupId, recent);
+    await _writeOrQueue(
+      () => _service.deleteEvaluation(e.id),
+      {'kind': 'evaluation_delete', 'id': e.id},
+    );
+  }
+
+  /// تعديل علامة مرصودة — كنقر الخلية في كشف الويب.
+  Future<void> _editScore(StudentEvaluation e, double score) async {
+    final updated = [
+      for (final x in recent) x.id == e.id ? x.copyWith(score: score) : x,
+    ];
+    setState(() => recent = updated);
+    if (e.groupId.isNotEmpty) await _offline.saveEvaluations(e.groupId, updated);
+    await _writeOrQueue(
+      () => _service.updateEvaluationScore(e.id, score),
+      {'kind': 'evaluation_score', 'id': e.id, 'score': score},
+    );
   }
 
   // ── المودل ────────────────────────────────────────────────────────────────
@@ -1216,13 +1293,23 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         term: term,
         includeHidden: true,
       );
+      await _offline.saveSections(c.group.id, term, list);
       if (!mounted || token != _moodleToken) return;
       setState(() {
         sections = list;
         loadingMoodle = false;
+        offline = false;
       });
     } catch (_) {
-      if (mounted && token == _moodleToken) setState(() => loadingMoodle = false);
+      // بلا اتصال: وحدات الفصل ومحتواها من نسخة الجهاز
+      final cached = _offline.loadSections(c.group.id, term);
+      if (!mounted || token != _moodleToken) return;
+      setState(() {
+        if (cached != null) sections = cached;
+        loadingMoodle = false;
+        offline = true;
+        pendingOps = _offline.pendingCountOf(widget.user.id);
+      });
     }
   }
 
@@ -1253,18 +1340,29 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     if (created == null || !mounted) return;
     if (created.term == term || (term == 'other' && created.term == 'general')) {
       setState(() => sections = [...sections, created]);
+      await _cacheSections();
     }
-    _flash('تم إنشاء القسم بنجاح');
+    final sent = await _writeOrQueue(
+      () => _service.saveSection(created),
+      {'kind': 'section_upsert', 'row': created.toCloud()},
+    );
+    if (mounted) _flash(sent ? 'تم إنشاء القسم بنجاح' : 'حُفظ على الجهاز، سيُرفع عند عودة الاتصال');
   }
 
   Future<void> _toggleVisibility(CourseSection sec) async {
-    try {
-      await _service.setSectionVisible(sec.id, !sec.isVisible);
-      if (!mounted) return;
-      setState(() => sections = [for (final s in sections) s.id == sec.id ? s.copyWith(isVisible: !s.isVisible) : s]);
-    } catch (_) {
-      if (mounted) showAppSnack(context, 'فشل تعديل حالة ظهور القسم', error: true);
-    }
+    final next = !sec.isVisible;
+    setState(() => sections = [for (final s in sections) s.id == sec.id ? s.copyWith(isVisible: next) : s]);
+    await _cacheSections();
+    await _writeOrQueue(
+      () => _service.setSectionVisible(sec.id, next),
+      {'kind': 'section_visible', 'id': sec.id, 'visible': next},
+    );
+  }
+
+  /// حفظ وحدات الفصل المعروضة على الجهاز بعد كل تعديل.
+  Future<void> _cacheSections() async {
+    final c = _current;
+    if (c != null) await _offline.saveSections(c.group.id, term, sections);
   }
 
   Future<void> _deleteSection(CourseSection sec) async {
@@ -1275,12 +1373,18 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       confirmLabel: 'حذف',
     );
     if (!ok || !mounted) return;
-    try {
-      await _service.deleteSection(sec, widget.user.tenantId);
-      if (mounted) setState(() => sections = sections.where((s) => s.id != sec.id).toList());
-    } catch (_) {
-      if (mounted) showAppSnack(context, 'فشل حذف القسم', error: true);
-    }
+
+    setState(() => sections = sections.where((s) => s.id != sec.id).toList());
+    await _cacheSections();
+    await _writeOrQueue(
+      () => _service.deleteSection(sec, widget.user.tenantId),
+      {
+        'kind': 'section_delete',
+        'tenant_id': widget.user.tenantId,
+        'row': sec.toCloud(),
+        'items': [for (final i in sec.items) i.toCloud()],
+      },
+    );
   }
 
   Future<void> _newItem(CourseSection sec) async {
@@ -1300,7 +1404,12 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     setState(() => sections = [
           for (final s in sections) s.id == sec.id ? s.copyWith(items: [...s.items, created]) : s,
         ]);
-    _flash('تمت إضافة المادة بنجاح');
+    await _cacheSections();
+    final sent = await _writeOrQueue(
+      () => _service.saveItem(created),
+      {'kind': 'item_upsert', 'row': created.toCloud()},
+    );
+    if (mounted) _flash(sent ? 'تمت إضافة المادة بنجاح' : 'حُفظت على الجهاز، سترفع عند عودة الاتصال');
   }
 
   Future<void> _deleteItem(CourseSection sec, CourseItem item) async {
@@ -1311,16 +1420,16 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       confirmLabel: 'حذف',
     );
     if (!ok || !mounted) return;
-    try {
-      await _service.deleteItem(item, widget.user.tenantId);
-      if (!mounted) return;
-      setState(() => sections = [
-            for (final s in sections)
-              s.id == sec.id ? s.copyWith(items: s.items.where((i) => i.id != item.id).toList()) : s,
-          ]);
-    } catch (_) {
-      if (mounted) showAppSnack(context, 'فشل حذف العنصر', error: true);
-    }
+
+    setState(() => sections = [
+          for (final s in sections)
+            s.id == sec.id ? s.copyWith(items: s.items.where((i) => i.id != item.id).toList()) : s,
+        ]);
+    await _cacheSections();
+    await _writeOrQueue(
+      () => _service.deleteItem(item, widget.user.tenantId),
+      {'kind': 'item_delete', 'tenant_id': widget.user.tenantId, 'row': item.toCloud()},
+    );
   }
 
   Future<void> _copySection(CourseSection sec) async {
@@ -1345,515 +1454,530 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     if (count != null && mounted) _flash('تم نسخ القسم بنجاح إلى $count مادة');
   }
 
+  /// إجراء التبويب المفتوح، قريباً من الإبهام بدل أعلى الشاشة.
+  ThumbAction? _thumbAction(_Brand brand) {
+    if (groupId.isEmpty && tab != 'attendance') return null;
+    return switch (tab) {
+      'moodle' => ThumbAction(
+          label: 'إضافة وحدة',
+          icon: Icons.add,
+          color: brand.primary,
+          onPressed: _current == null ? null : _newSection,
+        ),
+      'evaluations' => ThumbAction(
+          label: 'رصد درجات',
+          icon: Icons.add,
+          color: brand.primary,
+          onPressed: _current == null ? null : _openEvaluationForm,
+        ),
+      _ => ThumbAction(
+          label: 'الكل حاضر',
+          icon: Icons.done_all,
+          color: AppColors.success,
+          onPressed: _students().isEmpty ? null : _markAllPresent,
+        ),
+    };
+  }
+
+  /// رصد الجميع حاضرين — نفس إجراء شاشة الإدارة.
+  void _markAllPresent() {
+    final roomId = _attendanceRoomId;
+    if (roomId.isEmpty) return;
+    final day = {for (final s in _students()) s.id: 'present'};
+    setState(() => weekMarks = {...weekMarks, sessionDate: day});
+    unawaited(_offline.saveMarks(roomId, sessionDate, day));
+    _duePush = (roomId: roomId, date: sessionDate, statuses: day);
+    _pushTimer?.cancel();
+    _pushTimer = Timer(const Duration(milliseconds: 400), () {
+      _duePush = null;
+      _pushMarks(roomId, sessionDate, day);
+    });
+  }
+
   // ── البناء ────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final branding = data?.branding ?? const PortalBranding();
     final brand = _Brand(branding);
-    final c = _current;
-
-    Widget? bottom;
-    if (!loading && error == null && c != null && c.students.isNotEmpty) {
-      if (tab == 'attendance') {
-        bottom = _saveBar(context,
-            label: 'حفظ كشف الحضور الآن', color: brand.action, busy: savingAttendance, onTap: _saveAttendance);
-      } else if (tab == 'evaluations') {
-        bottom = _saveBar(context,
-            label: 'حفظ كشف الدرجات', color: brand.action, busy: savingEvaluations, onTap: _saveEvaluations);
-      }
-    }
 
     return Scaffold(
-      backgroundColor: _C.bg,
+      backgroundColor: AppColors.bg,
       body: Column(
         children: [
-          _PortalHeader(branding: branding, role: 'المعلم', userName: widget.user.name, onExit: widget.onExit),
-          _PortalTabs(
-            tabs: const [
-              _TabSpec('attendance', 'رصد الحضور', Icons.how_to_reg_outlined),
-              _TabSpec('evaluations', 'رصد الدرجات', Icons.workspace_premium_outlined),
-              _TabSpec('moodle', 'المودل', Icons.menu_book_outlined),
-            ],
-            active: tab,
-            color: brand.active,
-            onSelect: _selectTab,
+          PortalChromeHeader(
+            branding: branding,
+            roleLabel: '',
+            displayName: widget.user.name,
+            gradeLine: '',
+            onExit: widget.onExit,
+            action: _PortalSyncButton(
+              offline: offline,
+              pending: pendingOps,
+              busy: savingAttendance,
+              onTap: _syncNow,
+            ),
           ),
           Expanded(
             child: loading
                 ? _loadingView()
                 : error != null
                     ? _errorView(error!, _load)
-                    : RefreshIndicator(
-                        onRefresh: _load,
-                        color: brand.active,
-                        child: ListView(
-                          padding: const EdgeInsets.all(16),
-                          children: switch (tab) {
-                            'evaluations' => _evaluationsTab(brand),
-                            'moodle' => _moodleTab(brand),
-                            _ => _attendanceTab(brand),
-                          },
+                    // الإجراء الأساسي لكل تبويب في منطقة الإبهام، كشاشات الإدارة
+                    : ThumbActionLayer(
+                        action: _thumbAction(brand),
+                        child: RefreshIndicator(
+                          onRefresh: _load,
+                          color: brand.active,
+                          child: ListView(
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, thumbActionClearance),
+                            children: switch (tab) {
+                              'evaluations' => _evaluationsTab(brand),
+                              'moodle' => _moodleTab(brand),
+                              _ => _attendanceTab(brand),
+                            },
+                          ),
                         ),
                       ),
           ),
-          ?bottom,
+          PortalBottomNav(
+            items: const [
+              PortalNavItem(id: 'attendance', label: 'الحضور', icon: Icons.how_to_reg_outlined),
+              PortalNavItem(id: 'evaluations', label: 'الدرجات', icon: Icons.workspace_premium_outlined),
+              PortalNavItem(id: 'moodle', label: 'المودل', icon: Icons.menu_book_outlined),
+            ],
+            activeId: tab,
+            onSelect: _selectTab,
+          ),
         ],
       ),
     );
   }
 
-  /// تسمية اختيار الشعبة للمعلم: اسم الشعبة أولاً ثم المادة والمرحلة.
-  String _classLabel(TeacherClass k) {
-    final section = k.roomName.trim().isNotEmpty
-        ? k.roomName.trim()
-        : cleanGroupName(k.group.name, k.group.gradeLevel);
-    return [
-      section.isEmpty ? 'شعبة' : section,
-      if (k.subjectName.trim().isNotEmpty) '(${k.subjectName.trim()})',
-      if (k.group.gradeLevel.trim().isNotEmpty) '— ${k.group.gradeLevel.trim()}',
-    ].join(' ');
-  }
 
-  String _studentMetaLine(Student s) {
-    final parts = [
-      if (s.gradeLevel.trim().isNotEmpty) s.gradeLevel.trim(),
-      if (s.section.trim().isNotEmpty) s.section.trim(),
-    ];
-    return parts.join(' · ');
-  }
 
-  List<DropdownMenuItem<String>> _groupItems() {
-    final classes = data?.classes ?? const <TeacherClass>[];
-    if (classes.isEmpty) {
-      return const [DropdownMenuItem(value: '', child: Text('لا توجد شعب مسندة لك'))];
-    }
-    return [
-      for (final k in classes)
-        DropdownMenuItem(
-          value: k.group.id,
-          child: Text(
-            _classLabel(k),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+  /// اختيار نطاق الرصد: الصف ثم الشعبة ثم المادة — كنافذة الرصد في الويب.
+  Widget _scopePicker() {
+    final grades = _grades();
+    final effectiveGrade = gradeFilter.isNotEmpty
+        ? gradeFilter
+        : (_current?.group.gradeLevel.trim().isNotEmpty == true
+            ? _current!.group.gradeLevel.trim()
+            : (grades.isEmpty ? '' : grades.first));
+    final sections = _sections(effectiveGrade);
+    final subjects = _subjectClasses(grade: effectiveGrade, section: sectionFilter);
+
+    final gradeValue = grades.contains(effectiveGrade) ? effectiveGrade : null;
+    final sectionValue = sections.contains(sectionFilter) ? sectionFilter : null;
+    final subjectValue = subjects.any((c) => c.group.id == groupId) ? groupId : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _Label('الصف:'),
+        _Select<String>(
+          value: gradeValue,
+          items: [
+            if (grades.isEmpty)
+              const DropdownMenuItem(value: '__none__', child: Text('لا صفوف مسندة'))
+            else
+              for (final g in grades) DropdownMenuItem(value: g, child: Text(g)),
+          ],
+          onChanged: grades.isEmpty
+              ? null
+              : (v) {
+                  if (v != null && v != '__none__') _selectGrade(v);
+                },
         ),
-    ];
+        const SizedBox(height: 10),
+        const _Label('الشعبة:'),
+        _Select<String>(
+          value: sectionValue,
+          hint: sections.isEmpty
+              ? (effectiveGrade.isEmpty ? 'اختر الصف أولاً' : 'لا شعب في هذا الصف')
+              : 'اختر الشعبة',
+          items: [
+            if (sections.isEmpty)
+              DropdownMenuItem(
+                value: '__none__',
+                child: Text(effectiveGrade.isEmpty ? 'اختر الصف أولاً' : 'لا شعب في هذا الصف'),
+              )
+            else
+              for (final s in sections) DropdownMenuItem(value: s, child: Text(s)),
+          ],
+          onChanged: sections.isEmpty
+              ? null
+              : (v) {
+                  if (v != null && v != '__none__') _selectSection(v);
+                },
+        ),
+        const SizedBox(height: 10),
+        const _Label('المادة:'),
+        _Select<String>(
+          value: subjectValue,
+          hint: 'اختر المادة',
+          items: [
+            if (subjects.isEmpty)
+              const DropdownMenuItem(value: '__none__', child: Text('لا مواد'))
+            else
+              for (final c in subjects)
+                DropdownMenuItem(
+                  value: c.group.id,
+                  child: Text(
+                    c.subjectName.trim().isEmpty
+                        ? cleanGroupName(c.group.name, c.group.gradeLevel)
+                        : c.subjectName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+          ],
+          onChanged: subjects.isEmpty
+              ? null
+              : (v) {
+                  if (v != null && v != '__none__') _selectGroup(v);
+                },
+        ),
+        const SizedBox(height: 10),
+      ],
+    );
   }
+
 
   // ── تبويب رصد الحضور ─────────────────────────────────────────────────────
 
+  /// كشف الحضور — نفس كشف الإدارة: شريط أيام الأسبوع، وملخّص اليوم، وصفّ
+  /// لكل طالب بمفتاح رصد. الرصد يُحفظ في كشف الشعبة اليومي نفسه.
   List<Widget> _attendanceTab(_Brand brand) {
-    final c = _current;
-    final students = c?.students ?? const <Student>[];
-    var present = 0, absent = 0, excused = 0;
+    final students = _students();
+    var present = 0, absent = 0, excused = 0, unmarked = 0;
     for (final s in students) {
       switch (_statusOf(s.id)) {
+        case 'present':
+          present++;
         case 'absent':
           absent++;
         case 'excused':
           excused++;
         default:
-          present++;
+          unmarked++;
       }
     }
 
+    final week = _schoolWeek(weekOffset);
+    // اكتمال رصد كل يوم في الشريط، كشريط الإدارة
+    final dayProgress = <String, double>{
+      for (final d in week)
+        d.dateStr: students.isEmpty
+            ? 0
+            : students.where((s) => (weekMarks[d.dateStr] ?? const {}).containsKey(s.id)).length / students.length,
+    };
+    final selected = week.firstWhere(
+      (d) => d.dateStr == sessionDate,
+      orElse: () => week.where((d) => d.isToday).firstOrNull ?? week.first,
+    );
+    final visible = listPage(students, attendanceVisible);
+
     return [
       _Card(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const _Label('الشعبة / المادة:'),
-            _Select<String>(
-              value: groupId,
-              items: _groupItems(),
-              onChanged: (data?.classes.isEmpty ?? true) ? null : _selectGroup,
+            // سطر واحد كشاشة الإدارة: زر الصف، لا ثلاث قوائم. المادة لا تُسأل
+            // هنا — الحضور اليومي للشعبة كلها لا لحصة مادة.
+            _AttendanceClassButton(
+              label: _attendanceClassLabel(),
+              onTap: _pickAttendanceClass,
             ),
-            const SizedBox(height: 12),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const _Label('تاريخ الحصة:'),
-                      _DateBox(
-                        date: sessionDate,
-                        onPicked: (d) {
-                          setState(() => sessionDate = d);
-                          _loadMarks();
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _Soft(
-                    label: 'الكل حاضر',
-                    icon: Icons.check_circle_outline,
-                    fg: _C.greenText,
-                    bg: _C.greenSoft,
-                    border: _C.greenBorder,
-                    onTap: students.isEmpty
-                        ? null
-                        : () => setState(() => marks = {for (final s in students) s.id: 'present'}),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      if (attendanceSaved) ...[
-        const SizedBox(height: 12),
-        const _Success('تم حفظ كشف الحضور وتحديث بوابة الطالب بنجاح'),
-      ],
-      const SizedBox(height: 16),
-      if (students.isNotEmpty) ...[
-        Row(
-          children: [
-            Expanded(child: _Stat.plain('الطلاب', '${students.length}')),
-            const SizedBox(width: 8),
-            Expanded(child: _Stat.green('حضور', '$present')),
-            const SizedBox(width: 8),
-            Expanded(child: _Stat.red('غياب', '$absent')),
-            const SizedBox(width: 8),
-            Expanded(child: _Stat.amber('مأذون', '$excused')),
-          ],
-        ),
-        const SizedBox(height: 8),
-      ],
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                'كشف الطلاب (${students.length}):',
-                style: const TextStyle(color: _C.muted, fontSize: 12, fontWeight: FontWeight.w800),
-              ),
-            ),
-            Text.rich(
-              TextSpan(
-                text: 'الشعبة: ',
+            const SizedBox(height: 8),
+            // الأيام بين سهمي الأسبوع، والسحب عليها ينقل بين الأسابيع أيضاً
+            GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onHorizontalDragEnd: (d) {
+                final v = d.primaryVelocity ?? 0;
+                if (v.abs() < 200) return;
+                // في العربية الأسبوع التالي على اليسار: السحب لليمين يُظهره
+                setState(() => weekOffset += v > 0 ? 1 : -1);
+                _loadMarks();
+              },
+              child: Directionality(
+                textDirection: TextDirection.ltr,
+                child: Row(
                 children: [
-                  TextSpan(
-                    text: (c?.roomName ?? '').isEmpty ? '—' : c!.roomName,
-                    style: const TextStyle(color: _C.text, fontWeight: FontWeight.w900),
-                  ),
-                ],
-              ),
-              style: const TextStyle(color: _C.muted, fontSize: 12, fontWeight: FontWeight.w800),
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 4),
-      if (students.isEmpty)
-        const _Empty('لا يوجد طلاب مسجلون في هذه الشعبة', height: 150)
-      else
-        for (var i = 0; i < students.length; i++)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: _AttendanceRow(
-              index: i + 1,
-              student: students[i],
-              status: _statusOf(students[i].id),
-              onSet: (status) => setState(() => marks = {...marks, students[i].id: status}),
-            ),
-          ),
-    ];
-  }
-
-  // ── تبويب رصد الدرجات ────────────────────────────────────────────────────
-
-  List<Widget> _evaluationsTab(_Brand brand) {
-    final c = _current;
-    final students = c?.students ?? const <Student>[];
-    final names = {for (final s in students) s.id: s.fullName};
-    final scheme = data?.branding.gradingScheme ?? GradingScheme.empty;
-    final schemeOn = !scheme.isEmpty;
-    final components = evalTerm.isEmpty ? const <GradingComponent>[] : scheme.of(evalTerm);
-
-    Widget pair(Widget a, Widget b) => Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [Expanded(child: a), const SizedBox(width: 8), Expanded(child: b)],
-        );
-
-    Widget field(String label, Widget input) => Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [_Label(label), input],
-        );
-
-    void onComponent(String? id) {
-      final cid = id ?? '';
-      setState(() {
-        evalComponentId = cid;
-        final comp = components.where((x) => x.id == cid).firstOrNull;
-        if (comp != null) {
-          if (evalTitle.text.trim().isEmpty) evalTitle.text = comp.name;
-          // علامة المادة الكاملة — بوابة المعلم بلا تخصيص لكل مادة في الهوية
-          evalMax.text = trimNum(defaultFullMark);
-        }
-      });
-    }
-
-    return [
-      _Card(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.workspace_premium_outlined, size: 16, color: brand.active),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'رصد درجات اختبار أو تقييم',
-                    style: TextStyle(color: brand.primary, fontSize: 12, fontWeight: FontWeight.w800),
-                  ),
-                ),
-                if (evaluationsSaved)
-                  const _Badge('تم حفظ الدرجات', fg: _C.emerald600, bg: _C.emerald50, icon: Icons.check_circle_outline),
-              ],
-            ),
-            const SizedBox(height: 12),
-            field(
-              'الشعبة / المادة:',
-              _Select<String>(
-                value: groupId,
-                height: 36,
-                items: _groupItems(),
-                onChanged: (data?.classes.isEmpty ?? true) ? null : _selectGroup,
-              ),
-            ),
-            const SizedBox(height: 12),
-            pair(
-              field(
-                'عنوان الاختبار / التقييم:',
-                _Input(
-                  controller: evalTitle,
-                  hint: 'مثلاً: اختبار الشهر الأول',
-                  errorText: titleError,
-                  onChanged: (_) {
-                    if (titleError != null) setState(() => titleError = null);
-                  },
-                ),
-              ),
-              field(
-                'نوع التقييم:',
-                _Select<String>(
-                  value: evalType,
-                  items: [
-                    for (final e in evaluationTypeNames.entries) DropdownMenuItem(value: e.key, child: Text(e.value)),
-                  ],
-                  onChanged: (v) => setState(() => evalType = v ?? evalType),
-                ),
-              ),
-            ),
-            if (schemeOn) ...[
-              const SizedBox(height: 12),
-              pair(
-                field(
-                  'الفصل الدراسي:',
-                  _Select<String>(
-                    value: evalTerm,
-                    height: 36,
-                    items: [
-                      const DropdownMenuItem(value: '', child: Text('-- بدون ربط بفصل --')),
-                      for (final e in gradingTermLabels.entries)
-                        DropdownMenuItem(value: e.key, child: Text(e.value)),
-                    ],
-                    onChanged: (v) => setState(() {
-                      evalTerm = v ?? '';
-                      evalComponentId = '';
+                    _weekArrow(Icons.chevron_left, () {
+                      setState(() => weekOffset--);
+                      _loadMarks();
                     }),
-                  ),
-                ),
-                field(
-                  'مكوّن العلامة:',
-                  _Select<String>(
-                    value: evalComponentId,
-                    height: 36,
-                    items: [
-                      const DropdownMenuItem(value: '', child: Text('اختر المكوّن')),
-                      for (final c in components)
-                        DropdownMenuItem(
-                          value: c.id,
-                          child: Text('${c.name} (${trimNum(c.weight)}%)'),
-                        ),
-                    ],
-                    onChanged: evalTerm.isEmpty || components.isEmpty ? null : onComponent,
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            pair(
-              field(
-                'الدرجة القصوى:',
-                _Input(controller: evalMax, keyboardType: TextInputType.number, ltr: true),
-              ),
-              field('تاريخ التقييم:', _DateBox(date: evalDate, onPicked: (d) => setState(() => evalDate = d))),
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 16),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Wrap(
-          alignment: WrapAlignment.spaceBetween,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 12,
-          runSpacing: 4,
-          children: [
-            Text(
-              'قائمة الطلاب (${students.length})',
-              style: const TextStyle(color: _C.navy, fontSize: 12, fontWeight: FontWeight.w900),
-            ),
-            Wrap(
-              spacing: 12,
-              runSpacing: 4,
-              children: [
-                if (students.isNotEmpty)
-                  InkWell(
-                    onTap: _fullScoreForAll,
-                    child: const Text(
-                      'رصد الدرجة الكاملة للجميع',
-                      style: TextStyle(color: _C.blue600, fontSize: 11, fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                const Text('اترك الدرجة فارغة لمن لم يختبر', style: TextStyle(color: _C.muted, fontSize: 11)),
-              ],
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 8),
-      if (students.isEmpty)
-        const _Empty('لا يوجد طلاب مسجلون في هذه الشعبة', height: 110)
-      else
-        for (final s in students)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: _Card(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          s.fullName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: _C.text, fontSize: 12, fontWeight: FontWeight.w800),
-                        ),
-                        if (_studentMetaLine(s).isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: Text(
-                              _studentMetaLine(s),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: _C.faint, fontSize: 10.5),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 72,
-                    child: _Input(
-                      controller: _ctl(_scores, s.id),
-                      hint: 'من ${trimNum(_maxScore)}',
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      ltr: true,
-                      center: true,
-                      dense: true,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 88,
-                    child: _Input(controller: _ctl(_notes, s.id), hint: 'ملاحظة', dense: true),
-                  ),
-                ],
-              ),
-            ),
-          ),
-      if (recent.isNotEmpty) ...[
-        const SizedBox(height: 16),
-        _Card(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'سجل التقييمات السابقة لهذه الشعبة (${recent.length})',
-                style: const TextStyle(color: _C.navy, fontSize: 12, fontWeight: FontWeight.w800),
-              ),
-              const Padding(padding: EdgeInsets.only(top: 8, bottom: 10), child: Divider(height: 1, color: _C.soft)),
-              for (final e in recent)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: _C.bg,
-                    borderRadius: BorderRadius.circular(Corner.box),
-                    border: Border.all(color: _C.line),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                    Expanded(
+                      child: Directionality(
+                        textDirection: TextDirection.rtl,
+                        child: Row(
                           children: [
-                            Text(
-                              names[e.studentId] ?? 'طالب',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: _C.text, fontSize: 12, fontWeight: FontWeight.w800),
-                            ),
-                            Text(
-                              [e.title, e.typeLabel, if (e.evaluationDate.isNotEmpty) e.evaluationDate].join(' • '),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: _C.muted, fontSize: 10.5),
-                            ),
+                            for (final day in week)
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                                  child: AttendanceDayChip(
+                                    day: day,
+                                    selected: day.dateStr == selected.dateStr,
+                                    progress: dayProgress[day.dateStr] ?? 0,
+                                    onTap: () => setState(() => sessionDate = day.dateStr),
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      _Badge(
-                        '${e.score == null ? '—' : trimNum(e.score!)} / ${trimNum(e.maxScore)}',
-                        fg: _C.emerald700,
-                        bg: _C.emerald50,
-                        border: _C.emerald200,
-                        radius: Corner.chip,
-                      ),
-                      IconButton(
-                        tooltip: 'حذف',
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.delete_outline, size: 17, color: _C.rose600),
-                        onPressed: () => _deleteEvaluation(e),
-                      ),
-                    ],
-                  ),
+                    ),
+                    _weekArrow(Icons.chevron_right, () {
+                      setState(() => weekOffset++);
+                      _loadMarks();
+                    }),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 12),
+      AttendanceDaySummary(
+        day: selected,
+        total: students.length,
+        present: present,
+        absent: absent,
+        excused: excused,
+        unmarked: unmarked,
+      ),
+      const SizedBox(height: 12),
+      if (sectionFilter.trim().isEmpty && _sections().isNotEmpty)
+        const _Empty('اختر الشعبة من زر الصف لعرض كشفها', height: 150)
+      else if (students.isEmpty)
+        const _Empty('لا يوجد طلاب مسجلون في هذه الشعبة', height: 150)
+      else
+        Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(Corner.card),
+            border: Border.all(color: AppColors.line),
+            boxShadow: cardShadow,
+          ),
+          child: Column(
+            children: [
+              for (var i = 0; i < visible.length; i++)
+                AttendanceStudentRow(
+                  key: ValueKey('${visible[i].id}|$sessionDate'),
+                  index: i + 1,
+                  student: visible[i],
+                  status: _statusOf(visible[i].id),
+                  canEdit: true,
+                  last: i == visible.length - 1,
+                  onSet: (status) => _setMark(visible[i].id, status),
                 ),
             ],
           ),
         ),
+      LoadMoreButton(
+        shown: visible.length,
+        total: students.length,
+        onMore: () => setState(() => attendanceVisible += kListPageSize),
+      ),
+    ];
+  }
+
+  /// عنوان زر الصف: «الصف · الشعبة»، أو دعوة للاختيار.
+  String _attendanceClassLabel() {
+    final parts = [
+      if (gradeFilter.trim().isNotEmpty) gradeFilter.trim(),
+      if (sectionFilter.trim().isNotEmpty) sectionFilter.trim(),
+    ];
+    return parts.isEmpty ? 'اختر الصف' : parts.join('  ·  ');
+  }
+
+  /// ورقة اختيار الصف ثم الشعبة — ورقة واحدة كورقة الإدارة.
+  Future<void> _pickAttendanceClass() async {
+    final grades = _grades();
+    if (grades.isEmpty) return;
+
+    final picked = await showModalBottomSheet<({String grade, String section})>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet)),
+      ),
+      builder: (_) => _AttendanceClassSheet(
+        grades: grades,
+        initialGrade: gradeFilter.isNotEmpty ? gradeFilter : grades.first,
+        sectionsOf: _sections,
+        currentSection: sectionFilter,
+      ),
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() {
+      gradeFilter = picked.grade;
+      sectionFilter = picked.section;
+      // المادة تتبع الصف: الحضور لا يسأل عنها، والتبويبات الأخرى تحتاجها
+      final subjects = _subjectClasses();
+      if (!subjects.any((c) => c.group.id == groupId)) {
+        groupId = subjects.isEmpty ? '' : subjects.first.group.id;
+      }
+      _resetRecording();
+    });
+    _loadMarks();
+  }
+
+  /// أيام الأسبوع المدرسي — نفس حساب الإدارة (السبت أوله، والجمعة عطلة).
+  List<SchoolDay> _schoolWeek(int offsetWeeks) {
+    final now = DateTime.now();
+    final saturday = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: (now.weekday + 1) % 7))
+        .add(Duration(days: offsetWeeks * 7));
+    const names = ['السبت', 'الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
+    final today = isoDate(now);
+    return [
+      for (var i = 0; i < 6; i++)
+        () {
+          final d = saturday.add(Duration(days: i));
+          return SchoolDay(
+            date: d,
+            dateStr: isoDate(d),
+            dayName: names[i],
+            shortDate: '${d.day}/${d.month}',
+            isToday: isoDate(d) == today,
+          );
+        }(),
+    ];
+  }
+
+  Widget _weekArrow(IconData icon, VoidCallback onTap) {
+    return IconButton(
+      onPressed: onTap,
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+      icon: Icon(icon, size: 20, color: AppColors.muted),
+    );
+  }
+
+  /// مخطط الرصد في بوابة المعلم: النموذج الافتراضي إن لم تُعرّف مكوّنات.
+  GradingScheme get _evalRecordingScheme =>
+      withDefaultTerms(data?.branding.gradingScheme ?? GradingScheme.empty);
+
+  // ── تبويب الدرجات: السجل هنا، والرصد صفحة منفصلة لكشف الطلاب الطويل ──
+
+  Future<void> _openEvaluationForm() async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => _TeacherEvaluationFormPage(
+          offline: _offline,
+          user: widget.user,
+          service: _service,
+          classes: _classes,
+          branding: data?.branding ?? const PortalBranding(),
+          gradingScheme: _evalRecordingScheme,
+          initialGroupId: groupId,
+          initialGrade: gradeFilter,
+          initialSection: sectionFilter,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (saved == true) {
+      showAppSnack(context, 'تم حفظ كشف الدرجات');
+      _loadEvaluations();
+    }
+  }
+
+  List<Widget> _evaluationsTab(_Brand brand) {
+
+    String nameOf(String studentId) {
+      final fromMap = evalNames[studentId]?.trim() ?? '';
+      if (fromMap.isNotEmpty) return fromMap;
+      for (final cl in _classes) {
+        final s = cl.students.where((x) => x.id == studentId).firstOrNull;
+        if (s != null && s.fullName.trim().isNotEmpty) return s.fullName.trim();
+      }
+      return 'طالب';
+    }
+
+    final groups = _recentByEvaluation();
+
+    return [
+      // النطاق وحده في البطاقة: زر الرصد انتقل إلى منطقة الإبهام، والشرح
+      // المكتوب كان يشغل مساحةً بلا فائدة يومية
+      _Card(child: _scopePicker()),
+      if (groups.isNotEmpty) ...[
+        const SizedBox(height: 14),
+        // بطاقة لكل اختبار بمعدّله، وتُفتح فتظهر درجات طلابه
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'التقييمات السابقة',
+                style: TextStyle(
+                  fontFamily: AppText.family,
+                  color: AppColors.heading,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            Text(
+              '${groups.length}',
+              style: const TextStyle(color: AppColors.faint, fontSize: 12, fontWeight: FontWeight.w800),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        for (final entry in groups)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _RecentEvaluationCard(
+              title: entry.title,
+              meta: entry.meta,
+              average: entry.average,
+              rows: entry.rows,
+              nameOf: nameOf,
+              onDelete: _deleteEvaluation,
+              onEditScore: _editScore,
+            ),
+          ),
+      ] else ...[
+        const SizedBox(height: 16),
+        const _Empty('لا تقييمات سابقة لهذه المادة بعد', height: 110),
       ],
     ];
+  }
+
+
+  /// سجل الدرجات مجموعاً بالتقييم: اختبار واحد ببطاقة، لا صفّاً لكل طالب.
+  List<({String title, String meta, int average, List<StudentEvaluation> rows})> _recentByEvaluation() {
+    final groups = <String, List<StudentEvaluation>>{};
+    for (final e in recent) {
+      groups.putIfAbsent('${e.title}|${e.evaluationDate}|${e.type}', () => []).add(e);
+    }
+
+    final out = <({String title, String meta, int average, List<StudentEvaluation> rows})>[];
+    for (final rows in groups.values) {
+      final first = rows.first;
+      final scored = rows.where((e) => e.percent != null).toList();
+      final average = scored.isEmpty
+          ? 0
+          : (scored.fold<int>(0, (a, e) => a + (e.percent ?? 0)) / scored.length).round();
+      out.add((
+        title: first.title.isEmpty ? 'تقييم' : first.title,
+        meta: [
+          first.typeLabel,
+          if (first.evaluationDate.isNotEmpty) first.evaluationDate.split('T').first,
+          '${rows.length} طالب',
+        ].where((x) => x.trim().isNotEmpty).join('  ·  '),
+        average: average,
+        rows: rows,
+      ));
+    }
+    return out;
   }
 
   // ── تبويب المودل ─────────────────────────────────────────────────────────
@@ -1895,24 +2019,22 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
               onChanged: classes.isEmpty ? null : _selectGroup,
             ),
             const SizedBox(height: 10),
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: _Solid(
-                label: 'إضافة وحدة / قسم',
-                icon: Icons.add,
-                color: brand.primary,
-                height: 34,
-                radius: Corner.field,
-                onTap: hasGroup ? _newSection : null,
-              ),
-            ),
-            const SizedBox(height: 10),
             _TermSwitch(
               value: term,
               onChanged: (t) {
                 setState(() => term = t);
                 _loadMoodle();
               },
+            ),
+            const SizedBox(height: 10),
+            // الإضافة تحت الفصل بعرض الشعبة كاملاً — هي الإجراء المقصود هنا
+            _Solid(
+              label: 'إضافة وحدة / قسم',
+              icon: Icons.add,
+              color: brand.primary,
+              height: 42,
+              radius: Corner.field,
+              onTap: hasGroup ? _newSection : null,
             ),
           ],
         ),
@@ -1957,143 +2079,562 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   }
 }
 
-/// صف طالب في كشف الحضور: الرقم والاسم والهوية، وثلاثة أزرار رصد.
-class _AttendanceRow extends StatelessWidget {
-  const _AttendanceRow({required this.index, required this.student, required this.status, required this.onSet});
+/// صفحة رصد درجات المعلم — منفصلة عن التبويب لأن كشف الطلاب يطول.
+class _TeacherEvaluationFormPage extends StatefulWidget {
+  const _TeacherEvaluationFormPage({
+    required this.user,
+    required this.service,
+    required this.offline,
+    required this.classes,
+    required this.branding,
+    required this.gradingScheme,
+    this.initialGroupId = '',
+    this.initialGrade = '',
+    this.initialSection = '',
+  });
 
-  final int index;
-  final Student student;
-  final String status;
-  final ValueChanged<String> onSet;
+  final PortalUser user;
+  final PortalService service;
+  final PortalOffline offline;
+  final List<TeacherClass> classes;
+  final PortalBranding branding;
+  final GradingScheme gradingScheme;
+  final String initialGroupId;
+  final String initialGrade;
+  final String initialSection;
 
   @override
-  Widget build(BuildContext context) {
-    final info = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
+  State<_TeacherEvaluationFormPage> createState() => _TeacherEvaluationFormPageState();
+}
+
+class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> {
+  static const _uuid = Uuid();
+
+  late String groupId = widget.initialGroupId;
+  late String gradeFilter = widget.initialGrade;
+  late String sectionFilter = widget.initialSection;
+
+  final evalTitle = TextEditingController();
+  final evalMax = TextEditingController(text: trimNum(defaultFullMark));
+  String evalType = 'quiz';
+  late String evalDate = isoDate(DateTime.now());
+  late String evalTerm = termForDate(evalDate);
+  String evalComponentId = '';
+  String? titleError;
+  final _scores = <String, TextEditingController>{};
+  final _notes = <String, TextEditingController>{};
+  bool saving = false;
+  int rosterVisible = kListPageSize;
+
+  _Brand get brand => _Brand(widget.branding);
+
+  TeacherClass? get _current => widget.classes.where((c) => c.group.id == groupId).firstOrNull;
+
+  @override
+  void initState() {
+    super.initState();
+    // إن فُتحت الصفحة بلا شعبة: اختر الوحيدة، أو شعبة قاعة المادة الحالية
+    final secs = _sections();
+    if (sectionFilter.isEmpty && secs.isNotEmpty) {
+      if (secs.length == 1) {
+        sectionFilter = secs.first;
+      } else {
+        final current = _current;
+        final rooms = current == null
+            ? const <String>[]
+            : current.roomName
+                .split(RegExp(r'\s*[،,]\s*'))
+                .map((e) => e.trim())
+                .where((e) => e.isNotEmpty);
+        sectionFilter = rooms.cast<String>().where(secs.contains).firstOrNull ?? secs.first;
+      }
+    }
+  }
+
+  List<String> _grades() {
+    final list = <String>{
+      for (final c in widget.classes)
+        if (c.group.gradeLevel.trim().isNotEmpty) c.group.gradeLevel.trim(),
+    }.toList()
+      ..sort();
+    return list;
+  }
+
+  List<String> _sections([String? grade]) {
+    final g = grade ?? gradeFilter;
+    final current = _current;
+    if (current != null) {
+      final local = _teacherSectionsFor([current], grade: g);
+      if (local.isNotEmpty) return local;
+    }
+    return _teacherSectionsFor(widget.classes, grade: g);
+  }
+
+  List<TeacherClass> _subjectClasses({String? grade, String? section}) {
+    final g = (grade ?? gradeFilter).trim();
+    return [
+      for (final c in widget.classes)
+        if (g.isEmpty || c.group.gradeLevel.trim().isEmpty || c.group.gradeLevel.trim() == g) c,
+    ];
+  }
+
+  List<Student> _students() => _teacherRosterStudents(
+        _current,
+        sectionFilter: sectionFilter,
+        grade: gradeFilter,
+      );
+
+  TextEditingController _ctl(Map<String, TextEditingController> map, String id) =>
+      map.putIfAbsent(id, TextEditingController.new);
+
+  double get _maxScore {
+    final v = double.tryParse(evalMax.text.trim());
+    return (v == null || v <= 0) ? defaultFullMark : v;
+  }
+
+  void _clearScores() {
+    for (final c in [..._scores.values, ..._notes.values]) {
+      c.dispose();
+    }
+    _scores.clear();
+    _notes.clear();
+    rosterVisible = kListPageSize;
+  }
+
+  void _selectGrade(String value) {
+    setState(() {
+      gradeFilter = value;
+      sectionFilter = '';
+      final sections = _sections();
+      if (sections.length == 1) sectionFilter = sections.first;
+      final subjects = _subjectClasses();
+      groupId = subjects.length == 1 ? subjects.first.group.id : '';
+      _clearScores();
+    });
+  }
+
+  void _selectSection(String value) {
+    setState(() {
+      sectionFilter = value;
+      final subjects = _subjectClasses();
+      if (!subjects.any((c) => c.group.id == groupId)) {
+        groupId = subjects.length == 1 ? subjects.first.group.id : '';
+      }
+      _clearScores();
+    });
+  }
+
+  void _selectGroup(String? id) {
+    if (id == null || id == groupId) return;
+    setState(() {
+      groupId = id;
+      final current = widget.classes.where((c) => c.group.id == id).firstOrNull;
+      if (current != null) {
+        final g = current.group.gradeLevel.trim();
+        if (g.isNotEmpty) gradeFilter = g;
+      }
+      sectionFilter = '';
+      final secs = _sections();
+      if (secs.length == 1) sectionFilter = secs.first;
+      _clearScores();
+      evalMax.text = trimNum(defaultFullMark);
+      evalComponentId = '';
+    });
+  }
+
+  @override
+  void dispose() {
+    evalTitle.dispose();
+    evalMax.dispose();
+    for (final c in [..._scores.values, ..._notes.values]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final c = _current;
+    if (c == null || saving) return;
+
+    final title = evalTitle.text.trim();
+    setState(() => titleError = title.isEmpty ? 'يرجى إدخال عنوان الاختبار أو التقييم' : null);
+    if (title.isEmpty) {
+      showAppSnack(context, 'يرجى تحديد عنوان التقييم واختيار المادة', error: true);
+      return;
+    }
+
+    final max = _maxScore;
+    final batch = <StudentEvaluation>[];
+    for (final s in _students()) {
+      final raw = _ctl(_scores, s.id).text.trim();
+      if (raw.isEmpty) continue;
+      final score = double.tryParse(raw);
+      if (score == null || score < 0 || score > max) {
+        showAppSnack(context, 'درجة غير صالحة للطالب ${s.fullName} (من 0 إلى ${trimNum(max)})', error: true);
+        return;
+      }
+      final comps = evalTerm.isEmpty ? const <GradingComponent>[] : widget.gradingScheme.of(evalTerm);
+      final comp = comps.where((x) => x.id == evalComponentId).firstOrNull;
+      batch.add(StudentEvaluation(
+        id: _uuid.v4(),
+        studentId: s.id,
+        groupId: c.group.id,
+        subjectId: c.group.subjectId,
+        teacherId: widget.user.id,
+        title: title,
+        score: score,
+        maxScore: max,
+        evaluationDate: evalDate,
+        type: evalComponentId.isNotEmpty ? evaluationTypeForComponent(comp?.name) : evalType,
+        notes: _ctl(_notes, s.id).text.trim(),
+        term: evalTerm,
+        componentId: evalTerm.isNotEmpty && evalComponentId.isNotEmpty ? evalComponentId : '',
+      ));
+    }
+    if (batch.isEmpty) {
+      showAppSnack(context, 'يرجى إدخال درجة واحدة على الأقل', error: true);
+      return;
+    }
+
+    setState(() => saving = true);
+    try {
+      await widget.service.saveEvaluations(batch, widget.user.tenantId);
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (_) {
+      // بلا شبكة: الدرجات تُحفظ على الجهاز وتُرفع أول ما يعود الاتصال
+      await widget.offline.queueEvaluations(batch, widget.user.tenantId, widget.user.id);
+      if (!mounted) return;
+      setState(() => saving = false);
+      showAppSnack(context, 'حُفظت على الجهاز، سترفع عند عودة الاتصال');
+      Navigator.pop(context, true);
+    }
+  }
+
+  Widget _scopePicker() {
+    final grades = _grades();
+    final effectiveGrade = gradeFilter.isNotEmpty
+        ? gradeFilter
+        : (_current?.group.gradeLevel.trim().isNotEmpty == true
+            ? _current!.group.gradeLevel.trim()
+            : (grades.isEmpty ? '' : grades.first));
+    final sections = _sections(effectiveGrade);
+    final subjects = _subjectClasses(grade: effectiveGrade, section: sectionFilter);
+
+    final gradeValue = grades.contains(effectiveGrade) ? effectiveGrade : null;
+    final sectionValue = sections.contains(sectionFilter) ? sectionFilter : null;
+    final subjectValue = subjects.any((c) => c.group.id == groupId) ? groupId : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Container(
-              width: 24,
-              height: 24,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(color: _C.soft, shape: BoxShape.circle),
-              child: Text(
-                '$index',
-                style: const TextStyle(color: _C.slate600, fontSize: 11, fontWeight: FontWeight.w800, fontFamily: _mono),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    student.fullName,
+        const _Label('الصف:'),
+        _Select<String>(
+          value: gradeValue,
+          items: [
+            if (grades.isEmpty)
+              const DropdownMenuItem(value: '__none__', child: Text('لا صفوف مسندة'))
+            else
+              for (final g in grades) DropdownMenuItem(value: g, child: Text(g)),
+          ],
+          onChanged: grades.isEmpty
+              ? null
+              : (v) {
+                  if (v != null && v != '__none__') _selectGrade(v);
+                },
+        ),
+        const SizedBox(height: 10),
+        const _Label('الشعبة:'),
+        _Select<String>(
+          value: sectionValue,
+          hint: sections.isEmpty
+              ? (effectiveGrade.isEmpty ? 'اختر الصف أولاً' : 'لا شعب في هذا الصف')
+              : 'اختر الشعبة',
+          items: [
+            if (sections.isEmpty)
+              DropdownMenuItem(
+                value: '__none__',
+                child: Text(effectiveGrade.isEmpty ? 'اختر الصف أولاً' : 'لا شعب في هذا الصف'),
+              )
+            else
+              for (final s in sections) DropdownMenuItem(value: s, child: Text(s)),
+          ],
+          onChanged: sections.isEmpty
+              ? null
+              : (v) {
+                  if (v != null && v != '__none__') _selectSection(v);
+                },
+        ),
+        const SizedBox(height: 10),
+        const _Label('المادة:'),
+        _Select<String>(
+          value: subjectValue,
+          hint: 'اختر المادة',
+          items: [
+            if (subjects.isEmpty)
+              const DropdownMenuItem(value: '__none__', child: Text('لا مواد'))
+            else
+              for (final c in subjects)
+                DropdownMenuItem(
+                  value: c.group.id,
+                  child: Text(
+                    c.subjectName.trim().isEmpty
+                        ? cleanGroupName(c.group.name, c.group.gradeLevel)
+                        : c.subjectName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: _C.text, fontSize: 12, fontWeight: FontWeight.w800),
                   ),
-                  if ([
-                    if (student.gradeLevel.trim().isNotEmpty) student.gradeLevel.trim(),
-                    if (student.section.trim().isNotEmpty) student.section.trim(),
-                  ].isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        [
-                          if (student.gradeLevel.trim().isNotEmpty) student.gradeLevel.trim(),
-                          if (student.section.trim().isNotEmpty) student.section.trim(),
-                        ].join(' · '),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: _C.faint, fontSize: 10.5),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        if (student.nationalId.trim().isNotEmpty)
-          Padding(
-            padding: const EdgeInsetsDirectional.only(start: 32, top: 2),
-            child: Text(
-              'هوية: ${student.nationalId.trim()}',
-              style: const TextStyle(color: _C.faint, fontSize: 10, fontFamily: _mono),
-            ),
-          ),
-      ],
-    );
-
-    final buttons = [
-      _markButton('حاضر', Icons.check_circle_outline, 'present', _C.green, _C.greenDark, _C.greenSoft, _C.greenBorder),
-      _markButton('غائب', Icons.cancel_outlined, 'absent', _C.red, _C.redDark, _C.redSoft, _C.redBorder),
-      _markButton('مأذون', null, 'excused', _C.amber600, _C.orangeDark, _C.amber50, _C.amber200),
-    ];
-
-    return _Card(
-      padding: const EdgeInsets.all(12),
-      child: LayoutBuilder(
-        builder: (context, box) {
-          // ثلاثة أزرار بأيقوناتها بجوار الاسم تحتاج نحو 380 بكسل؛ دونها تنزل
-          // تحته بعرض كامل فلا يُسحق الاسم ولا تصغر أهداف اللمس
-          if (box.maxWidth < 380) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                info,
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    for (var i = 0; i < buttons.length; i++) ...[
-                      if (i > 0) const SizedBox(width: 6),
-                      Expanded(child: buttons[i]),
-                    ],
-                  ],
                 ),
-              ],
-            );
-          }
-          return Row(
-            children: [
-              Expanded(child: info),
-              const SizedBox(width: 8),
-              for (var i = 0; i < buttons.length; i++) ...[if (i > 0) const SizedBox(width: 6), buttons[i]],
-            ],
-          );
-        },
-      ),
+          ],
+          onChanged: subjects.isEmpty
+              ? null
+              : (v) {
+                  if (v != null && v != '__none__') _selectGroup(v);
+                },
+        ),
+        const SizedBox(height: 10),
+      ],
     );
   }
 
-  Widget _markButton(String label, IconData? icon, String value, Color on, Color onBorder, Color off, Color offBorder) {
-    final selected = status == value;
-    return GestureDetector(
-      onTap: () => onSet(value),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        height: 32,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected ? on : off,
-          borderRadius: BorderRadius.circular(Corner.field),
-          border: Border.all(color: selected ? onBorder : offBorder),
-          boxShadow: selected ? [BoxShadow(color: on.withValues(alpha: 0.22), blurRadius: 0, spreadRadius: 2)] : null,
+  @override
+  Widget build(BuildContext context) {
+    final students = _students();
+    final visibleStudents = listPage(students, rosterVisible);
+    final scheme = widget.gradingScheme;
+    final components = evalTerm.isEmpty ? const <GradingComponent>[] : scheme.of(evalTerm);
+    final useComponents = evalTerm.isNotEmpty && components.isNotEmpty;
+    final fullMark = defaultFullMark;
+
+    Widget pair(Widget a, Widget b) => Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [Expanded(child: a), const SizedBox(width: 8), Expanded(child: b)],
+        );
+
+    Widget field(String label, Widget input) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [_Label(label), input],
+        );
+
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      appBar: AppBar(
+        titleSpacing: 0,
+        title: const Text(
+          'رصد درجات',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
         ),
-        // ثلث عرض 320 بكسل لا يسع الأيقونة والكلمة بحجمهما: يُصغَّر المحتوى ولا يطفح
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null) ...[Icon(icon, size: 14, color: selected ? Colors.white : on), const SizedBox(width: 4)],
-              Text(label, style: TextStyle(color: selected ? Colors.white : on, fontSize: 12, fontWeight: FontWeight.w800)),
-            ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _Card(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _scopePicker(),
+                field(
+                  'العنوان',
+                  _Input(
+                    controller: evalTitle,
+                    hint: 'العنوان',
+                    errorText: titleError,
+                    onChanged: (_) {
+                      if (titleError != null) setState(() => titleError = null);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
+                pair(
+                  field(
+                    'الفصل',
+                    _Select<String>(
+                      value: evalTerm.isEmpty ? 'term_1' : evalTerm,
+                      height: 36,
+                      items: [
+                        for (final e in gradingTermLabels.entries)
+                          DropdownMenuItem(value: e.key, child: Text(e.value)),
+                      ],
+                      onChanged: (v) => setState(() {
+                        evalTerm = v ?? 'term_1';
+                        evalComponentId = '';
+                        evalTitle.clear();
+                      }),
+                    ),
+                  ),
+                  useComponents
+                      ? field(
+                          'المكوّن',
+                          _Select<String>(
+                            value: evalComponentId,
+                            height: 36,
+                            items: [
+                              const DropdownMenuItem(value: '', child: Text('اختر المكوّن')),
+                              for (final c in components)
+                                DropdownMenuItem(
+                                  value: c.id,
+                                  child: Text('${c.name} (من ${trimNum(componentMark(c, fullMark))})'),
+                                ),
+                            ],
+                            onChanged: (id) {
+                              final cid = id ?? '';
+                              setState(() {
+                                evalComponentId = cid;
+                                final comp = components.where((x) => x.id == cid).firstOrNull;
+                                if (comp == null) return;
+                                evalTitle.text = comp.name;
+                                final mark = componentMark(comp, fullMark);
+                                evalMax.text = trimNum(mark > 0 ? mark : fullMark);
+                                evalType = evaluationTypeForComponent(comp.name);
+                                titleError = null;
+                              });
+                            },
+                          ),
+                        )
+                      : field(
+                          'النوع',
+                          _Select<String>(
+                            value: evalType,
+                            height: 36,
+                            items: [
+                              for (final e in evaluationTypeNames.entries)
+                                DropdownMenuItem(value: e.key, child: Text(e.value)),
+                            ],
+                            onChanged: (v) => setState(() => evalType = v ?? evalType),
+                          ),
+                        ),
+                ),
+                const SizedBox(height: 10),
+                pair(
+                  field(
+                    'من',
+                    _Input(controller: evalMax, keyboardType: TextInputType.number, ltr: true),
+                  ),
+                  field(
+                    'التاريخ',
+                    _DateBox(
+                      date: evalDate,
+                      onPicked: (d) => setState(() {
+                        final next = termForDate(d);
+                        evalDate = d;
+                        if (next != evalTerm) {
+                          evalComponentId = '';
+                          evalTitle.clear();
+                        }
+                        evalTerm = next;
+                      }),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'قائمة الطلاب (${students.length})',
+                    style: const TextStyle(color: _C.navy, fontSize: 13, fontWeight: FontWeight.w900),
+                  ),
+                ),
+                if (students.isNotEmpty)
+                  InkWell(
+                    onTap: () {
+                      final full = trimNum(_maxScore);
+                      setState(() {
+                        for (final s in _students()) {
+                          _ctl(_scores, s.id).text = full;
+                        }
+                      });
+                    },
+                    child: const Text(
+                      'رصد الدرجة الكاملة للجميع',
+                      style: TextStyle(color: _C.blue600, fontSize: 11, fontWeight: FontWeight.w800),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(4, 4, 4, 8),
+            child: Text(
+              'اترك الدرجة فارغة لمن لم يختبر',
+              style: TextStyle(color: _C.muted, fontSize: 11),
+            ),
+          ),
+          if (students.isEmpty)
+            const _Empty('لا يوجد طلاب مسجلون في هذه الشعبة', height: 110)
+          else ...[
+            for (final s in visibleStudents)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _Card(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          s.fullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _C.text,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 80,
+                        child: _Input(
+                          controller: _ctl(_scores, s.id),
+                          hint: 'من ${trimNum(_maxScore)}',
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          ltr: true,
+                          center: true,
+                          dense: true,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 96,
+                        child: _Input(controller: _ctl(_notes, s.id), hint: 'ملاحظة', dense: true),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            LoadMoreButton(
+              shown: visibleStudents.length,
+              total: students.length,
+              onMore: () => setState(() => rosterVisible += kListPageSize),
+            ),
+          ],
+        ],
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          child: SizedBox(
+            height: 48,
+            child: FilledButton(
+              onPressed: saving || students.isEmpty ? null : _save,
+              style: FilledButton.styleFrom(
+                backgroundColor: brand.action,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Corner.field)),
+              ),
+              child: Text(
+                saving ? 'جاري الحفظ...' : 'حفظ كشف الدرجات',
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
           ),
         ),
       ),
@@ -2245,11 +2786,10 @@ class _TeacherSectionCard extends StatelessWidget {
 
 /// مادة تعليمية: نوعها وعنوانها ووصفها وموعد تسليمها، مقابل إجراءاتها.
 class _ItemTile extends StatelessWidget {
-  const _ItemTile({required this.item, required this.trailing, this.showNew = false});
+  const _ItemTile({required this.item, required this.trailing});
 
   final CourseItem item;
   final Widget trailing;
-  final bool showNew;
 
   @override
   Widget build(BuildContext context) {
@@ -2275,7 +2815,6 @@ class _ItemTile extends StatelessWidget {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     _Badge(item.typeLabel, fg: colors.fg, bg: colors.bg, radius: Corner.chip),
-                    if (showNew && item.isNew()) const _Badge('جديد', fg: _C.amber800, bg: _C.amber100, radius: Corner.chip),
                     Text(
                       item.title,
                       style: const TextStyle(color: _C.text, fontSize: 12, fontWeight: FontWeight.w800),
@@ -2286,8 +2825,8 @@ class _ItemTile extends StatelessWidget {
                   const SizedBox(height: 5),
                   Text(
                     item.description.trim(),
-                    maxLines: showNew ? null : 2,
-                    overflow: showNew ? null : TextOverflow.ellipsis,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: _C.slate600, fontSize: 11, height: 1.6),
                   ),
                 ],
@@ -2413,21 +2952,20 @@ class _NewSectionSheetState extends State<_NewSectionSheet> {
       setState(() => titleError = 'يرجى إدخال عنوان الوحدة');
       return;
     }
-    setState(() => busy = true);
-    try {
-      final section = await widget.service.createSection(
+    // تُبنى بمعرّفها هنا ويتولّى الرفع من فتح الورقة: هكذا تُنشأ الوحدة بلا
+    // شبكة أيضاً، وتُرفع بالمعرّف نفسه حين يعود الاتصال
+    Navigator.pop(
+      context,
+      CourseSection(
+        id: const Uuid().v4(),
         tenantId: widget.tenantId,
         groupId: widget.groupId,
         term: term,
-        title: title.text,
+        title: title.text.trim(),
         sortOrder: widget.sortOrder,
-      );
-      if (mounted) Navigator.pop(context, section);
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => busy = false);
-      showAppSnack(context, 'فشل إنشاء القسم', error: true);
-    }
+        createdAt: DateTime.now().toIso8601String(),
+      ),
+    );
   }
 
   @override
@@ -2560,8 +3098,10 @@ class _NewItemSheetState extends State<_NewItemSheet> {
         fileName = file!.name;
         size = fileSize;
       }
-      final item = await widget.service.createItem(CourseItem(
-        id: '',
+      // تُبنى بمعرّفها هنا: المادة النصية والرابط والواجب تُنشأ بلا شبكة،
+      // ويتولّى الرفع من فتح الورقة. الملف وحده يلزمه اتصال لرفع بايتاته.
+      final item = CourseItem(
+        id: const Uuid().v4(),
         tenantId: widget.tenantId,
         sectionId: widget.section.id,
         groupId: widget.section.groupId,
@@ -2573,7 +3113,8 @@ class _NewItemSheetState extends State<_NewItemSheet> {
         description: description.text,
         dueDate: dueDate,
         sortOrder: widget.section.items.length,
-      ));
+        createdAt: DateTime.now().toIso8601String(),
+      );
       if (mounted) Navigator.pop(context, item);
     } on PortalException catch (e) {
       if (mounted) {
@@ -2785,1081 +3326,444 @@ class _CopySectionSheetState extends State<_CopySectionSheet> {
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
-// بوابة الطالب
-// ══════════════════════════════════════════════════════════════════════════
-
-class StudentPortalScreen extends StatefulWidget {
-  const StudentPortalScreen({
-    super.key,
-    required this.user,
-    required this.onExit,
-    this.service = const PortalService(),
+/// تقييم واحد في سجل المعلم: عنوانه ومعدّله، ويُفتح فتظهر درجات طلابه.
+class _RecentEvaluationCard extends StatefulWidget {
+  const _RecentEvaluationCard({
+    required this.title,
+    required this.meta,
+    required this.average,
+    required this.rows,
+    required this.nameOf,
+    required this.onDelete,
+    required this.onEditScore,
   });
 
-  final PortalUser user;
-  final VoidCallback onExit;
-
-  /// قابلة للاستبدال في الاختبارات كي لا تمسّ السحابة.
-  final PortalService service;
+  final String title;
+  final String meta;
+  final int average;
+  final List<StudentEvaluation> rows;
+  final String Function(String studentId) nameOf;
+  final void Function(StudentEvaluation) onDelete;
+  final void Function(StudentEvaluation, double) onEditScore;
 
   @override
-  State<StudentPortalScreen> createState() => _StudentPortalScreenState();
+  State<_RecentEvaluationCard> createState() => _RecentEvaluationCardState();
 }
 
-class _StudentPortalScreenState extends State<StudentPortalScreen> {
-  StudentPortalData? data;
-  String? error;
-  bool loading = true;
+class _RecentEvaluationCardState extends State<_RecentEvaluationCard> {
+  bool open = false;
 
-  /// ولي الأمر يتابع ملف ابنه: الجدول والحضور والدرجات والرسوم، بلا المودل —
-  /// المحتوى الدراسي ليس من شأنه، ولا تمنحه القاعدة إياه أصلاً.
-  bool get isParent => widget.user.isParent;
-
-  late String tab = isParent ? 'attendance' : 'moodle';
-
-  // المودل
-  String? moodleGroupId;
-  String term = 'term_1';
-  List<CourseSection> sections = const [];
-  bool loadingMoodle = false;
-  final closed = <String>{};
-  int _moodleToken = 0;
-
-  PortalService get _service => widget.service;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    setState(() {
-      loading = true;
-      error = null;
-    });
-    try {
-      final result = await _service.studentData(widget.user);
-      if (!mounted) return;
-      setState(() {
-        data = result;
-        loading = false;
-        if (result == null) {
-          error = 'تعذّر جلب بيانات الطالب.';
-        } else if (moodleGroupId == null && result.subjects.isNotEmpty) {
-          moodleGroupId = result.subjects.first.groupId;
-        }
-      });
-      if (tab == 'moodle' && !isParent) _loadMoodle();
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        loading = false;
-        error = 'تعذّر الاتصال بالسحابة.';
-      });
-    }
-  }
-
-  Future<void> _loadMoodle() async {
-    final gid = moodleGroupId;
-    if (gid == null || gid.isEmpty) return;
-    final token = ++_moodleToken;
-    setState(() => loadingMoodle = true);
-    try {
-      final list = await _service.groupSections(
-        tenantId: widget.user.tenantId,
-        groupId: gid,
-        term: term,
-        // الطالب يرى المنشور وحده
-        includeHidden: false,
-      );
-      if (!mounted || token != _moodleToken) return;
-      setState(() {
-        sections = list;
-        closed.clear();
-        loadingMoodle = false;
-      });
-    } catch (_) {
-      if (mounted && token == _moodleToken) setState(() => loadingMoodle = false);
-    }
+  Color get _tone {
+    if (widget.average >= 85) return const Color(0xFF2E7D57);
+    if (widget.average >= 60) return const Color(0xFF9A6700);
+    return const Color(0xFFA5484A);
   }
 
   @override
   Widget build(BuildContext context) {
-    final branding = data?.branding ?? const PortalBranding();
-    final brand = _Brand(branding);
-
-    return Scaffold(
-      backgroundColor: _C.bg,
-      body: Column(
-        children: [
-          _PortalHeader(
-            branding: branding,
-            role: isParent ? 'ولي الأمر' : 'الطالب',
-            userName: widget.user.name,
-            onExit: widget.onExit,
-          ),
-          _ProfileBand(user: widget.user, student: data?.student, color: brand.side),
-          _PortalTabs(
-            compact: true,
-            tabs: [
-              if (!isParent) const _TabSpec('moodle', 'المودل', Icons.menu_book_outlined),
-              // المدرسة لا جداول أوقات فيها: المادة ومعلمها هما المحتوى
-              const _TabSpec('subjects', 'المواد والمعلمون', Icons.menu_book_outlined),
-              const _TabSpec('attendance', 'الحضور', Icons.event_available_outlined),
-              const _TabSpec('evaluations', 'الدرجات', Icons.workspace_premium_outlined),
-              const _TabSpec('financial', 'الرسوم', Icons.credit_card_outlined),
-            ],
-            active: tab,
-            color: brand.active,
-            onSelect: (id) {
-              setState(() => tab = id);
-              if (id == 'moodle' && !isParent && sections.isEmpty) _loadMoodle();
-            },
-          ),
-          Expanded(
-            child: loading
-                ? _loadingView()
-                : error != null
-                    ? _errorView(error!, _load)
-                    : RefreshIndicator(
-                        onRefresh: () async {
-                          await _load();
-                        },
-                        color: brand.active,
-                        child: ListView(
-                          padding: const EdgeInsets.all(16),
-                          children: switch (tab) {
-                            'subjects' => _subjectsTab(brand),
-                            'attendance' => _attendanceTab(),
-                            'evaluations' => _evaluationsTab(brand),
-                            'financial' => _financialTab(brand),
-                            _ => _moodleTab(),
-                          },
-                        ),
-                      ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── المودل ────────────────────────────────────────────────────────────────
-
-  List<Widget> _moodleTab() {
-    final subjects = data!.subjects;
-    return [
-      _Card(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text('المادة الدراسية:', style: TextStyle(color: _C.muted, fontSize: 12, fontWeight: FontWeight.w800)),
-                ),
-                Text(
-                  '${subjects.length} مواد مسجلة',
-                  style: const TextStyle(color: _C.navy, fontSize: 12, fontWeight: FontWeight.w800, fontFamily: _mono),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            if (subjects.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 6),
-                child: Text(
-                  'لا توجد مواد مسجلة حالياً',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: _C.faint, fontSize: 12, fontWeight: FontWeight.w800),
-                ),
-              )
-            else
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    for (final s in subjects)
-                      Padding(
-                        padding: const EdgeInsetsDirectional.only(end: 6),
-                        child: GestureDetector(
-                          onTap: () {
-                            setState(() => moodleGroupId = s.groupId);
-                            _loadMoodle();
-                          },
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 150),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                            decoration: BoxDecoration(
-                              color: moodleGroupId == s.groupId ? _C.navy : _C.soft,
-                              borderRadius: BorderRadius.circular(Corner.chip),
-                            ),
-                            child: Text(
-                              s.subjectName,
-                              style: TextStyle(
-                                color: moodleGroupId == s.groupId ? Colors.white : _C.muted,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            const SizedBox(height: 10),
-            _TermSwitch(
-              value: term,
-              onChanged: (t) {
-                setState(() => term = t);
-                _loadMoodle();
-              },
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 14),
-      if (loadingMoodle)
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 40),
-          child: Column(
-            children: [
-              SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: _C.navy)),
-              SizedBox(height: 8),
-              Text('جارٍ تحميل المحتوى الدراسي...', style: TextStyle(color: _C.muted, fontSize: 12, fontWeight: FontWeight.w800)),
-            ],
-          ),
-        )
-      else if (sections.isEmpty)
-        const _Empty(
-          'لا توجد وحدات أو دروس منشورة لهذه المادة في هذا الفصل',
-          icon: Icons.layers_outlined,
-          dashed: true,
-          height: 200,
-        )
-      else
-        for (final sec in sections) Padding(padding: const EdgeInsets.only(bottom: 12), child: _studentSection(sec)),
-    ];
-  }
-
-  Widget _studentSection(CourseSection sec) {
-    final open = !closed.contains(sec.id);
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(Corner.card),
-        border: Border.all(color: _C.line),
+        border: Border.all(color: AppColors.line),
+        boxShadow: cardShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           InkWell(
-            onTap: () => setState(() => open ? closed.add(sec.id) : closed.remove(sec.id)),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: _C.bg,
-                border: open ? const Border(bottom: BorderSide(color: _C.line)) : null,
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.layers_outlined, size: 16, color: _C.navy),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(
-                          sec.title,
-                          style: const TextStyle(color: _C.navy, fontSize: 12, fontWeight: FontWeight.w900),
-                        ),
-                        _Badge(sec.termLabel, fg: _C.muted, bg: _C.line, radius: Corner.chip),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '${sec.items.length} عنصر',
-                    style: const TextStyle(color: _C.muted, fontSize: 11, fontWeight: FontWeight.w800, fontFamily: _mono),
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(open ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 18, color: _C.muted),
-                ],
-              ),
-            ),
-          ),
-          if (open)
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: sec.items.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 10),
-                      child: Text(
-                        'لا توجد مواد أو واجبات مضافة في هذه الوحدة',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: _C.faint, fontSize: 11),
-                      ),
-                    )
-                  : Column(
-                      children: [
-                        for (final it in sec.items)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: _ItemTile(
-                              item: it,
-                              showNew: true,
-                              trailing: it.contentUrl.isEmpty
-                                  ? const SizedBox.shrink()
-                                  : _Soft(
-                                      label: it.type == 'file' ? 'عرض الملف' : 'فتح الرابط',
-                                      icon: it.type == 'file' ? Icons.description_outlined : Icons.open_in_new,
-                                      fg: _C.navy,
-                                      height: 32,
-                                      radius: Corner.field,
-                                      onTap: () => _openMaterial(context, it.contentUrl),
-                                    ),
-                            ),
-                          ),
-                      ],
-                    ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // ── الجدول ────────────────────────────────────────────────────────────────
-
-  List<Widget> _subjectsTab(_Brand brand) {
-    final subjects = data!.subjects;
-    return [
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Text(
-          'المواد والمعلمون (${subjects.length}):',
-          style: const TextStyle(color: _C.muted, fontSize: 12, fontWeight: FontWeight.w800),
-        ),
-      ),
-      const SizedBox(height: 10),
-      if (subjects.isEmpty)
-        const _Empty('لا توجد مواد مسجلة حالياً', height: 130)
-      else
-        for (final s in subjects)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: _Card(
+            onTap: () => setState(() => open = !open),
+            child: Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(14, 11, 8, 11),
               child: Row(
                 children: [
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(s.subjectName, style: TextStyle(color: brand.primary, fontSize: 12, fontWeight: FontWeight.w900)),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            Icon(Icons.person_outline, size: 13, color: brand.active),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text.rich(
-                                TextSpan(
-                                  text: 'المعلم: ',
-                                  children: [
-                                    TextSpan(
-                                      text: s.teacherName,
-                                      style: const TextStyle(color: _C.slate700, fontWeight: FontWeight.w800),
-                                    ),
-                                  ],
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(color: _C.muted, fontSize: 11),
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (s.roomName.isNotEmpty) ...[
-                          const SizedBox(height: 3),
-                          Text('القاعة: ${s.roomName}', style: const TextStyle(color: _C.faint, fontSize: 10.5)),
-                        ],
-                      ],
-                    ),
-                  ),
-                  if (s.days.isNotEmpty) ...[
-                    const SizedBox(width: 10),
-                    // خمسة أيام بأسمائها أعرض من نصف الهاتف: الشارة تنكسر سطرين
-                    // داخل نصف البطاقة بدل أن تدفع اسم المادة خارجها
-                    Flexible(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          _Badge(daysNames(s.days), fg: _C.amber600, bg: _C.amber100, radius: Corner.chip, maxLines: 2),
-                          if (s.startTime.length >= 5 && s.endTime.length >= 5) ...[
-                            const SizedBox(height: 4),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.schedule, size: 11, color: _C.muted),
-                                const SizedBox(width: 3),
-                                Flexible(
-                                  child: Text(
-                                    '${s.startTime.substring(0, 5)} - ${s.endTime.substring(0, 5)}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    textDirection: TextDirection.ltr,
-                                    style: const TextStyle(color: _C.muted, fontSize: 10.5, fontFamily: _mono),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-    ];
-  }
-
-  // ── الحضور ────────────────────────────────────────────────────────────────
-
-  List<Widget> _attendanceTab() {
-    final a = data!.attendance;
-    return [
-      Row(
-        children: [
-          Expanded(child: _Stat.green('حضور', '${a.present}')),
-          const SizedBox(width: 8),
-          Expanded(child: _Stat.red('غياب', '${a.absent}')),
-          const SizedBox(width: 8),
-          Expanded(child: _Stat.amber('مأذون', '${a.excused}')),
-        ],
-      ),
-      const SizedBox(height: 16),
-      const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 4),
-        child: Text('سجل الحضور:', style: TextStyle(color: _C.muted, fontSize: 12, fontWeight: FontWeight.w800)),
-      ),
-      const SizedBox(height: 8),
-      if (a.records.isEmpty)
-        const _Empty('لا توجد سجلات حضور مسجلة بعد', height: 130)
-      else
-        for (final r in a.records)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(Corner.box),
-                border: Border.all(color: _C.line),
-              ),
-              // التاريخ وسببه في عمود، والحالة في الطرف: الملاحظة الطويلة كانت
-              // تزاحم التاريخ في سطر واحد فيُقصّ أحدهما
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
                         Text(
-                          r.date,
-                          textDirection: TextDirection.ltr,
-                          style: const TextStyle(color: _C.slate700, fontSize: 12, fontWeight: FontWeight.w800, fontFamily: _mono),
-                        ),
-                        if (r.notes.trim().isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: Text(
-                              r.notes.trim(),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: _C.faint, fontSize: 10.5, fontWeight: FontWeight.w600),
-                            ),
+                          widget.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: AppText.family,
+                            color: AppColors.heading,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w800,
                           ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.meta,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: AppColors.faint, fontSize: 11),
+                        ),
                       ],
                     ),
                   ),
                   const SizedBox(width: 8),
-                  switch (r.status) {
-                    'present' => const _Badge('حاضر', fg: _C.emerald700, bg: _C.emerald50, border: _C.emerald200, icon: Icons.check_circle_outline),
-                    'excused' => const _Badge('مأذون', fg: _C.amber700, bg: _C.amber50, border: _C.amber200),
-                    _ => const _Badge('غائب', fg: _C.rose700, bg: _C.rose50, border: _C.rose200, icon: Icons.cancel_outlined),
-                  },
-                ],
-              ),
-            ),
-          ),
-    ];
-  }
-
-  // ── الدرجات ───────────────────────────────────────────────────────────────
-
-  List<Widget> _evaluationsTab(_Brand brand) {
-    final list = data!.evaluations;
-    final scheme = data!.branding.gradingScheme;
-    final summaries = subjectGradeSummaries(
-      [for (final e in list) e.toEvaluation()],
-      scheme,
-      (id) {
-        for (final e in list) {
-          if (e.subjectId == id && e.subjectName.isNotEmpty) return e.subjectName;
-        }
-        return 'مادة';
-      },
-    );
-
-    Widget termLine(String label, TermGrade term) {
-      final avg = term.components.isEmpty || term.currentAverage == null
-          ? '—'
-          : term.isComplete
-              ? '${term.total.round()}%'
-              : '${term.currentAverage!.round()}% (حالي)';
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(child: Text(label, style: const TextStyle(color: _C.slate700, fontSize: 11.5, fontWeight: FontWeight.w800))),
-              Text(avg, style: TextStyle(color: term.isComplete ? _C.emerald600 : _C.amber600, fontSize: 11.5, fontWeight: FontWeight.w900, fontFamily: _mono)),
-            ],
-          ),
-          for (final c in term.components)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${c.component.name} (${trimNum(c.component.weight)}%)',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: _C.muted, fontSize: 10.5),
+                  Text(
+                    '${widget.average}%',
+                    style: TextStyle(
+                      fontFamily: AppText.family,
+                      color: _tone,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                  Text(
-                    c.achievedPercent == null ? '—' : '${c.achievedPercent!.round()}%',
-                    style: const TextStyle(color: _C.muted, fontSize: 10.5, fontFamily: _mono),
+                  AnimatedRotation(
+                    turns: open ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: const Icon(Icons.keyboard_arrow_down_rounded, size: 22, color: AppColors.faint),
                   ),
                 ],
               ),
             ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            alignment: Alignment.topCenter,
+            child: !open
+                ? const SizedBox(width: double.infinity)
+                : Container(
+                    decoration: const BoxDecoration(
+                      color: AppColors.sunken,
+                      border: Border(top: BorderSide(color: AppColors.line)),
+                    ),
+                    child: Column(
+                      children: [
+                        for (var i = 0; i < widget.rows.length; i++)
+                          Container(
+                            padding: const EdgeInsetsDirectional.fromSTEB(14, 6, 6, 6),
+                            decoration: BoxDecoration(
+                              border: i == widget.rows.length - 1
+                                  ? null
+                                  : const Border(bottom: BorderSide(color: AppColors.hover)),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    widget.nameOf(widget.rows[i].studentId),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: AppColors.text,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                _EditableScore(
+                                  row: widget.rows[i],
+                                  onSave: (v) => widget.onEditScore(widget.rows[i], v),
+                                ),
+                                IconButton(
+                                  tooltip: 'حذف',
+                                  visualDensity: VisualDensity.compact,
+                                  icon: const Icon(Icons.delete_outline, size: 17, color: AppColors.danger),
+                                  onPressed: () => widget.onDelete(widget.rows[i]),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+/// حالة المزامنة في ترويسة المعلم — مقابل زر المزامنة في ترويسة الإدارة.
+///
+/// سحابة مشطوبة بلا اتصال، وعدد ما ينتظر الرفع فوقها، وضغطة تعيد المحاولة.
+class _PortalSyncButton extends StatelessWidget {
+  const _PortalSyncButton({
+    required this.offline,
+    required this.pending,
+    required this.busy,
+    required this.onTap,
+  });
+
+  final bool offline;
+  final int pending;
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tooltip = offline
+        ? (pending > 0 ? 'لا يوجد اتصال · $pending بانتظار الرفع' : 'لا يوجد اتصال')
+        : (pending > 0 ? '$pending بانتظار الرفع' : 'مزامنة');
+
+    return Tooltip(
+      message: tooltip,
+      child: InkResponse(
+        onTap: busy ? null : onTap,
+        radius: 22,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              if (busy)
+                SizedBox(
+                  width: 19,
+                  height: 19,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white.withValues(alpha: 0.85),
+                  ),
+                )
+              else
+                Icon(
+                  offline ? Icons.cloud_off_outlined : Icons.cloud_done_outlined,
+                  size: 19,
+                  color: offline ? const Color(0xFFF2C14E) : Colors.white.withValues(alpha: 0.85),
+                ),
+              if (pending > 0 && !busy)
+                PositionedDirectional(
+                  top: -4,
+                  end: -4,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    constraints: const BoxConstraints(minWidth: 14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF2C14E),
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: Text(
+                      '$pending',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFF3A2A00),
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// زر الصف في كشف حضور المعلم — مقابل زر الصف في كشف الإدارة.
+class _AttendanceClassButton extends StatelessWidget {
+  const _AttendanceClassButton({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.sunken,
+      borderRadius: BorderRadius.circular(Corner.field),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(Corner.field),
+        child: Container(
+          height: 40,
+          padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 8, 0),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(Corner.field),
+            border: Border.all(color: AppColors.line),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.groups_2_outlined, size: 17, color: AppColors.muted),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: AppText.family,
+                    color: AppColors.heading,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: AppColors.faint),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// اختيار الصف ثم شعبته في ورقة واحدة.
+class _AttendanceClassSheet extends StatefulWidget {
+  const _AttendanceClassSheet({
+    required this.grades,
+    required this.initialGrade,
+    required this.sectionsOf,
+    required this.currentSection,
+  });
+
+  final List<String> grades;
+  final String initialGrade;
+  final List<String> Function(String grade) sectionsOf;
+  final String currentSection;
+
+  @override
+  State<_AttendanceClassSheet> createState() => _AttendanceClassSheetState();
+}
+
+class _AttendanceClassSheetState extends State<_AttendanceClassSheet> {
+  late String grade = widget.initialGrade;
+
+  @override
+  Widget build(BuildContext context) {
+    final sections = widget.sectionsOf(grade);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('المرحلة', style: AppText.cardTitle),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final g in widget.grades)
+                  ChoiceChip(
+                    label: Text(g, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                    selected: g == grade,
+                    onSelected: (_) => setState(() => grade = g),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text('الشعبة', style: AppText.cardTitle),
+            if (sections.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  'لا شعب مسندة لهذا الصف',
+                  style: TextStyle(color: AppColors.faint, fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+              )
+            else
+              for (final s in sections)
+                ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    s,
+                    style: const TextStyle(color: AppColors.text, fontSize: 13, fontWeight: FontWeight.w700),
+                  ),
+                  trailing: s == widget.currentSection
+                      ? const Icon(Icons.check_rounded, size: 18, color: AppColors.success)
+                      : null,
+                  onTap: () => Navigator.pop(context, (grade: grade, section: s)),
+                ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// علامة تُلمس فتُعدَّل — مقابل نقر خلية العلامة في كشف الويب.
+///
+/// الرصد يخطئ، والمعلم كان مضطراً لحذف التقييم وإعادة رصده كلّه لتصحيح رقم.
+class _EditableScore extends StatefulWidget {
+  const _EditableScore({required this.row, required this.onSave});
+
+  final StudentEvaluation row;
+  final ValueChanged<double> onSave;
+
+  @override
+  State<_EditableScore> createState() => _EditableScoreState();
+}
+
+class _EditableScoreState extends State<_EditableScore> {
+  bool editing = false;
+  late final TextEditingController ctl = TextEditingController(
+    text: widget.row.score == null ? '' : trimNum(widget.row.score!),
+  );
+
+  @override
+  void dispose() {
+    ctl.dispose();
+    super.dispose();
+  }
+
+  void _commit() {
+    setState(() => editing = false);
+    final v = double.tryParse(ctl.text.trim());
+    if (v == null || v < 0 || v > widget.row.maxScore) {
+      // خارج المدى: تُردّ إلى قيمتها ولا تُحفظ
+      ctl.text = widget.row.score == null ? '' : trimNum(widget.row.score!);
+      showAppSnack(context, 'العلامة بين 0 و ${trimNum(widget.row.maxScore)}', error: true);
+      return;
+    }
+    if (v != widget.row.score) widget.onSave(v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (editing) {
+      return SizedBox(
+        width: 74,
+        height: 30,
+        child: TextField(
+          controller: ctl,
+          autofocus: true,
+          textAlign: TextAlign.center,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          style: TextStyle(
+            fontFamily: AppText.family,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w800,
+            color: AppColors.heading,
+          ),
+          decoration: InputDecoration(
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            suffixText: '/${trimNum(widget.row.maxScore)}',
+            suffixStyle: const TextStyle(color: AppColors.faint, fontSize: 10.5),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(Corner.field - 2)),
+          ),
+          onSubmitted: (_) => _commit(),
+          onTapOutside: (_) => _commit(),
+        ),
       );
     }
 
-    return [
-      if (summaries.isNotEmpty) ...[
-        for (final s in summaries)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: _Card(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(s.subjectName, style: TextStyle(color: brand.primary, fontSize: 13, fontWeight: FontWeight.w900)),
-                      ),
-                      if (s.yearAverage != null)
-                        Text('السنة: ${s.yearAverage!.round()}%', style: const TextStyle(color: _C.emerald600, fontSize: 11.5, fontWeight: FontWeight.w900)),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  if (scheme.isConfigured('term_1')) termLine('الفصل الأول', s.term1),
-                  if (scheme.isConfigured('term_1') && scheme.isConfigured('term_2')) const SizedBox(height: 8),
-                  if (scheme.isConfigured('term_2')) termLine('الفصل الثاني', s.term2),
-                ],
-              ),
-            ),
-          ),
-        const SizedBox(height: 6),
-      ],
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
+    return InkWell(
+      onTap: () => setState(() => editing = true),
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
         child: Text(
-          'كشف الدرجات والتقييمات (${list.length}):',
-          style: const TextStyle(color: _C.muted, fontSize: 12, fontWeight: FontWeight.w800),
-        ),
-      ),
-      const SizedBox(height: 10),
-      if (list.isEmpty)
-        const _Empty('لم يتم رصد أي درجات أو تقييمات لك بعد', icon: Icons.workspace_premium_outlined, height: 160)
-      else
-        for (final e in list) Padding(padding: const EdgeInsets.only(bottom: 10), child: _evaluationCard(e, brand)),
-    ];
-  }
-
-  Widget _evaluationCard(StudentEvaluation e, _Brand brand) {
-    final pct = e.percent ?? 0;
-    final tone = pct >= 85
-        ? (fg: _C.emerald700, bg: _C.emerald50, bar: const Color(0xFF10B981))
-        : pct >= 50
-            ? (fg: _C.amber700, bg: _C.amber50, bar: const Color(0xFFF59E0B))
-            : (fg: _C.rose700, bg: _C.rose50, bar: const Color(0xFFF43F5E));
-
-    return _Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(e.subjectName, style: TextStyle(color: brand.primary, fontSize: 12, fontWeight: FontWeight.w900)),
-                        _Badge(e.typeLabel, fg: _C.slate700, bg: _C.soft, radius: Corner.chip),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      e.title.isEmpty ? 'تقييم دراسي' : e.title,
-                      style: const TextStyle(color: _C.slate700, fontSize: 12, fontWeight: FontWeight.w800),
-                    ),
-                  ],
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text.rich(
-                    TextSpan(
-                      text: e.score == null ? '—' : trimNum(e.score!),
-                      style: TextStyle(
-                        color: e.passed ? _C.emerald600 : _C.rose600,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                      ),
-                      children: [
-                        TextSpan(
-                          text: ' / ${trimNum(e.maxScore)}',
-                          style: const TextStyle(color: _C.faint, fontSize: 12, fontWeight: FontWeight.w800),
-                        ),
-                      ],
-                    ),
-                    textDirection: TextDirection.ltr,
-                    style: const TextStyle(fontFamily: _mono),
-                  ),
-                  const SizedBox(height: 2),
-                  _Badge('$pct%', fg: tone.fg, bg: tone.bg, radius: Corner.chip),
-                ],
-              ),
-            ],
+          '${widget.row.score == null ? '—' : trimNum(widget.row.score!)}'
+          ' / ${trimNum(widget.row.maxScore)}',
+          textDirection: TextDirection.ltr,
+          style: TextStyle(
+            fontFamily: AppText.family,
+            color: AppColors.heading,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w800,
           ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(99),
-            child: LinearProgressIndicator(
-              value: (pct / 100).clamp(0.0, 1.0),
-              minHeight: 6,
-              backgroundColor: _C.soft,
-              color: tone.bar,
-            ),
-          ),
-          const Padding(padding: EdgeInsets.only(top: 8, bottom: 6), child: Divider(height: 1, color: _C.bg)),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'المعلم: ${e.teacherName}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: _C.muted, fontSize: 11),
-                ),
-              ),
-              Text(e.evaluationDate, style: const TextStyle(color: _C.muted, fontSize: 11, fontFamily: _mono)),
-            ],
-          ),
-          if (e.notes.trim().isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: _C.bg,
-                borderRadius: BorderRadius.circular(Corner.box),
-                border: Border.all(color: _C.soft),
-              ),
-              child: Text.rich(
-                TextSpan(
-                  text: 'ملاحظة: ',
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                  children: [TextSpan(text: e.notes.trim(), style: const TextStyle(fontWeight: FontWeight.w500))],
-                ),
-                style: const TextStyle(color: _C.slate600, fontSize: 11),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  // ── الرسوم ────────────────────────────────────────────────────────────────
-
-  List<Widget> _financialTab(_Brand brand) {
-    final f = data!.finance;
-    final owes = f.currentDue > 0;
-
-    return [
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: owes
-                ? _Stat.red('المستحق حالياً', money(f.currentDue), radius: Corner.card)
-                : _Stat.green('حالة الحساب', 'مسدد بالكامل', radius: Corner.card),
-          ),
-          const SizedBox(width: 8),
-          Expanded(child: _Stat.plain('إجمالي المسدد', money(f.totalPaid), valueColor: _C.emerald600, radius: Corner.card)),
-          const SizedBox(width: 8),
-          Expanded(child: _Stat.plain('إجمالي الرسوم', money(f.totalDue), valueColor: brand.primary, radius: Corner.card)),
-        ],
-      ),
-      if (f.scheduledRemaining > 0) ...[
-        const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            color: _C.bg,
-            borderRadius: BorderRadius.circular(Corner.box),
-            border: Border.all(color: _C.line),
-          ),
-          child: Text.rich(
-            TextSpan(
-              text: 'مجدول لاحقاً: ',
-              children: [
-                TextSpan(
-                  text: money(f.scheduledRemaining),
-                  style: const TextStyle(color: _C.navy, fontWeight: FontWeight.w800),
-                ),
-              ],
-            ),
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: _C.muted, fontSize: 11),
-          ),
-        ),
-      ],
-      const SizedBox(height: 16),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Text(
-          'جدول الأقساط والمطالبات (${f.installments.length}):',
-          style: const TextStyle(color: _C.muted, fontSize: 12, fontWeight: FontWeight.w800),
-        ),
-      ),
-      const SizedBox(height: 8),
-      if (f.installments.isEmpty)
-        const _Empty('لا توجد أقساط مسجلة حالياً', height: 90)
-      else
-        for (final i in f.installments)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: _Card(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(i.title, style: TextStyle(color: brand.primary, fontSize: 12, fontWeight: FontWeight.w900)),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            const Icon(Icons.schedule, size: 11, color: _C.muted),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text(
-                                'استحقاق: ${i.dueDate}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(color: _C.muted, fontSize: 10.5, fontFamily: _mono),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        money(i.amount),
-                        style: const TextStyle(color: _C.navy, fontSize: 12, fontWeight: FontWeight.w900, fontFamily: _mono),
-                      ),
-                      const SizedBox(height: 4),
-                      _installmentBadge(i),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-      const SizedBox(height: 8),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Text(
-          'سجل الدفعات وسندات القبض (${f.payments.length}):',
-          style: const TextStyle(color: _C.muted, fontSize: 12, fontWeight: FontWeight.w800),
-        ),
-      ),
-      const SizedBox(height: 8),
-      if (f.payments.isEmpty)
-        const _Empty('لا توجد سندات قبض مسجلة بعد', height: 90)
-      else
-        for (final p in f.payments)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () => _showReceipt(p),
-                borderRadius: BorderRadius.circular(Corner.card),
-                child: _Card(
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 4,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                Text(
-                                  'سند #${p.receiptNumber}',
-                                  style: TextStyle(color: brand.primary, fontSize: 12, fontWeight: FontWeight.w900, fontFamily: _mono),
-                                ),
-                                _Badge(data!.branding.methodLabel(p.method), fg: _C.muted, bg: _C.soft, radius: Corner.chip),
-                              ],
-                            ),
-                            const SizedBox(height: 3),
-                            Text(isoDate(p.date), style: const TextStyle(color: _C.faint, fontSize: 10.5, fontFamily: _mono)),
-                            if (p.purpose.isNotEmpty)
-                              Text(
-                                paymentPurposeNames[p.purpose] ?? p.purpose,
-                                style: const TextStyle(color: _C.slate600, fontSize: 10.5),
-                              ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          _Badge('+ ${money(p.amount)}', fg: _C.emerald600, bg: _C.emerald50, border: _C.emerald200, radius: Corner.chip),
-                          const SizedBox(height: 6),
-                          Text(
-                            'عرض الوصل',
-                            style: TextStyle(
-                              color: brand.primary,
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w800,
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-    ];
-  }
-
-  Widget _installmentBadge(PortalInstallment i) {
-    if (i.status == 'unpaid') {
-      return i.isScheduled
-          ? const _Badge('مجدول', fg: _C.slate600, bg: _C.soft, border: _C.line)
-          : const _Badge('مستحق', fg: _C.rose700, bg: _C.rose50, border: _C.rose200);
-    }
-    if (i.status == 'partially_paid') {
-      return i.isScheduled
-          ? _Badge('مجدول (باقي ${money(i.remaining)})', fg: _C.slate600, bg: _C.soft, border: _C.line)
-          : _Badge('باقي ${money(i.remaining)}', fg: _C.amber700, bg: _C.amber50, border: _C.amber200);
-    }
-    return const _Badge('مسدد', fg: _C.emerald700, bg: _C.emerald50, border: _C.emerald200);
-  }
-
-  Future<void> _showReceipt(Payment p) {
-    final d = data!;
-    return showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
-      builder: (ctx) => _PortalReceipt(payment: p, student: d.student, branding: d.branding),
-    );
-  }
-}
-
-/// شريط هوية الطالب بلون القائمة الجانبية: الاسم والمرحلة ورقم الهوية.
-class _ProfileBand extends StatelessWidget {
-  const _ProfileBand({required this.user, required this.student, required this.color});
-
-  final PortalUser user;
-  final Student? student;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final grade = user.gradeLevel.trim().isNotEmpty
-        ? user.gradeLevel.trim()
-        : (student?.gradeLevel.trim().isNotEmpty ?? false)
-            ? student!.gradeLevel.trim()
-            : 'طالب';
-    final rawSection = user.section.trim().isNotEmpty ? user.section.trim() : (student?.section.trim() ?? '');
-    // الشعبة المحفوظة قد تحمل كلمة «شعبة»: لا تتكرر «شعبة شعبة (1)»
-    final section = rawSection.isEmpty ? '' : (rawSection.startsWith('شعبة') ? ' - $rawSection' : ' - شعبة $rawSection');
-    final nationalId = user.nationalId.trim();
-
-    return Container(
-      color: color,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), shape: BoxShape.circle),
-            child: Icon(Icons.person_outline, size: 15, color: Colors.white.withValues(alpha: 0.8)),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  user.isParent
-                      ? (user.studentName.isNotEmpty ? user.studentName : (student?.fullName ?? user.name))
-                      : user.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800),
-                ),
-                Text(
-                  '$grade$section',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 10.5),
-                ),
-              ],
-            ),
-          ),
-          if (nationalId.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(Corner.chip),
-              ),
-              child: Text(
-                nationalId,
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 11, fontFamily: _mono),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// سند القبض كما يراه الطالب — المقابل لـ `ReceiptModal`.
-class _PortalReceipt extends StatelessWidget {
-  const _PortalReceipt({required this.payment, required this.student, required this.branding});
-
-  final Payment payment;
-  final Student student;
-  final PortalBranding branding;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = payment;
-    final brand = _Brand(branding);
-
-    Widget row(String k, String v) => Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(width: 100, child: Text(k, style: const TextStyle(color: _C.muted, fontSize: 11.5))),
-              Expanded(child: Text(v, style: const TextStyle(color: _C.text, fontSize: 12.5, fontWeight: FontWeight.w800))),
-            ],
-          ),
-        );
-
-    return SafeArea(
-      top: false,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                InstitutionBadge(logo: branding.logo, size: 40, radius: Corner.card, onDark: false),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(branding.name, style: TextStyle(color: brand.primary, fontSize: 13, fontWeight: FontWeight.w900)),
-                      const Text('سند قبض', style: TextStyle(color: _C.muted, fontSize: 11, fontWeight: FontWeight.w700)),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 18, color: _C.faint),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: Divider(height: 1, color: _C.line)),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'رقم الوصل: ${p.receiptNumber}',
-                    style: TextStyle(color: brand.primary, fontSize: 12.5, fontWeight: FontWeight.w900, fontFamily: _mono),
-                  ),
-                ),
-                Text(formatDate(p.date), style: const TextStyle(color: _C.muted, fontSize: 11.5, fontFamily: _mono)),
-              ],
-            ),
-            const SizedBox(height: 12),
-            row('وصلنا من', student.fullName),
-            if (student.gradeLevel.trim().isNotEmpty) row('المرحلة الدراسية', student.gradeLevel.trim()),
-            row('المبلغ المقبوض', money(p.amount)),
-            row('وقدره كتابةً', amountInArabicWords(p.amount)),
-            row('طريقة السداد', branding.methodLabel(p.method)),
-            row('وذلك عن', paymentPurposeNames[p.purpose] ?? p.purpose),
-            if (p.senderName.isNotEmpty) row('اسم المحول منه', p.senderName),
-            if (p.reference.isNotEmpty) row('الرقم المرجعي', p.reference),
-            if (p.notes.trim().isNotEmpty) row('البيان', p.notes.trim()),
-          ],
         ),
       ),
     );

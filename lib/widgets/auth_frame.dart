@@ -37,97 +37,144 @@ class AuthFrame extends StatelessWidget {
     final logoSize = keyboard ? 60.0 : 88.0;
 
     return Scaffold(
+      // خلفية فاتحة، وهويّة المنشأة حاضرة في دائرتين ناعمتين خلف المحتوى
       backgroundColor: Colors.white,
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, box) => SingleChildScrollView(
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 20),
-            // ارتفاع أدنى بقدر الشاشة: المحتوى في المنتصف حين يتسع المكان، ويُمرَّر
-            // حين تأخذ لوحة المفاتيح نصفه — بدل أن يُعصر ويقفز مع كل فتح لها
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: (box.maxHeight - 40).clamp(0.0, double.infinity)),
-              child: Center(
+      body: Stack(
+        children: [
+          PositionedDirectional(
+            top: -110,
+            end: -80,
+            child: _Blob(size: 260, color: AppColors.amber.withValues(alpha: 0.10)),
+          ),
+          PositionedDirectional(
+            bottom: -130,
+            start: -90,
+            child: _Blob(size: 300, color: AppColors.navy.withValues(alpha: 0.05)),
+          ),
+          SafeArea(
+            child: LayoutBuilder(
+              builder: (context, box) => SingleChildScrollView(
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+                // ارتفاع أدنى بقدر الشاشة: المحتوى في المنتصف حين يتسع المكان، ويُمرَّر
+                // حين تأخذ لوحة المفاتيح نصفه — بدل أن يُعصر ويقفز مع كل فتح لها
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 380),
-                  // عدد الأبناء ثابت مهما فُتحت لوحة المفاتيح: حذف العنوان
-                  // الفرعي والتذييل عند فتحها كان يزيح ما بعدهما، فتُبنى الحقول
-                  // من جديد وتفقد التركيز — فتنغلق لوحة المفاتيح فور فتحها.
-                  // المفاتيح تضمن بقاء عناصر النموذج نفسها عبر كل إعادة بناء.
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AnimatedContainer(
-                        key: const ValueKey('auth-logo'),
-                        duration: const Duration(milliseconds: 200),
-                        width: logoSize,
-                        height: logoSize,
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(Corner.card),
-                          border: Border.all(color: AppColors.line),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(Corner.box),
-                          // شعار المنشأة إن وصل، وإلا شعار النظام نفسه الذي
-                          // يحمله تطبيق سطح المكتب
-                          child: image == null
-                              ? Image.asset('assets/logo.png', fit: BoxFit.contain)
-                              : Image.memory(image, fit: BoxFit.contain, gaplessPlayback: true),
-                        ),
-                      ),
-                      SizedBox(key: const ValueKey('auth-gap-title'), height: keyboard ? 10 : 16),
-                      Text(
-                        title,
-                        key: const ValueKey('auth-title'),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: AppColors.heading,
-                          fontSize: keyboard ? 17 : 20,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      AnimatedSize(
-                        key: const ValueKey('auth-subtitle'),
-                        duration: const Duration(milliseconds: 200),
-                        curve: Curves.easeOut,
-                        child: keyboard || subtitle == null
-                            ? const SizedBox(width: double.infinity)
-                            : Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: Text(
-                                  subtitle!,
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                  constraints: BoxConstraints(minHeight: (box.maxHeight - 48).clamp(0.0, double.infinity)),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 360),
+                      // عدد الأبناء ثابت مهما فُتحت لوحة المفاتيح: حذف العنوان
+                      // الفرعي والتذييل عند فتحها كان يزيح ما بعدهما، فتُبنى الحقول
+                      // من جديد وتفقد التركيز — فتنغلق لوحة المفاتيح فور فتحها.
+                      // المفاتيح تضمن بقاء عناصر النموذج نفسها عبر كل إعادة بناء.
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          AnimatedContainer(
+                            key: const ValueKey('auth-logo'),
+                            duration: const Duration(milliseconds: 200),
+                            width: logoSize,
+                            height: logoSize,
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: AppColors.line),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.navy.withValues(alpha: 0.10),
+                                  blurRadius: 22,
+                                  offset: const Offset(0, 10),
                                 ),
-                              ),
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(Corner.box),
+                              // شعار المنشأة إن وصل، وإلا شعار النظام نفسه الذي
+                              // يحمله تطبيق سطح المكتب
+                              child: image == null
+                                  ? Image.asset('assets/logo.png', fit: BoxFit.contain)
+                                  : Image.memory(image, fit: BoxFit.contain, gaplessPlayback: true),
+                            ),
+                          ),
+                          SizedBox(key: const ValueKey('auth-gap-title'), height: keyboard ? 10 : 16),
+                          Text(
+                            title,
+                            key: const ValueKey('auth-title'),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: AppText.family,
+                              color: AppColors.heading,
+                              fontSize: keyboard ? 17 : 20,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                          AnimatedSize(
+                            key: const ValueKey('auth-subtitle'),
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeOut,
+                            child: keyboard || subtitle == null
+                                ? const SizedBox(width: double.infinity)
+                                : Padding(
+                                    padding: const EdgeInsets.only(top: 6),
+                                    child: Text(
+                                      subtitle!,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        fontFamily: AppText.family,
+                                        color: AppColors.muted,
+                                        fontSize: 12.5,
+                                        height: 1.45,
+                                      ),
+                                    ),
+                                  ),
+                          ),
+                          SizedBox(key: const ValueKey('auth-gap-body'), height: keyboard ? 14 : 22),
+                          KeyedSubtree(
+                            key: const ValueKey('auth-body'),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              mainAxisSize: MainAxisSize.min,
+                              children: children,
+                            ),
+                          ),
+                          AnimatedSize(
+                            key: const ValueKey('auth-footer'),
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeOut,
+                            child: keyboard || footer == null
+                                ? const SizedBox(width: double.infinity)
+                                : Padding(padding: const EdgeInsets.only(top: 16), child: footer!),
+                          ),
+                        ],
                       ),
-                      SizedBox(key: const ValueKey('auth-gap-body'), height: keyboard ? 14 : 24),
-                      KeyedSubtree(
-                        key: const ValueKey('auth-body'),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          mainAxisSize: MainAxisSize.min,
-                          children: children,
-                        ),
-                      ),
-                      AnimatedSize(
-                        key: const ValueKey('auth-footer'),
-                        duration: const Duration(milliseconds: 200),
-                        curve: Curves.easeOut,
-                        child: keyboard || footer == null
-                            ? const SizedBox(width: double.infinity)
-                            : Padding(padding: const EdgeInsets.only(top: 16), child: footer!),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
+        ],
       ),
+    );
+  }
+}
+
+/// دائرة ناعمة خلف المحتوى — عمق بلا ضجيج.
+class _Blob extends StatelessWidget {
+  const _Blob({required this.size, required this.color});
+
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
     );
   }
 }
@@ -144,8 +191,11 @@ class AuthCard extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(Corner.card),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: AppColors.line),
+        boxShadow: [
+          BoxShadow(color: AppColors.navy.withValues(alpha: 0.07), blurRadius: 24, offset: const Offset(0, 12)),
+        ],
       ),
       child: child,
     );
@@ -252,8 +302,12 @@ class AuthSubmitButton extends StatelessWidget {
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
-          color: AppColors.navy,
+          // لون الإجراءات في الثيم نفسه الذي يمتلئ به التبويب المختار
+          color: onTap == null && !busy ? AppColors.lineStrong : AppColors.amber,
           borderRadius: BorderRadius.circular(Corner.field),
+          boxShadow: onTap == null && !busy
+              ? null
+              : [BoxShadow(color: AppColors.amber.withValues(alpha: 0.28), blurRadius: 12, offset: const Offset(0, 4))],
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,

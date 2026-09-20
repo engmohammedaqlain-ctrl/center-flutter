@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../data/balance.dart';
-import '../data/phone.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
-import '../widgets/due_status.dart';
-import '../widgets/panels.dart';
+import '../widgets/animated_count.dart';
 import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
+import '../widgets/list_paging.dart';
 import 'return_to_grade_plan_sheet.dart';
 import 'student_detail_screen.dart';
 import 'student_form_screen.dart';
@@ -31,6 +30,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
   bool customPlanOnly = false;
   bool selectionMode = false;
   final selectedIds = <String>{};
+  int visibleCount = kListPageSize;
 
   @override
   void dispose() {
@@ -42,6 +42,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
     setState(() {
       grade = v;
       section = '';
+      visibleCount = kListPageSize;
     });
   }
 
@@ -110,15 +111,40 @@ class _StudentsScreenState extends State<StudentsScreen> {
     });
   }
 
-  void _openPendingSelection(AppStore store) {
-    final pending = store.studentsInViewedYear.where((s) => s.status == 'pending').map((s) => s.id).toSet();
-    setState(() {
-      statusFilter = 'pending';
-      selectionMode = true;
-      selectedIds
-        ..clear()
-        ..addAll(pending);
-    });
+  /// ضغطة واحدة من البانر: تأكيد كل المنتظرين بلا دخول وضع التحديد.
+  Future<void> _confirmAllPending(AppStore store) async {
+    final pending = store.studentsInViewedYear
+        .where((s) => s.status == 'pending')
+        .toList();
+    if (pending.isEmpty) return;
+    final ids = pending.map((s) => s.id).toList();
+    final ok = await confirmSheet(
+      context,
+      title: 'تأكيد التسجيل',
+      message: ids.length == 1
+          ? 'تأكيد تسجيل ${pending.first.fullName} وبناء أقساط السنة الجديدة؟'
+          : 'تأكيد تسجيل ${ids.length} طلاب وبناء أقساط سنتهم الجديدة؟',
+      confirmLabel: ids.length == 1 ? 'تأكيد' : 'تأكيد الكل',
+      confirmColor: AppColors.heading,
+    );
+    if (!ok || !mounted) return;
+    try {
+      final result = store.confirmPendingStudents(ids);
+      setState(() {
+        selectedIds.clear();
+        selectionMode = false;
+        if (statusFilter == 'pending') statusFilter = '';
+      });
+      final parts = <String>[
+        'تم تأكيد ${result.confirmed}',
+        if (result.planBuilt > 0) 'بُنيت أقساط ${result.planBuilt}',
+        if (result.customPlan > 0) '${result.customPlan} على خطة مخصصة',
+        if (result.withoutPlan > 0) '${result.withoutPlan} بلا أقساط',
+      ];
+      showAppSnack(context, parts.join(' · '));
+    } on StoreException catch (e) {
+      showAppSnack(context, e.message, error: true);
+    }
   }
 
   @override
@@ -169,6 +195,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
               }).toList()
               ..sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
 
+        final page = listPage(list, visibleCount);
         final canSelect = (customPlanOnly || pendingMode) && list.isNotEmpty && store.can('students');
         // المقام يستثني المؤرشفين حين الفلتر فارغ (كل الحالات) — مطابق للويب
         final countDenom = statusFilter.isEmpty
@@ -209,89 +236,47 @@ class _StudentsScreenState extends State<StudentsScreen> {
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Row(
                       children: [
                         Expanded(
                           child: SearchField(
                             controller: search,
-                            hint: 'بحث بالاسم أو الهاتف...',
-                            onChanged: (_) => setState(() {}),
-                            trailing: Text.rich(
-                              TextSpan(
-                                children: [
-                                  TextSpan(
-                                    text: '${list.length}',
-                                    style: TextStyle(
-                                      color: AppColors.heading,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                  if (list.length != countDenom)
-                                    TextSpan(
-                                      text: '/$countDenom',
-                                      style: const TextStyle(color: AppColors.faint),
-                                    ),
-                                ],
+                            hint: 'بحث بالاسم أو الهاتف أو الهوية…',
+                            onChanged: (_) => setState(() => visibleCount = kListPageSize),
+                            trailing: Text(
+                              list.length == countDenom
+                                  ? '$countDenom'
+                                  : '${list.length}/$countDenom',
+                              style: TextStyle(
+                                fontFamily: AppText.family,
+                                color: AppColors.muted,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
                               ),
-                              style: const TextStyle(fontSize: 11.5),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        FilterButton(
-                          value: grade,
-                          options: gradeFilterOptions,
-                          onSelected: _setGrade,
-                        ),
                         const SizedBox(width: 6),
-                        FilterButton(
-                          value: statusFilter,
-                          options: const {
-                            '': 'كل الحالات',
-                            'active': 'نشط',
-                            'pending': 'بانتظار التأكيد',
-                            'withdrawn': 'منسحب',
-                            'archived': 'مؤرشف',
-                            'completed': 'أنهى السنة',
-                          },
-                          onSelected: (v) => setState(() {
-                            statusFilter = v;
-                            if (v != 'pending' && !customPlanOnly) {
-                              selectionMode = false;
-                              selectedIds.clear();
-                            }
-                          }),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        if (grade.isNotEmpty && sectionOptions.isNotEmpty) ...[
-                          FilterButton(
-                            value: section,
-                            options: {
-                              '': 'كل الشعب',
-                              for (final s in sectionOptions.toList()..sort())
-                                s: s.replaceAll(RegExp(r'[()]'), ''),
-                            },
-                            onSelected: (v) => setState(() => section = v),
+                        _FilterIconButton(
+                          active: grade.isNotEmpty ||
+                              statusFilter.isNotEmpty ||
+                              section.isNotEmpty ||
+                              customPlanOnly,
+                          onTap: () => _openFiltersSheet(
+                            context,
+                            gradeOptions: gradeFilterOptions,
                           ),
-                          const SizedBox(width: 6),
-                        ],
-                        _ToggleChip(
-                          label: 'خطة مخصصة',
-                          on: customPlanOnly,
-                          onTap: () => _setCustomPlanOnly(!customPlanOnly),
                         ),
                         if (canSelect) ...[
                           const SizedBox(width: 6),
-                          _ToggleChip(
-                            label: selectionMode ? 'إنهاء التحديد' : 'تحديد',
-                            on: selectionMode,
+                          _FilterIconButton(
+                            icon: selectionMode ? Icons.close_rounded : Icons.checklist_rtl_rounded,
+                            active: selectionMode,
+                            tooltip: selectionMode ? 'إنهاء التحديد' : 'تحديد',
                             onTap: () => setState(() {
                               selectionMode = !selectionMode;
                               if (!selectionMode) selectedIds.clear();
@@ -300,41 +285,85 @@ class _StudentsScreenState extends State<StudentsScreen> {
                         ],
                       ],
                     ),
+                    // الفلاتر المفعّلة في سطر تحت البحث: كثرتها لا تضيّق حقل البحث
+                    if (!selectionMode &&
+                        (grade.isNotEmpty ||
+                            statusFilter.isNotEmpty ||
+                            section.isNotEmpty ||
+                            customPlanOnly)) ...[
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        height: 28,
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              if (grade.isNotEmpty)
+                                _ActiveFilterChip(
+                                  label: grade,
+                                  onClear: () => _setGrade(''),
+                                ),
+                              if (section.isNotEmpty) ...[
+                                const SizedBox(width: 4),
+                                _ActiveFilterChip(
+                                  label: section.startsWith('شعبة') ? section : 'شعبة $section',
+                                  onClear: () => setState(() => section = ''),
+                                ),
+                              ],
+                              if (statusFilter.isNotEmpty) ...[
+                                const SizedBox(width: 4),
+                                _ActiveFilterChip(
+                                  label: switch (statusFilter) {
+                                    'active' => 'نشط',
+                                    'pending' => 'بانتظار التأكيد',
+                                    'withdrawn' => 'منسحب',
+                                    'archived' => 'مؤرشف',
+                                    'completed' => 'أنهى السنة',
+                                    _ => statusFilter,
+                                  },
+                                  onClear: () => setState(() {
+                                    statusFilter = '';
+                                    if (!customPlanOnly) {
+                                      selectionMode = false;
+                                      selectedIds.clear();
+                                    }
+                                  }),
+                                ),
+                              ],
+                              if (customPlanOnly) ...[
+                                const SizedBox(width: 4),
+                                _ActiveFilterChip(
+                                  label: 'خطة مخصصة',
+                                  onClear: () => _setCustomPlanOnly(false),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 6),
                   ],
                 ),
               ),
-              if (pendingCount > 0 && !pendingMode)
+              if (pendingCount > 0 && !pendingMode && !selectionMode)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                  child: InfoStrip(
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '$pendingCount طالب بانتظار التأكيد بعد الترقية — لا أقساط لسنتهم الجديدة حتى تأكيدهم',
-                            style: const TextStyle(
-                              color: AppColors.text,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        if (store.can('students'))
-                          TextButton(
-                            onPressed: () => _openPendingSelection(store),
-                            style: TextButton.styleFrom(
-                              foregroundColor: AppColors.amber,
-                              textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11),
-                            ),
-                            child: const Text('تأكيد الطلاب'),
-                          ),
-                      ],
-                    ),
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                  child: _PendingNotice(
+                    count: pendingCount,
+                    onConfirm: store.can('students')
+                        ? () => _confirmAllPending(store)
+                        : null,
                   ),
                 ),
               if (selectionMode && canSelect)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border(bottom: BorderSide(color: AppColors.line)),
+                  ),
                   child: Row(
                     children: [
                       TextButton(
@@ -347,31 +376,44 @@ class _StudentsScreenState extends State<StudentsScreen> {
                               ..addAll(list.map((s) => s.id));
                           }
                         }),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: const Size(0, 40),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
                         child: Text(
-                          selectedIds.length == list.length
-                              ? 'إلغاء تحديد الكل'
-                              : 'تحديد الكل (${list.length})',
-                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5),
+                          selectedIds.length == list.length ? 'إلغاء التحديد' : 'تحديد الكل',
+                          style: TextStyle(
+                            fontFamily: AppText.family,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12.5,
+                            color: AppColors.heading,
+                          ),
                         ),
                       ),
                       Text(
-                        'محدّد: ${selectedIds.length}',
-                        style: const TextStyle(color: AppColors.muted, fontSize: 11),
+                        pendingMode
+                            ? '${selectedIds.length} بانتظار التأكيد'
+                            : '${selectedIds.length} محدّد',
+                        style: TextStyle(
+                          fontFamily: AppText.family,
+                          color: AppColors.muted,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       const Spacer(),
                       if (pendingMode)
                         PrimaryButton(
-                          label: 'تأكيد المحدّدين (${selectedIds.length})',
-                          onPressed: selectedIds.isEmpty
-                              ? null
-                              : () => _confirmSelected(store, list),
+                          label: selectedIds.isEmpty ? 'تأكيد' : 'تأكيد (${selectedIds.length})',
+                          height: 40,
+                          onPressed: selectedIds.isEmpty ? null : () => _confirmSelected(store, list),
                         )
                       else if (customPlanOnly && store.can('finance.discount'))
                         PrimaryButton(
-                          label: 'إرجاع المحددين لخطة المرحلة',
-                          onPressed: selectedIds.isEmpty
-                              ? null
-                              : () => _returnSelected(store, list),
+                          label: 'إرجاع لخطة المرحلة',
+                          height: 40,
+                          onPressed: selectedIds.isEmpty ? null : () => _returnSelected(store, list),
                         ),
                     ],
                   ),
@@ -379,58 +421,62 @@ class _StudentsScreenState extends State<StudentsScreen> {
               Expanded(
                 child: list.isEmpty
                     ? const Padding(
-                        padding: EdgeInsets.all(12),
+                        padding: EdgeInsets.all(16),
                         child: EmptyState(message: 'لا توجد بيانات طلاب مطابقة للبحث'),
                       )
                     : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, thumbActionClearance),
-                        itemCount: list.length,
+                        padding: const EdgeInsets.fromLTRB(0, 4, 0, thumbActionClearance),
+                        itemCount: page.length + (page.length < list.length ? 1 : 0),
                         itemBuilder: (_, i) {
-                          final student = list[i];
+                          if (i >= page.length) {
+                            return LoadMoreButton(
+                              shown: page.length,
+                              total: list.length,
+                              onMore: () => setState(() => visibleCount += kListPageSize),
+                            );
+                          }
+                          final student = page[i];
                           final hasPlan = store.installments.any((inst) => inst.studentId == student.id);
                           final due = buckets.due[student.id] ?? 0;
                           final scheduled = buckets.scheduled[student.id] ?? 0;
-                          final shown = hasPlan ? -due : student.balance;
+                          final shownBalance = hasPlan ? -due : student.balance;
                           final selected = selectedIds.contains(student.id);
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: _StudentCard(
-                              student: student,
-                              shownBalance: shown,
-                              scheduled: scheduled,
-                              hasPlan: hasPlan,
-                              selectionMode: selectionMode,
-                              selected: selected,
-                              onToggleSelect: selectionMode
-                                  ? () => setState(() {
-                                      if (selected) {
-                                        selectedIds.remove(student.id);
-                                      } else {
-                                        selectedIds.add(student.id);
-                                      }
-                                    })
-                                  : null,
-                              onConfirmPending: store.can('students') &&
-                                      student.status == 'pending' &&
-                                      !selectionMode
-                                  ? () {
-                                      try {
-                                        final usesCustom = student.usesCustomPlan;
-                                        final result = store.confirmPendingStudent(student.id);
-                                        showAppSnack(
-                                          context,
-                                          result.planBuilt
-                                              ? 'تم تأكيد تسجيل الطالب وبناء خطة أقساطه'
-                                              : usesCustom
-                                                  ? 'تم تأكيد تسجيل الطالب'
-                                                  : 'تم التأكيد — بلا أقساط',
-                                        );
-                                      } on StoreException catch (e) {
-                                        showAppSnack(context, e.message, error: true);
-                                      }
+                          return _StudentCard(
+                            student: student,
+                            shownBalance: shownBalance,
+                            scheduled: scheduled,
+                            hasPlan: hasPlan,
+                            selectionMode: selectionMode,
+                            selected: selected,
+                            onToggleSelect: selectionMode
+                                ? () => setState(() {
+                                    if (selected) {
+                                      selectedIds.remove(student.id);
+                                    } else {
+                                      selectedIds.add(student.id);
                                     }
-                                  : null,
-                            ),
+                                  })
+                                : null,
+                            onConfirmPending: store.can('students') &&
+                                    student.status == 'pending' &&
+                                    !selectionMode
+                                ? () {
+                                    try {
+                                      final usesCustom = student.usesCustomPlan;
+                                      final result = store.confirmPendingStudent(student.id);
+                                      showAppSnack(
+                                        context,
+                                        result.planBuilt
+                                            ? 'تم تأكيد تسجيل الطالب وبناء خطة أقساطه'
+                                            : usesCustom
+                                                ? 'تم تأكيد تسجيل الطالب'
+                                                : 'تم التأكيد — بلا أقساط',
+                                      );
+                                    } on StoreException catch (e) {
+                                      showAppSnack(context, e.message, error: true);
+                                    }
+                                  }
+                                : null,
                           );
                         },
                       ),
@@ -441,34 +487,226 @@ class _StudentsScreenState extends State<StudentsScreen> {
       },
     );
   }
+
+  Future<void> _openFiltersSheet(
+    BuildContext context, {
+    required Map<String, String> gradeOptions,
+  }) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet)),
+      ),
+      builder: (ctx) {
+        var draftGrade = grade;
+        var draftSection = section;
+        var draftStatus = statusFilter;
+        var draftCustom = customPlanOnly;
+        return StatefulBuilder(
+          builder: (ctx, setSheet) {
+            final sections = <String>{};
+            if (draftGrade.isNotEmpty) {
+              for (final s in StoreScope.of(context).studentsInViewedYear) {
+                if (s.gradeLevel.trim() != draftGrade) continue;
+                final sec = s.section.trim();
+                if (sec.isNotEmpty) sections.add(sec);
+              }
+            }
+            return SafeArea(
+              top: false,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + MediaQuery.paddingOf(ctx).bottom),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppColors.lineStrong,
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text('تصفية القائمة', style: AppText.title),
+                    const SizedBox(height: 18),
+                    Text('المرحلة', style: AppText.label),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final e in gradeOptions.entries)
+                          _SheetChoiceChip(
+                            label: e.value,
+                            selected: draftGrade == e.key,
+                            onTap: () => setSheet(() {
+                              draftGrade = e.key;
+                              draftSection = '';
+                            }),
+                          ),
+                      ],
+                    ),
+                    if (sections.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Text('الشعبة', style: AppText.label),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _SheetChoiceChip(
+                            label: 'كل الشعب',
+                            selected: draftSection.isEmpty,
+                            onTap: () => setSheet(() => draftSection = ''),
+                          ),
+                          for (final s in sections.toList()..sort())
+                            _SheetChoiceChip(
+                              label: s.replaceAll(RegExp(r'[()]'), ''),
+                              selected: draftSection == s,
+                              onTap: () => setSheet(() => draftSection = s),
+                            ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    Text('الحالة', style: AppText.label),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final e in const {
+                          '': 'كل الحالات',
+                          'active': 'نشط',
+                          'pending': 'بانتظار التأكيد',
+                          'withdrawn': 'منسحب',
+                          'archived': 'مؤرشف',
+                          'completed': 'أنهى السنة',
+                        }.entries)
+                          _SheetChoiceChip(
+                            label: e.value,
+                            selected: draftStatus == e.key,
+                            onTap: () => setSheet(() => draftStatus = e.key),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('خطة مخصصة فقط', style: AppText.cardTitle.copyWith(fontSize: 14)),
+                      value: draftCustom,
+                      activeThumbColor: AppColors.accent,
+                      onChanged: (v) => setSheet(() => draftCustom = v),
+                    ),
+                    const SizedBox(height: 12),
+                    PrimaryButton(
+                      expand: true,
+                      label: 'تطبيق التصفية',
+                      height: 48,
+                      onPressed: () {
+                        setState(() {
+                          grade = draftGrade;
+                          section = draftSection;
+                          statusFilter = draftStatus;
+                          customPlanOnly = draftCustom;
+                          if (draftStatus != 'pending' && !draftCustom) {
+                            selectionMode = false;
+                            selectedIds.clear();
+                          }
+                        });
+                        Navigator.pop(ctx);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 }
 
-class _ToggleChip extends StatelessWidget {
-  const _ToggleChip({required this.label, required this.on, required this.onTap});
-  final String label;
-  final bool on;
+class _FilterIconButton extends StatelessWidget {
+  const _FilterIconButton({
+    required this.onTap,
+    this.active = false,
+    this.icon = Icons.tune_rounded,
+    this.tooltip,
+  });
+
   final VoidCallback onTap;
+  final bool active;
+  final IconData icon;
+  final String? tooltip;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    final child = PressableScale(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
       child: Container(
-        height: 32,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-          color: on ? AppColors.amberSoft : Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: on ? AppColors.amber : AppColors.line),
-        ),
+        width: controlHeight,
+        height: controlHeight,
         alignment: Alignment.center,
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            color: on ? AppColors.amberDark : AppColors.muted,
+        decoration: BoxDecoration(
+          color: active ? AppColors.amberSoft : AppColors.surface,
+          borderRadius: BorderRadius.circular(Corner.field),
+          border: Border.all(color: active ? AppColors.amberBorder : AppColors.line),
+        ),
+        child: Icon(
+          icon,
+          size: 20,
+          color: active ? AppColors.amberDark : AppColors.muted,
+        ),
+      ),
+    );
+    return tooltip == null ? child : Tooltip(message: tooltip!, child: child);
+  }
+}
+
+class _ActiveFilterChip extends StatelessWidget {
+  const _ActiveFilterChip({required this.label, required this.onClear});
+
+  final String label;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onClear,
+        borderRadius: BorderRadius.circular(Corner.chip),
+        child: Container(
+          height: 28,
+          padding: const EdgeInsetsDirectional.only(start: 8, end: 6),
+          decoration: BoxDecoration(
+            color: AppColors.amberSoft,
+            borderRadius: BorderRadius.circular(Corner.chip),
+            border: Border.all(color: AppColors.amberBorder),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontFamily: AppText.family,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.amberDark,
+                ),
+              ),
+              const SizedBox(width: 2),
+              Icon(Icons.close_rounded, size: 14, color: AppColors.amberDark),
+            ],
           ),
         ),
       ),
@@ -476,7 +714,126 @@ class _ToggleChip extends StatelessWidget {
   }
 }
 
-/// بطاقة الطالب — بعناصر `StudentMobileCard.tsx` في صفّ واحد.
+class _SheetChoiceChip extends StatelessWidget {
+  const _SheetChoiceChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return PressableScale(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.heading : AppColors.hover,
+          borderRadius: BorderRadius.circular(Corner.field),
+          border: Border.all(color: selected ? AppColors.heading : AppColors.line),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontFamily: AppText.family,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+            color: selected ? Colors.white : AppColors.text,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PendingNotice extends StatelessWidget {
+  const _PendingNotice({required this.count, this.onConfirm});
+
+  final int count;
+  final VoidCallback? onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final cta = count == 1 ? 'تأكيد' : 'تأكيد الكل';
+    return Material(
+      color: AppColors.amberSoft,
+      borderRadius: BorderRadius.circular(Corner.field),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+        child: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppColors.amber.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(Corner.box),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  fontFamily: AppText.family,
+                  color: AppColors.amberDark,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'بانتظار تأكيد التسجيل',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: AppText.family,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.text,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'بعد التأكيد تُبنى أقساط السنة الجديدة',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: AppText.family,
+                      fontSize: 11.5,
+                      color: AppColors.muted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (onConfirm != null) ...[
+              const SizedBox(width: 8),
+              SizedBox(
+                height: 36,
+                child: PrimaryButton(
+                  label: cta,
+                  height: 36,
+                  onPressed: onConfirm,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// بطاقة طالب بريميوم: أفاتار + اسم/مرحلة + شارة مالية مرتبة.
 class _StudentCard extends StatelessWidget {
   const _StudentCard({
     required this.student,
@@ -497,179 +854,210 @@ class _StudentCard extends StatelessWidget {
   final bool selected;
   final VoidCallback? onToggleSelect;
 
+  String get _metaLine {
+    final grade = student.gradeLevel.trim().isEmpty ? 'غير محدد' : student.gradeLevel.trim();
+    final raw = student.section.trim();
+    if (raw.isEmpty) return grade;
+    final section = raw.startsWith('شعبة') ? raw : 'شعبة $raw';
+    return '$grade · $section';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final phone = student.phone.trim().isNotEmpty
-        ? student.phone.trim()
-        : student.parentPhone.trim();
-    final grade = student.gradeLevel.trim().isEmpty ? 'غير محدد' : student.gradeLevel.trim();
-    final meta = student.section.trim().isEmpty
-        ? grade
-        : '$grade  ·  شعبة ${student.section.trim()}';
+    final pending = student.status == 'pending';
+    final showFinance = StoreScope.of(context).can('finance') && !pending;
+    final shape = BorderRadius.circular(Corner.card);
 
-    return AppCard(
-      padding: const EdgeInsets.fromLTRB(6, 11, 12, 11),
-      onTap: () {
-        if (selectionMode && onToggleSelect != null) {
-          onToggleSelect!();
-          return;
-        }
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => StudentDetailScreen(studentId: student.id),
-          ),
-        );
-      },
-      child: Row(
-        children: [
-          if (selectionMode) ...[
-            Checkbox(
-              value: selected,
-              activeColor: AppColors.amber,
-              onChanged: (_) => onToggleSelect?.call(),
+    Widget trailing;
+    if (selectionMode) {
+      trailing = Checkbox(
+        value: selected,
+        activeColor: AppColors.amber,
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        onChanged: (_) => onToggleSelect?.call(),
+      );
+    } else if (onConfirmPending != null) {
+      trailing = _QuietAction(label: 'تأكيد', onTap: onConfirmPending!);
+    } else if (showFinance) {
+      trailing = _FinanceChip(
+        shownBalance: shownBalance,
+        scheduled: scheduled,
+        hasPlan: hasPlan,
+      );
+    } else if (!student.isActiveStudent) {
+      trailing = StudentStatusChip(status: student.status, compact: true);
+    } else if (student.usesCustomPlan) {
+      trailing = StatusChip.amber('مخصصة');
+    } else {
+      trailing = const AppChevron(size: 20);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: shape,
+        child: InkWell(
+          borderRadius: shape,
+          onTap: () {
+            if (selectionMode && onToggleSelect != null) {
+              onToggleSelect!();
+              return;
+            }
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => StudentDetailScreen(studentId: student.id),
+              ),
+            );
+          },
+          child: Ink(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: shape,
+              border: Border.all(
+                color: selected ? AppColors.accent.withValues(alpha: 0.35) : AppColors.line,
+              ),
+              boxShadow: cardShadow,
             ),
-          ],
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        student.fullName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppText.cardTitle.copyWith(fontSize: 14),
-                      ),
-                    ),
-                    if (!student.isActiveStudent) ...[
-                      const SizedBox(width: 6),
-                      StudentStatusChip(status: student.status, compact: true),
-                    ],
-                    if (student.usesCustomPlan) ...[
-                      const SizedBox(width: 6),
-                      StatusChip.amber('مخصصة'),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  meta,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
-                ),
-                if (student.parentName.trim().isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    'ولي الأمر: ${student.parentName.trim()}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppColors.faint, fontSize: 11),
-                  ),
-                ] else if (student.phone.trim().isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    formatPhoneDisplay(student.phone, student.phonePrefix),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textDirection: TextDirection.ltr,
-                    style: const TextStyle(color: AppColors.faint, fontSize: 11),
-                  ),
-                ],
-                if (onConfirmPending != null) ...[
-                  const SizedBox(height: 6),
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: TextButton(
-                      onPressed: onConfirmPending,
-                      style: TextButton.styleFrom(
-                        foregroundColor: AppColors.amber,
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-                        minimumSize: const Size(0, 28),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: const Text(
-                        'تأكيد',
-                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-                      ),
-                    ),
-                  ),
-                ],
-                if (selectionMode)
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: TextButton(
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => StudentDetailScreen(studentId: student.id),
-                          ),
-                        );
-                      },
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: const Text(
-                        'فتح',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          decoration: TextDecoration.underline,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          student.fullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.cardTitle.copyWith(fontSize: 15, fontWeight: FontWeight.w700),
                         ),
-                      ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _metaLine,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: AppText.family,
+                            color: AppColors.muted,
+                            fontSize: 12.5,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-              ],
+                  const SizedBox(width: 8),
+                  trailing,
+                ],
+              ),
             ),
           ),
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (StoreScope.of(context).can('finance'))
-                DueStatus(
-                  kind: shownBalance.abs() <= cent
-                      ? DueStatusKind.clear
-                      : shownBalance < 0
-                          ? DueStatusKind.due
-                          : DueStatusKind.credit,
-                  amount: shownBalance.abs(),
-                  scheduled: scheduled,
-                  clearLabel: hasPlan ? 'لا مستحق' : 'خالص',
-                  compact: true,
-                ),
-              if (phone.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ContactIconButton(
-                      tooltip: 'اتصال هاتفي',
-                      onTap: () => launchTel(phone),
-                      child: const Icon(Icons.phone_outlined, size: 18, color: AppColors.muted),
-                    ),
-                    ContactIconButton(
-                      tooltip: 'مراسلة واتساب',
-                      onTap: () => launchWa(phone),
-                      child: const MessageCircleIcon(color: AppColors.success),
-                    ),
-                  ],
-                ),
-              ],
-            ],
-          ),
-          if (!selectionMode) ...[
-            const SizedBox(width: 2),
-            const Icon(Icons.chevron_right, size: 20, color: AppColors.faint),
-          ],
-        ],
+        ),
       ),
+    );
+  }
+}
+
+/// زر صف مضغوط بنفس لغة PrimaryButton — لا إطار أبيض خفيف يُشبه «مراجعة».
+class _QuietAction extends StatelessWidget {
+  const _QuietAction({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 32,
+      child: FilledButton(
+        onPressed: onTap,
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.heading,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          minimumSize: const Size(0, 32),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(Corner.box),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontFamily: AppText.family,
+            fontWeight: FontWeight.w700,
+            fontSize: 12.5,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// شارة مالية مرتبة — مبلغ بارز، والمجدول تحته بخط ثانوي.
+class _FinanceChip extends StatelessWidget {
+  const _FinanceChip({
+    required this.shownBalance,
+    required this.scheduled,
+    required this.hasPlan,
+  });
+
+  final double shownBalance;
+  final double scheduled;
+  final bool hasPlan;
+
+  @override
+  Widget build(BuildContext context) {
+    final clear = shownBalance.abs() <= cent;
+    if (clear) {
+      return StatusChip.success(hasPlan ? 'لا مستحق' : 'خالص');
+    }
+
+    final due = shownBalance < 0;
+    final amount = money(shownBalance.abs());
+    final fg = due ? const Color(0xFFAE2A19) : AppColors.heading;
+    final bg = due ? AppColors.dangerSoft : AppColors.hover;
+    final border = due ? AppColors.dangerBorder : AppColors.lineStrong;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(Corner.chip),
+            border: Border.all(color: border),
+          ),
+          child: Text(
+            amount,
+            style: TextStyle(
+              fontFamily: AppText.family,
+              color: fg,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+              height: 1.1,
+            ),
+          ),
+        ),
+        if (scheduled > 0) ...[
+          const SizedBox(height: 4),
+          Text(
+            'مجدول ${money(scheduled)}',
+            style: TextStyle(
+              fontFamily: AppText.family,
+              color: AppColors.faint,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

@@ -173,56 +173,170 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
     );
   }
 
+  /// التنزيل الأول: حلقة تقدّم وعدّاد وخطوات — كلّها في محور واحد في وسط البطاقة.
   Widget _loading() {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Center(
-            child: SizedBox(
-              width: 26,
-              height: 26,
-              child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.navy),
+          SizedBox(
+            width: 64,
+            height: 64,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox.expand(
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3.5,
+                    strokeCap: StrokeCap.round,
+                    backgroundColor: AppColors.hover,
+                    color: AppColors.amber,
+                  ),
+                ),
+                Icon(Icons.cloud_download_outlined, size: 24, color: AppColors.amberDark),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           Text(
-            'جاري تنزيل بيانات المركز من السحابة...',
+            'جاري تنزيل بيانات المنشأة',
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.heading, fontSize: 13.5, fontWeight: FontWeight.w800),
+            style: TextStyle(
+              fontFamily: AppText.family,
+              color: AppColors.heading,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+            ),
           ),
-          const SizedBox(height: 6),
-          const Text(
-            'جارٍ تنزيل بيانات المنشأة.',
+          const SizedBox(height: 8),
+          Text(
+            pulledCount > 0 ? 'وصل $pulledCount سجلاً حتى الآن' : 'أول تشغيل يحتاج دقيقة — اتركه متصلاً',
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.muted, fontSize: 12, height: 1.6),
+            style: const TextStyle(color: AppColors.muted, fontSize: 12.5, height: 1.55),
+          ),
+          const SizedBox(height: 20),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            decoration: BoxDecoration(
+              color: AppColors.bg,
+              borderRadius: BorderRadius.circular(Corner.box),
+              border: Border.all(color: AppColors.line),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _step(
+                  icon: Icons.check_circle_rounded,
+                  label: 'تسجيل الدخول',
+                  state: _StepState.done,
+                ),
+                const SizedBox(height: 10),
+                _step(
+                  icon: Icons.downloading_rounded,
+                  label: 'تنزيل الطلاب والصفوف والمالية',
+                  state: _StepState.active,
+                ),
+                const SizedBox(height: 10),
+                _step(
+                  icon: Icons.badge_outlined,
+                  label: 'اختيار هوية الجهاز',
+                  state: _StepState.pending,
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _error() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+  Widget _step({required IconData icon, required String label, required _StepState state}) {
+    final Color color;
+    final Color bg;
+    switch (state) {
+      case _StepState.done:
+        color = AppColors.success;
+        bg = AppColors.successSoft;
+      case _StepState.active:
+        color = AppColors.amberDark;
+        bg = AppColors.amberSoft;
+      case _StepState.pending:
+        color = AppColors.faint;
+        bg = Colors.white;
+    }
+    return Row(
       children: [
-        const Icon(Icons.cloud_off_outlined, color: AppColors.danger, size: 30),
-        const SizedBox(height: 12),
-        Text(
-          'تعذر تنزيل البيانات من السحابة',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: AppColors.heading, fontSize: 13.5, fontWeight: FontWeight.w800),
+        Container(
+          width: 28,
+          height: 28,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: bg,
+            shape: BoxShape.circle,
+            border: Border.all(color: state == _StepState.pending ? AppColors.line : color.withValues(alpha: 0.35)),
+          ),
+          child: Icon(icon, size: 15, color: color),
         ),
-        const SizedBox(height: 6),
-        Text(
-          syncError!,
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: AppColors.muted, fontSize: 12, height: 1.6),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            label,
+            textAlign: TextAlign.start,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: AppText.family,
+              color: state == _StepState.pending ? AppColors.muted : AppColors.heading,
+              fontSize: 12.5,
+              fontWeight: state == _StepState.pending ? FontWeight.w600 : FontWeight.w800,
+              height: 1.35,
+            ),
+          ),
         ),
-        const SizedBox(height: 16),
-        AuthSubmitButton(label: 'إعادة المحاولة', icon: Icons.refresh, onTap: _performInitialSync),
       ],
+    );
+  }
+
+  Widget _error() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppColors.dangerSoft,
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.dangerBorder),
+            ),
+            child: const Icon(Icons.cloud_off_outlined, color: AppColors.danger, size: 26),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'تعذر تنزيل البيانات من السحابة',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: AppText.family,
+              color: AppColors.heading,
+              fontSize: 14.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            syncError!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.muted, fontSize: 12.5, height: 1.55),
+          ),
+          const SizedBox(height: 18),
+          AuthSubmitButton(label: 'إعادة المحاولة', icon: Icons.refresh, onTap: _performInitialSync),
+        ],
+      ),
     );
   }
 
@@ -318,31 +432,37 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
   /// مخرج من الشاشة في كل حالاتها: من لا يملك كلمة مرور المدير أو لا اتصال
   /// عنده يعود إلى بوابة الدخول بدل أن يُحبس هنا.
   Widget _backToLogin(AppStore store) {
-    return Center(
-      child: PressableScale(
-        onTap: () => store.logout(),
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.logout, size: 15, color: AppColors.muted),
-              SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  'العودة لتسجيل الدخول',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w700),
+    return PressableScale(
+      onTap: () => store.logout(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.logout_rounded, size: 16, color: AppColors.muted),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                'العودة لتسجيل الدخول',
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: AppText.family,
+                  color: AppColors.muted,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
+
+enum _StepState { done, active, pending }
 
 /// خيار مستخدم في التهيئة: الاسم ودوره، وعلامة على المختار.
 class _UserOption extends StatelessWidget {

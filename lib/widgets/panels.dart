@@ -38,30 +38,49 @@ class StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      padding: EdgeInsets.symmetric(horizontal: 8, vertical: compact ? 8 : 12),
+      padding: EdgeInsets.symmetric(horizontal: Gap.md, vertical: compact ? Gap.sm : Gap.md),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.muted, fontSize: compact ? 10 : 11)),
-          SizedBox(height: compact ? 2 : 4),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: AppText.family,
+              color: AppColors.muted,
+              fontSize: compact ? 11 : 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          SizedBox(height: compact ? Gap.xs : Gap.sm),
           FittedBox(
             fit: BoxFit.scaleDown,
             child: Text(
               value,
-              style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: compact ? 15 : 17),
+              style: TextStyle(
+                fontFamily: AppText.family,
+                color: color,
+                fontWeight: FontWeight.w900,
+                fontSize: compact ? 16 : 18,
+                height: 1.15,
+              ),
             ),
           ),
           if (caption != null) ...[
-            const SizedBox(height: 2),
-            Text(caption!,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.faint, fontSize: compact ? 9.5 : 10.5)),
+            const SizedBox(height: 4),
+            Text(
+              caption!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: AppText.family,
+                color: AppColors.faint,
+                fontSize: compact ? 10 : 11,
+              ),
+            ),
           ],
         ],
       ),

@@ -43,11 +43,13 @@ const withdrawnStatusMigrationKey = 'student_status_withdrawn_v1';
 
 /// ألوان الهوية — الحقول الخمسة نفسها الموجودة في `InstitutionColors`.
 class InstitutionColors {
+  // الافتراضي مطابق لـ `DEFAULT_COLORS` في الويب — اختلاف القيم هنا كان يجعل
+  // الجوال كحملياً/برتقالي والويب أزرق سماوي قبل وصول ألوان السحابة.
   const InstitutionColors({
-    this.sidebarBg = '#0B2545',
-    this.activeItem = '#E88C15',
-    this.primaryButton = '#0B2545',
-    this.actionButton = '#E88C15',
+    this.sidebarBg = '#0F172A',
+    this.activeItem = '#0284C7',
+    this.primaryButton = '#0F172A',
+    this.actionButton = '#0EA5E9',
     this.appBg = '#F8FAFC',
   });
 

@@ -8,7 +8,10 @@ import '../widgets/widgets.dart';
 import 'app_update_sheet.dart';
 import 'attendance_screen.dart';
 import 'classes_screen.dart';
+import 'developer_settings_screen.dart';
+import 'evaluations_screen.dart';
 import 'finance_screen.dart';
+import 'moodle_admin_screen.dart';
 import 'settings_screen.dart';
 import 'students_screen.dart';
 import 'sync_sheet.dart';
@@ -20,7 +23,7 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-/// قسم في شريط التنقّل — مطابق لـ `MobileBottomNav` مع حراسة الصلاحيات.
+/// قسم يومي في الشريط السفلي — الإعدادات والدرجات في القائمة الجانبية.
 class Section {
   const Section(
     this.id,
@@ -40,53 +43,70 @@ class Section {
 
 class _AppShellState extends State<AppShell> {
   String current = 'students';
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+  bool _wasOffline = false;
 
-  /// الأقسام المتاحة لهذا المستخدم على هذا الجهاز.
+  /// الأقسام اليومية فقط — بقية الإدارة من القائمة الجانبية.
+  /// الترتيب: طلاب → صفوف → حضور → مالية.
   List<Section> _sections(AppStore store) {
     final all = [
       const Section(
         'students',
         'الطلاب',
         'الطلاب',
-        Icons.groups_outlined,
-        Icons.groups,
+        Icons.people_alt_outlined,
+        Icons.people_alt_rounded,
         StudentsScreen(),
+      ),
+      const Section(
+        'classes',
+        'الصفوف',
+        'الصفوف',
+        Icons.school_outlined,
+        Icons.school_rounded,
+        ClassesScreen(),
       ),
       const Section(
         'attendance',
         'الحضور',
         'الحضور',
-        Icons.fact_check_outlined,
-        Icons.fact_check,
+        Icons.event_available_outlined,
+        Icons.event_available_rounded,
         AttendanceScreen(),
       ),
       const Section(
         'finance',
         'المالية',
         'المالية',
-        Icons.account_balance_wallet_outlined,
-        Icons.account_balance_wallet,
+        Icons.payments_outlined,
+        Icons.payments_rounded,
         FinanceScreen(),
-      ),
-      const Section(
-        'classes',
-        'الصفوف',
-        'الصفوف',
-        Icons.apartment_outlined,
-        Icons.apartment,
-        ClassesScreen(),
-      ),
-      const Section(
-        'settings',
-        'الإعدادات',
-        'الإعدادات',
-        Icons.settings_outlined,
-        Icons.settings,
-        SettingsScreen(),
       ),
     ];
     final allowed = all.where((s) => store.canOpenSection(s.id)).toList();
     return allowed.isEmpty ? [all.first] : allowed;
+  }
+
+  void _openSettings(String? tab) {
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(
+        builder: (_) => Material(
+          color: AppColors.bg,
+          child: SettingsScreen(initialTab: tab),
+        ),
+      ),
+    );
+  }
+
+  void _openPage(Widget page) {
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(
+        builder: (_) => Material(
+          color: AppColors.bg,
+          child: page,
+        ),
+      ),
+    );
   }
 
   @override
@@ -95,15 +115,61 @@ class _AppShellState extends State<AppShell> {
     return ListenableBuilder(
       listenable: store,
       builder: (context, _) {
+        // تنبيه واحد عند انقطاع الاتصال وعند عودته — لا مؤشر يدور بلا نهاية
+        if (store.offline != _wasOffline) {
+          _wasOffline = store.offline;
+          final offline = store.offline;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            showAppSnack(context, offline ? 'لا يوجد اتصال بالإنترنت' : 'عاد الاتصال', error: offline);
+          });
+        }
+        // قائمة بلا بنود لا تُفتح: من لا يملك إعدادات ولا درجات ولا مودل ليس
+        // له فيها إلا الخروج، فيُنقل إلى الترويسة ويُخفى زر القائمة
+        final hasMenu = store.canOpenSection('settings') ||
+            (store.features.enableEvaluations && store.can('evaluations')) ||
+            store.can('moodle') ||
+            store.isMasterAdmin;
         final sections = _sections(store);
         var index = sections.indexWhere((s) => s.id == current);
         if (index < 0) index = 0;
 
         return Scaffold(
-          backgroundColor: Colors.white,
+          key: _scaffoldKey,
+          backgroundColor: AppColors.bg,
+          drawer: !hasMenu
+              ? null
+              : _SideMenu(
+            store: store,
+            onClose: () => Navigator.of(context).maybePop(),
+            onOpenEvaluations: () {
+              Navigator.of(context).pop();
+              _openPage(const EvaluationsScreen());
+            },
+            onOpenMoodle: () {
+              Navigator.of(context).pop();
+              _openPage(const MoodleAdminScreen());
+            },
+            onOpenSettings: (tab) {
+              Navigator.of(context).pop();
+              _openSettings(tab);
+            },
+            onOpenDeveloper: () {
+              Navigator.of(context).pop();
+              _openPage(const DeveloperSettingsScreen());
+            },
+            onLogout: () {
+              Navigator.of(context).pop();
+              store.logout();
+            },
+          ),
           body: Column(
             children: [
-              _Header(title: sections[index].title),
+              _Header(
+                title: sections[index].title,
+                onOpenMenu: hasMenu ? () => _scaffoldKey.currentState?.openDrawer() : null,
+                onLogout: hasMenu ? null : store.logout,
+              ),
               Expanded(
                 child: IndexedStack(
                   index: index,
@@ -118,7 +184,6 @@ class _AppShellState extends State<AppShell> {
               ),
             ],
           ),
-          // سطر التحديث فوق شريط الأقسام: ظاهر دائماً بلا تغطية ولا توست يختفي
           bottomNavigationBar: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -137,34 +202,301 @@ class _AppShellState extends State<AppShell> {
   }
 }
 
-/// ترويسة الهاتف — مطابقة لـ `MobileHeader`: شعار المنشأة، ثم عنوان القسم
-/// واسم المنشأة، ثم حبّة المزامنة الذكية، ثم زر القائمة السريعة.
+/// قائمة جانبية: تفتح من اليمين (بداية الشاشة في RTL) وزر القائمة معها.
+class _SideMenu extends StatelessWidget {
+  const _SideMenu({
+    required this.store,
+    required this.onClose,
+    required this.onOpenEvaluations,
+    required this.onOpenMoodle,
+    required this.onOpenSettings,
+    required this.onOpenDeveloper,
+    required this.onLogout,
+  });
+
+  final AppStore store;
+  final VoidCallback onClose;
+  final VoidCallback onOpenEvaluations;
+  final VoidCallback onOpenMoodle;
+  final ValueChanged<String?> onOpenSettings;
+  final VoidCallback onOpenDeveloper;
+  final VoidCallback onLogout;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = store.institutionName.trim().isEmpty ? 'إدارة المدارس' : store.institutionName.trim();
+    final me = store.deviceUser;
+    final role = me?.name.trim().isNotEmpty == true ? me!.name : store.roleName;
+    final top = MediaQuery.paddingOf(context).top;
+
+    Widget sectionLabel(String text) => Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
+          child: Text(
+            text,
+            style: TextStyle(
+              fontFamily: AppText.family,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
+              color: AppColors.faint,
+            ),
+          ),
+        );
+
+    Widget item({
+      required IconData icon,
+      required String label,
+      required VoidCallback onTap,
+      Color? color,
+    }) {
+      return ListTile(
+        dense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+        leading: Container(
+          width: 36,
+          height: 36,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: (color ?? AppColors.heading).withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(Corner.box),
+          ),
+          child: Icon(icon, size: 18, color: color ?? AppColors.heading),
+        ),
+        title: Text(
+          label,
+          style: TextStyle(
+            fontFamily: AppText.family,
+            fontWeight: FontWeight.w700,
+            fontSize: 13.5,
+            color: AppColors.text,
+          ),
+        ),
+        // سهم «التالي» ينعكس مع العربية (matchTextDirection)
+        trailing: const AppChevron(size: 22),
+        onTap: onTap,
+      );
+    }
+
+    final canSettings = store.canOpenSection('settings');
+    final showAcademic = (store.features.enableEvaluations && store.can('evaluations')) || store.can('moodle');
+
+    return Drawer(
+      backgroundColor: Colors.white,
+      width: MediaQuery.sizeOf(context).width * 0.82,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: EdgeInsets.fromLTRB(16, top + 16, 20, 18),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topRight,
+                end: Alignment.bottomLeft,
+                colors: [AppColors.navy, AppColors.navyMid],
+              ),
+            ),
+            child: Row(
+              children: [
+                InstitutionBadge(logo: store.institutionLogo, size: 44, radius: 12),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: AppText.family,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                          height: 1.25,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        role,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: AppText.family,
+                          color: Colors.white.withValues(alpha: 0.65),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: onClose,
+                  icon: Icon(Icons.close_rounded, color: Colors.white.withValues(alpha: 0.85)),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.only(bottom: 16),
+              children: [
+                if (showAcademic) ...[
+                  sectionLabel('الأكاديمي'),
+                  if (store.features.enableEvaluations && store.can('evaluations'))
+                    item(
+                      icon: Icons.workspace_premium_rounded,
+                      label: 'الدرجات والتقييمات',
+                      color: AppColors.amber,
+                      onTap: onOpenEvaluations,
+                    ),
+                  if (store.can('moodle'))
+                    item(
+                      icon: Icons.auto_stories_rounded,
+                      label: 'المودل',
+                      color: AppColors.amber,
+                      onTap: onOpenMoodle,
+                    ),
+                ],
+                if (canSettings) ...[
+                  sectionLabel('إدارة المدرسة'),
+                  item(
+                    icon: Icons.badge_outlined,
+                    label: 'المعلمون',
+                    onTap: () => onOpenSettings('teachers'),
+                  ),
+                  item(
+                    icon: Icons.menu_book_rounded,
+                    label: 'المواد',
+                    onTap: () => onOpenSettings('subjects'),
+                  ),
+                  if (store.features.enableEvaluations)
+                    item(
+                      icon: Icons.grid_view_rounded,
+                      label: 'نظام العلامات',
+                      onTap: () => onOpenSettings('grading'),
+                    ),
+                  item(
+                    icon: Icons.calendar_month_rounded,
+                    label: 'الأعوام الدراسية',
+                    onTap: () => onOpenSettings('academic_years'),
+                  ),
+                  item(
+                    icon: Icons.account_balance_wallet_outlined,
+                    label: 'المراحل والرسوم',
+                    onTap: () => onOpenSettings('grade_fees'),
+                  ),
+                  item(
+                    icon: Icons.credit_card_rounded,
+                    label: 'وسائل الدفع',
+                    onTap: () => onOpenSettings('payment_methods'),
+                  ),
+                  if (store.can('settings.users'))
+                    item(
+                      icon: Icons.manage_accounts_rounded,
+                      label: 'المستخدمون',
+                      onTap: () => onOpenSettings('users'),
+                    ),
+                  if (store.can('settings.backup'))
+                    item(
+                      icon: Icons.cloud_sync_rounded,
+                      label: 'البيانات والنسخ',
+                      onTap: () => onOpenSettings('backup'),
+                    ),
+                ],
+                if (store.isMasterAdmin) ...[
+                  sectionLabel('المنصة'),
+                  item(
+                    icon: Icons.developer_mode_rounded,
+                    label: 'إعدادات المطور',
+                    color: AppColors.amber,
+                    onTap: onOpenDeveloper,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.line),
+          SafeArea(
+            top: false,
+            child: ListTile(
+              leading: Icon(Icons.logout_rounded, color: AppColors.danger),
+              title: Text(
+                'تسجيل الخروج',
+                style: TextStyle(
+                  fontFamily: AppText.family,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.danger,
+                  fontSize: 13.5,
+                ),
+              ),
+              onTap: onLogout,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// ترويسة: زر القائمة على اليمين مع فتح الـ Drawer من اليمين (RTL صحيح).
 class _Header extends StatelessWidget {
-  const _Header({required this.title});
+  const _Header({required this.title, this.onOpenMenu, this.onLogout});
   final String title;
+
+  /// `null` حين لا تحمل القائمة الجانبية شيئاً لهذا المستخدم.
+  final VoidCallback? onOpenMenu;
+
+  /// يظهر بدل زر القائمة حين تُخفى، فيبقى الخروج في متناول اليد.
+  final VoidCallback? onLogout;
 
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final top = MediaQuery.paddingOf(context).top;
+    final name = store.institutionName.trim().isEmpty ? 'إدارة المدارس' : store.institutionName.trim();
 
     return Container(
-      padding: EdgeInsets.fromLTRB(14, top + 10, 14, 10),
-      decoration: BoxDecoration(
-        color: AppColors.navy,
-        border: Border(bottom: BorderSide(color: AppColors.navyMid)),
-        boxShadow: [
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 8,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
+      padding: EdgeInsets.fromLTRB(8, top + 10, 8, 12),
+      color: AppColors.navy,
       child: Row(
         children: [
-          InstitutionBadge(logo: store.institutionLogo, size: 32),
-          const SizedBox(width: 10),
+          // قائمة بلا خلفية مربّعة — الأيقونة وحدها لا تسرق مساحة الترويسة
+          if (onOpenMenu != null)
+            Tooltip(
+              message: 'القائمة',
+              child: PressableScale(
+                onTap: onOpenMenu,
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: Icon(
+                    Icons.menu_rounded,
+                    size: 28,
+                    color: Colors.white.withValues(alpha: 0.95),
+                  ),
+                ),
+              ),
+            )
+          else if (onLogout != null)
+            Tooltip(
+              message: 'تسجيل الخروج',
+              child: PressableScale(
+                onTap: onLogout,
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: Icon(
+                    Icons.logout_rounded,
+                    size: 22,
+                    color: Colors.white.withValues(alpha: 0.9),
+                  ),
+                ),
+              ),
+            )
+          else
+            const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -175,96 +507,64 @@ class _Header extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
+                    fontFamily: AppText.family,
                     color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
-                    height: 1.25,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 17,
+                    height: 1.2,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  store.institutionName.isEmpty
-                      ? 'إدارة المدارس'
-                      : store.institutionName,
+                  name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.headerMuted,
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w600,
+                  style: TextStyle(
+                    fontFamily: AppText.family,
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
                     height: 1.2,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          _YearChip(store: store),
-          const SizedBox(width: 6),
-          _SyncPill(store: store),
-          const SizedBox(width: 8),
-          PressableScale(
-            onTap: () => showActionSheet(context, store),
-            child: Container(
-              width: 32,
-              height: 32,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(Corner.box),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-              ),
-              child: const Icon(Icons.more_vert, size: 17, color: Colors.white),
-            ),
+          _HeaderIconButton(
+            tooltip: store.viewedAcademicYear?.label ?? 'العام الدراسي',
+            icon: Icons.calendar_today_rounded,
+            onTap: store.academicYears.isEmpty ? null : () => _showYearPicker(context, store),
           ),
+          _SyncIcon(store: store),
         ],
       ),
     );
   }
 }
 
-/// العام المعروض: تغييره يبدّل نطاق القوائم دون تغيير عام التشغيل.
-class _YearChip extends StatelessWidget {
-  const _YearChip({required this.store});
+class _HeaderIconButton extends StatelessWidget {
+  const _HeaderIconButton({
+    required this.icon,
+    required this.onTap,
+    this.tooltip,
+  });
 
-  final AppStore store;
+  final IconData icon;
+  final VoidCallback? onTap;
+  final String? tooltip;
 
   @override
   Widget build(BuildContext context) {
-    final year = store.viewedAcademicYear;
-    return PressableScale(
-      onTap: store.academicYears.isEmpty
-          ? null
-          : () => _showYearPicker(context, store),
-      child: Container(
-        height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(Corner.box),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.calendar_month_outlined,
-              size: 13,
-              color: AppColors.headerMuted,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              year?.label.replaceAll(' ', '') ?? 'العام',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 9.5,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
+    final btn = PressableScale(
+      onTap: onTap,
+      child: SizedBox(
+        width: 40,
+        height: 40,
+        child: Icon(icon, size: 20, color: Colors.white.withValues(alpha: onTap == null ? 0.35 : 0.9)),
       ),
     );
+    if (tooltip == null) return btn;
+    return Tooltip(message: tooltip!, child: btn);
   }
 }
 
@@ -325,104 +625,82 @@ Future<void> _showYearPicker(BuildContext context, AppStore store) {
   );
 }
 
-/// حبّة المزامنة الذكية: حالة واحدة فقط بحسب الأولوية — رفع معلّق، ثم سحب
-/// متاح، ثم «متزامن». الرقم يتحرّك بدل أن يقفز، فيُرى أثر العملية.
-class _SyncPill extends StatelessWidget {
-  const _SyncPill({required this.store});
+/// مزامنة: أيقونة هادئة عند السكون، وشارة ملونة فقط حين يوجد رفع/سحب معلّق.
+class _SyncIcon extends StatelessWidget {
+  const _SyncIcon({required this.store});
   final AppStore store;
 
   @override
   Widget build(BuildContext context) {
     final push = store.pendingPush;
     final pull = store.pendingPull;
-    final busy = store.sync.isSyncing;
+    final busy = store.sync.isSyncing && !store.offline;
+
+    // بلا اتصال: سحابة مشطوبة ثابتة، وما ينتظر الرفع يبقى عدده ظاهراً عليها
+    if (store.offline) {
+      return _HeaderIconButton(
+        tooltip: push > 0 ? 'لا يوجد اتصال · $push بانتظار الرفع' : 'لا يوجد اتصال',
+        icon: Icons.cloud_off_outlined,
+        onTap: () => openSyncSheet(context, store, push: push > 0),
+      );
+    }
 
     if (push > 0) {
-      return _pill(
-        context,
+      return _SyncActionBadge(
         color: AppColors.amber,
-        icon: Icons.arrow_upward,
-        label: 'رفع',
+        icon: Icons.arrow_upward_rounded,
         count: push,
         busy: busy,
         onTap: () => openSyncSheet(context, store, push: true),
       );
     }
     if (pull > 0) {
-      return _pill(
-        context,
+      return _SyncActionBadge(
         color: AppColors.accent,
-        icon: Icons.arrow_downward,
-        label: 'سحب',
+        icon: Icons.arrow_downward_rounded,
         count: pull,
         busy: busy,
         onTap: () => openSyncSheet(context, store, push: false),
       );
     }
-    // «متزامن» تُقال فقط حين تكون السحابة قد فُحصت للتوّ. قولها بلا فحص
-    // كانت تطمئن المستخدم بينما في السحابة تعديلات لم يعلم بها.
+
     final known = store.sync.remoteStateKnown;
-    return PressableScale(
+    return _HeaderIconButton(
+      tooltip: known ? 'متزامن' : 'مزامنة',
+      icon: known ? Icons.cloud_done_outlined : Icons.cloud_outlined,
       onTap: () => openSyncSheet(context, store, push: false),
-      child: Container(
-        height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 9),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(Corner.box),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              known ? Icons.check_circle : Icons.cloud_sync_outlined,
-              size: 13,
-              color: known
-                  ? const Color(0xFF34D399)
-                  : Colors.white.withValues(alpha: 0.7),
-            ),
-            const SizedBox(width: 5),
-            Text(
-              known ? 'متزامن' : 'مزامنة',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.85),
-                fontSize: 10.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
+}
 
-  Widget _pill(
-    BuildContext context, {
-    required Color color,
-    required IconData icon,
-    required String label,
-    required int count,
-    required bool busy,
-    required VoidCallback onTap,
-  }) {
+class _SyncActionBadge extends StatelessWidget {
+  const _SyncActionBadge({
+    required this.color,
+    required this.icon,
+    required this.count,
+    required this.busy,
+    required this.onTap,
+  });
+
+  final Color color;
+  final IconData icon;
+  final int count;
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
     return PulsingBadge(
       trigger: count,
       child: PressableScale(
         onTap: busy ? null : onTap,
         child: Container(
-          height: 28,
-          padding: const EdgeInsets.symmetric(horizontal: 11),
+          margin: const EdgeInsets.symmetric(horizontal: 2),
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
           decoration: BoxDecoration(
             color: color,
-            borderRadius: BorderRadius.circular(Corner.box),
-            boxShadow: [
-              BoxShadow(
-                color: color.withValues(alpha: 0.35),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            borderRadius: BorderRadius.circular(Corner.field),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -431,29 +709,18 @@ class _SyncPill extends StatelessWidget {
                 const SizedBox(
                   width: 12,
                   height: 12,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 1.8,
-                    color: Colors.white,
-                  ),
+                  child: CircularProgressIndicator(strokeWidth: 1.8, color: Colors.white),
                 )
               else
-                Icon(icon, size: 13, color: Colors.white),
-              const SizedBox(width: 5),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
+                Icon(icon, size: 14, color: Colors.white),
               const SizedBox(width: 4),
               AnimatedCount(
                 count,
                 style: const TextStyle(
+                  fontFamily: AppText.family,
                   color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
             ],
@@ -464,8 +731,8 @@ class _SyncPill extends StatelessWidget {
   }
 }
 
-/// شريط التنقّل السفلي — مطابق لـ `MobileBottomNav`: خط كهرماني فوق القسم
-/// المفتوح وحبّة خلف أيقونته.
+/// شريط التنقّل السفلي — أسلوب Jira: أيقونة + تسمية بفواصل بينها، والنشط بلون
+/// الإجراءات في الثيم كبقية عناصر الواجهة التفاعلية.
 class _BottomNav extends StatelessWidget {
   const _BottomNav({
     required this.sections,
@@ -497,7 +764,9 @@ class _BottomNav extends StatelessWidget {
       ),
       child: Row(
         children: [
-          for (var i = 0; i < sections.length; i++)
+          for (var i = 0; i < sections.length; i++) ...[
+            // فاصل رفيع بين كل قسمين
+            if (i > 0) Container(width: 1, height: 28, color: AppColors.line),
             Expanded(
               child: _NavItem(
                 section: sections[i],
@@ -506,6 +775,7 @@ class _BottomNav extends StatelessWidget {
                 onTap: () => onSelect(i),
               ),
             ),
+          ],
         ],
       ),
     );
@@ -528,91 +798,64 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PressableScale(
-      scale: 0.92,
+      scale: 0.96,
       onTap: onTap,
       child: SizedBox(
-        height: 50,
-        child: Stack(
-          alignment: Alignment.topCenter,
+        height: 56,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeOut,
-              height: 2,
-              width: active ? 34 : 0,
-              decoration: BoxDecoration(
-                color: AppColors.accent,
-                borderRadius: BorderRadius.circular(Corner.box),
-              ),
-            ),
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+            Stack(
+              clipBehavior: Clip.none,
               children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      width: 38,
-                      height: 27,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: active
-                            ? AppColors.amberSoft
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(Corner.box),
-                      ),
-                      child: Icon(
-                        active ? section.activeIcon : section.icon,
-                        size: 19,
-                        color: active ? AppColors.accent : AppColors.muted,
-                      ),
-                    ),
-                    if (badge > 0)
-                      Positioned(
-                        left: -4,
-                        top: -3,
-                        child: PulsingBadge(
-                          trigger: badge,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 4,
-                              vertical: 1,
-                            ),
-                            constraints: const BoxConstraints(minWidth: 15),
-                            decoration: BoxDecoration(
-                              color: AppColors.danger,
-                              borderRadius: BorderRadius.circular(Corner.box),
-                              border: Border.all(
-                                color: Colors.white,
-                                width: 1.2,
-                              ),
-                            ),
-                            child: Text(
-                              '$badge',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 8.5,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
+                SizedBox(
+                  width: 30,
+                  height: 30,
+                  child: Icon(
+                    active ? section.activeIcon : section.icon,
+                    size: 24,
+                    color: active ? AppColors.amber : AppColors.faint,
+                  ),
+                ),
+                if (badge > 0)
+                  Positioned(
+                    left: -6,
+                    top: -4,
+                    child: PulsingBadge(
+                      trigger: badge,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        constraints: const BoxConstraints(minWidth: 16),
+                        decoration: BoxDecoration(
+                          color: AppColors.danger,
+                          borderRadius: BorderRadius.circular(Corner.chip),
+                          border: Border.all(color: Colors.white, width: 1.2),
+                        ),
+                        child: Text(
+                          '$badge',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontFamily: AppText.family,
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  section.label,
-                  style: TextStyle(
-                    fontSize: 10,
-                    height: 1,
-                    fontWeight: active ? FontWeight.w800 : FontWeight.w500,
-                    color: active ? AppColors.accent : AppColors.muted,
+                    ),
                   ),
-                ),
               ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              section.label,
+              style: TextStyle(
+                fontFamily: AppText.family,
+                fontSize: 10.5,
+                height: 1.1,
+                fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                color: active ? AppColors.amber : AppColors.faint,
+              ),
             ),
           ],
         ),

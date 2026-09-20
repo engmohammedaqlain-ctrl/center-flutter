@@ -14,6 +14,7 @@ class DueStatus extends StatelessWidget {
     this.scheduled = 0,
     this.clearLabel = 'خالص',
     this.compact = false,
+    this.endAligned = true,
   });
 
   final DueStatusKind kind;
@@ -21,6 +22,7 @@ class DueStatus extends StatelessWidget {
   final double scheduled;
   final String clearLabel;
   final bool compact;
+  final bool endAligned;
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +34,7 @@ class DueStatus extends StatelessWidget {
     final showAmount = kind != DueStatusKind.clear || clearLabel != 'لا مستحق';
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
+      crossAxisAlignment: endAligned ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         Text.rich(

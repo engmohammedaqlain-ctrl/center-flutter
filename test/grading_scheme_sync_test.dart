@@ -71,7 +71,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('شهري أول'), findsOneWidget);
-    expect(find.text('100%'), findsOneWidget, reason: 'مجموع الأوزان كما في الويب');
+    expect(find.text('100 / 100'), findsOneWidget, reason: 'مجموع العلامات كما في الويب');
     await s.flush();
   });
   testWidgets('مدرسة جديدة تبدأ بالنموذج الافتراضي كما في الديسكتوب', (tester) async {
@@ -93,9 +93,15 @@ void main() {
     for (final name in ['شهري أول', 'نصفي', 'شهري ثانٍ', 'نهائي']) {
       expect(find.text(name), findsOneWidget, reason: name);
     }
-    expect(find.text('100%'), findsOneWidget);
-    expect(find.text('حفظ'), findsOneWidget, reason: 'نموذج جاهز للتعديل لا نظام محفوظ');
+    expect(find.text('100 / 100'), findsOneWidget);
     expect(s.gradingScheme.isEmpty, isTrue, reason: 'لا يصير نظامها حتى تحفظه');
+
+    // الحفظ يظهر عند التعديل وحده — كما في الويب
+    expect(find.text('حفظ'), findsNothing, reason: 'لا تعديل بعد');
+    await tester.enterText(find.widgetWithText(TextField, 'نهائي'), 'نهائي معدّل');
+    await tester.pump();
+    expect(find.text('حفظ'), findsOneWidget);
+    expect(find.text('تراجع'), findsOneWidget);
     await s.flush();
   });
 }

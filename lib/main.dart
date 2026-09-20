@@ -7,6 +7,7 @@ import 'data/app_update.dart';
 import 'data/db_platform.dart';
 import 'data/local_db.dart';
 import 'data/portal.dart';
+import 'data/portal_offline.dart';
 import 'data/store.dart';
 import 'data/supabase.dart';
 import 'models/models.dart';
@@ -328,12 +329,51 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  /// استعادة جلسة بوابة محفوظة جارية — تبقى شاشة الإقلاع ظاهرة حتى تنتهي،
+  /// فلا يرى الطالب نموذج الدخول يومض قبل أن تُفتح بوابته.
+  late bool restoring = AppStore.instance.portalSession != null;
+
   @override
   void initState() {
     super.initState();
     // آخر اسم مستخدم أُدخل على هذا الجهاز — مطابق لسلوك LandingPage
     user.text = AppStore.instance.lastUsername;
     portalId.text = AppStore.instance.lastPortalNationalId;
+    unawaited(_restorePortal());
+  }
+
+  /// جلسة بوابة محفوظة: يُعاد التحقق بها بصمت فتُفتح البوابة مباشرةً.
+  /// الرمز قد يكون غُيّر أو الحساب أُوقف، فالفشل يترك شاشة الدخول كما هي.
+  Future<void> _restorePortal() async {
+    final saved = AppStore.instance.portalSession;
+    if (saved == null) return;
+    try {
+      final result = await const PortalService().login(saved.nationalId, saved.code);
+      if (!mounted) return;
+      final account = result.ok
+          ? (result.users.where((u) => u.id == saved.userId).firstOrNull ??
+              (result.users.length == 1 ? result.users.first : null))
+          : null;
+      setState(() => restoring = false);
+      if (account == null) {
+        if (!result.ok) await AppStore.instance.clearPortalSession();
+        return;
+      }
+      portalId.text = saved.nationalId;
+      portalCode.text = saved.code;
+      _openPortal(account, code: saved.code);
+    } catch (_) {
+      // بلا اتصال: تُفتح البوابة بالحساب المحفوظ على الجهاز، كما تفتح واجهة
+      // الإدارة على قاعدتها. التحقق يمرّ على السيرفر، فانتظاره يعني أن معلماً
+      // بلا شبكة لا يصل إلى كشوف صفوفه وهي محفوظة أمامه.
+      if (!mounted) return;
+      setState(() => restoring = false);
+      final cached = saved.user;
+      if (cached == null) return;
+      portalId.text = saved.nationalId;
+      portalCode.text = saved.code;
+      _openPortal(cached, code: saved.code);
+    }
   }
 
   Future<void> _portalSubmit() async {
@@ -388,9 +428,20 @@ class _LoginScreenState extends State<LoginScreen> {
     _openPortal(result.users.first);
   }
 
-  void _openPortal(PortalUser account) {
+  void _openPortal(PortalUser account, {String? code}) {
+    // الجلسة تبقى بعد إغلاق التطبيق، كجلسة الإدارة
+    unawaited(AppStore.instance.savePortalSession(
+      nationalId: account.nationalId.isEmpty ? portalId.text : account.nationalId,
+      code: code ?? portalCode.text,
+      userId: account.id,
+      user: account,
+    ));
+
     // الخروج يُنهي جلسة البوابة: لا تبقى صلاحيات طالب أو ولي أمر على الجهاز
     Future<void> exit() async {
+      await AppStore.instance.clearPortalSession();
+      // ولا تبقى كشوف صفوفه معروضة لمن يدخل بعده
+      await PortalOffline(AppStore.instance.db).clear();
       await supabaseSignOut();
       if (mounted) Navigator.of(context).pop();
     }
@@ -423,6 +474,8 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final store = AppStore.instance;
+    // جلسة محفوظة قيد الاستعادة: شاشة الإقلاع نفسها تبقى حتى تُفتح البوابة
+    if (restoring) return const SplashScreen();
     return AuthFrame(
       title: store.institutionName.isEmpty ? appName : store.institutionName,
       subtitle: 'بوابة تسجيل الدخول الرسمية',
@@ -449,17 +502,21 @@ class _LoginScreenState extends State<LoginScreen> {
           onTap: onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
-            height: 40,
+            height: 44,
             alignment: Alignment.center,
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
-              color: selected ? AppColors.navy : Colors.transparent,
-              borderRadius: BorderRadius.circular(Corner.box),
+              // المختار بلون الإجراءات في الثيم، فيُعرف من بعيد
+              color: selected ? AppColors.amber : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: selected
+                  ? [BoxShadow(color: AppColors.amber.withValues(alpha: 0.30), blurRadius: 10, offset: const Offset(0, 3))]
+                  : null,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: 15, color: selected ? Colors.white : AppColors.muted),
+                Icon(icon, size: 16, color: selected ? Colors.white : AppColors.muted),
                 const SizedBox(width: 5),
                 // «بوابة الطلاب والمعلمين» أطول من نصف الشاشة على الأجهزة الضيقة،
                 // فيلزم أن ينكمش بدل أن يفيض
@@ -470,8 +527,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
                     style: TextStyle(
+                      fontFamily: AppText.family,
                       color: selected ? Colors.white : AppColors.muted,
-                      fontSize: 11.5,
+                      fontSize: 12.5,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -486,13 +544,12 @@ class _LoginScreenState extends State<LoginScreen> {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: AppColors.bg,
-        borderRadius: BorderRadius.circular(Corner.field),
-        border: Border.all(color: AppColors.line),
+        color: AppColors.hover,
+        borderRadius: BorderRadius.circular(13),
       ),
       child: Row(
         children: [
-          tab('بوابة الطلاب والمعلمين', Icons.school_outlined, portalTab, () {
+          tab('الطلاب والمعلمون', Icons.school_outlined, portalTab, () {
             setState(() {
               portalTab = true;
               error = null;
@@ -500,7 +557,7 @@ class _LoginScreenState extends State<LoginScreen> {
             });
           }),
           const SizedBox(width: 4),
-          tab('دخول الإدارة', Icons.lock_outline, !portalTab, () {
+          tab('الإدارة', Icons.lock_outline, !portalTab, () {
             setState(() {
               portalTab = false;
               error = null;

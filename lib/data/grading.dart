@@ -94,6 +94,43 @@ const gradingTermLabels = {'term_1': 'الفصل الأول', 'term_2': 'الف�
 
 const defaultFullMark = 100.0;
 
+/// فصل التاريخ: من بداية الفصل الثاني في العام إن عُرّفت، وإلا تقديراً بالشهر
+/// (من أغسطس إلى يناير الأول، ومن فبراير إلى يوليو الثاني) — `termForDate`.
+String termForDate(String date, {String? term2Start}) {
+  final start = (term2Start ?? '').trim();
+  if (start.isNotEmpty) return date.compareTo(start) >= 0 ? 'term_2' : 'term_1';
+  final month = int.tryParse(date.length >= 7 ? date.substring(5, 7) : '') ?? 0;
+  return month >= 2 && month <= 7 ? 'term_2' : 'term_1';
+}
+
+/// علامة المكوّن من علامة المادة: نهائي 40% من 150 = 60 — `componentMark`.
+double componentMark(GradingComponent component, double fullMark) =>
+    (((component.weight) * fullMark) / 100 * 10).roundToDouble() / 10;
+
+/// نوع التقييم من اسم مكوّنه — المكوّن هو النوع فلا يُسأل عنهما معاً.
+String evaluationTypeForComponent(String? name) {
+  final n = name ?? '';
+  if (n.contains('نهائي')) return 'final';
+  if (n.contains('شهري') || n.contains('نصفي')) return 'monthly';
+  if (n.contains('نشاط') || n.contains('واجب') || n.contains('مشارك')) return 'activity';
+  if (n.contains('سلوك')) return 'behavior';
+  return 'quiz';
+}
+
+/// نموذج افتراضي بمعرّفات ثابتة كـ `createDefaultTermComponents` في الويب.
+List<GradingComponent> defaultRecordingComponents() => const [
+      GradingComponent(id: 'default_participation', name: 'مشاركة وواجبات', weight: 20),
+      GradingComponent(id: 'default_quizzes', name: 'اختبارات قصيرة', weight: 20),
+      GradingComponent(id: 'default_monthly', name: 'شهري', weight: 20),
+      GradingComponent(id: 'default_final', name: 'نهائي', weight: 40),
+    ];
+
+/// فصل بلا مكوّنات يأخذ النموذج الافتراضي — `withDefaultTerms`.
+GradingScheme withDefaultTerms(GradingScheme scheme) => GradingScheme(
+      term1: scheme.term1.isNotEmpty ? scheme.term1 : defaultRecordingComponents(),
+      term2: scheme.term2.isNotEmpty ? scheme.term2 : defaultRecordingComponents(),
+    );
+
 String subjectGradingKey(String grade, String subjectId) => '${grade.trim()}|$subjectId';
 
 /// تخصيص مادة داخل مرحلة — `SubjectGrading`.
@@ -124,6 +161,7 @@ class GradingSettings {
     this.subjects = const {},
     this.yearResultMode = 'average',
     this.monthlyDiscountRules = const [],
+    this.passPercent = defaultPassPercent,
   });
 
   static const empty = GradingSettings();
@@ -135,10 +173,21 @@ class GradingSettings {
 
   /// `average` | `term_2_only` | `sum`.
   final String yearResultMode;
+
+  /// علامة النجاح بالنسبة المئوية — تضبطها المدرسة، وافتراضها [defaultPassPercent].
+  final double passPercent;
   final List<({double minAverage, double discountPercent})> monthlyDiscountRules;
 
   GradingScheme schemeForSubject(String grade, String subjectId) =>
       subjects[subjectGradingKey(grade, subjectId)]?.scheme ?? scheme;
+
+  /// مخطط الرصد: تخصيص المادة إن وُجد، وإلا النموذج الافتراضي للفصلين — كـ
+  /// `schemeForSubject` + `withDefaultTerms` في نافذة الرصد على الويب.
+  GradingScheme recordingSchemeForSubject(String grade, String subjectId) {
+    final own = subjects[subjectGradingKey(grade, subjectId)]?.scheme;
+    if (own != null && !own.isEmpty) return own;
+    return withDefaultTerms(scheme);
+  }
 
   double fullMarkForSubject(String grade, String subjectId) =>
       subjects[subjectGradingKey(grade, subjectId)]?.fullMark ?? defaultFullMark;
@@ -150,6 +199,7 @@ class GradingSettings {
           for (final e in subjects.entries) e.key: e.value.toMap(),
         },
         'year_result_mode': yearResultMode,
+        'pass_percent': passPercent,
         'monthly_discount_rules': [
           for (final r in monthlyDiscountRules)
             {'min_average': r.minAverage, 'discount_percent': r.discountPercent},
@@ -187,6 +237,10 @@ class GradingSettings {
       subjects: subjects,
       yearResultMode: yrm == 'term_2_only' || yrm == 'sum' ? yrm : 'average',
       monthlyDiscountRules: rules,
+      passPercent: () {
+        final raw = (value['pass_percent'] as num?)?.toDouble() ?? 0;
+        return raw > 0 ? raw : defaultPassPercent;
+      }(),
     );
   }
 
@@ -196,6 +250,7 @@ class GradingSettings {
     Map<String, SubjectGrading>? subjects,
     String? yearResultMode,
     List<({double minAverage, double discountPercent})>? monthlyDiscountRules,
+    double? passPercent,
   }) =>
       GradingSettings(
         mode: mode ?? this.mode,
@@ -203,7 +258,21 @@ class GradingSettings {
         subjects: subjects ?? this.subjects,
         yearResultMode: yearResultMode ?? this.yearResultMode,
         monthlyDiscountRules: monthlyDiscountRules ?? this.monthlyDiscountRules,
+        passPercent: passPercent ?? this.passPercent,
       );
+}
+
+/// علامة النجاح الافتراضية — المقابل لـ `passPercent` في gradingScheme.ts.
+const defaultPassPercent = 50.0;
+
+/// هل الفصلان بتوزيع واحد؟ المدرسة الغالبة توزيعها واحد للفصلين.
+bool termsAreSame(GradingScheme scheme) {
+  if (scheme.term1.length != scheme.term2.length) return false;
+  for (var i = 0; i < scheme.term1.length; i++) {
+    final a = scheme.term1[i], b = scheme.term2[i];
+    if (a.name.trim() != b.name.trim() || (a.weight - b.weight).abs() > 0.001) return false;
+  }
+  return true;
 }
 
 /// تقييم مادة مرتبط بشعبة — يُستبعد من قائمة المعدلات الشهرية.

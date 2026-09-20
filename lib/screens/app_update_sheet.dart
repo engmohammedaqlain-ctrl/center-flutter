@@ -156,25 +156,10 @@ class UpdatePanel extends StatelessWidget {
               ),
             ],
 
+            // ملاحظات الإصدار لإدارة النشر وحدها، فلا تُعرض للمستخدم
             if (available && u.transferring) ...[
               const SizedBox(height: 12),
               DownloadProgressCard(updater: u),
-            ] else if (available && release.notes.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text('ما الجديد', style: TextStyle(color: AppColors.heading, fontSize: 12, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 6),
-              Container(
-                constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.3),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.bg,
-                  borderRadius: BorderRadius.circular(Corner.box),
-                  border: Border.all(color: AppColors.line),
-                ),
-                child: SingleChildScrollView(
-                  child: Text(release.notes, style: const TextStyle(color: AppColors.text, fontSize: 12, height: 1.7)),
-                ),
-              ),
             ],
 
             if (u.patchPhase != PatchPhase.none) ...[
@@ -472,7 +457,8 @@ class UpdateStatusStrip extends StatelessWidget {
                                   style: TextStyle(color: content.tone, fontSize: 11.5, fontWeight: FontWeight.w800),
                                 ),
                               ),
-                              if (content.opensSheet) Icon(Icons.chevron_left, size: 16, color: content.tone),
+                              if (content.opensSheet)
+                                Icon(Icons.chevron_right_rounded, size: 16, color: content.tone),
                             ],
                           ),
                         ),

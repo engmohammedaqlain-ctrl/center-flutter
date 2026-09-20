@@ -1,0 +1,173 @@
+        final teacher = store.teacherById(room.teacherId);
+        final canEdit = store.can('classes');
+        final canAttendance = store.can('attendance');
+        final roster = store.studentsOf(room);
+        final q = search.text.trim();
+        final list = q.isEmpty ? roster : roster.where((s) => s.fullName.contains(q) || s.phone.contains(q)).toList();
+        final buckets = installmentBucketsByStudent(store.installments);
+        final meta = [
+          if (room.gradeLevel.trim().isNotEmpty) room.gradeLevel.trim(),
+          teacher == null ? 'بدون مربي' : 'المربي: ${teacher.name}',
+          '${roster.length} طالباً',
+        ].join('  ·  ');
+        final showThumbBar = canAttendance || canEdit;
+
+        return Scaffold(
+          backgroundColor: AppColors.bg,
+          appBar: AppBar(
+            titleSpacing: 0,
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  room.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  meta,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 11, fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+            actions: [
+              IconButton(
+                tooltip: 'المعلمون والمواد',
+                icon: const Icon(Icons.menu_book_outlined, size: 22),
+                onPressed: () => _showSubjectTeachersSheet(context, room: room, canEdit: canEdit),
+              ),
+              PopupMenuButton<String>(
+                tooltip: 'المزيد',
+                position: PopupMenuPosition.under,
+                icon: const Icon(Icons.more_horiz, color: Colors.white),
+                onSelected: (v) {
+                  if (v == 'print') printClassRoster(context, store: store, room: room, students: roster);
+                  if (v == 'codes') showClassPortalCodes(context, room: room, students: roster);
+                  if (v == 'edit') _openRoomForm(context, room);
+                  if (v == 'assign') _assignTeacher(context, room);
+                  if (v == 'subjects') _assignSubjectTeachers(context, room);
+                  if (v == 'delete') {
+                    _confirmDeleteRoom(context, room, onDeleted: () => Navigator.pop(context));
+                  }
+                },
+                itemBuilder: (_) => [
+                  _menuItem('print', Icons.download_outlined, 'تنزيل كشف الصف (PDF)'),
+                  _menuItem('codes', Icons.vpn_key_outlined, 'رموز دخول الطلاب'),
+                  if (canEdit) ...[
+                    const PopupMenuDivider(height: 8),
+                    ..._manageItems(teacher),
+                  ],
+                ],
+              ),
+            ],
+          ),
+          body: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                child: SearchField(
+                  controller: search,
+                  hint: 'ابحث باسم الطالب أو الهاتف...',
+                  onChanged: (_) => setState(() {}),
+                  trailing: Text(
+                    q.isEmpty ? '${roster.length}' : '${list.length}/${roster.length}',
+                    style: const TextStyle(color: AppColors.muted, fontSize: 11, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+              if (room.notes.trim().isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  child: InfoStrip(
+                    child: Text(
+                      'ملاحظات: ${room.notes.trim()}',
+                      style: const TextStyle(color: AppColors.muted, fontSize: 12, height: 1.5),
+                    ),
+                  ),
+                ),
+              Expanded(
+                child: list.isEmpty
+                    ? EmptyState(
+                        message: q.isEmpty ? 'لا يوجد طلاب مسجلين في هذا الصف' : 'لا يوجد طلاب يطابقون البحث',
+                      )
+                    : ListView.builder(
+                        padding: EdgeInsets.fromLTRB(12, 0, 12, showThumbBar ? 12 : 16),
+                        itemCount: 1,
+                        itemBuilder: (_, __) => DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(Corner.card),
+                            border: Border.all(color: AppColors.line),
+                          ),
+                          child: Column(
+                            children: [
+                              for (var i = 0; i < list.length; i++) ...[
+                                _RosterRow(
+                                  seat: roster.indexOf(list[i]) + 1,
+                                  student: list[i],
+                                  due: buckets.due[list[i].id] ?? 0,
+                                  scheduled: buckets.scheduled[list[i].id] ?? 0,
+                                  hasPlan: buckets.due.containsKey(list[i].id) ||
+                                      buckets.scheduled.containsKey(list[i].id),
+                                  showBalance: store.can('finance'),
+                                  last: i == list.length - 1,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+              ),
+              if (showThumbBar)
+                Material(
+                  color: Colors.white,
+                  elevation: 10,
+                  shadowColor: const Color(0xFF091E42).withValues(alpha: 0.12),
+                  child: SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                      child: Row(
+                        children: [
+                          if (canAttendance)
+                            Expanded(
+                              child: PrimaryButton(
+                                label: 'رصد الحضور',
+                                icon: Icons.fact_check_outlined,
+                                expand: true,
+                                height: 48,
+                                onPressed: () => openClassAttendance(context, room: room),
+                              ),
+                            ),
+                          if (canAttendance && canEdit) const SizedBox(width: 8),
+                          if (canEdit)
+                            Expanded(
+                              child: SizedBox(
+                                height: 48,
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _addStudents(context, room),
+                                  icon: const Icon(Icons.person_add_alt_1_outlined, size: 18),
+                                  label: const Text('إضافة طالب', style: TextStyle(fontWeight: FontWeight.w700)),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppColors.heading,
+                                    side: const BorderSide(color: AppColors.lineStrong),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(Corner.field),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );

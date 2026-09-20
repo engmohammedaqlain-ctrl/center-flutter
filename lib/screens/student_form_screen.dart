@@ -825,17 +825,34 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
             // ── ٤. الرسوم والخصم ─────────────────────────────────────────────
             if (widget.student == null) ...[
               const FormSection(icon: Icons.account_balance_wallet_outlined, title: 'نوع خطة الأقساط'),
+              // ثلاثة خيارات في صفّ واحد: «خطة المرحلة» كاملةً، أو منها من شهر
+              // التسجيل، أو خطة يكتبها المستخدم — بدل سؤالين متتاليين
               Row(
                 children: [
                   Expanded(
                     child: _toggle(
                       'خطة المرحلة',
-                      planSource == 'grade',
+                      planSource == 'grade' && enrollmentMode == EnrollmentPlanMode.full,
                       AppColors.amber,
-                      () => _setPlanSource('grade'),
+                      () {
+                        _setPlanSource('grade');
+                        setState(() => enrollmentMode = EnrollmentPlanMode.full);
+                      },
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _toggle(
+                      'من شهر التسجيل',
+                      planSource == 'grade' && enrollmentMode == EnrollmentPlanMode.fromEnrollment,
+                      AppColors.amber,
+                      () {
+                        _setPlanSource('grade');
+                        setState(() => enrollmentMode = EnrollmentPlanMode.fromEnrollment);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 6),
                   Expanded(
                     child: _toggle(
                       'خطة مخصصة',
@@ -892,30 +909,6 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
               ] else
                 const SizedBox(height: 8),
               if (planSource == 'grade') ...[
-                _gap,
-                const FieldLabel('كيف تُنسَخ خطة المرحلة؟'),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _toggle(
-                        'الخطة كاملة',
-                        enrollmentMode == EnrollmentPlanMode.full,
-                        AppColors.amber,
-                        () => setState(() => enrollmentMode = EnrollmentPlanMode.full),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _toggle(
-                        'من شهر التسجيل',
-                        enrollmentMode == EnrollmentPlanMode.fromEnrollment,
-                        AppColors.amber,
-                        () => setState(() => enrollmentMode = EnrollmentPlanMode.fromEnrollment),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
                 Text(
                   enrollmentMode == EnrollmentPlanMode.fromEnrollment
                       ? 'لن تُحتسب أقساط الأشهر السابقة لشهر التسجيل (${isoDate(enrollmentDate).substring(0, 7)}).'
@@ -1660,12 +1653,15 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           color: on ? color : Colors.white,
           border: Border.all(color: on ? color : AppColors.line),
         ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: on ? Colors.white : AppColors.muted, fontWeight: FontWeight.w800, fontSize: 11.5),
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            style: TextStyle(color: on ? Colors.white : AppColors.muted, fontWeight: FontWeight.w800, fontSize: 11.5),
+          ),
         ),
       ),
     );

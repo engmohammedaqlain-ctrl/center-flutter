@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../data/store.dart';
@@ -5,8 +7,9 @@ import '../data/teacher_salary.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/animated_count.dart';
 import '../widgets/form_layout.dart';
-import '../widgets/panels.dart';
+import '../widgets/list_paging.dart';
 import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import 'expense_form_sheet.dart';
@@ -16,12 +19,12 @@ import 'general_income_sheet.dart';
 import 'receipt_screen.dart';
 import 'student_detail_screen.dart';
 
-/// المالية والصندوق — بتبويبات `pages/Finance.tsx` وترتيبها: المستحقات ثم
-/// المقبوضات ثم المصروفات وأجور المعلمين. المستحقات أولاً لأنها سبب فتح المالية.
+/// المالية والصندوق — بترتيب `pages/Finance.tsx` ومنطقه.
 ///
-/// بتنسيق ملف الطالب: بطاقات أرقام متجاورة أول كل تبويب، ثم سجل من بطاقات مرتبة —
-/// سطر رئيسي مقابل مبلغه، وخط رفيع، ثم الحالة وأزرارها. البحث والتصفية سطر واحد
-/// ثابت، والأرقام تُمرَّر مع السجل فلا تحجز من الشاشة شيئاً.
+/// الملخص هو التبويبات كما في الويب: أربع بطاقات — المستحقات والمقبوضات
+/// والمصروفات والطلبات — كلٌّ منها رقم الفترة وبابُ سجلّه. تحتها سطر ثابت:
+/// البحث وزرّ تصفية واحد يجمع العام والفصل وفلاتر التبويب، ثم السجل في بطاقة
+/// واحدة. الإجراء الأساسي زر الإبهام، والثانوي في رأس السجل.
 class FinanceScreen extends StatefulWidget {
   const FinanceScreen({super.key});
 
@@ -29,22 +32,36 @@ class FinanceScreen extends StatefulWidget {
   State<FinanceScreen> createState() => _FinanceScreenState();
 }
 
+/// التبويبات بترتيب الويب.
+enum _Tab { dues, payments, expenses, controls }
+
 class _FinanceScreenState extends State<FinanceScreen> {
-  int tab = 0;
+  _Tab tab = _Tab.dues;
+  /// التنقّل بين الأقسام سحباً بالإصبع، لا بالضغط على المفتاح وحده
+  final _pages = PageController();
   final search = TextEditingController();
   String method = '';
   String status = '';
   String dueStage = '';
+
   /// مصدر المقبوضات: '' الكل | students | other
   String sourceFilter = '';
+
+  /// المقبوضات حسب سنة الدفع (متى قُبض) أو حسب سنة القسط (رسوم أي سنة سُدّدت).
+  String paymentsBasis = 'payment';
+
+  int visibleCount = kListPageSize;
+  int auditVisible = kListPageSize;
+
   /// فلتر معلم في المصروفات (نسخه عبر الأعوام)
   String statementTeacherId = '';
-  /// فلتر سنة المالية المستقل عن العام المعروض: `current` | `all` | yearId
-  String financeYearFilter = 'current';
-  String termFilter = 'all';
   bool showProcessedRequests = false;
   String auditUserFilter = '';
   String auditActionFilter = '';
+
+  /// فلتر سنة المالية المستقل عن العام المعروض: `current` | `all` | yearId
+  String financeYearFilter = 'current';
+  String termFilter = 'all';
 
   static const _statusOptions = {
     '': 'كل الحالات',
@@ -113,49 +130,77 @@ class _FinanceScreenState extends State<FinanceScreen> {
     return true;
   }
 
+  /// سندات الفترة بسنة دفعها — أساس «المقبوضات» في البطاقة والصافي.
   List<Payment> _periodPayments(AppStore store) {
-    final source = financeYearFilter == 'all'
-        ? store.payments
-        : store.filterByYear(store.payments, yearId: _resolvedFinanceYearId(store));
-    return source.where((p) {
-      return _matchesFinancePeriod(
-        store,
-        yearId: p.academicYearId,
-        paymentDate: isoDate(p.date),
-      );
-    }).toList();
+    return store.payments
+        .where((p) => _matchesFinancePeriod(store, yearId: p.academicYearId, paymentDate: isoDate(p.date)))
+        .toList();
   }
 
+  /// المصروفات التشغيلية بتاريخها ضمن السنة والفصل — كما في الويب.
+  List<Expense> _periodExpenses(AppStore store) =>
+      store.expenses.where((e) => _matchesFinancePeriod(store, paymentDate: e.expenseDate)).toList();
+
+  /// الرواتب بشهرها لا بيوم صرفها.
+  List<TeacherPayout> _periodPayouts(AppStore store) => store.teacherPayouts
+      .where((p) => _matchesFinancePeriod(
+            store,
+            paymentDate: p.periodStart.isNotEmpty ? p.periodStart : p.paymentDate,
+          ))
+      .toList();
+
+  /// صافي الفترة: المقبوض فعلاً (بتاريخ قبضه) ناقص المصروفات والرواتب.
   ({double received, double spent, double net}) _periodNet(AppStore store) {
-    final pays = _periodPayments(store).where((p) => !p.cancelled);
-    final received = pays.fold<double>(0, (a, p) => a + p.amount);
-    final year = _filterYear(store);
-    var spent = 0.0;
-    for (final e in store.expenses) {
-      if (!_matchesFinancePeriod(store, paymentDate: e.expenseDate)) continue;
-      if (financeYearFilter != 'all' && year != null) {
-        final d = e.expenseDate.split('T').first;
-        if (d.compareTo(year.startsOn) < 0 || d.compareTo(year.endsOn) > 0) continue;
-      }
-      spent += e.amount;
-    }
-    for (final p in store.teacherPayouts) {
-      final d = p.periodStart.isNotEmpty ? p.periodStart : p.paymentDate;
-      if (!_matchesFinancePeriod(store, paymentDate: d)) continue;
-      if (financeYearFilter != 'all' && year != null) {
-        final day = d.split('T').first;
-        if (day.compareTo(year.startsOn) < 0 || day.compareTo(year.endsOn) > 0) continue;
-      }
-      spent += p.amount;
-    }
+    final received = _periodPayments(store).where((p) => !p.cancelled).fold<double>(0, (a, p) => a + p.amount);
+    final spent = _periodExpenses(store).fold<double>(0, (a, e) => a + e.amount) +
+        _periodPayouts(store).fold<double>(0, (a, p) => a + p.amount);
     return (received: received, spent: spent, net: received - spent);
   }
 
   @override
   void dispose() {
+    _pages.dispose();
     search.dispose();
     super.dispose();
   }
+
+  /// الأقسام بترتيبها — فهرس القسم هو رقم صفحته في السحب.
+  List<_Tab> _visibleTabs(bool showExpenses) => [
+        _Tab.dues,
+        _Tab.payments,
+        if (showExpenses) _Tab.expenses,
+        _Tab.controls,
+      ];
+
+  void _openTab(_Tab next) {
+    if (tab == next) return;
+    setState(() {
+      tab = next;
+      // لكل تبويب بحثه: نص يبحث عن وصل لا معنى له في المستحقات
+      search.clear();
+      visibleCount = kListPageSize;
+      auditVisible = kListPageSize;
+    });
+  }
+
+  ({Widget? toolbar, List<Widget> slivers}) _bodyOf(
+    _Tab which,
+    BuildContext context,
+    AppStore store,
+    List<DueItem> allDues,
+    String q,
+  ) =>
+      switch (which) {
+        _Tab.payments => _payments(context, store, q),
+        _Tab.expenses => _expenses(store, q),
+        _Tab.controls => (toolbar: null, slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+              sliver: SliverList(delegate: SliverChildListDelegate(_controls(context, store))),
+            ),
+          ]),
+        _Tab.dues => _dues(context, store, allDues, q),
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -167,10 +212,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
           return NoAccess(section: 'finance', roleName: store.roleName);
         }
 
-        // التبويب يتبع الميزة وحدها كما في Finance.tsx: من يفتح المالية يرى
-        // المصروفات، وتسجيل سند الصرف وحده يتطلب صلاحيته
+        // التبويب يتبع الميزة والصلاحية كما في Finance.tsx
         final showExpenses = store.features.enableExpenses && store.can('finance.expenses');
-        if (tab == 2 && !showExpenses) tab = 0;
+        if (tab == _Tab.expenses && !showExpenses) tab = _Tab.dues;
 
         final q = search.text.trim().toLowerCase();
         final allDues = store.dueItems().where((d) {
@@ -184,69 +228,117 @@ class _FinanceScreenState extends State<FinanceScreen> {
           );
         }).toList();
 
-        // الإجراء يتبع التبويب: قبض دفعة، أو سند صرف في تبويب المصروفات
-        final ThumbAction? action;
-        if (tab == 2) {
-          action = store.can('finance.expenses')
+        // زر «+» واحد يفتح ورقة تختار منها العملية، بدل أزرار ثانوية متفرقة
+        final ThumbAction? action = switch (tab) {
+          _Tab.expenses => store.can('finance.expenses')
               ? ThumbAction(
-                  label: 'إضافة سند صرف',
+                  label: 'صرف جديد',
                   icon: Icons.add,
                   color: AppColors.navy,
-                  onPressed: () async {
-                    final saved = await showExpenseSheet(context, store);
-                    if (saved && context.mounted)
-                      showAppSnack(context, 'تم حفظ سند الصرف');
-                  },
+                  onPressed: () => _showActions(context, 'صرف جديد', [
+                    (
+                      icon: Icons.receipt_long_outlined,
+                      label: 'إضافة سند صرف',
+                      color: AppColors.heading,
+                      onTap: () async {
+                        final saved = await showExpenseSheet(context, store);
+                        if (saved && context.mounted) showAppSnack(context, 'تم حفظ سند الصرف');
+                      },
+                    ),
+                    (
+                      icon: Icons.payments_outlined,
+                      label: 'صرف رواتب',
+                      color: AppColors.heading,
+                      onTap: () async {
+                        final count = await showPayrollSheet(context, store, month: monthKeyOf(DateTime.now()));
+                        if (count > 0 && context.mounted) showAppSnack(context, 'صُرفت رواتب $count معلماً');
+                      },
+                    ),
+                  ]),
                 )
-              : null;
-        } else if (tab == 3) {
-          action = store.can('finance.collect')
+              : null,
+          // المستحقات: التسديد وحده هو المقصود منها
+          _Tab.dues => store.can('finance.collect')
               ? ThumbAction(
-                  label: 'إيراد جديد',
+                  label: 'تسديد دفعة',
                   icon: Icons.add_card,
-                  color: AppColors.navy,
-                  onPressed: () async {
-                    final saved = await showGeneralIncomeSheet(context, store);
-                    if (saved && context.mounted) {
-                      showAppSnack(context, 'تم حفظ الإيراد وإصدار السند');
-                    }
-                  },
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const PaymentFormScreen()),
+                  ),
                 )
-              : null;
-        } else if (tab == 4) {
-          action = null;
-        } else {
-          action = store.can('finance.collect')
+              : null,
+          _Tab.controls => null,
+          _ => store.can('finance.collect')
               ? ThumbAction(
-                  label: 'دفعة جديدة',
-                  icon: Icons.add_card,
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const PaymentFormScreen(),
+                  label: 'قبض جديد',
+                  icon: Icons.add,
+                  onPressed: () => _showActions(context, 'قبض جديد', [
+                    (
+                      icon: Icons.add_card,
+                      label: 'تسديد دفعة',
+                      color: AppColors.heading,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const PaymentFormScreen()),
                       ),
-                    );
-                  },
+                    ),
+                    (
+                      icon: Icons.account_balance_wallet_outlined,
+                      label: 'قبض من غير طالب',
+                      color: AppColors.heading,
+                      onTap: () async {
+                        final saved = await showGeneralIncomeSheet(context, store);
+                        if (saved && context.mounted) showAppSnack(context, 'تم حفظ الإيراد وإصدار السند');
+                      },
+                    ),
+                  ]),
                 )
-              : null;
-        }
+              : null,
+        };
 
-        final net = showExpenses ? _periodNet(store) : null;
+        final net = _periodNet(store);
+        final tabs = _visibleTabs(showExpenses);
+        final index = tabs.indexOf(tab).clamp(0, tabs.length - 1);
+        // اختيار القسم من المفتاح يحرّك الصفحات إليه، والسحب يحرّك المفتاح
+        if (_pages.hasClients && (_pages.page ?? index).round() != index) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || !_pages.hasClients) return;
+            _pages.animateToPage(index, duration: const Duration(milliseconds: 320), curve: Curves.easeOutCubic);
+          });
+        }
+        final hero = _hero(store, allDues, net, showExpenses);
 
         return ThumbActionLayer(
           action: action,
           child: Column(
             children: [
-              _periodBar(store, showExpenses, net),
-              _tabBar(store, allDues.length, showExpenses),
+              // الأقسام مفتاح مقسّم ثابت أعلى الشاشة — نمط الجوال لا شبكة بطاقات الويب
+              _segments(store, showExpenses),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 320),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: hero == null
+                    ? const SizedBox(width: double.infinity)
+                    : Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 2), child: hero),
+              ),
               Expanded(
-                child: switch (tab) {
-                  1 => _payments(context, store, q),
-                  2 => _expenses(store),
-                  3 => _generalIncome(context, store),
-                  4 => _controls(context, store),
-                  _ => _dues(context, store, allDues, q),
-                },
+                child: PageView.builder(
+                  controller: _pages,
+                  itemCount: tabs.length,
+                  onPageChanged: (i) => _openTab(tabs[i]),
+                  itemBuilder: (context, i) {
+                    // البحث يخص القسم المفتوح وحده، فلا يُصفّي جيرانه أثناء السحب
+                    final body = _bodyOf(tabs[i], context, store, allDues, tabs[i] == tab ? q : '');
+                    return CustomScrollView(
+                      slivers: [
+                        // البحث والتصفية يبقيان ظاهرين عند التمرير، والملخص يصعد
+                        if (body.toolbar != null)
+                          SliverPersistentHeader(pinned: true, delegate: _PinnedBar(child: body.toolbar!)),
+                        ...body.slivers,
+                      ],
+                    );
+                  },
+                ),
               ),
             ],
           ),
@@ -255,261 +347,442 @@ class _FinanceScreenState extends State<FinanceScreen> {
     );
   }
 
-  // ── التبويبات ─────────────────────────────────────────────────────────────
+  // ── الأقسام والملخص ──────────────────────────────────────────────────────
 
-  Widget _periodBar(
-    AppStore store,
-    bool showExpenses,
-    ({double received, double spent, double net})? net,
-  ) {
+  Widget _segments(AppStore store, bool showExpenses) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(10, 6, 10, 4),
       color: Colors.white,
-      child: Row(
-        children: [
-          FilterButton(
-            value: financeYearFilter,
-            options: {
-              'current': 'عام التشغيل',
-              'all': 'كل الأعوام',
-              for (final y in store.academicYears) y.id: y.label,
-            },
-            onSelected: (v) => setState(() => financeYearFilter = v),
-          ),
-          const SizedBox(width: 6),
-          FilterButton(
-            value: termFilter,
-            options: const {
-              'all': 'كل الفصول',
-              'term_1': 'الفصل الأول',
-              'term_2': 'الفصل الثاني',
-            },
-            onSelected: (v) => setState(() => termFilter = v),
-          ),
-          if (showExpenses && net != null) ...[
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'صافي ${money(net.net)}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.end,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: net.net >= 0 ? AppColors.heading : AppColors.danger,
-                ),
-              ),
-            ),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      child: _Segmented(
+        selected: tab,
+        onSelect: _openTab,
+        items: [
+          (_Tab.dues, 'المستحقات', 0),
+          (_Tab.payments, 'المقبوضات', 0),
+          if (showExpenses) (_Tab.expenses, 'المصروفات', 0),
+          (_Tab.controls, 'الرقابة', store.pendingFinanceRequests.length),
+        ],
+      ),
+    );
+  }
+
+  /// بطاقة القسم المفتوح: رقمه الرئيسي كبيراً وتفاصيله شرائح. الرقابة سجلّ
+  /// طلبات لا رقم فيه، فلا بطاقة لها.
+  Widget? _hero(
+    AppStore store,
+    List<DueItem> dues,
+    ({double received, double spent, double net}) net,
+    bool showExpenses,
+  ) {
+    final period = _periodLabel(store);
+    switch (tab) {
+      case _Tab.dues:
+        final owed = dues.where((d) => !d.scheduled).toList();
+        final debtors = owed.map((d) => d.student.id).toSet().length;
+        return _Hero(
+          tab: tab,
+          label: 'إجمالي المستحق',
+          value: money(owed.fold<double>(0, (a, d) => a + d.amount)),
+          period: period,
+          onPeriod: () => _openFilters(store),
+          chips: ['$debtors طالب', 'قادم ${money(store.projectRemainingYear())}'],
+        );
+      case _Tab.payments:
+        return _Hero(
+          tab: tab,
+          label: 'المقبوض في الفترة',
+          value: money(net.received),
+          period: period,
+          onPeriod: () => _openFilters(store),
+          chips: [
+            '${_periodPayments(store).length} سند',
+            if (showExpenses) 'الصافي ${net.net < 0 ? '-' : ''}${money(net.net)}',
           ],
-        ],
-      ),
-    );
+        );
+      case _Tab.controls:
+        return null;
+      case _Tab.expenses:
+        return _Hero(
+          tab: tab,
+          label: 'المصروف في الفترة',
+          value: money(net.spent),
+          period: period,
+          onPeriod: () => _openFilters(store),
+          chips: ['${_periodExpenses(store).length} تشغيلية', '${_periodPayouts(store).length} رواتب'],
+        );
+    }
   }
 
-  Widget _tabBar(AppStore store, int dueCount, bool showExpenses) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: AppColors.line)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _tab(
-              'المستحقات',
-              0,
-              dueCount,
-              alert: dueCount > 0,
-            ),
-          ),
-          Expanded(
-            child: _tab(
-              'المقبوضات',
-              1,
-              _periodPayments(store).length,
-            ),
-          ),
-          if (showExpenses)
-            Expanded(
-              child: _tab(
-                'المصروفات',
-                2,
-                store.expenses.length + store.teacherPayouts.length,
-              ),
-            ),
-          Expanded(
-            child: _tab(
-              'إيرادات',
-              3,
-              store.generalIncomes.length,
-            ),
-          ),
-          Expanded(
-            child: _tab(
-              'الرقابة',
-              4,
-              store.pendingFinanceRequests.length,
-              alert: store.pendingFinanceRequests.isNotEmpty,
-            ),
-          ),
-        ],
-      ),
-    );
+  String _periodLabel(AppStore store) {
+    final year = switch (financeYearFilter) {
+      'current' => 'عام التشغيل',
+      'all' => 'كل الأعوام',
+      _ => store.academicYears.where((y) => y.id == financeYearFilter).firstOrNull?.label ?? 'عام',
+    };
+    final term = switch (termFilter) {
+      'term_1' => 'الفصل الأول',
+      'term_2' => 'الفصل الثاني',
+      _ => null,
+    };
+    return term == null ? year : '$year · $term';
   }
 
-  Widget _tab(
-    String label,
-    int index,
-    int count, {
-    bool alert = false,
-  }) {
-    final on = tab == index;
-    final fg = on ? AppColors.heading : AppColors.muted;
-    return InkWell(
-      onTap: () {
-        if (tab == index) return;
-        setState(() {
-          tab = index;
-          // لكل تبويب بحثه: نص يبحث عن وصل لا معنى له في المستحقات
-          search.clear();
-        });
-      },
-      child: Container(
-        height: 40,
-        padding: const EdgeInsets.symmetric(horizontal: 2),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: on ? AppColors.accent : Colors.transparent,
-              width: 2,
+  // ── البحث والتصفية ───────────────────────────────────────────────────────
+
+  /// عدد الفلاتر المختلفة عن الافتراضي في التبويب الحالي.
+  int get _activeFilters {
+    var n = 0;
+    if (financeYearFilter != 'current') n++;
+    if (termFilter != 'all') n++;
+    switch (tab) {
+      case _Tab.dues:
+        if (dueStage.isNotEmpty) n++;
+      case _Tab.payments:
+        n += [method, status, sourceFilter].where((v) => v.isNotEmpty).length;
+        if (paymentsBasis != 'payment') n++;
+      case _Tab.expenses:
+        if (statementTeacherId.isNotEmpty) n++;
+      case _Tab.controls:
+        break;
+    }
+    return n;
+  }
+
+  Widget _toolbar({required String hint, required int shown, required int total, required AppStore store}) {
+    return Row(
+      children: [
+        Expanded(
+          child: SearchField(
+            controller: search,
+            hint: hint,
+            onChanged: (_) => setState(() => visibleCount = kListPageSize),
+            trailing: Text(
+              shown == total ? '$total' : '$shown/$total',
+              style: const TextStyle(color: AppColors.muted, fontSize: 11, fontWeight: FontWeight.w700),
             ),
           ),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  height: 1.1,
-                  color: fg,
-                ),
-              ),
-            ),
-            if (count > 0) ...[
-              const SizedBox(width: 3),
-              Container(
-                constraints: const BoxConstraints(minWidth: 15),
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  color: alert ? AppColors.dangerSoft : const Color(0xFFF1F5F9),
-                  border: Border.all(
-                    color: alert ? AppColors.dangerBorder : AppColors.line,
-                  ),
-                ),
-                child: Text(
-                  count > 99 ? '99+' : '$count',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 9,
-                    height: 1.1,
-                    fontWeight: FontWeight.w800,
-                    color: alert ? AppColors.danger : AppColors.muted,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+        const SizedBox(width: 8),
+        _FiltersButton(count: _activeFilters, onTap: () => _openFilters(store)),
+      ],
     );
   }
 
-  // ── عناصر مشتركة بين التبويبات ────────────────────────────────────────────
+  /// ورقة التصفية: العام والفصل لكل التبويبات، ثم فلاتر التبويب نفسه.
+  Future<void> _openFilters(AppStore store) {
+    return showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          void pick(VoidCallback change) {
+            setState(change);
+            setSheet(() {});
+          }
 
-  /// البحث وعدد النتائج وزر التصفية في سطر واحد.
-  Widget _toolbar({
-    required String hint,
-    required int shown,
-    required int total,
-    required Widget filter,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-      child: Row(
-        children: [
-          Expanded(
-            child: SearchField(
-              controller: search,
-              hint: hint,
-              onChanged: (_) => setState(() {}),
-              trailing: Text(
-                shown == total ? '$total' : '$shown/$total',
-                style: const TextStyle(
-                  color: AppColors.muted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
+          // ثلاثة خيارات فأقل: مفتاح مقسّم بسطر واحد؛ وأكثر: شرائح تتمرّر أفقياً
+          Widget group(String title, Map<String, String> options, String value, ValueChanged<String> onPick) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(color: AppColors.faint, fontSize: 11.5, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  if (options.length <= 3)
+                    _FilterSegment(options: options, value: value, onPick: (v) => pick(() => onPick(v)))
+                  else
+                    SizedBox(
+                      height: 34,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: [
+                          for (final e in options.entries)
+                            Padding(
+                              padding: const EdgeInsetsDirectional.only(end: 6),
+                              child: _Pill(
+                                label: e.value,
+                                selected: e.key == value,
+                                onTap: () => pick(() => onPick(e.key)),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                ],
               ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          filter,
-        ],
-      ),
-    );
-  }
+            );
+          }
 
-  /// سجل يبدأ ببطاقات الأرقام ثم عناصره، يُبنى منه ما يظهر فقط.
-  Widget _list({
-    required List<Widget> header,
-    required int count,
-    required Widget empty,
-    required IndexedWidgetBuilder item,
-  }) {
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, thumbActionClearance),
-      itemCount: 1 + (count == 0 ? 1 : count),
-      itemBuilder: (context, i) {
-        if (i == 0) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: header,
+          return SafeArea(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.85),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // مقبض السحب — الورقة تُغلق بالسحب لأسفل
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(color: AppColors.lineStrong, borderRadius: BorderRadius.circular(2)),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsetsDirectional.fromSTEB(20, 10, 12, 10),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text('تصفية', style: AppText.cardTitle.copyWith(fontSize: 16))),
+                        if (_activeFilters > 0)
+                          TextButton(
+                            onPressed: () => pick(_clearFilters),
+                            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+                            child: const Text('إعادة الضبط', style: TextStyle(fontWeight: FontWeight.w700)),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                      children: [
+                        group(
+                          'العام الدراسي',
+                          {
+                            'current': 'عام التشغيل',
+                            'all': 'كل الأعوام',
+                            for (final y in store.academicYears) y.id: y.label,
+                          },
+                          financeYearFilter,
+                          (v) => financeYearFilter = v,
+                        ),
+                        group(
+                          'الفصل',
+                          const {'all': 'كل الفصول', 'term_1': 'الفصل الأول', 'term_2': 'الفصل الثاني'},
+                          termFilter,
+                          (v) => termFilter = v,
+                        ),
+                        if (tab == _Tab.dues) group('الحالة', _stageOptions, dueStage, (v) => dueStage = v),
+                        if (tab == _Tab.payments) ...[
+                          group('الحالة', _statusOptions, status, (v) => status = v),
+                          group(
+                            'طريقة الدفع',
+                            {'': 'الكل', for (final m in store.paymentMethods) m.id: m.name},
+                            method,
+                            (v) => method = v,
+                          ),
+                          group(
+                            'المصدر',
+                            const {'': 'الكل', 'students': 'الطلاب', 'other': 'إيرادات أخرى'},
+                            sourceFilter,
+                            (v) => sourceFilter = v,
+                          ),
+                          group(
+                            'السنة المحتسبة',
+                            const {'payment': 'حسب سنة الدفع', 'installment': 'حسب سنة الرسوم'},
+                            paymentsBasis,
+                            (v) => paymentsBasis = v,
+                          ),
+                        ],
+                        if (tab == _Tab.expenses)
+                          group(
+                            'المعلم',
+                            {'': 'كل المعلمين', for (final t in store.teachersInViewedYear) t.id: t.name},
+                            statementTeacherId,
+                            (v) => statementTeacherId = v,
+                          ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
+                    child: PrimaryButton(label: 'تم', expand: true, height: 46, onPressed: () => Navigator.pop(ctx)),
+                  ),
+                ],
+              ),
             ),
           );
+        },
+      ),
+    );
+  }
+
+  void _clearFilters() {
+    financeYearFilter = 'current';
+    termFilter = 'all';
+    dueStage = '';
+    method = '';
+    status = '';
+    sourceFilter = '';
+    paymentsBasis = 'payment';
+    statementTeacherId = '';
+    visibleCount = kListPageSize;
+    auditVisible = kListPageSize;
+  }
+
+  /// سجل مجمّع بالتاريخ كتطبيقات البنوك: عنوان لكل مجموعة بمجموعها، وتحته
+  /// بطاقتها. العناصر مرتّبة سلفاً فتتجاور عناصر المجموعة الواحدة.
+  /// تُعرض أول [visibleCount] بنداً فقط مع زر المزيد تحتها.
+  List<Widget> _listSlivers<T>({
+    Widget? header,
+    required List<T> items,
+    required String emptyMessage,
+    required String Function(T) groupOf,
+    required double Function(T) amountOf,
+    required Widget Function(BuildContext, T) row,
+  }) {
+    final page = listPage(items, visibleCount);
+    // مدخلات القائمة: عنوان مجموعة أو صف بموضعه فيها
+    final entries = <({String? title, double total, T? item, bool first, bool last})>[];
+    for (var i = 0; i < page.length; i++) {
+      final g = groupOf(page[i]);
+      final first = i == 0 || groupOf(page[i - 1]) != g;
+      final last = i == page.length - 1 || groupOf(page[i + 1]) != g;
+      if (first) {
+        var total = 0.0;
+        for (var j = i; j < page.length && groupOf(page[j]) == g; j++) {
+          total += amountOf(page[j]);
         }
-        if (count == 0) return SizedBox(height: 220, child: empty);
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: item(context, i - 1),
-        );
-      },
+        entries.add((title: g, total: total, item: null, first: false, last: false));
+      }
+      entries.add((title: null, total: 0, item: page[i], first: first, last: last));
+    }
+
+    return [
+      if (header != null)
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+          sliver: SliverToBoxAdapter(child: header),
+        ),
+      if (items.isEmpty)
+        SliverToBoxAdapter(child: SizedBox(height: 200, child: EmptyState(message: emptyMessage)))
+      else ...[
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+          sliver: SliverList.builder(
+            itemCount: entries.length,
+            itemBuilder: (context, i) {
+              final e = entries[i];
+              if (e.title != null) return _GroupHeader(title: e.title!, total: e.total);
+              const r = Radius.circular(14);
+              return Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(
+                    top: e.first ? r : Radius.zero,
+                    bottom: e.last ? r : Radius.zero,
+                  ),
+                  boxShadow: const [BoxShadow(color: Color(0x0A0F172A), blurRadius: 10, offset: Offset(0, 3))],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (!e.first) const Divider(height: 1, thickness: 1, indent: 14, endIndent: 14, color: AppColors.hover),
+                    row(context, e.item as T),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, thumbActionClearance),
+            child: LoadMoreButton(
+              shown: page.length,
+              total: items.length,
+              onMore: () => setState(() => visibleCount += kListPageSize),
+            ),
+          ),
+        ),
+      ],
+    ];
+  }
+
+  // ── المستحقات ─────────────────────────────────────────────────────────────
+
+  ({Widget? toolbar, List<Widget> slivers}) _dues(
+    BuildContext context,
+    AppStore store,
+    List<DueItem> all,
+    String q,
+  ) {
+    final dues = all.where((d) {
+      final matchQ = q.isEmpty ||
+          d.student.fullName.toLowerCase().contains(q) ||
+          d.student.phone.contains(q) ||
+          d.title.toLowerCase().contains(q);
+      final matchS = dueStage.isEmpty ||
+          (dueStage == 'late' && d.late) ||
+          (dueStage == 'due' && !d.late && !d.scheduled);
+      return matchQ && matchS;
+    }).toList();
+
+    // بتاريخ الاستحقاق كما في الويب، فتتجاور بنود الشهر الواحد
+    dues.sort((a, b) => a.dueDate.compareTo(b.dueDate));
+
+    final canCollect = store.can('finance.collect');
+    final canOpenStudent = store.can('students');
+
+    return (
+      toolbar: _toolbar(hint: 'اسم الطالب أو الهاتف', shown: dues.length, total: all.length, store: store),
+      slivers: _listSlivers(
+        items: dues,
+        emptyMessage: 'لا مستحقات',
+        groupOf: (d) => _monthLabel(d.dueDate),
+        amountOf: (d) => d.amount,
+        row: (context, d) {
+          return _DueCard(
+            item: d,
+            onOpen: canOpenStudent
+                ? () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => StudentDetailScreen(studentId: d.student.id)),
+                    )
+                : null,
+            onPay: canCollect
+                ? () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => PaymentFormScreen(
+                          studentId: d.student.id,
+                          installmentId: d.installmentId,
+                          amount: d.amount,
+                        ),
+                      ),
+                    )
+                : null,
+          );
+        },
+      ),
     );
   }
 
   // ── المقبوضات ─────────────────────────────────────────────────────────────
 
-  Widget _payments(BuildContext context, AppStore store, String q) {
-    final yearPayments = _periodPayments(store);
-    final pays = yearPayments.where((p) {
-      final name = (store.studentById(p.studentId)?.fullName ?? '')
-          .toLowerCase();
+  ({Widget? toolbar, List<Widget> slivers}) _payments(BuildContext context, AppStore store, String q) {
+    // «حسب سنة الرسوم»: السند المربوط بقسط يُنسب لسنة قسطه (دين العام الماضي
+    // المدفوع اليوم يُحسب على العام الماضي)، والدفعة غير المربوطة بسنة دفعها
+    final installmentById = paymentsBasis == 'installment' ? {for (final i in store.installments) i.id: i} : null;
+    bool inPeriod(Payment p) {
+      final inst = installmentById?[p.installmentId];
+      if (inst != null) {
+        return _matchesFinancePeriod(store, yearId: inst.academicYearId, dueDate: isoDate(inst.dueDate));
+      }
+      return _matchesFinancePeriod(store, yearId: p.academicYearId, paymentDate: isoDate(p.date));
+    }
+
+    final periodPays = store.payments.where(inPeriod).toList();
+    final pays = periodPays.where((p) {
+      final name = (store.studentById(p.studentId)?.fullName ?? '${p.payerName} ${p.incomeCategory}').toLowerCase();
       // البحث يشمل البيان والمحوِّل وجهة التحويل، كما في Finance.tsx
-      final matchQ =
-          q.isEmpty ||
+      final matchQ = q.isEmpty ||
           p.receiptNumber.toLowerCase().contains(q) ||
           name.contains(q) ||
           p.reference.toLowerCase().contains(q) ||
@@ -517,10 +790,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
           p.senderName.toLowerCase().contains(q) ||
           p.channel.toLowerCase().contains(q);
       final matchM = method.isEmpty || p.method == method;
-      final matchS =
-          status.isEmpty ||
-          (status == 'active' && !p.cancelled) ||
-          (status == 'cancelled' && p.cancelled);
+      final matchS = status.isEmpty || (status == 'active' && !p.cancelled) || (status == 'cancelled' && p.cancelled);
       final matchSource = sourceFilter.isEmpty ||
           (sourceFilter == 'students' && p.studentId.isNotEmpty) ||
           (sourceFilter == 'other' && p.studentId.isEmpty);
@@ -528,139 +798,96 @@ class _FinanceScreenState extends State<FinanceScreen> {
     }).toList();
     sortPayments(pays);
 
-    final active = pays.where((p) => !p.cancelled).toList();
-    final collected = active.fold<double>(0, (a, p) => a + p.amount);
-    final cancelled = pays.length - active.length;
-    final refunded = active.where((p) => p.amount < 0).length;
-    return Column(
-      children: [
-        _toolbar(
-          hint: 'ابحث برقم الوصل، الطالب، المرجع...',
-          shown: pays.length,
-          total: yearPayments.length,
-          filter: GroupedFilterButton(
-            groups: [
-              FilterGroup(
-                title: 'المصدر',
-                options: const {
-                  '': 'الكل',
-                  'students': 'الطلاب',
-                  'other': 'إيرادات أخرى',
-                },
-                value: sourceFilter,
-                onSelected: (v) => setState(() => sourceFilter = v),
-              ),
-              FilterGroup(
-                title: 'طريقة الدفع',
-                options: {
-                  '': 'كل طرق الدفع',
-                  for (final m in store.paymentMethods) m.id: m.name,
-                },
-                value: method,
-                onSelected: (v) => setState(() => method = v),
-              ),
-              FilterGroup(
-                title: 'الحالة',
-                options: _statusOptions,
-                value: status,
-                onSelected: (v) => setState(() => status = v),
-              ),
-            ],
-          ),
+    // رسوم الفترة بحسب سنة الرسوم: المطلوب منها وما سُدّد وما بقي
+    Widget? feesLine;
+    if (paymentsBasis == 'installment' && financeYearFilter != 'all') {
+      final insts = store.installments.where(
+        (i) => _matchesFinancePeriod(store, yearId: i.academicYearId, dueDate: isoDate(i.dueDate)),
+      );
+      final required = insts.fold<double>(0, (a, i) => a + i.chargeable);
+      final paid = insts.fold<double>(0, (a, i) => a + i.paidAmount);
+      feesLine = _ListHeader(
+        parts: [
+          ('رسوم الفترة: مطلوب ${money(required)}', AppColors.muted),
+          ('مسدَّد ${money(paid)}', AppColors.success),
+          ('باقٍ ${money(math.max(0, required - paid))}', AppColors.danger),
+        ],
+      );
+    }
+
+    return (
+      toolbar: _toolbar(hint: 'اسم أو رقم وصل', shown: pays.length, total: periodPays.length, store: store),
+      slivers: _listSlivers(
+        // سطر «رسوم الفترة» وحده يبقى، حين يُحتسب المقبوض بسنة الرسوم
+        header: feesLine,
+        items: pays,
+        emptyMessage: 'لا نتائج',
+        groupOf: (p) => _dayLabel(p.date),
+        amountOf: (p) => p.cancelled ? 0 : p.amount,
+        row: (context, p) {
+          final income = p.studentId.isEmpty ? store.generalIncomes.where((g) => g.id == p.id).firstOrNull : null;
+          return _PaymentCard(
+            payment: p,
+            student: store.studentById(p.studentId),
+            onCancel: _canCancelPayment(p) ? () => _cancel(context, store, p) : null,
+            onEdit: income != null && !p.cancelled && store.can('finance.collect')
+                ? () => showGeneralIncomeSheet(context, store, income: income)
+                : null,
+          );
+        },
+      ),
+    );
+  }
+
+  // ── المصروفات وأجور المعلمين ──────────────────────────────────────────────
+
+  /// سجل موحّد للمصروفات وأجور المعلمين في الفترة، مرتّب بالتاريخ تنازلياً —
+  /// نفس دمج القائمتين في جدول واحد في Finance.tsx. اختيار معلم يقصره على ما صُرف له.
+  ({Widget? toolbar, List<Widget> slivers}) _expenses(AppStore store, String q) {
+    final linked = statementTeacherId.isEmpty ? null : store.linkedTeacherIds(statementTeacherId);
+    final expenses = linked == null ? _periodExpenses(store) : <Expense>[];
+    final payouts = [
+      for (final p in _periodPayouts(store))
+        if (linked == null || linked.contains(p.teacherId)) p,
+    ];
+    final all = <_SpendRow>[
+      for (final e in expenses)
+        _SpendRow(
+          date: e.expenseDate,
+          isPayout: false,
+          category: expenseCategoryLabel(e.category),
+          description: e.description,
+          amount: e.amount,
+          method: e.method,
+          voucher: ExpenseVoucher.fromExpense(e),
         ),
-        Expanded(
-          child: _list(
-            header: [
-              if (store.pendingFinanceRequests.isNotEmpty) ...[
-                InkWell(
-                  onTap: () => setState(() => tab = 4),
-                  child: InfoStrip(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          '${store.pendingFinanceRequests.length} طلب مالي بانتظار الموافقة',
-                          style: TextStyle(
-                            color: AppColors.amberDark,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 11,
-                          ),
-                        ),
-                        for (final request in store.pendingFinanceRequests.take(
-                          3,
-                        ))
-                          Padding(
-                            padding: const EdgeInsets.only(top: 3),
-                            child: Text(
-                              '• ${request.summary}${request.requestedByName.isEmpty ? '' : ' — ${request.requestedByName}'}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppColors.muted,
-                                fontSize: 10.5,
-                              ),
-                            ),
-                          ),
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            'اضغط لفتح تبويب الطلبات والرقابة',
-                            style: TextStyle(
-                              color: AppColors.heading,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-              ],
-              StatRow(
-                children: [
-                  StatCard(
-                    label: 'إجمالي المقبوض',
-                    value: money(collected),
-                    color: AppColors.success,
-                    caption: '${active.length} سند معتمد',
-                    compact: true,
-                  ),
-                  StatCard(
-                    label: 'مستردة',
-                    value: '$refunded',
-                    color: refunded > 0 ? AppColors.danger : AppColors.heading,
-                    caption: 'ردود وعكوس',
-                    compact: true,
-                  ),
-                  StatCard(
-                    label: 'السندات الملغاة',
-                    value: '$cancelled',
-                    color: cancelled > 0 ? AppColors.danger : AppColors.heading,
-                    caption: 'من ${pays.length} سند',
-                    compact: true,
-                  ),
-                ],
-              ),
-            ],
-            count: pays.length,
-            empty: const EmptyState(
-              message: 'لا توجد دفعات مسجلة مطابقة للبحث',
-            ),
-            item: (context, i) {
-              final p = pays[i];
-              return _PaymentCard(
-                payment: p,
-                student: store.studentById(p.studentId),
-                onCancel: _canCancelPayment(p)
-                    ? () => _cancel(context, store, p)
-                    : null,
-              );
-            },
-          ),
+      for (final p in payouts)
+        _SpendRow(
+          date: p.paymentDate,
+          isPayout: true,
+          category: payoutExpenseCategory,
+          description: payoutDescription(p, fallbackName: store.teacherById(p.teacherId)?.name ?? ''),
+          amount: p.amount,
+          method: p.method,
+          voucher: ExpenseVoucher.fromPayout(p, fallbackName: store.teacherById(p.teacherId)?.name ?? ''),
         ),
-      ],
+    ]..sort((a, b) => b.date.compareTo(a.date));
+    final rows = q.isEmpty
+        ? all
+        : all.where((r) => r.description.toLowerCase().contains(q) || r.category.toLowerCase().contains(q)).toList();
+
+    return (
+      toolbar: _toolbar(hint: 'ابحث في البيان', shown: rows.length, total: all.length, store: store),
+      slivers: _listSlivers(
+        items: rows,
+        emptyMessage: 'لا مصروفات',
+        groupOf: (r) {
+          final d = parseIsoDate(r.date.length >= 10 ? r.date.substring(0, 10) : r.date);
+          return d == null ? r.date : _dayLabel(d);
+        },
+        amountOf: (r) => r.amount,
+        row: (context, r) => _SpendCard(row: r),
+      ),
     );
   }
 
@@ -771,6 +998,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
     }
   }
 
+
   Future<void> _rejectFinanceRequest(
     BuildContext context,
     AppStore store,
@@ -827,7 +1055,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
   }
 
   /// تبويب الطلبات والرقابة — المقابل لـ `FinanceControlPanel.tsx`.
-  Widget _controls(BuildContext context, AppStore store) {
+  List<Widget> _controls(BuildContext context, AppStore store) {
     final pending = store.pendingFinanceRequests;
     final done = store.financeRequests
         .where((r) => r.status != 'pending')
@@ -849,6 +1077,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
       return true;
     }).toList()
       ..sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
+    final auditPage = listPage(audit, auditVisible);
 
     Widget requestCard(FinanceRequest request) {
       final pendingRow = request.status == 'pending';
@@ -959,9 +1188,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
       );
     }
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 24),
-      children: [
+    return [
         Text(
           'طلبات بانتظار الموافقة (${pending.length})',
           style: TextStyle(
@@ -1028,7 +1255,10 @@ class _FinanceScreenState extends State<FinanceScreen> {
                       DropdownMenuItem(value: u, child: Text(u)),
                   ],
                   onChanged: (v) =>
-                      setState(() => auditUserFilter = v ?? ''),
+                      setState(() {
+                        auditUserFilter = v ?? '';
+                        auditVisible = kListPageSize;
+                      }),
                 ),
               ),
               const SizedBox(width: 8),
@@ -1042,7 +1272,10 @@ class _FinanceScreenState extends State<FinanceScreen> {
                       DropdownMenuItem(value: e.key, child: Text(e.value)),
                   ],
                   onChanged: (v) =>
-                      setState(() => auditActionFilter = v ?? ''),
+                      setState(() {
+                        auditActionFilter = v ?? '';
+                        auditVisible = kListPageSize;
+                      }),
                 ),
               ),
             ],
@@ -1057,8 +1290,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 style: TextStyle(color: AppColors.muted, fontSize: 12),
               ),
             )
-          else
-            for (final a in audit)
+          else ...[
+            for (final a in auditPage)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: AppCard(
@@ -1135,343 +1368,795 @@ class _FinanceScreenState extends State<FinanceScreen> {
                   ),
                 ),
               ),
-        ],
-      ],
-    );
-  }
-
-  // ── المستحقات ─────────────────────────────────────────────────────────────
-
-  Widget _dues(
-    BuildContext context,
-    AppStore store,
-    List<DueItem> all,
-    String q,
-  ) {
-    final dues = all.where((d) {
-      final matchQ =
-          q.isEmpty ||
-          d.student.fullName.toLowerCase().contains(q) ||
-          d.student.phone.contains(q) ||
-          d.title.toLowerCase().contains(q);
-      final matchS =
-          dueStage.isEmpty ||
-          (dueStage == 'late' && d.late) ||
-          (dueStage == 'due' && !d.late && !d.scheduled);
-      return matchQ && matchS;
-    }).toList();
-
-    // المطلوب اليوم: القسط الذي لم يحن موعده ليس ديناً على الطالب
-    final total = dues
-        .where((d) => !d.scheduled)
-        .fold<double>(0, (a, d) => a + d.amount);
-    final debtors = dues
-        .where((d) => !d.scheduled)
-        .map((d) => d.student.id)
-        .toSet()
-        .length;
-    final lateCount = all.where((d) => d.late).length;
-    final dueCount = all.where((d) => !d.late && !d.scheduled).length;
-    final scheduledCount = all.where((d) => d.scheduled).length;
-    final canCollect = store.can('finance.collect');
-    final canOpenStudent = store.can('students');
-
-    return Column(
-      children: [
-        _toolbar(
-          hint: 'ابحث باسم الطالب أو رقم الهاتف...',
-          shown: dues.length,
-          total: all.length,
-          filter: FilterButton(
-            options: _stageOptions,
-            value: dueStage,
-            onSelected: (v) => setState(() => dueStage = v),
-          ),
-        ),
-        Expanded(
-          child: _list(
-            header: [
-              StatRow(
-                children: [
-                  StatCard(
-                    label: 'إجمالي المستحق',
-                    value: money(total),
-                    color: AppColors.danger,
-                    caption: '${dues.length} بند',
-                    compact: true,
-                  ),
-                  // للإدارة وحدها: متوقع لا يُطالَب به قبل موعده
-                  StatCard(
-                    label: 'باقي السنة',
-                    value: money(store.projectRemainingYear()),
-                    color: AppColors.heading,
-                    caption: 'متوقع',
-                    compact: true,
-                  ),
-                  StatCard(
-                    label: 'طلاب عليهم مستحقات',
-                    value: '$debtors',
-                    color: AppColors.heading,
-                    caption: 'من ${store.students.length} طالب',
-                    compact: true,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              InfoStrip(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _tally('متأخر', lateCount, AppColors.danger),
-                    ),
-                    const Text('•', style: TextStyle(color: AppColors.faint)),
-                    Expanded(child: _tally('مستحق', dueCount, AppColors.amber)),
-                    const Text('•', style: TextStyle(color: AppColors.faint)),
-                    Expanded(
-                      child: _tally('مجدول', scheduledCount, AppColors.muted),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            count: dues.length,
-            empty: const EmptyState(message: 'لا مستحقات'),
-            item: (context, i) {
-              final d = dues[i];
-              return _DueCard(
-                item: d,
-                onOpen: canOpenStudent
-                    ? () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              StudentDetailScreen(studentId: d.student.id),
-                        ),
-                      )
-                    : null,
-                onPay: canCollect
-                    ? () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => PaymentFormScreen(
-                            studentId: d.student.id,
-                            installmentId: d.installmentId,
-                            amount: d.amount,
-                          ),
-                        ),
-                      )
-                    : null,
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _tally(String label, int value, Color color) {
-    return Center(
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: TallyText(label, value, color),
-      ),
-    );
-  }
-
-  // ── الإيرادات العامة ─────────────────────────────────────────────────────
-
-  Widget _generalIncome(BuildContext context, AppStore store) {
-    final rows = store.generalIncomes;
-    final active = rows.where((e) => !e.cancelled).toList();
-    final total = active.fold<double>(0, (sum, e) => sum + e.amount);
-    return _list(
-      header: [
-        StatRow(
-          children: [
-            StatCard(
-              label: 'الإيرادات العامة',
-              value: money(total),
-              color: AppColors.success,
-              caption: '${active.length} سند معتمد',
-              compact: true,
-            ),
-            StatCard(
-              label: 'كل السندات',
-              value: '${rows.length}',
-              color: AppColors.heading,
-              caption: store.viewedAcademicYear?.label ?? 'العام المعروض',
-              compact: true,
+            LoadMoreButton(
+              shown: auditPage.length,
+              total: audit.length,
+              onMore: () => setState(() => auditVisible += kListPageSize),
             ),
           ],
-        ),
-      ],
-      count: rows.length,
-      empty: const EmptyState(message: 'لا توجد إيرادات عامة في هذا العام'),
-      item: (context, i) => _IncomeCard(
-        income: rows[i],
-        methodLabel: store.paymentMethodLabel(rows[i].method),
-        onEdit: !rows[i].cancelled && store.can('finance.collect')
-            ? () => showGeneralIncomeSheet(context, store, income: rows[i])
-            : null,
-        onCancel: !rows[i].cancelled && store.can('finance.cancel')
-            ? () async {
-                final payment = store.payments
-                    .where((p) => p.id == rows[i].id)
-                    .firstOrNull;
-                if (payment != null) await _cancel(context, store, payment);
-              }
-            : null,
-      ),
-    );
-  }
-
-  // ── المصروفات وأجور المعلمين ──────────────────────────────────────────────
-
-  /// سجل موحّد للمصروفات وأجور المعلمين مرتّب بالتاريخ تنازلياً —
-  /// نفس دمج القائمتين في جدول واحد في Finance.tsx.
-  Widget _expenses(AppStore store) {
-    final linked = statementTeacherId.isEmpty
-        ? null
-        : store.linkedTeacherIds(statementTeacherId);
-    final expenses = store.expenses;
-    final payouts = [
-      for (final p in store.teacherPayouts)
-        if (linked == null || linked.contains(p.teacherId)) p,
+        ],
     ];
-    final rows = <_SpendRow>[
-      for (final e in expenses)
-        if (linked == null)
-          _SpendRow(
-            date: e.expenseDate,
-            isPayout: false,
-            category: expenseCategoryLabel(e.category),
-            description: e.description,
-            amount: e.amount,
-            method: e.method,
-            voucher: ExpenseVoucher.fromExpense(e),
-          ),
-      for (final p in payouts)
-        _SpendRow(
-          date: p.paymentDate,
-          isPayout: true,
-          category: payoutExpenseCategory,
-          description: payoutDescription(
-            p,
-            fallbackName: store.teacherById(p.teacherId)?.name ?? '',
-          ),
-          amount: p.amount,
-          method: p.method,
-          voucher: ExpenseVoucher.fromPayout(
-            p,
-            fallbackName: store.teacherById(p.teacherId)?.name ?? '',
-          ),
-        ),
-    ]..sort((a, b) => b.date.compareTo(a.date));
-
-    final payoutTotal = payouts.fold<double>(0, (a, p) => a + p.amount);
-    final expenseTotal = linked == null
-        ? store.totalExpenses
-        : 0.0;
-
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-          child: AppDropdown<String>(
-            value: statementTeacherId.isEmpty ? null : statementTeacherId,
-            hint: 'كل المعلمين',
-            items: [
-              const DropdownMenuItem(value: '', child: Text('كل المعلمين')),
-              for (final t in store.teachersInViewedYear)
-                DropdownMenuItem(value: t.id, child: Text(t.name)),
-            ],
-            onChanged: (v) => setState(() => statementTeacherId = v ?? ''),
-          ),
-        ),
-        Expanded(
-          child: _list(
-            header: [
-              _SalariesDueCard(store: store),
-              const SizedBox(height: 8),
-              StatRow(
-                children: [
-                  StatCard(
-                    label: linked == null ? 'المصروفات' : 'سندات المعلم',
-                    value: money(expenseTotal + payoutTotal),
-                    color: AppColors.danger,
-                    caption: '${rows.length} سند',
-                    compact: true,
-                  ),
-                  if (linked == null)
-                    StatCard(
-                      label: 'تشغيلية',
-                      value: money(store.totalExpenses),
-                      color: AppColors.heading,
-                      caption: '${expenses.length} سند',
-                      compact: true,
-                    ),
-                  StatCard(
-                    label: 'أجور معلمين',
-                    value: money(payoutTotal),
-                    color: AppColors.amber,
-                    caption: '${payouts.length} دفعة',
-                    compact: true,
-                  ),
-                ],
-              ),
-            ],
-            count: rows.length,
-            empty: const EmptyState(message: 'لا سندات صرف'),
-            item: (context, i) => _SpendCard(row: rows[i]),
-          ),
-        ),
-      ],
-    );
   }
 }
 
-// ═══ بطاقات السجل ════════════════════════════════════════════════════════════
+// ═══ عناصر الشاشة ═══════════════════════════════════════════════════════════
 
-TextStyle get _titleStyle => TextStyle(
-  fontWeight: FontWeight.w800,
-  fontSize: 13,
-  color: AppColors.heading,
-);
+/// بطاقة ملخص هي تبويب في الوقت نفسه: اسم القسم ورقمه وسطر تحته. المختارة
+/// بيضاء بإطار داكن، والبقية على خلفية هادئة — كبطاقات الويب.
+/// مفتاح الأقسام المقسّم: مسار هادئ والقسم المفتوح بطاقة بيضاء تنزلق إليه.
+class _Segmented extends StatelessWidget {
+  const _Segmented({required this.items, required this.selected, required this.onSelect});
 
-const _metaStyle = TextStyle(color: AppColors.muted, fontSize: 11);
-
-/// خط رفيع يفصل رأس البطاقة عن تفاصيلها.
-class _Rule extends StatelessWidget {
-  const _Rule();
+  final List<(_Tab, String, int)> items;
+  final _Tab selected;
+  final ValueChanged<_Tab> onSelect;
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 8),
-      child: Divider(height: 1, color: Color(0xFFF1F5F9)),
+    final index = items.indexWhere((e) => e.$1 == selected).clamp(0, items.length - 1);
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: AppColors.hover,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final w = box.maxWidth / items.length;
+          final rtl = Directionality.of(context) == TextDirection.rtl;
+          return Stack(
+            children: [
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 240),
+                curve: Curves.easeOutCubic,
+                top: 0,
+                bottom: 0,
+                width: w,
+                left: rtl ? box.maxWidth - w * (index + 1) : w * index,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(9),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x14000000), blurRadius: 6, offset: Offset(0, 2)),
+                    ],
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  for (final (value, label, badge) in items)
+                    Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => onSelect(value),
+                        child: Center(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  AnimatedDefaultTextStyle(
+                                    duration: const Duration(milliseconds: 180),
+                                    style: TextStyle(
+                                      fontFamily: AppText.family,
+                                      fontSize: 12.5,
+                                      fontWeight: value == selected ? FontWeight.w800 : FontWeight.w600,
+                                      color: value == selected ? AppColors.heading : AppColors.muted,
+                                    ),
+                                    child: Text(label, maxLines: 1),
+                                  ),
+                                  if (badge > 0) ...[
+                                    const SizedBox(width: 4),
+                                    Container(
+                                      constraints: const BoxConstraints(minWidth: 16),
+                                      height: 16,
+                                      alignment: Alignment.center,
+                                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.warn,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        '$badge',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.w800,
+                                          height: 1,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
 
-/// حالة البند بألوان Finance.tsx: متأخر أحمر، ومستحق بلون العمليات.
-StatusChip _stageChip(DueItem d) {
-  if (d.late) return StatusChip.danger(d.stageLabel);
-  // المجدول ليس مطلوباً بعد، فلا يُلوَّن بلون المطالبة
-  return d.scheduled
-      ? StatusChip.muted(d.stageLabel)
-      : StatusChip.amber(d.stageLabel);
+/// لون كل قسم في بطاقة الملخص — درجات عميقة هادئة لا فاقعة، ليُعرف القسم
+/// من لونه قبل قراءة عنوانه.
+({List<Color> colors, IconData icon}) _toneOf(_Tab tab) => switch (tab) {
+      _Tab.dues => (
+          colors: const [Color(0xFF5B1A24), Color(0xFF8C3441)],
+          icon: Icons.pending_actions_rounded,
+        ),
+      _Tab.payments => (
+          colors: const [Color(0xFF0F4A34), Color(0xFF1E7651)],
+          icon: Icons.south_west_rounded,
+        ),
+      _Tab.expenses || _Tab.controls => (
+          colors: const [Color(0xFF1E2A44), Color(0xFF3A4C72)],
+          icon: Icons.north_east_rounded,
+        ),
+    };
+
+/// ملخّص القسم: بطاقة بلون قسمها، الرقم الرئيسي بالأبيض وتفاصيله شرائح شفافة.
+/// الانتقال بين الأقسام يمزج اللون ويحرّك الزخرفة ويبدّل الرقم بسلاسة.
+class _Hero extends StatelessWidget {
+  const _Hero({
+    required this.tab,
+    required this.label,
+    required this.value,
+    required this.chips,
+    this.period,
+    this.onPeriod,
+  });
+
+  final _Tab tab;
+  final String label;
+  final String value;
+  final List<String> chips;
+  final String? period;
+  final VoidCallback? onPeriod;
+
+  static const _duration = Duration(milliseconds: 420);
+
+  @override
+  Widget build(BuildContext context) {
+    final tone = _toneOf(tab);
+    final i = tab.index;
+    return AnimatedContainer(
+      key: const ValueKey('finance-hero'),
+      duration: _duration,
+      curve: Curves.easeOutCubic,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        // الزوايا تتبدّل قليلاً مع القسم فيبدو الانتقال حيّاً
+        borderRadius: BorderRadiusDirectional.only(
+          topStart: Radius.circular(i.isEven ? 20 : 12),
+          topEnd: Radius.circular(i.isEven ? 12 : 20),
+          bottomStart: Radius.circular(i.isEven ? 12 : 20),
+          bottomEnd: Radius.circular(i.isEven ? 20 : 12),
+        ),
+        gradient: LinearGradient(
+          begin: AlignmentDirectional.topStart,
+          end: AlignmentDirectional.bottomEnd,
+          colors: tone.colors,
+        ),
+        boxShadow: [
+          BoxShadow(color: tone.colors.first.withValues(alpha: 0.28), blurRadius: 18, offset: const Offset(0, 8)),
+        ],
+      ),
+      child: Stack(
+        children: [
+          // دائرتان زخرفيتان تنتقلان مع القسم
+          AnimatedPositionedDirectional(
+            duration: _duration,
+            curve: Curves.easeOutCubic,
+            end: -40.0 + i * 30,
+            top: -60.0 + i * 12,
+            child: Container(
+              width: 170,
+              height: 170,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.07)),
+            ),
+          ),
+          AnimatedPositionedDirectional(
+            duration: _duration,
+            curve: Curves.easeOutCubic,
+            end: 70.0 - i * 18,
+            bottom: -70.0 + i * 8,
+            child: Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.05)),
+            ),
+          ),
+          // أيقونة القسم علامةً مائية
+          PositionedDirectional(
+            end: 14,
+            bottom: 10,
+            child: AnimatedSwitcher(
+              duration: _duration,
+              transitionBuilder: (child, a) => FadeTransition(
+                opacity: a,
+                child: ScaleTransition(scale: Tween(begin: 0.7, end: 1.0).animate(a), child: child),
+              ),
+              child: Icon(tone.icon, key: ValueKey(tab), size: 46, color: Colors.white.withValues(alpha: 0.14)),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: AppText.family,
+                          color: Colors.white.withValues(alpha: 0.78),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    // الفترة في الطرف المقابل للعنوان
+                    if (period != null) ...[
+                      const SizedBox(width: 8),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 160),
+                        child: PressableScale(
+                          onTap: onPeriod,
+                          child: Container(
+                            height: 26,
+                            padding: const EdgeInsetsDirectional.fromSTEB(9, 0, 5, 0),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(13),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    period!,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontFamily: AppText.family,
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                const Icon(Icons.expand_more_rounded, size: 16, color: Colors.white),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 6),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  switchInCurve: Curves.easeOutCubic,
+                  transitionBuilder: (child, a) => FadeTransition(
+                    opacity: a,
+                    child: SlideTransition(
+                      position: Tween(begin: const Offset(0, 0.25), end: Offset.zero).animate(a),
+                      child: child,
+                    ),
+                  ),
+                  layoutBuilder: (current, previous) => Stack(
+                    alignment: AlignmentDirectional.centerStart,
+                    children: [...previous, ?current],
+                  ),
+                  child: FittedBox(
+                    key: ValueKey('$tab|$value'),
+                    fit: BoxFit.scaleDown,
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Text(
+                      value,
+                      style: const TextStyle(
+                        fontFamily: AppText.family,
+                        color: Colors.white,
+                        fontSize: 30,
+                        fontWeight: FontWeight.w800,
+                        height: 1.15,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final c in chips)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          c,
+                          style: const TextStyle(
+                            fontFamily: AppText.family,
+                            color: Colors.white,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-/// سند قبض: الطالب مقابل المبلغ، ثم رقم الوصل وتاريخه مقابل طريقة الدفع، ثم خط
-/// رفيع، ثم الحالة مقابل أزرار الوصل والواتساب والإلغاء.
+/// سطر البحث والتصفية مثبّتاً أعلى السجل عند التمرير.
+class _PinnedBar extends SliverPersistentHeaderDelegate {
+  const _PinnedBar({required this.child});
+
+  final Widget child;
+  static const _height = 60.0;
+
+  @override
+  double get minExtent => _height;
+  @override
+  double get maxExtent => _height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(
+      color: AppColors.bg,
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      alignment: Alignment.center,
+      child: child,
+    );
+  }
+
+  @override
+  bool shouldRebuild(_PinnedBar old) => true;
+}
+
+/// زرّ التصفية الموحّد: أيقونة، وعدد الفلاتر المفعّلة عليها.
+class _FiltersButton extends StatelessWidget {
+  const _FiltersButton({required this.count, required this.onTap});
+
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final on = count > 0;
+    return Tooltip(
+      message: 'تصفية',
+      child: PressableScale(
+        key: const ValueKey('finance-filters'),
+        onTap: onTap,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              width: controlHeight,
+              height: controlHeight,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: on ? AppColors.amberSoft : AppColors.surface,
+                borderRadius: BorderRadius.circular(Corner.field),
+                border: Border.all(color: on ? AppColors.amberBorder : AppColors.line),
+              ),
+              child: Icon(Icons.tune_rounded, size: 20, color: on ? AppColors.amberDark : AppColors.muted),
+            ),
+            if (on)
+              PositionedDirectional(
+                top: -5,
+                end: -5,
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 17),
+                  height: 17,
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.amber,
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800, height: 1),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// سطر أرقام فوق السجل — «رسوم الفترة» حين يُحتسب المقبوض بسنة الرسوم.
+class _ListHeader extends StatelessWidget {
+  const _ListHeader({required this.parts});
+
+  final List<(String, Color)> parts;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text.rich(
+            TextSpan(
+              children: [
+                for (var i = 0; i < parts.length; i++) ...[
+                  if (i > 0) const TextSpan(text: '  ·  ', style: TextStyle(color: AppColors.faint)),
+                  TextSpan(
+                    text: parts[i].$1,
+                    style: TextStyle(
+                      color: parts[i].$2,
+                      fontWeight: i == 0 ? FontWeight.w600 : FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontFamily: AppText.family, fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _Pill extends StatelessWidget {
+  const _Pill({required this.label, required this.selected, required this.onTap});
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return PressableScale(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.amber : Colors.white,
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(color: selected ? AppColors.amber : AppColors.lineStrong),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontFamily: AppText.family,
+            color: selected ? Colors.white : AppColors.heading,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// إجراء في ورقة الإجراءات.
+typedef _SheetAction = ({IconData icon, String label, Color color, VoidCallback onTap});
+
+Future<void> _showActions(BuildContext context, String title, List<_SheetAction> actions) {
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
+    builder: (ctx) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+            child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.cardTitle),
+          ),
+          const Divider(height: 1, color: AppColors.line),
+          for (final a in actions)
+            ListTile(
+              leading: Icon(a.icon, color: a.color, size: 20),
+              title: Text(
+                a.label,
+                style: TextStyle(
+                  color: a.color == AppColors.danger ? AppColors.danger : AppColors.text,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13.5,
+                ),
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                a.onTap();
+              },
+            ),
+          const SizedBox(height: 6),
+        ],
+      ),
+    ),
+  );
+}
+
+// ═══ صفوف السجل ═════════════════════════════════════════════════════════════
+//
+// كل صف بنمط واحد: دائرة بالحرف الأول أو أيقونة، ثم العنوان وتحته التفاصيل،
+// والمبلغ بلون داكن هادئ في الطرف وتحته حالته شارةً ناعمة. الأحمر للحالة لا
+// للرقم: عمود أرقام حمراء صارخ يُتعب العين ولا يضيف معنى.
+
+TextStyle get _titleStyle => TextStyle(
+  fontFamily: AppText.family,
+  fontWeight: FontWeight.w700,
+  fontSize: 14,
+  color: AppColors.heading,
+);
+
+const _metaStyle = TextStyle(color: AppColors.faint, fontSize: 11.5, height: 1.3);
+
+/// تاريخ قصير مقروء: «1 أكتوبر»، والسنة إن لم تكن الحالية.
+String _shortDate(DateTime d) {
+  final base = '${d.day} ${gregorianMonths[d.month - 1]}';
+  return d.year == DateTime.now().year ? base : '$base ${d.year}';
+}
+
+/// عنوان مجموعة يومية: «اليوم» و«أمس»، وإلا التاريخ.
+String _dayLabel(DateTime d) {
+  final today = dateOnly(DateTime.now());
+  final day = dateOnly(d);
+  if (day == today) return 'اليوم';
+  if (day == today.subtract(const Duration(days: 1))) return 'أمس';
+  return _shortDate(d);
+}
+
+/// عنوان مجموعة شهرية للمستحقات.
+String _monthLabel(DateTime d) => '${gregorianMonths[d.month - 1]} ${d.year}';
+
+/// عنوان مجموعة في السجل: اسمها ومجموعها.
+class _GroupHeader extends StatelessWidget {
+  const _GroupHeader({required this.title, required this.total});
+
+  final String title;
+  final double total;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontFamily: AppText.family,
+                color: AppColors.heading,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          Text(
+            '${total < 0 ? '-' : ''}${money(total)}',
+            style: const TextStyle(
+              fontFamily: AppText.family,
+              color: AppColors.faint,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// مفتاح مقسّم لمجموعة تصفية قصيرة: الخيارات متجاورة بعرض متساوٍ.
+class _FilterSegment extends StatelessWidget {
+  const _FilterSegment({required this.options, required this.value, required this.onPick});
+
+  final Map<String, String> options;
+  final String value;
+  final ValueChanged<String> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(color: AppColors.hover, borderRadius: BorderRadius.circular(11)),
+      child: Row(
+        children: [
+          for (final e in options.entries)
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => onPick(e.key),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: e.key == value ? Colors.white : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: e.key == value
+                        ? const [BoxShadow(color: Color(0x14000000), blurRadius: 5, offset: Offset(0, 1))]
+                        : null,
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Text(
+                        e.value,
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontFamily: AppText.family,
+                          color: e.key == value ? AppColors.heading : AppColors.muted,
+                          fontSize: 12.5,
+                          fontWeight: e.key == value ? FontWeight.w800 : FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// شارة حالة ناعمة: خلفية باهتة ونص بلونها.
+class _Badge extends StatelessWidget {
+  const _Badge(this.label, this.color);
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        style: TextStyle(fontFamily: AppText.family, color: color, fontSize: 10.5, fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+}
+
+/// ألوان الشارات: أعمق وأهدأ من ألوان الأزرار.
+/// المبلغ المستحق بأحمر هادئ مطفي: يُقرأ ديناً بلا صراخ.
+const _owedColor = Color(0xFFA5484A);
+const _lateColor = Color(0xFFB42318);
+const _dueColor = Color(0xFF9A6700);
+const _okColor = Color(0xFF1F7A4D);
+
+/// المبلغ في طرف الصف وتحته شارة حالته.
+class _AmountColumn extends StatelessWidget {
+  const _AmountColumn({required this.amount, this.color, this.badge, this.struck = false});
+
+  final String amount;
+  final Color? color;
+  final Widget? badge;
+  final bool struck;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          amount,
+          style: TextStyle(
+            fontFamily: AppText.family,
+            fontWeight: FontWeight.w800,
+            fontSize: 14.5,
+            color: color ?? AppColors.heading,
+            decoration: struck ? TextDecoration.lineThrough : null,
+          ),
+        ),
+        if (badge != null) ...[const SizedBox(height: 4), badge!],
+      ],
+    );
+  }
+}
+
+/// هيكل الصف: [العنوان/التفاصيل] [المبلغ]. لمسه يفتح إجراءاته.
+class _Row extends StatelessWidget {
+  const _Row({
+    required this.title,
+    required this.meta,
+    required this.amount,
+    this.onTap,
+  });
+
+  final String title;
+  final String meta;
+  final Widget amount;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: _titleStyle),
+                    if (meta.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(meta, maxLines: 1, overflow: TextOverflow.ellipsis, style: _metaStyle),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              amount,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// سند قبض: الطالب ورقم الوصل وتاريخه وطريقة الدفع، والمبلغ بحالته. لمس الصف
+/// يفتح الوصل، والتعديل والواتساب والإلغاء في «المزيد».
 class _PaymentCard extends StatelessWidget {
   const _PaymentCard({
     required this.payment,
     required this.student,
     this.onCancel,
+    this.onEdit,
   });
 
   final Payment payment;
   final Student? student;
   final VoidCallback? onCancel;
+
+  /// تعديل سند قبض من غير طالب — الإيراد العام.
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -1485,160 +2170,62 @@ class _PaymentCard extends StatelessWidget {
     final method = [
       StoreScope.of(context).paymentMethodLabel(p.method),
       if (p.reference.trim().isNotEmpty) '(${p.reference.trim()})',
-    ].join('  ');
+    ].join(' ');
     final reversed = p.reversedByPaymentId != null;
     final sameDay = dateOnly(p.date) == dateOnly(DateTime.now());
-    final amountColor = p.cancelled
-        ? AppColors.faint
-        : (p.amount < 0 ? AppColors.danger : AppColors.success);
 
-    return AppCard(
-      onTap: () => ReceiptScreen.open(context, p),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: _titleStyle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                money(p.amount),
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 15,
-                  color: amountColor,
-                  decoration: p.cancelled ? TextDecoration.lineThrough : null,
-                ),
-              ),
-            ],
-          ),
-          if (p.discountAmount.abs() > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                '(خصم: -${money(p.discountAmount.abs())})',
-                textAlign: TextAlign.end,
-                style: const TextStyle(
-                  color: AppColors.danger,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          const SizedBox(height: 3),
-          Row(
-            children: [
-              Expanded(
-                child: Text.rich(
-                  TextSpan(
-                    children: [
-                      WidgetSpan(
-                        alignment: PlaceholderAlignment.middle,
-                        child: Icon(
-                          Icons.receipt_long_outlined,
-                          size: 13,
-                          color: AppColors.amber,
-                        ),
-                      ),
-                      TextSpan(
-                        text: ' ${p.receiptNumber}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.heading,
-                        ),
-                      ),
-                      TextSpan(text: '  ·  ${formatDate(p.date)}'),
-                    ],
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: _metaStyle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              // طريقة الدفع في طرف السطر تحت المبلغ، لا في منتصف البطاقة
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 120),
-                child: Text(
-                  method,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.end,
-                  style: _metaStyle,
-                ),
-              ),
-            ],
-          ),
-          const _Rule(),
-          Row(
-            children: [
-              if (p.cancelled)
-                StatusChip.danger('ملغى')
-              else if (reversed)
-                StatusChip.muted('معكوس')
-              else
-                StatusChip.success('معتمد'),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Align(
-                  alignment: AlignmentDirectional.centerEnd,
-                  child: Wrap(
-                    spacing: 5,
-                    runSpacing: 5,
-                    alignment: WrapAlignment.end,
-                    children: [
-                      TileButton(
-                        label: 'الوصل',
-                        icon: const Icon(Icons.print_outlined, size: 13),
-                        color: AppColors.heading,
-                        background: Colors.white,
-                        border: AppColors.lineStrong,
-                        onTap: () => ReceiptScreen.open(context, p),
-                      ),
-                      if (!p.cancelled && !reversed && student != null)
-                        TileButton(
-                          label: 'واتساب',
-                          icon: const MessageCircleIcon(
-                            color: AppColors.success,
-                            size: 12,
-                          ),
-                          color: AppColors.success,
-                          background: AppColors.successSoft,
-                          border: const Color(0xFF86EFAC),
-                          onTap: () =>
-                              ReceiptScreen.sendWhatsApp(context, p, student!),
-                        ),
-                      if (onCancel != null)
-                        TileButton(
-                          label: sameDay ? 'إلغاء' : 'عكس',
-                          icon: const Icon(Icons.block, size: 13),
-                          color: AppColors.danger,
-                          background: Colors.white,
-                          border: AppColors.dangerBorder,
-                          onTap: onCancel!,
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+    final Widget? badge = p.cancelled
+        ? const _Badge('ملغى', _lateColor)
+        : reversed
+            ? _Badge('معكوس', AppColors.muted)
+            : p.amount < 0
+                ? const _Badge('مسترد', _lateColor)
+                : p.discountAmount.abs() > 0
+                    ? _Badge('خصم ${money(p.discountAmount.abs())}', _dueColor)
+                    : null;
+
+    final canWhatsApp = !p.cancelled && !reversed && student != null;
+
+    return _Row(
+      title: name,
+      meta: ['#${p.receiptNumber}', method].join('  ·  '),
+      amount: _AmountColumn(
+        amount: '${p.amount < 0 ? '-' : '+'}${money(p.amount)}',
+        color: p.cancelled ? AppColors.faint : (p.amount < 0 ? _lateColor : _okColor),
+        badge: badge,
+        struck: p.cancelled,
       ),
+      // الإجراءات في ورقة بلمس الصف، أولها الوصل — لا نقاط ثلاث في كل صف
+      onTap: () => _showActions(context, 'سند ${p.receiptNumber}', [
+        (
+          icon: Icons.receipt_long_outlined,
+          label: 'عرض الوصل',
+          color: AppColors.heading,
+          onTap: () => ReceiptScreen.open(context, p),
+        ),
+        if (onEdit != null)
+          (icon: Icons.edit_outlined, label: 'تعديل', color: AppColors.heading, onTap: onEdit!),
+        if (canWhatsApp)
+          (
+            icon: Icons.chat_outlined,
+            label: 'إرسال عبر واتساب',
+            color: AppColors.success,
+            onTap: () => ReceiptScreen.sendWhatsApp(context, p, student!),
+          ),
+        if (onCancel != null)
+          (
+            icon: Icons.block,
+            label: sameDay ? 'إلغاء السند' : 'عكس السند',
+            color: AppColors.danger,
+            onTap: onCancel!,
+          ),
+      ]),
     );
   }
 }
 
-/// بند مستحق: الطالب ومرحلته مقابل حالة البند، ثم خط رفيع، ثم البيان وتاريخ
-/// الاستحقاق مقابل المبلغ وزر التسديد. البطاقة تفتح ملف الطالب.
+/// بند مستحق: الطالب والبيان وتاريخ الاستحقاق، والمبلغ وتحته حالته، وزر التسديد.
+/// لمسه يفتح التسديد وملف الطالب.
 class _DueCard extends StatelessWidget {
   const _DueCard({required this.item, this.onOpen, this.onPay});
 
@@ -1649,98 +2236,21 @@ class _DueCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final d = item;
-    final meta = [
-      if (d.student.gradeLevel.trim().isNotEmpty) d.student.gradeLevel.trim(),
-      if (d.student.phone.trim().isNotEmpty) d.student.phone.trim(),
-    ].join('  ·  ');
 
-    return AppCard(
-      onTap: onOpen,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      d.student.fullName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: _titleStyle,
-                    ),
-                    if (meta.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        meta,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: _metaStyle,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              _stageChip(d),
-            ],
-          ),
-          const _Rule(),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      d.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF475569),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'استحقاق: ${formatDate(d.dueDate)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: _metaStyle,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                money(d.amount),
-                style: const TextStyle(
-                  color: AppColors.danger,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 15,
-                ),
-              ),
-              if (onPay != null) ...[
-                const SizedBox(width: 8),
-                TileButton(
-                  label: 'تسديد',
-                  icon: const Icon(Icons.credit_card, size: 13),
-                  color: Colors.white,
-                  background: AppColors.amber,
-                  border: AppColors.amber,
-                  onTap: onPay!,
-                ),
-              ],
-            ],
-          ),
-        ],
-      ),
+    return _Row(
+      title: d.student.fullName,
+      meta: [d.title, _shortDate(d.dueDate)].where((s) => s.trim().isNotEmpty).join('  ·  '),
+      amount: _AmountColumn(amount: money(d.amount), color: _owedColor),
+      // لمسة واحدة: التسديد وملف الطالب في ورقة، أو مباشرةً إن كان متاحاً وحده
+      onTap: () {
+        final actions = <_SheetAction>[
+          if (onPay != null) (icon: Icons.add_card, label: 'تسديد', color: AppColors.heading, onTap: onPay!),
+          if (onOpen != null)
+            (icon: Icons.person_outline, label: 'ملف الطالب', color: AppColors.heading, onTap: onOpen!),
+        ];
+        if (actions.length == 1) return actions.first.onTap();
+        if (actions.isNotEmpty) _showActions(context, d.student.fullName, actions);
+      },
     );
   }
 }
@@ -1768,7 +2278,7 @@ class _SpendRow {
   final ExpenseVoucher voucher;
 }
 
-/// سند صرف: البيان مقابل المبلغ، ثم التاريخ وطريقة الصرف مقابل التصنيف.
+/// سند صرف: البيان وتحته التاريخ وطريقة الصرف، والمبلغ وتحته التصنيف.
 class _SpendCard extends StatelessWidget {
   const _SpendCard({required this.row});
   final _SpendRow row;
@@ -1776,281 +2286,18 @@ class _SpendCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // التاريخ يصل أحياناً بطابع زمني كامل من السحابة — يُعرض يوماً فقط
-    final day = parseIsoDate(
-      row.date.length >= 10 ? row.date.substring(0, 10) : row.date,
-    );
-    final details = [
-      day == null ? row.date : formatDate(day),
-      StoreScope.of(context).paymentMethodLabel(row.method),
-    ].join('  ·  ');
+    final details = StoreScope.of(context).paymentMethodLabel(row.method);
 
-    return AppCard(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      // السند المطبوع يُسلَّم لمن قبض المبلغ، فيُفتح بلمس بطاقته
+    return _Row(
+      title: row.description.trim().isEmpty ? row.category : row.description.trim(),
+      meta: details,
+      amount: _AmountColumn(
+        amount: '-${money(row.amount)}',
+        color: _owedColor,
+        badge: _Badge(row.category, row.isPayout ? const Color(0xFF6E5DC6) : AppColors.muted),
+      ),
+      // السند المطبوع يُسلَّم لمن قبض المبلغ، فيُفتح بلمس صفّه
       onTap: () => ExpenseVoucher.open(context, row.voucher),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  row.description.trim().isEmpty
-                      ? row.category
-                      : row.description.trim(),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: _titleStyle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                money(row.amount),
-                style: const TextStyle(
-                  color: AppColors.danger,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 15,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          // التاريخ وطريقة الصرف تحت البيان، والتصنيف في الطرف تحت المبلغ
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  details,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: _metaStyle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 150),
-                child: row.isPayout
-                    ? StatusChip.amber(row.category)
-                    : StatusChip.muted(row.category),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// سند إيراد عام: الجهة والبيان دون إيهام بأنه مرتبط بملف طالب.
-class _IncomeCard extends StatelessWidget {
-  const _IncomeCard({
-    required this.income,
-    required this.methodLabel,
-    this.onEdit,
-    this.onCancel,
-  });
-
-  final GeneralIncome income;
-  final String methodLabel;
-  final VoidCallback? onEdit;
-  final VoidCallback? onCancel;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  income.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: _titleStyle,
-                ),
-              ),
-              Text(
-                money(income.amount),
-                style: TextStyle(
-                  color: income.cancelled ? AppColors.faint : AppColors.success,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 15,
-                  decoration: income.cancelled
-                      ? TextDecoration.lineThrough
-                      : null,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            [
-              income.category,
-              formatDate(income.date),
-              methodLabel,
-              if (income.note.isNotEmpty) income.note,
-            ].join('  ·  '),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: _metaStyle,
-          ),
-          if (onEdit != null || onCancel != null) ...[
-            const _Rule(),
-            Row(
-              children: [
-                income.cancelled
-                    ? StatusChip.danger('ملغى')
-                    : StatusChip.success('معتمد'),
-                const Spacer(),
-                if (onEdit != null)
-                  TileButton(
-                    label: 'تعديل',
-                    icon: const Icon(Icons.edit_outlined, size: 13),
-                    color: AppColors.heading,
-                    background: Colors.white,
-                    border: AppColors.lineStrong,
-                    onTap: onEdit!,
-                  ),
-                if (onEdit != null && onCancel != null)
-                  const SizedBox(width: 5),
-                if (onCancel != null)
-                  TileButton(
-                    label: 'إبطال',
-                    icon: const Icon(Icons.block, size: 13),
-                    color: AppColors.danger,
-                    background: Colors.white,
-                    border: AppColors.dangerBorder,
-                    onTap: onCancel!,
-                  ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// رواتب الشهر الجاري: ما صُرف لكل معلم، وزر صرفها دفعةً واحدة.
-///
-/// لا «مستحق» ولا «متبقٍّ»: المدرسة عمل خاص لا وظيفة حكومية، فشهر بلا راتب وشهر
-/// بأكثر منه وشهر إجازة. الصرف يُنسب لشهر الراتب لا ليوم صرفه، فراتب أيلول
-/// المصروف في تشرين يبقى لأيلول.
-class _SalariesDueCard extends StatelessWidget {
-  const _SalariesDueCard({required this.store});
-
-  final AppStore store;
-
-  @override
-  Widget build(BuildContext context) {
-    if (store.teachersInViewedYear.isEmpty) return const SizedBox.shrink();
-    final month = monthKeyOf(DateTime.now());
-    final rows = [
-      for (final t in store.teachersInViewedYear)
-        (teacher: t, paid: paidInMonth(store.teacherPayouts, store.linkedTeacherIds(t.id), month)),
-    ];
-    final total = rows.fold<double>(0, (sum, r) => sum + r.paid.total);
-
-    return AppCard(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'رواتب ${monthLabel(month)}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12.5,
-                    color: AppColors.heading,
-                  ),
-                ),
-              ),
-              TextButton.icon(
-                onPressed: () async {
-                  final count = await showPayrollSheet(
-                    context,
-                    store,
-                    month: month,
-                  );
-                  if (count > 0 && context.mounted) {
-                    showAppSnack(context, 'صُرفت رواتب $count معلماً');
-                  }
-                },
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.amber,
-                  textStyle: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12,
-                  ),
-                ),
-                icon: const Icon(Icons.payments_outlined, size: 16),
-                label: const Text('صرف الرواتب'),
-              ),
-            ],
-          ),
-          Text(
-            total > 0
-                ? 'صُرف هذا الشهر ${money(total)}'
-                : 'لم يُصرف شيء هذا الشهر',
-            style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
-          ),
-          for (final row in rows.where((r) => r.paid.total > 0))
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          row.teacher.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 12,
-                            color: AppColors.text,
-                          ),
-                        ),
-                        Text(
-                          [
-                            if (row.paid.salary > 0)
-                              'راتب ${money(row.paid.salary)}',
-                            if (row.paid.advance > 0)
-                              'سلفة ${money(row.paid.advance)}',
-                            if (row.paid.bonus > 0)
-                              'مكافأة ${money(row.paid.bonus)}',
-                          ].join('  ·  '),
-                          style: const TextStyle(
-                            color: AppColors.muted,
-                            fontSize: 10.5,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Text(
-                    money(row.paid.total),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 13,
-                      color: AppColors.success,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
     );
   }
 }
@@ -2178,34 +2425,37 @@ Future<int> showPayrollSheet(
                         borderRadius: BorderRadius.circular(Corner.box),
                         border: Border.all(color: AppColors.line),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            tooltip: 'الشهر السابق',
-                            visualDensity: VisualDensity.compact,
-                            icon: const Icon(Icons.chevron_right, size: 18),
-                            onPressed: () => setSt(
-                              () => payrollMonth = shiftMonth(payrollMonth, -1),
+                      child: Directionality(
+                        textDirection: TextDirection.ltr,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'الشهر السابق',
+                              visualDensity: VisualDensity.compact,
+                              icon: const Icon(Icons.chevron_left, size: 18),
+                              onPressed: () => setSt(
+                                () => payrollMonth = shiftMonth(payrollMonth, -1),
+                              ),
                             ),
-                          ),
-                          Text(
-                            monthLabel(payrollMonth),
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 12,
-                              color: AppColors.heading,
+                            Text(
+                              monthLabel(payrollMonth),
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
+                                color: AppColors.heading,
+                              ),
                             ),
-                          ),
-                          IconButton(
-                            tooltip: 'الشهر التالي',
-                            visualDensity: VisualDensity.compact,
-                            icon: const Icon(Icons.chevron_left, size: 18),
-                            onPressed: () => setSt(
-                              () => payrollMonth = shiftMonth(payrollMonth, 1),
+                            IconButton(
+                              tooltip: 'الشهر التالي',
+                              visualDensity: VisualDensity.compact,
+                              icon: const Icon(Icons.chevron_right, size: 18),
+                              onPressed: () => setSt(
+                                () => payrollMonth = shiftMonth(payrollMonth, 1),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ],

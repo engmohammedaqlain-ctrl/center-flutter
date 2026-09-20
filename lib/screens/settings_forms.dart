@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../data/academic_matching.dart';
 import '../data/permissions.dart';
@@ -630,7 +630,7 @@ class _GradeFeeFormScreenState extends State<GradeFeeFormScreen> {
             ),
             if (!editing) ...[
               _gap,
-              FieldLabel('الرسم الشهري (₪)', key: errors.key('fee'), requiredField: true),
+              FieldLabel('الرسم الشهري (شيكل)', key: errors.key('fee'), requiredField: true),
               TextField(
                 controller: monthly,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),

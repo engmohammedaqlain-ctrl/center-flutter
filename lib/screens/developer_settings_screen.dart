@@ -384,7 +384,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
                         style: const TextStyle(fontSize: 11, color: AppColors.muted, fontFamily: 'monospace'),
                       ),
                       const SizedBox(width: 2),
-                      const Icon(Icons.chevron_right, size: 18, color: AppColors.faint),
+                      const AppChevron(size: 18),
                     ],
                   ),
                 ),
@@ -436,7 +436,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
 
   List<Widget> _financeRules() => [
         const FormSection(icon: Icons.payments_outlined, title: 'القواعد المالية'),
-        FieldLabel('رسم حجز المقعد (₪)', key: errors.key('seatFee')),
+        FieldLabel('رسم حجز المقعد (شيكل)', key: errors.key('seatFee')),
         TextField(
           controller: seatFee,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -630,7 +630,11 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
                 ],
               ),
             ),
-            Icon(Icons.chevron_right, size: 18, color: danger ? AppColors.danger : AppColors.faint),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 18,
+              color: danger ? AppColors.danger : AppColors.faint,
+            ),
           ],
         ),
       ),

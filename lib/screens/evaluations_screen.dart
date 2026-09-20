@@ -8,6 +8,8 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/animated_count.dart';
+import '../widgets/list_paging.dart';
 import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import 'evaluation_form_sheet.dart';
@@ -27,9 +29,12 @@ class EvaluationsScreen extends StatefulWidget {
 class _EvaluationsScreenState extends State<EvaluationsScreen> {
   final search = TextEditingController();
   String gradeFilter = 'all';
+  int listVisible = kListPageSize;
   String roomFilter = 'all';
   String groupId = 'all';
   String type = 'all';
+  /// فلتر الفصل الدراسي — مطابق لـ `selectedTerm` في الويب.
+  String termFilter = 'all';
 
   @override
   void dispose() {
@@ -64,6 +69,9 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
     );
   }
 
+  /// النمط الموزون: التقييمات مجموعة بموادها كجدول الويب، لكن بعمقٍ يناسب
+  /// الجوال — المادة تُفتح فتُظهر طلابها بمعدل كلٍّ منهم، والطالب يُفتح فتظهر
+  /// درجاته فيها. الجدول العريض لا يُقرأ على شاشة هاتف.
   Widget _weightedBody(AppStore store) {
     final q = search.text.trim().toLowerCase();
     final rooms = store.roomsInViewedYear;
@@ -109,13 +117,31 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
       }
       if (groupId != 'all' && e.groupId != groupId) return false;
       if (type != 'all' && e.type != type) return false;
+      if (termFilter != 'all' && e.term != termFilter) return false;
       if (q.isEmpty) return true;
       final name = (student?.fullName ?? '').toLowerCase();
       return name.contains(q) || e.title.toLowerCase().contains(q);
     }).toList();
 
+    // المواد بترتيب أسمائها، وطلاب كل مادة بترتيب أسمائهم
+    final byGroup = <String, List<Evaluation>>{};
+    for (final e in list) {
+      byGroup.putIfAbsent(e.groupId, () => []).add(e);
+    }
+    String groupTitle(String id) {
+      final g = store.groupById(id);
+      if (g == null) return 'بلا مادة';
+      final subject = store.subjectName(g.subjectId);
+      return subject.isNotEmpty && subject != 'غير محدد' ? subject : g.name;
+    }
+
+    final groupIds = byGroup.keys.toList()..sort((a, b) => groupTitle(a).compareTo(groupTitle(b)));
+
+    final activeFilters =
+        [gradeFilter, roomFilter, groupId, termFilter, type].where((v) => v != 'all').length;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.bg,
       appBar: AppBar(
         title: const Text('الدرجات والتقييمات'),
         actions: [
@@ -133,192 +159,227 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
           ),
         ],
       ),
-      body: ThumbActionLayer(
-        action: store.can('evaluations')
-            ? ThumbAction(
-                label: 'رصد درجات جديدة',
-                icon: Icons.edit_note,
-                color: AppColors.navy,
-                onPressed: () => _record(context, store),
-              )
-            : null,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-              child: _stats(list),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: SearchField(
-                controller: search,
-                hint: 'ابحث باسم الطالب أو عنوان التقييم...',
-                onChanged: (_) => setState(() {}),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: AppDropdown<String>(
-                      value: gradeFilter,
-                      items: [
-                        const DropdownMenuItem(value: 'all', child: Text('كل المراحل')),
-                        for (final g in grades) DropdownMenuItem(value: g, child: Text(g)),
-                      ],
-                      onChanged: (v) => setState(() {
-                        gradeFilter = v ?? 'all';
-                        roomFilter = 'all';
-                        groupId = 'all';
-                      }),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: AppDropdown<String>(
-                      value: roomFilter,
-                      items: [
-                        const DropdownMenuItem(value: 'all', child: Text('كل الشعب')),
-                        for (final r in roomsForGrade)
-                          DropdownMenuItem(
-                            value: r.id,
-                            child: Text(
-                              r.gradeLevel.isEmpty ? r.name : '${r.gradeLevel} — ${r.name}',
-                              overflow: TextOverflow.ellipsis,
-                            ),
+      body: Material(
+        color: AppColors.bg,
+        child: ThumbActionLayer(
+          action: store.can('evaluations')
+              ? ThumbAction(
+                  label: 'رصد درجات',
+                  icon: Icons.edit_note,
+                  color: AppColors.navy,
+                  onPressed: () => _record(context, store),
+                )
+              : null,
+          child: Column(
+            children: [
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SearchField(
+                            controller: search,
+                            hint: 'اسم الطالب أو عنوان التقييم',
+                            onChanged: (_) => setState(() => listVisible = kListPageSize),
                           ),
-                      ],
-                      onChanged: (v) => setState(() {
-                        roomFilter = v ?? 'all';
-                        groupId = 'all';
-                      }),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: AppDropdown<String>(
-                      value: groups.any((g) => g.id == groupId) ? groupId : 'all',
-                      items: [
-                        const DropdownMenuItem(value: 'all', child: Text('كل المواد')),
-                        for (final g in groups)
-                          DropdownMenuItem(value: g.id, child: Text(g.name, overflow: TextOverflow.ellipsis)),
-                      ],
-                      onChanged: (v) => setState(() => groupId = v ?? 'all'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: AppDropdown<String>(
-                      value: type,
-                      items: [
-                        const DropdownMenuItem(value: 'all', child: Text('كل الأنواع')),
-                        for (final e in evaluationTypeNames.entries)
-                          DropdownMenuItem(value: e.key, child: Text(e.value)),
-                      ],
-                      onChanged: (v) => setState(() => type = v ?? 'all'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: list.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: EmptyState(message: 'لا توجد تقييمات مرصودة مطابقة للبحث.'),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, thumbActionClearance),
-                      itemCount: list.length,
-                      itemBuilder: (_, i) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _EvalCard(
-                          evaluation: list[i],
-                          studentName: store.studentById(list[i].studentId)?.fullName ?? 'طالب محذوف',
-                          subjectLine: () {
-                            final e = list[i];
-                            final group = store.groupById(e.groupId);
-                            final subject = store.subjectById(e.subjectId)?.name ??
-                                (group != null ? store.subjectName(group.subjectId) : '');
-                            final grade = group?.gradeLevel.trim() ?? '';
-                            final teacher = group == null || group.teacherId.isEmpty
-                                ? ''
-                                : store.teacherName(group.teacherId);
-                            return [
-                              if (subject.isNotEmpty && subject != 'غير محدد') subject,
-                              if (grade.isNotEmpty) grade,
-                              if (teacher.isNotEmpty && teacher != 'غير محدد') teacher,
-                            ].join(' · ');
-                          }(),
-                          onDelete: store.can('evaluations') ? () => _delete(context, store, list[i]) : null,
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        _FilterButton(
+                          count: activeFilters,
+                          onTap: () => _openFilters(
+                            store,
+                            grades: grades,
+                            rooms: roomsForGrade,
+                            groups: groups,
+                          ),
+                        ),
+                      ],
                     ),
-            ),
-          ],
+                  ],
+                ),
+              ),
+              Expanded(
+                child: groupIds.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: EmptyState(message: 'لا توجد تقييمات مرصودة مطابقة للبحث.'),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(12, 12, 12, thumbActionClearance),
+                        itemCount: listPage(groupIds, listVisible).length +
+                            (listVisible < groupIds.length ? 1 : 0),
+                        itemBuilder: (context, i) {
+                          final page = listPage(groupIds, listVisible);
+                          if (i >= page.length) {
+                            return LoadMoreButton(
+                              shown: page.length,
+                              total: groupIds.length,
+                              onMore: () => setState(() => listVisible += kListPageSize),
+                            );
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _GroupSection(
+                              title: groupTitle(page[i]),
+                              group: store.groupById(page[i]),
+                              evaluations: byGroup[page[i]]!,
+                              onDelete: store.can('evaluations') ? (e) => _delete(context, store, e) : null,
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  /// أربع إحصاءات سريعة — نفس حساب `stats` في Evaluations.tsx: النسبة تُحسب
-  /// من كل تقييم على حدة ثم تُعدّل، لا من مجموع الدرجات على مجموع القصوى.
-  Widget _stats(List<Evaluation> list) {
-    var totalPercent = 0;
-    var passCount = 0;
-    var highest = 0;
-    for (final e in list) {
-      totalPercent += e.percent;
-      if (e.passed) passCount++;
-      if (e.percent > highest) highest = e.percent;
-    }
-    final average = list.isEmpty ? 0 : (totalPercent / list.length).round();
-    final passRate = list.isEmpty ? 0 : ((passCount / list.length) * 100).round();
+  /// فلاتر الشاشة في ورقة واحدة: المرحلة والشعبة والمادة والفصل والنوع.
+  Future<void> _openFilters(
+    AppStore store, {
+    required List<String> grades,
+    required List<Classroom> rooms,
+    required List<Group> groups,
+  }) {
+    return showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          void pick(VoidCallback change) {
+            setState(() {
+              change();
+              listVisible = kListPageSize;
+            });
+            setSheet(() {});
+          }
 
-    return Row(
-      children: [
-        _stat('التقييمات', '${list.length}', AppColors.heading),
-        const SizedBox(width: 6),
-        _stat('المعدل العام', '$average%', AppColors.success),
-        const SizedBox(width: 6),
-        _stat('النجاح (50%)', '$passRate%', AppColors.info),
-        const SizedBox(width: 6),
-        _stat('الأعلى', '$highest%', AppColors.amber),
-      ],
-    );
-  }
+          Widget group(String title, Map<String, String> options, String value, ValueChanged<String> onPick) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(color: AppColors.faint, fontSize: 11.5, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 34,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: [
+                        for (final e in options.entries)
+                          Padding(
+                            padding: const EdgeInsetsDirectional.only(end: 6),
+                            child: _ChoicePill(
+                              label: e.value,
+                              selected: e.key == value,
+                              onTap: () => pick(() => onPick(e.key)),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
 
-  Widget _stat(String label, String value, Color color) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(Corner.box),
-          color: Colors.white,
-          border: Border.all(color: AppColors.line),
-        ),
-        child: Column(
-          children: [
-            Text(
-              value,
-              style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 14, fontFamily: 'monospace'),
+          return SafeArea(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(color: AppColors.lineStrong, borderRadius: BorderRadius.circular(2)),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsetsDirectional.fromSTEB(20, 10, 12, 10),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text('تصفية', style: AppText.cardTitle.copyWith(fontSize: 16))),
+                        TextButton(
+                          onPressed: () => pick(() {
+                            gradeFilter = 'all';
+                            roomFilter = 'all';
+                            groupId = 'all';
+                            type = 'all';
+                            termFilter = 'all';
+                          }),
+                          style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+                          child: const Text('إعادة الضبط', style: TextStyle(fontWeight: FontWeight.w700)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                      children: [
+                        group('المرحلة', {'all': 'الكل', for (final g in grades) g: g}, gradeFilter, (v) {
+                          gradeFilter = v;
+                          roomFilter = 'all';
+                          groupId = 'all';
+                        }),
+                        group(
+                          'الشعبة',
+                          {'all': 'الكل', for (final r in rooms) r.id: r.name},
+                          roomFilter,
+                          (v) {
+                            roomFilter = v;
+                            groupId = 'all';
+                          },
+                        ),
+                        group(
+                          'المادة',
+                          {'all': 'الكل', for (final g in groups) g.id: g.name},
+                          groups.any((g) => g.id == groupId) ? groupId : 'all',
+                          (v) => groupId = v,
+                        ),
+                        group(
+                          'الفصل',
+                          {
+                            'all': 'كل الفصول',
+                            for (final e in gradingTermLabels.entries) e.key: e.value,
+                          },
+                          termFilter,
+                          (v) => termFilter = v,
+                        ),
+                        group(
+                          'النوع',
+                          {'all': 'الكل', for (final e in evaluationTypeNames.entries) e.key: e.value},
+                          type,
+                          (v) => type = v,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
+                    child: PrimaryButton(label: 'تم', expand: true, height: 46, onPressed: () => Navigator.pop(ctx)),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: AppColors.muted, fontSize: 9.5),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -357,6 +418,7 @@ class _MonthlyGradesPanelState extends State<_MonthlyGradesPanel> {
   final draft = <String, TextEditingController>{};
   bool busy = false;
   String message = '';
+  int rosterVisible = kListPageSize;
 
   @override
   void initState() {
@@ -405,6 +467,7 @@ class _MonthlyGradesPanelState extends State<_MonthlyGradesPanel> {
     setState(() {
       month = '${picked.year}-${picked.month.toString().padLeft(2, '0')}';
       _clearDraft();
+      rosterVisible = kListPageSize;
     });
   }
 
@@ -598,6 +661,7 @@ class _MonthlyGradesPanelState extends State<_MonthlyGradesPanel> {
                         setState(() {
                           roomId = v ?? '';
                           _clearDraft();
+                          rosterVisible = kListPageSize;
                         });
                       },
                     ),
@@ -629,9 +693,18 @@ class _MonthlyGradesPanelState extends State<_MonthlyGradesPanel> {
                     )
                   : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-                      itemCount: rows.length,
+                      itemCount: listPage(rows, rosterVisible).length +
+                          (rosterVisible < rows.length ? 1 : 0),
                       itemBuilder: (_, i) {
-                        final r = rows[i];
+                        final page = listPage(rows, rosterVisible);
+                        if (i >= page.length) {
+                          return LoadMoreButton(
+                            shown: page.length,
+                            total: rows.length,
+                            onMore: () => setState(() => rosterVisible += kListPageSize),
+                          );
+                        }
+                        final r = page[i];
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 8),
                           child: AppCard(
@@ -728,97 +801,404 @@ class _MonthlyGradesPanelState extends State<_MonthlyGradesPanel> {
   }
 }
 
-class _EvalCard extends StatelessWidget {
-  const _EvalCard({
-    required this.evaluation,
-    required this.studentName,
-    required this.subjectLine,
+/// مادة في كشف الدرجات: رأسها معدلها وعدد طلابها، وتُفتح فتُظهر طلابها.
+class _GroupSection extends StatefulWidget {
+  const _GroupSection({
+    required this.title,
+    required this.group,
+    required this.evaluations,
     this.onDelete,
   });
 
-  final Evaluation evaluation;
-  final String studentName;
-  final String subjectLine;
-  final VoidCallback? onDelete;
+  final String title;
+  final Group? group;
+  final List<Evaluation> evaluations;
+  final void Function(Evaluation)? onDelete;
+
+  @override
+  State<_GroupSection> createState() => _GroupSectionState();
+}
+
+class _GroupSectionState extends State<_GroupSection> {
+  bool open = false;
+  int visibleCount = kListPageSize;
 
   @override
   Widget build(BuildContext context) {
-    final e = evaluation;
-    return AppCard(
-      padding: const EdgeInsets.all(12),
+    final store = StoreScope.of(context);
+    final g = widget.group;
+
+    // طلاب المادة بترتيب أسمائهم، ولكلٍّ معدله فيها
+    final byStudent = <String, List<Evaluation>>{};
+    for (final e in widget.evaluations) {
+      byStudent.putIfAbsent(e.studentId, () => []).add(e);
+    }
+    final students = byStudent.keys.toList()
+      ..sort((a, b) => (store.studentById(a)?.fullName ?? '').compareTo(store.studentById(b)?.fullName ?? ''));
+    final visibleStudents = listPage(students, visibleCount);
+
+    int averageOf(List<Evaluation> rows) =>
+        rows.isEmpty ? 0 : (rows.fold<int>(0, (a, e) => a + e.percent) / rows.length).round();
+    final average = averageOf(widget.evaluations);
+
+    final meta = [
+      if (g != null && g.gradeLevel.trim().isNotEmpty) g.gradeLevel.trim(),
+      if (g != null && g.teacherId.isNotEmpty) store.teacherName(g.teacherId),
+      '${students.length} طالب',
+    ].where((s) => s.isNotEmpty && s != 'غير محدد').join('  ·  ');
+
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(Corner.card),
+        border: Border.all(color: AppColors.line),
+        boxShadow: cardShadow,
+      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      studentName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
-                    ),
-                    if (subjectLine.isNotEmpty)
-                      Text(subjectLine, style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
-                  ],
-                ),
-              ),
-              StatusChip.muted(e.typeLabel),
-              if (onDelete != null) ...[
-                const SizedBox(width: 4),
-                SquareIconButton(
-                  icon: Icons.delete_outline,
-                  color: AppColors.danger,
-                  bg: AppColors.dangerSoft,
-                  border: AppColors.dangerBorder,
-                  onTap: onDelete!,
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(e.title, style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
-                    Text(
-                      e.evaluationDate,
-                      style: const TextStyle(color: AppColors.faint, fontSize: 10.5, fontFamily: 'monospace'),
-                    ),
-                  ],
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
+          InkWell(
+            onTap: () => setState(() => open = !open),
+            child: Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(14, 11, 8, 11),
+              child: Row(
                 children: [
-                  Text(
-                    '${trimNum(e.score)} / ${trimNum(e.maxScore)}',
-                    style: TextStyle(
-                      color: _tierColor(e.percent),
-                      fontWeight: FontWeight.w900,
-                      fontSize: 14,
-                      fontFamily: 'monospace',
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: AppText.family,
+                            color: AppColors.heading,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          meta,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: AppColors.faint, fontSize: 11),
+                        ),
+                      ],
                     ),
                   ),
+                  const SizedBox(width: 8),
                   Text(
-                    '${e.percent}%',
-                    style: const TextStyle(color: AppColors.muted, fontSize: 10.5, fontFamily: 'monospace'),
+                    '$average%',
+                    style: TextStyle(
+                      fontFamily: AppText.family,
+                      color: _tierColor(average),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: open ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: const Icon(Icons.keyboard_arrow_down_rounded, size: 22, color: AppColors.faint),
                   ),
                 ],
               ),
-            ],
+            ),
           ),
-          if (e.notes.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(e.notes, style: const TextStyle(color: AppColors.faint, fontSize: 10.5, height: 1.5)),
-          ],
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            alignment: Alignment.topCenter,
+            child: !open
+                ? const SizedBox(width: double.infinity)
+                : Container(
+                    decoration: const BoxDecoration(
+                      color: AppColors.sunken,
+                      border: Border(top: BorderSide(color: AppColors.line)),
+                    ),
+                    child: Column(
+                      children: [
+                        for (var i = 0; i < visibleStudents.length; i++)
+                          _StudentRow(
+                            name: store.studentById(visibleStudents[i])?.fullName ?? 'طالب محذوف',
+                            rows: byStudent[visibleStudents[i]]!,
+                            percent: averageOf(byStudent[visibleStudents[i]]!),
+                            last: i == visibleStudents.length - 1 && visibleStudents.length >= students.length,
+                            subject: widget.title,
+                            onDelete: widget.onDelete,
+                          ),
+                        if (visibleStudents.length < students.length)
+                          LoadMoreButton(
+                            shown: visibleStudents.length,
+                            total: students.length,
+                            onMore: () => setState(() => visibleCount += kListPageSize),
+                          ),
+                      ],
+                    ),
+                  ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+/// طالب داخل المادة: اسمه ومعدله، ولمسه يفتح درجاته فيها.
+class _StudentRow extends StatelessWidget {
+  const _StudentRow({
+    required this.name,
+    required this.rows,
+    required this.percent,
+    required this.last,
+    required this.subject,
+    this.onDelete,
+  });
+
+  final String name;
+  final List<Evaluation> rows;
+  final int percent;
+  final bool last;
+  final String subject;
+  final void Function(Evaluation)? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => _showStudentGrades(context, name: name, subject: subject, rows: rows, onDelete: onDelete),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          border: last ? null : const Border(bottom: BorderSide(color: AppColors.hover)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppColors.text, fontSize: 12.5, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 2),
+                  Text('${rows.length} تقييم', style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
+                ],
+              ),
+            ),
+            Text(
+              '$percent%',
+              style: TextStyle(
+                fontFamily: AppText.family,
+                color: _tierColor(percent),
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, size: 20, color: AppColors.faint),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// درجات طالب في مادة: لكل تقييم عنوانه ودرجته من أصلها ونسبته، ونوعه وتاريخه.
+Future<void> _showStudentGrades(
+  BuildContext context, {
+  required String name,
+  required String subject,
+  required List<Evaluation> rows,
+  void Function(Evaluation)? onDelete,
+}) {
+  final sorted = [...rows]..sort((a, b) => b.evaluationDate.compareTo(a.evaluationDate));
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.white,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
+    builder: (ctx) => SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(20, 14, 12, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.cardTitle.copyWith(fontSize: 15)),
+                  const SizedBox(height: 2),
+                  Text(subject, style: const TextStyle(color: AppColors.faint, fontSize: 11.5)),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: AppColors.line),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                itemCount: sorted.length,
+                separatorBuilder: (_, _) =>
+                    const Divider(height: 1, color: AppColors.hover, indent: 20, endIndent: 20),
+                itemBuilder: (context, i) {
+                  final e = sorted[i];
+                  return Padding(
+                    padding: const EdgeInsetsDirectional.fromSTEB(20, 10, 12, 10),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                e.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(color: AppColors.text, fontSize: 12.5, fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                [e.typeLabel, if (e.evaluationDate.isNotEmpty) e.evaluationDate]
+                                    .where((s) => s.isNotEmpty)
+                                    .join('  ·  '),
+                                style: const TextStyle(color: AppColors.faint, fontSize: 10.5),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '${trimNum(e.score)} / ${trimNum(e.maxScore)}',
+                              style: TextStyle(
+                                fontFamily: AppText.family,
+                                color: _tierColor(e.percent),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            Text('${e.percent}%', style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
+                          ],
+                        ),
+                        if (onDelete != null)
+                          IconButton(
+                            tooltip: 'حذف',
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.danger),
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              onDelete(e);
+                            },
+                          ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// زرّ التصفية الموحّد: أيقونة وعدد الفلاتر المفعّلة عليها.
+class _FilterButton extends StatelessWidget {
+  const _FilterButton({required this.count, required this.onTap});
+
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final on = count > 0;
+    return Tooltip(
+      message: 'تصفية',
+      child: PressableScale(
+        onTap: onTap,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              width: controlHeight,
+              height: controlHeight,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: on ? AppColors.amberSoft : AppColors.surface,
+                borderRadius: BorderRadius.circular(Corner.field),
+                border: Border.all(color: on ? AppColors.amberBorder : AppColors.line),
+              ),
+              child: Icon(Icons.tune_rounded, size: 20, color: on ? AppColors.amberDark : AppColors.muted),
+            ),
+            if (on)
+              PositionedDirectional(
+                top: -5,
+                end: -5,
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 17),
+                  height: 17,
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.amber,
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800, height: 1),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ChoicePill extends StatelessWidget {
+  const _ChoicePill({required this.label, required this.selected, required this.onTap});
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return PressableScale(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.amber : Colors.white,
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(color: selected ? AppColors.amber : AppColors.lineStrong),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          style: TextStyle(
+            fontFamily: AppText.family,
+            color: selected ? Colors.white : AppColors.heading,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
     );
   }

@@ -24,6 +24,25 @@ const _uuid = Uuid();
 String _nowIso() => DateTime.now().toUtc().toIso8601String();
 
 /// قائمة قيم لمرشّح `in` في PostgREST، كل قيمة بين علامتي تنصيص.
+
+/// اسم الطالب من صفّ البوابة: `full_name` إن وُجد، وإلا الاسمان معاً.
+///
+/// صفوف تُخزَّن باسمين منفصلين و`full_name` فارغ، فكان الكشف يظهر بلا أسماء.
+Map<String, dynamic> _withFullName(Map<String, dynamic> row) {
+  final full = '${row['full_name'] ?? ''}'.trim();
+  if (full.isNotEmpty) return row;
+  final joined = [
+    '${row['first_name'] ?? ''}'.trim(),
+    '${row['last_name'] ?? ''}'.trim(),
+  ].where((p) => p.isNotEmpty).join(' ');
+  if (joined.isEmpty) return row;
+  return {...row, 'full_name': joined};
+}
+
+/// أعمدة العرض في البوابة — بلا بيانات شخصية، ومنها الاسمان للصفوف التي لا
+/// تحمل `full_name` جاهزاً.
+const _portalStudentCols = 'id,first_name,last_name,full_name,section,grade_level,status';
+
 String _inList(Iterable<String> values) => 'in.(${values.map((v) => '"$v"').join(',')})';
 
 /// حساب في البوابة: طالب أو معلم.
@@ -206,6 +225,26 @@ class StudentEvaluation {
   /// للعرض فقط — تُملأ عند الجلب ولا تُرفع.
   final String subjectName;
   final String teacherName;
+
+  StudentEvaluation copyWith({double? score}) => StudentEvaluation(
+        id: id,
+        studentId: studentId,
+        groupId: groupId,
+        teacherId: teacherId,
+        subjectId: subjectId,
+        title: title,
+        score: score ?? this.score,
+        maxScore: maxScore,
+        evaluationDate: evaluationDate,
+        type: type,
+        notes: notes,
+        term: term,
+        componentId: componentId,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+        subjectName: subjectName,
+        teacherName: teacherName,
+      );
 
   /// النسبة المئوية للدرجة، أو `null` إن لم تُرصد درجة بعد.
   int? get percent {
@@ -443,12 +482,35 @@ class TeacherClass {
     required this.students,
     this.subjectName = '',
     this.roomName = '',
+    this.rooms = const [],
   });
 
   final Group group;
   final List<Student> students;
   final String subjectName;
   final String roomName;
+
+  /// شعب المادة بمعرّفاتها — الحضور يُكتب في كشف الشعبة اليومي بمعرّفها.
+  final List<PortalRoom> rooms;
+
+  /// معرّف الشعبة المطابقة للاسم، أو الشعبة الوحيدة إن لم يُحدَّد اسم.
+  String roomIdFor(String sectionName) {
+    final want = sectionName.trim();
+    if (want.isEmpty) return rooms.length == 1 ? rooms.first.id : '';
+    for (final r in rooms) {
+      if (isSameSectionName(r.name, want)) return r.id;
+    }
+    return rooms.length == 1 ? rooms.first.id : '';
+  }
+}
+
+/// شعبة كما تحتاجها البوابة: معرّفها واسمها ومرحلتها.
+class PortalRoom {
+  const PortalRoom({required this.id, required this.name, this.gradeLevel = ''});
+
+  final String id;
+  final String name;
+  final String gradeLevel;
 }
 
 /// كل ما تعرضه بوابة المعلم.
@@ -680,6 +742,10 @@ class PortalService {
   /// معرّف حصة حتمي: الشعبة نفسها في اليوم نفسه = الحصة نفسها على كل جهاز.
   /// مطابق لـ `AttendanceService.sessionIdFor`.
   static String sessionIdFor(String groupId, String date) => 'ses_${groupId}_$date';
+
+  /// كشف الشعبة اليومي — نفس صيغة الإدارة (`AppStore.roomSessionIdFor`)، فما
+  /// يرصده المعلم هو ما تراه الإدارة، لا كشف حصةٍ منفصل لكل مادة.
+  static String roomSessionIdFor(String roomId, String date) => 'ses_room_${roomId}_$date';
 
   /// مطابق لـ `AttendanceService.attendanceIdFor`.
   static String attendanceIdFor(String sessionId, String studentId) => 'att_${sessionId}_$studentId';
@@ -925,31 +991,52 @@ class PortalService {
   // ── بوابة المعلم ───────────────────────────────────────────────────────────
 
   /// أسماء طلاب البوابة بلا PII — عبر `portal_students` إن وُجدت، وإلا أعمدة محدودة.
+  /// طلاب مراحل بعينها — لمدرسة لا تسجّل الطلاب في المجموعات، فشعبة المادة
+  /// هي ما يربط المعلم بطلابه. أعمدة آمنة بلا بيانات شخصية.
+  Future<List<Student>> _portalStudentsOfGrades(
+    Set<String> grades,
+    Map<String, String> tenant,
+  ) async {
+    final filters = {...tenant, 'grade_level': _inList(grades)};
+    final rows = await supabaseSelect('portal_students', filters: filters, columns: _portalStudentCols) ??
+        await supabaseSelect('students', filters: filters, columns: _portalStudentCols) ??
+        const <Map<String, dynamic>>[];
+    return [for (final r in rows) Student.fromCloud(_withFullName(r))];
+  }
+
   Future<List<Map<String, dynamic>>> _portalStudentRows(
     Set<String> enrolledIds,
     Map<String, String> tenant,
   ) async {
     if (enrolledIds.isEmpty) return const [];
     final idFilter = {'id': _inList(enrolledIds)};
-    const safeCols = 'id,full_name,section,grade_level,status';
 
     final viaView = await supabaseSelect(
       'portal_students',
       filters: {...tenant, ...idFilter},
-      columns: 'id,full_name,name,section,grade_level,status',
+      columns: _portalStudentCols,
     );
-    if (viaView != null) {
-      return [
-        for (final r in viaView)
-          {
-            ...r,
-            if ('${r['full_name'] ?? ''}'.trim().isEmpty && '${r['name'] ?? ''}'.trim().isNotEmpty)
-              'full_name': '${r['name']}',
-          },
-      ];
-    }
+    if (viaView != null) return [for (final r in viaView) _withFullName(r)];
 
-    return (await supabaseSelect('students', filters: idFilter, columns: safeCols)) ?? const [];
+    final rows = await supabaseSelect('students', filters: idFilter, columns: _portalStudentCols) ?? const [];
+    return [for (final r in rows) _withFullName(r)];
+  }
+
+  /// بحث أسماء طلاب بمعرّفاتهم — لسجل التقييمات حين يغيب الطالب عن كشف الشعبة الحالية.
+  Future<Map<String, String>> studentNamesByIds(Set<String> ids, String tenantId) async {
+    final clean = {for (final id in ids) if (id.trim().isNotEmpty) id.trim()};
+    if (clean.isEmpty) return const {};
+    final rows = await _portalStudentRows(clean, {'tenant_id': 'eq.$tenantId'});
+    return {
+      for (final r in rows)
+        if ('${r['id']}'.isNotEmpty)
+          '${r['id']}': () {
+            final full = '${r['full_name'] ?? ''}'.trim();
+            if (full.isNotEmpty) return full;
+            final name = '${r['name'] ?? ''}'.trim();
+            return name;
+          }(),
+    }..removeWhere((_, v) => v.isEmpty);
   }
 
   Future<TeacherPortalData> teacherData(PortalUser user) async {
@@ -1010,7 +1097,20 @@ class PortalService {
         if ('${e['status'] ?? 'active'}' == 'active') '${e['student_id']}',
     }..removeWhere((id) => id.isEmpty);
     final studentRows = await _portalStudentRows(enrolledIds, tenant);
-    final students = studentRows.map(Student.fromCloud).toList();
+    var students = studentRows.map(Student.fromCloud).toList();
+
+    // المدرسة تُسند المادة للشعبة: الطلاب يُعرفون بشعبتهم لا بتسجيل كلٍّ منهم
+    // في المادة. فيُجلب طلاب مراحل شعب المعلم دائماً، ويُطابَقون بالشعبة أدناه.
+    final gradesOfRooms = <String>{
+      for (final g in groups)
+        for (final id in g.allRoomIds)
+          if (rooms[id] != null) '${rooms[id]!['grade_level'] ?? ''}'.trim(),
+    }..removeWhere((g) => g.isEmpty);
+    if (gradesOfRooms.isNotEmpty) {
+      final ofGrades = await _portalStudentsOfGrades(gradesOfRooms, tenant);
+      final seen = {for (final s in students) s.id};
+      students = [...students, ...ofGrades.where((s) => !seen.contains(s.id))];
+    }
     final byId = {for (final s in students) s.id: s};
 
     final classes = <TeacherClass>[];
@@ -1021,19 +1121,24 @@ class PortalService {
             byId['${e['student_id']}']!,
       ];
 
-      // بلا تسجيلات: طلاب شعبها من المسجّلين فقط (لا نحمّل جدول الطلاب كاملاً)
+      // طلاب شعب المادة يُضافون لمسجّليها: الشعبة هي ما يربط المعلم بطلابه
       final groupRooms = [
         for (final id in group.allRoomIds)
           if (rooms[id] != null) rooms[id]!,
       ];
-      if (list.isEmpty && groupRooms.isNotEmpty) {
-        list = students
-            .where((s) => groupRooms.any((room) => studentInRoom(
-                  s,
-                  roomName: '${room['name'] ?? ''}',
-                  roomGrade: '${room['grade_level'] ?? ''}',
-                )))
-            .toList();
+      if (groupRooms.isNotEmpty) {
+        final seen = {for (final s in list) s.id};
+        list = [
+          ...list,
+          for (final s in students)
+            if (!seen.contains(s.id) &&
+                groupRooms.any((room) => studentInRoom(
+                      s,
+                      roomName: '${room['name'] ?? ''}',
+                      roomGrade: '${room['grade_level'] ?? ''}',
+                    )))
+              s,
+        ];
       }
 
       classes.add(TeacherClass(
@@ -1041,6 +1146,14 @@ class PortalService {
         students: list,
         subjectName: subjectName[group.subjectId] ?? '',
         roomName: groupRooms.map((room) => '${room['name'] ?? ''}').join('، '),
+        rooms: [
+          for (final room in groupRooms)
+            PortalRoom(
+              id: '${room['id'] ?? ''}',
+              name: '${room['name'] ?? ''}',
+              gradeLevel: '${room['grade_level'] ?? ''}',
+            ),
+        ],
       ));
     }
 
@@ -1053,20 +1166,58 @@ class PortalService {
 
   /// الحصة القائمة لهذه الشعبة واليوم إن وُجدت — أنشأها جهاز الإدارة بمعرّف
   /// آخر — وإلا فالمعرّف الحتمي. إنشاء حصة ثانية لليوم نفسه كان يشطر الرصد.
-  Future<String> _sessionFor(String groupId, String date) async {
+  /// كشف الشعبة ليوم: القائم إن وُجد (قد تكون الإدارة أنشأته)، وإلا الحتمي.
+  Future<String> _roomSessionFor(String roomId, String date) async {
     final existing = await supabaseSelect(
       'sessions',
-      filters: {'group_id': 'eq.$groupId', 'session_date': 'eq.$date'},
+      filters: {'room_id': 'eq.$roomId', 'session_date': 'eq.$date'},
       columns: 'id',
       limit: 1,
     );
     if (existing != null && existing.isNotEmpty) return '${existing.first['id']}';
-    return sessionIdFor(groupId, date);
+    return roomSessionIdFor(roomId, date);
   }
 
-  /// كشف حضور حصة محفوظ: الطالب ← (حالته، معرّف سجله).
-  Future<Map<String, ({String status, String id})>> sessionAttendance(String groupId, String date) async {
-    final sessionId = await _sessionFor(groupId, date);
+  /// كشف حضور الشعبة ليومٍ: الطالب ← (حالته، معرّف سجله).
+  /// رصد الأسبوع كلّه لشعبة: `{تاريخ: {معرّف الطالب: الحالة}}`.
+  ///
+  /// طلبان لا اثنا عشر: كشوف الأيام دفعةً، ثم رصدها دفعةً — شريط الأيام عند
+  /// المعلم يُظهر اكتمال كل يوم كما يُظهره عند الإدارة.
+  Future<Map<String, Map<String, String>>> weekAttendance(String roomId, List<String> dates) async {
+    if (roomId.isEmpty || dates.isEmpty) return {};
+
+    final sessions = await supabaseSelect(
+      'sessions',
+      filters: {
+        'room_id': 'eq.$roomId',
+        'session_date': 'in.(${dates.join(',')})',
+      },
+      columns: 'id,session_date',
+    );
+
+    final dateOf = <String, String>{
+      for (final r in sessions ?? const <Map<String, dynamic>>[])
+        '${r['id']}': '${r['session_date'] ?? ''}'.split('T').first,
+    };
+    if (dateOf.isEmpty) return {};
+
+    final rows = await supabaseSelect(
+      'attendance',
+      filters: {'session_id': 'in.(${dateOf.keys.join(',')})'},
+      columns: 'session_id,student_id,status',
+    );
+
+    final out = <String, Map<String, String>>{};
+    for (final r in rows ?? const <Map<String, dynamic>>[]) {
+      final date = dateOf['${r['session_id']}'];
+      if (date == null || date.isEmpty) continue;
+      out.putIfAbsent(date, () => {})['${r['student_id']}'] = '${r['status'] ?? 'present'}';
+    }
+    return out;
+  }
+
+  Future<Map<String, ({String status, String id})>> sessionAttendance(String roomId, String date) async {
+    final sessionId = await _roomSessionFor(roomId, date);
     final rows = await supabaseSelect(
       'attendance',
       filters: {'session_id': 'eq.$sessionId'},
@@ -1078,28 +1229,31 @@ class PortalService {
     };
   }
 
-  /// رصد حضور صفّ من بوابة المعلم — مطابق لـ `saveTeacherAttendance`.
+  /// رصد حضور اليوم لشعبة من بوابة المعلم.
   ///
-  /// سجل الطالب القائم يُحدَّث بمعرّفه نفسه: التصالح على (الحصة، الطالب) مع
+  /// يكتب في كشف الشعبة اليومي نفسه الذي تكتب فيه الإدارة — لا كشف حصة لكل
+  /// مادة — فالغياب يُرصد مرة واحدة ويراه الطرفان.
+  ///
+  /// سجل الطالب القائم يُحدَّث بمعرّفه نفسه: التصالح على (الكشف، الطالب) مع
   /// معرّف جديد كان يستبدل المفتاح الأساسي فيبقى السجل القديم يتيماً على الأجهزة.
   Future<void> saveAttendance({
-    required Group group,
+    required String roomId,
     required String date,
     required Map<String, String> statuses,
     required PortalUser teacher,
   }) async {
-    final sessionId = await _sessionFor(group.id, date);
+    final sessionId = await _roomSessionFor(roomId, date);
     final now = _nowIso();
 
     await supabaseUpsert('sessions', [
       {
         'id': sessionId,
-        'group_id': group.id,
+        'group_id': null,
         'teacher_id': teacher.id,
-        'room_id': group.roomId.isEmpty ? null : group.roomId,
+        'room_id': roomId,
         'session_date': date,
-        'start_time': group.startTime.isEmpty ? '08:00' : group.startTime,
-        'end_time': group.endTime.isEmpty ? '10:00' : group.endTime,
+        'start_time': '00:00',
+        'end_time': '23:59',
         'status': 'completed',
         'tenant_id': teacher.tenantId,
         'updated_at': now,
@@ -1150,6 +1304,13 @@ class PortalService {
   }
 
   Future<void> deleteEvaluation(String id) => supabaseDelete('student_evaluations', {'id': 'eq.$id'});
+
+  /// تعديل علامة مرصودة — مقابل `EvaluationService.updateScore` في الويب.
+  Future<void> updateEvaluationScore(String id, double score) => supabaseUpdate(
+        'student_evaluations',
+        {'id': 'eq.$id'},
+        {'score': score, 'updated_at': _nowIso()},
+      );
 
   // ── المودل (المقابل لـ moodle.service.ts) ─────────────────────────────────
 
@@ -1204,6 +1365,12 @@ class PortalService {
     await supabaseUpsert('course_sections', [section.toCloud()]);
     return section;
   }
+
+  /// كتابة وحدة جاهزة (بمعرّفها) — تسمح ببنائها على الجهاز ثم رفعها لاحقاً.
+  Future<void> saveSection(CourseSection section) => supabaseUpsert('course_sections', [section.toCloud()]);
+
+  /// كتابة مادة جاهزة (بمعرّفها).
+  Future<void> saveItem(CourseItem item) => supabaseUpsert('course_items', [item.toCloud()]);
 
   Future<void> setSectionVisible(String sectionId, bool visible) =>
       supabaseUpdate('course_sections', {'id': 'eq.$sectionId'}, {'is_visible': visible});

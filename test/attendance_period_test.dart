@@ -1,6 +1,5 @@
 import 'package:center_mobile/data/demo_data.dart';
 import 'package:center_mobile/data/store.dart';
-import 'package:center_mobile/models/models.dart';
 import 'package:center_mobile/screens/attendance_screen.dart';
 import 'package:center_mobile/screens/classes_screen.dart';
 import 'package:flutter/material.dart';
@@ -24,46 +23,14 @@ Future<void> _pump(WidgetTester tester, AppStore s, Widget home, {double width =
 }
 
 void main() {
-  testWidgets('زر التقويم يفتح حضور فترة بحصيلة كل طالب', (tester) async {
+  testWidgets('إعدادات الحضور تنزّل كشف الأسبوع، ولا زرّ لحضور فترة', (tester) async {
     final s = await _store();
     await _pump(tester, s, const Scaffold(body: AttendanceScreen()));
 
-    final calendar = find.byIcon(Icons.calendar_month_outlined);
-    expect(calendar, findsOneWidget, reason: 'التقويم بجوار اختيار الصف');
-
-    await tester.tap(calendar);
+    expect(find.byIcon(Icons.calendar_month_outlined), findsNothing);
+    await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pumpAndSettle();
-
-    expect(find.text('الحضور في فترة'), findsOneWidget);
-    expect(find.text('من'), findsOneWidget);
-    expect(find.text('إلى'), findsOneWidget);
-    expect(find.text('آخر ٣٠ يوماً'), findsOneWidget);
-    expect(find.text('نسبة الحضور'), findsOneWidget);
-    expect(find.text('عرض يوم محدد للرصد'), findsOneWidget);
-
-    await s.flush();
-  });
-
-  testWidgets('الفترة تحسب الحاضر والغائب في المدى المختار', (tester) async {
-    final s = await _store();
-    final room = s.rooms.first;
-    final roster = s.studentsOf(room);
-    final student = roster.first;
-    // لوحة نظيفة: رصد العرض التجريبي يختلف بحسب يوم التشغيل
-    s.attendance.removeWhere((a) => roster.any((x) => x.id == a.studentId));
-
-    // الجمعة عطلة لا تدخل الفترة، فيُختار يوم دراسي مهما كان اليوم الحالي
-    var when = DateTime.now().subtract(const Duration(days: 3));
-    if (when.weekday == DateTime.friday) when = when.subtract(const Duration(days: 1));
-    s.setAttendance(student.id, isoDate(when), 'absent', ownerId: room.id);
-
-    await _pump(tester, s, const Scaffold(body: AttendanceScreen()));
-    await tester.tap(find.byIcon(Icons.calendar_month_outlined));
-    await tester.pumpAndSettle();
-
-    // الأكثر غياباً في رأس قائمة الفترة
-    expect(find.text(student.fullName), findsWidgets);
-    expect(find.textContaining('غائب 1'), findsWidgets);
+    expect(find.text('تنزيل كشف الأسبوع'), findsOneWidget);
 
     await s.flush();
   });
@@ -77,8 +44,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('رصد الحضور'), findsOneWidget);
-    expect(find.text('معلمو المواد'), findsOneWidget);
-    expect(find.text('المعلمون'), findsOneWidget, reason: 'عدد معلمي الصف في أرقام الصفحة');
+    expect(find.text('المواد والمعلمون'), findsOneWidget);
+    expect(find.text('تعديل'), findsOneWidget, reason: 'تعديل المواد ظاهر بلا فتح البطاقة');
+
+    // البطاقة تُفتح شبكةَ مواد بلا طفح
+    await tester.tap(find.text('المواد والمعلمون'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
 
     await tester.tap(find.text('رصد الحضور'));
     await tester.pumpAndSettle();

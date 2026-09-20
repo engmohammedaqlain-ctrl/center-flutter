@@ -46,6 +46,18 @@ class SupabaseConfig {
       };
 }
 
+/// فحص سريع لوصول السحابة قبل المزامنة التلقائية. أي ردّ من الخادم — ولو رفضاً —
+/// يعني أن الشبكة تعمل؛ الانقطاع وحده يُرجع `false`. بلا الفحص كانت كل محاولة
+/// رفع أو سحب تدور حتى تنتهي مهلتها، فيبقى مؤشر المزامنة يدور بلا نهاية.
+Future<bool> probeCloud({Duration timeout = const Duration(seconds: 4)}) async {
+  try {
+    await http.head(Uri.parse('${SupabaseConfig.url}/auth/v1/health')).timeout(timeout);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 /// جلسة الدخول السحابية — المقابل لـ `lib/auth.ts`.
 ///
 /// كلمة المرور لا تصل الجهاز ولا تُقارن فيه: السحابة تتحقق منها وتُصدر توكناً

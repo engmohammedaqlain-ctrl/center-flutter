@@ -54,7 +54,7 @@ void main() {
     ));
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.text('المصروفات'));
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('شراء قرطاسية'));
     await tester.pumpAndSettle();

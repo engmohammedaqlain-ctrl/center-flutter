@@ -5,7 +5,7 @@ import '../theme/app_theme.dart';
 import 'animated_count.dart';
 
 /// المسافة التي تتركها القوائم أسفلها كي لا يغطي زر الإبهام آخر بطاقة.
-const thumbActionClearance = 84.0;
+const thumbActionClearance = 72.0;
 
 /// الإجراء الأكثر استعمالاً في الشاشة.
 class ThumbAction {
@@ -98,19 +98,19 @@ class _ThumbButton extends StatelessWidget {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
-          height: 50,
-          constraints: const BoxConstraints(minWidth: 50),
-          padding: EdgeInsets.symmetric(horizontal: extended ? 18 : 0),
+          height: 46,
+          constraints: const BoxConstraints(minWidth: 46),
+          padding: EdgeInsets.symmetric(horizontal: extended ? 16 : 0),
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: color,
-            borderRadius: BorderRadius.circular(Corner.box),
+            borderRadius: BorderRadius.circular(Corner.field),
             boxShadow: enabled
                 ? [
                     BoxShadow(
-                      color: color.withValues(alpha: 0.38),
-                      blurRadius: 16,
-                      offset: const Offset(0, 6),
+                      color: color.withValues(alpha: 0.28),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
                     ),
                   ]
                 : null,
@@ -121,16 +121,17 @@ class _ThumbButton extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(action.icon, size: 21, color: Colors.white),
+                Icon(action.icon, size: 20, color: Colors.white),
                 if (extended) ...[
                   const SizedBox(width: 8),
                   Text(
                     action.label,
                     maxLines: 1,
                     style: const TextStyle(
+                      fontFamily: AppText.family,
                       color: Colors.white,
                       fontSize: 13,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ],

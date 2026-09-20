@@ -15,7 +15,6 @@ import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/custom_plan_rows.dart';
-import '../widgets/due_status.dart';
 import '../widgets/form_layout.dart';
 import '../widgets/panels.dart';
 import '../widgets/widgets.dart';
@@ -32,12 +31,17 @@ const _installmentReasonChips = ['ظرف مادي', 'أخوة', 'أبناء كا
 /// اقتراحات سبب خصم الطالب على الخطة.
 const _studentDiscountReasonChips = ['أخوة', 'أبناء كادر', 'منحة', 'ظرف مادي', 'تفوق'];
 
-/// ملف الطالب — بتخطيط واجهة الهاتف في `pages/StudentDetail.tsx`.
+/// هوامش موحّدة لكاردات ملف الطالب.
+/// 18 داخل الكارد يبعد النص عن الحدّ المستدير فيزول إحساس «الكلام ورا الهامش».
+const _cardMargin = EdgeInsets.fromLTRB(16, 0, 16, 8);
+const _cardHeaderPad = EdgeInsets.fromLTRB(18, 14, 18, 14);
+const _cardRowPad = EdgeInsets.symmetric(horizontal: 18, vertical: 12);
+const _cardHairlineInset = 18.0;
+
+/// ملف الطالب — تخطيط ميداني للإبهام.
 ///
-/// بطاقات مدمجة متتالية كما في Center، وكل عنصر متكرر فيها — قسط، سند،
-/// تقييم — بلاطة خفيفة مستقلة. البيانات الأساسية شبكة من عمودين: عنوان صغير
-/// فوق قيمته، فتُقرأ بلمحة بدل أسطر متفاوتة الأطوال. اسم الطالب عنوان الصفحة،
-/// وتسديد الدفعة وتعديل البيانات ثابتان أسفل الشاشة.
+/// الملخص المالي أعلى الصفحة للقراءة، والأفعال اليومية (تسديد / رد / تعديل)
+/// ثابتة أسفل الشاشة قرب اليد. الأقسام قابلة للطي ومجموعة بعناوين واضحة.
 class StudentDetailScreen extends StatelessWidget {
   const StudentDetailScreen({super.key, required this.studentId});
   final String studentId;
@@ -87,7 +91,6 @@ class StudentDetailScreen extends StatelessWidget {
         // السند الملغى لا يُحتسب، والخصم يفسّر لماذا يزيد المسدَّد على المقبوض نقداً
         final activePays = pays.where((p) => !p.cancelled);
         final totalPaid = activePays.fold<double>(0, (a, p) => a + p.amount);
-        final totalDiscount = activePays.fold<double>(0, (a, p) => a + p.discountAmount);
         final present = days.where((d) => d.status == 'present').length;
         final absent = days.where((d) => d.status == 'absent').length;
         final excused = days.where((d) => d.status == 'excused').length;
@@ -136,9 +139,23 @@ class StudentDetailScreen extends StatelessWidget {
           );
         }
 
+        Future<void> refund() async {
+          final receipt = await showStudentCreditSheet(context, store, student);
+          if (receipt != null && context.mounted) {
+            ReceiptScreen.open(context, receipt);
+          }
+        }
+
+        void edit() {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => StudentFormScreen(student: student)),
+          );
+        }
+
+        // ملخص للقراءة أعلى الشاشة — الأفعال اليومية أسفلها قرب الإبهام
+        final showBottomBar = canCollect || canEdit || canRefundStudent;
         return Scaffold(
-          backgroundColor: Colors.white,
-          // اسم الطالب عنوان الصفحة، والمرحلة تحته — فلا يتكرر الاسم في المحتوى
+          backgroundColor: AppColors.bg,
           appBar: AppBar(
             titleSpacing: 0,
             title: Column(
@@ -149,7 +166,13 @@ class StudentDetailScreen extends StatelessWidget {
                   student.fullName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
+                  style: const TextStyle(
+                    fontFamily: AppText.family,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                    height: 1.2,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Row(
@@ -159,312 +182,180 @@ class StudentDetailScreen extends StatelessWidget {
                         meta,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 11, fontWeight: FontWeight.w500),
+                        style: TextStyle(
+                          fontFamily: AppText.family,
+                          color: Colors.white.withValues(alpha: 0.72),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
-                    if (!student.isActiveStudent) ...[const SizedBox(width: 6), StudentStatusChip(status: student.status, compact: true)],
+                    if (!student.isActiveStudent) ...[
+                      const SizedBox(width: 6),
+                      StudentStatusChip(status: student.status, compact: true),
+                    ],
                   ],
                 ),
               ],
             ),
           ),
-          bottomNavigationBar: (canCollect || canEdit || canRefundStudent)
-              ? _ActionBar(
+          bottomNavigationBar: showBottomBar
+              ? _ThumbBar(
                   showPay: canCollect,
-                  onPay: canCollect ? (settled ? null : pay) : null,
+                  onPay: canCollect && !settled ? pay : null,
                   showRefund: canRefundStudent,
-                  onRefund: canRefundStudent
-                      ? () async {
-                          final receipt = await showStudentCreditSheet(context, store, student);
-                          if (receipt != null && context.mounted) {
-                            ReceiptScreen.open(context, receipt);
-                          }
-                        }
-                      : null,
-                  onEdit: canEdit ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StudentFormScreen(student: student))) : null,
+                  onRefund: canRefundStudent ? refund : null,
+                  showEdit: canEdit,
+                  onEdit: canEdit ? edit : null,
                 )
               : null,
           body: ListView(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+            padding: EdgeInsets.fromLTRB(0, 10, 0, showBottomBar ? 12 : 28),
             children: [
-              // ── الوضع المالي: شريط رصيد أوضح بسطرين بدل تكديس ──
-              if (canFinance) ...[
-                AppCard(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'الرصيد المالي',
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.muted),
-                            ),
-                            const SizedBox(height: 6),
-                            if (isDebtor)
-                              DueStatus(kind: DueStatusKind.due, amount: dueNow, scheduled: scheduledRemaining)
-                            else if (student.balance > cent) ...[
-                              DueStatus(kind: DueStatusKind.credit, amount: student.balance, scheduled: scheduledRemaining),
-                              if (canRefundStudent)
-                                TextButton(
-                                  onPressed: () => showStudentCreditSheet(context, store, student),
-                                  style: TextButton.styleFrom(
-                                    padding: EdgeInsets.zero,
-                                    minimumSize: Size.zero,
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                  child: const Text(
-                                    'تسوية',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                      decoration: TextDecoration.underline,
-                                    ),
-                                  ),
-                                ),
-                            ] else
-                              DueStatus(
-                                kind: DueStatusKind.clear,
-                                scheduled: scheduledRemaining,
-                                clearLabel: scheduledRemaining > 0 ? 'لا مستحقات' : 'مسدد',
-                              ),
-                            if (previousYearsDue > cent)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: Text(
-                                  'منها سنوات سابقة ${money(previousYearsDue)}',
-                                  style: TextStyle(
-                                    color: AppColors.amberDark,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      Container(width: 1, height: 48, color: AppColors.line),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          const Text(
-                            'إجمالي المقبوضات',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.muted),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            money(totalPaid),
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                              fontFamily: 'monospace',
-                              color: AppColors.heading,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+              if (canFinance)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: _FinanceStrip(
+                    student: student,
+                    totalPaid: totalPaid,
+                    dueNow: dueNow,
+                    scheduledRemaining: scheduledRemaining,
+                    isDebtor: isDebtor,
+                    previousYearsDue: previousYearsDue,
+                    pendingRequests: studentPendingRequests,
                   ),
                 ),
-                if (studentPendingRequests.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  InfoStrip(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          'بانتظار موافقة المدير:',
-                          style: TextStyle(
-                            color: AppColors.amberDark,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 11,
-                          ),
-                        ),
-                        for (final r in studentPendingRequests)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 3),
-                            child: Text(
-                              '• ${financeRequestLabel(r.kind)}: ${r.summary}${r.requestedByName.isEmpty ? '' : ' — ${r.requestedByName}'}',
-                              style: const TextStyle(color: AppColors.muted, fontSize: 10.5, height: 1.35),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-                // من أين جاء الرصيد: المقبوض مقابل المطالبات، والمستحق اليوم
-                _BalanceBreakdown(student: student, totalPaid: totalPaid, installments: insts),
-                // خصم الرسوم إن وُجد: نسبته وسببه والصافي الشهري بعده
-                _DiscountBadge(student: student),
-                const SizedBox(height: 10),
-              ],
 
-              // ── بيانات الدخول: كلمتا مرور البوابة ──────────────────────────
               _Card(
-                title: 'بيانات الدخول',
+                title: 'بيانات التواصل',
                 children: [
-                  // للطالب ولولي أمره — كل زر يولّد كلمته فقط دون المساس بالأخرى
-                  _SecretCode(
-                    label: 'كلمة مرور الطالب',
-                    code: student.portalCode,
-                    onGenerate: canEdit
-                        ? () => store.generateStudentPortalCode(student.id, forParent: false)
-                        : null,
+                  _DetailRow(
+                    label: 'هاتف الطالب',
+                    value: student.phone.trim().isEmpty
+                        ? '—'
+                        : formatPhoneDisplay(student.phone, student.phonePrefix),
+                    ltr: student.phone.trim().isNotEmpty,
+                    trailing: student.phone.trim().isEmpty
+                        ? null
+                        : _phoneActions(student.phone),
                   ),
-                  const SizedBox(height: 6),
-                  _SecretCode(
-                    label: 'كلمة مرور ولي الأمر',
-                    code: student.parentPortalCode,
-                    onGenerate: canEdit
-                        ? () => store.generateStudentPortalCode(student.id, forParent: true)
-                        : null,
-                  ),
-                ],
-              ),
-
-              // ── بيانات الطالب والتواصل ──
-              _Card(
-                title: 'بيانات الطالب والتواصل',
-                children: [
-                  // الرقمان متجاوران: عنوان صغير فوق رقم بارز، وأيقونتا الاتصال تحته
-                  IntrinsicHeight(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(
-                          child: _ContactCell(
-                            label: 'هاتف الطالب',
-                            phone: student.phone,
-                            prefix: student.phonePrefix,
-                          ),
-                        ),
-                        if (parentPhone.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _ContactCell(
-                              label: parentName.isEmpty ? 'هاتف ولي الأمر' : 'ولي الأمر · $parentName',
-                              phone: parentPhone,
-                              prefix: student.parentPhonePrefix,
-                            ),
-                          ),
-                        ],
-                      ],
+                  // بلا اسم ولي أمر → لا اسم ولا هاتف ولا علاقة
+                  if (parentName.isNotEmpty) ...[
+                    const _Hairline(),
+                    _DetailRow(
+                      label: 'ولي الأمر',
+                      value: [
+                        parentName,
+                        if (student.relation.trim().isNotEmpty) '(${student.relation.trim()})',
+                      ].join(' '),
                     ),
-                  ),
-                  const _Rule(),
-                  _FieldGrid(
-                    fields: [
-                      _Field('حالة الطالب', student.statusLabel),
-                      if (student.nationalId.isNotEmpty) _Field('رقم الهوية', student.nationalId, ltr: true),
-                      if (student.gender.trim().isNotEmpty) _Field('الجنس', genderLabel(student.gender)),
-                      if (student.relation.trim().isNotEmpty) _Field('صلة القرابة', student.relation.trim()),
-                      if (parentName.isNotEmpty && parentPhone.isEmpty) _Field('ولي الأمر', parentName),
-                      if (student.nationality.trim().isNotEmpty) _Field('الجنسية', student.nationality.trim()),
-                      if (student.birthPlace.trim().isNotEmpty) _Field('مكان الولادة', student.birthPlace.trim()),
-                      if (birth != null) _Field('تاريخ الميلاد', formatDate(birth), ltr: true),
-                      _Field('تاريخ التسجيل', formatDate(student.enrollmentDate), ltr: true),
-                      if (student.healthStatus.trim().isNotEmpty) _Field('الحالة الصحية', student.healthStatus.trim()),
-                      if (student.housingStatus.trim().isNotEmpty) _Field('طبيعة السكن', student.housingStatus.trim()),
-                      if (student.gpa.trim().isNotEmpty) _Field('المعدل', student.gpa.trim(), ltr: true),
-                      if (medical.isNotEmpty) _Field('تفاصيل الحالة الصحية', medical),
-                      if (student.previousSchool.trim().isNotEmpty) _Field('المدرسة السابقة', student.previousSchool.trim()),
-                      if (address.isNotEmpty) _Field('العنوان', address),
-                      if (student.referralSource.trim().isNotEmpty) _Field('مصدر التعرف', student.referralSource.trim()),
-                      // الملاحظة القصيرة خانة كبقيتها تُكمل الصف، والطويلة وحدها بعرض السطر
-                      if (student.notes.trim().isNotEmpty) _Field('ملاحظات', student.notes.trim()),
-                      if (student.initialRating > 0)
-                        _Field(
-                          'التقييم المبدئي',
-                          '',
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                for (var i = 1; i <= 5; i++)
-                                  Icon(
-                                    i <= student.initialRating ? Icons.star_rounded : Icons.star_outline_rounded,
-                                    size: 17,
-                                    color: i <= student.initialRating ? const Color(0xFFF59E0B) : AppColors.lineStrong,
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
+                    if (parentPhone.isNotEmpty) ...[
+                      const _Hairline(),
+                      _DetailRow(
+                        label: 'هاتف ولي الأمر',
+                        value: formatPhoneDisplay(parentPhone, student.parentPhonePrefix),
+                        ltr: true,
+                        trailing: _phoneActions(parentPhone),
+                      ),
                     ],
+                  ],
+                  if (student.nationalId.isNotEmpty) ...[
+                    const _Hairline(),
+                    _DetailRow(label: 'رقم الهوية', value: student.nationalId, ltr: true),
+                  ],
+                  if (address.isNotEmpty) ...[
+                    const _Hairline(),
+                    _DetailRow(label: 'العنوان', value: address),
+                  ],
+                  const _Hairline(),
+                  _DetailRow(
+                    label: 'تاريخ التسجيل',
+                    value: formatDate(student.enrollmentDate),
+                    ltr: true,
                   ),
+                  if (!student.isActiveStudent) ...[
+                    const _Hairline(),
+                    _DetailRow(label: 'حالة الطالب', value: student.statusLabel),
+                  ],
                 ],
               ),
 
-              // ── السنوات الدراسية ────────────────────────────────────────────
+              if (_hasExtraIdentity(student, birth, medical))
+                _Card(
+                  title: 'بيانات إضافية',
+                  children: [
+                    ..._extraIdentityRows(student, birth, medical),
+                  ],
+                ),
+
               if (_studentYearHistory(store, student).length > 1)
                 _Card(
                   title: 'السنوات الدراسية',
                   children: [
-                    for (final row in _studentYearHistory(store, student))
+                    for (final row in _studentYearHistory(store, student)) ...[
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Text(
-                          row,
-                          style: const TextStyle(color: AppColors.text, fontSize: 12, height: 1.4),
-                        ),
+                        padding: _cardRowPad,
+                        child: Text(row, style: AppText.body),
                       ),
+                      const _Hairline(),
+                    ],
                   ],
                 ),
 
-              // ── الأقساط المجدولة ────────────────────────────────────────────
-              if (canFinance)
+              _Card(
+                title: 'بيانات الدخول',
+                children: [
+                  _SecretCode(
+                    label: 'كلمة مرور الطالب',
+                    code: student.portalCode,
+                    onGenerate: canEdit ? () => store.generateStudentPortalCode(student.id, forParent: false) : null,
+                  ),
+                  const _Hairline(),
+                  _SecretCode(
+                    label: 'كلمة مرور ولي الأمر',
+                    code: student.parentPortalCode,
+                    onGenerate: canEdit ? () => store.generateStudentPortalCode(student.id, forParent: true) : null,
+                  ),
+                ],
+              ),
+
+              if (canFinance) ...[
                 _Card(
-                  title: 'الأقساط المجدولة (${insts.length})',
+                  title: 'الرسوم (${insts.length})',
+                  titleBadge: () {
+                    final label = _studentDiscountBadgeLabel(student);
+                    return label == null ? null : StatusChip.amber(label);
+                  }(),
                   initiallyOpen: true,
-                  trailing: PopupMenuButton<String>(
-                    tooltip: 'إجراءات الأقساط',
-                    icon: Icon(Icons.more_horiz, color: AppColors.heading, size: 20),
-                    onSelected: (value) {
-                      if (value == 'discount') {
-                        _showStudentDiscountSheet(context, store, student);
-                      } else if (value == 'extra') {
-                        _showExtraChargeSheet(context, store, student);
-                      } else if (value == 'custom') {
-                        _showCustomPlanSheet(context, store, student);
-                      } else if (value == 'return') {
-                        _returnToGradePlan(context, store, student);
-                      }
-                    },
-                    itemBuilder: (_) => [
-                      if (!student.usesCustomPlan && student.gradeLevel.trim().isNotEmpty) const PopupMenuItem(value: 'discount', child: Text('خصم للطالب')),
-                      const PopupMenuItem(value: 'extra', child: Text('رسم خاص')),
-                      if (store.can('finance.discount')) PopupMenuItem(value: 'custom', child: Text(student.usesCustomPlan ? 'تعديل المخصصة' : 'خطة مخصصة')),
-                      if (student.usesCustomPlan && store.can('finance.discount')) const PopupMenuItem(value: 'return', child: Text('رجوع لخطة المرحلة')),
-                    ],
+                  trailing: IconButton(
+                    tooltip: 'إجراءات الرسوم',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                    icon: Icon(Icons.more_horiz, color: AppColors.heading, size: 22),
+                    onPressed: () => _showFeesActionSheet(context, store, student),
                   ),
                   children: [
                     if (student.usesCustomPlan)
                       const Padding(
-                        padding: EdgeInsets.only(bottom: 8),
+                        padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
                         child: Text(
                           'خطة مخصصة — مستقلة عن خطة المرحلة',
-                          style: TextStyle(color: AppColors.info, fontSize: 11, fontWeight: FontWeight.w800),
+                          style: TextStyle(color: AppColors.info, fontSize: 12, fontWeight: FontWeight.w700),
                         ),
                       ),
                     if (insts.isEmpty)
                       Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
                         child: Column(
                           children: [
-                            const Text(
-                              'لا توجد أقساط بعد',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: AppColors.faint),
-                            ),
+                            Text('لا توجد رسوم بعد', style: AppText.muted),
                             if (store.can('finance.discount'))
                               TextButton(
                                 onPressed: () => _showCustomPlanSheet(context, store, student),
                                 child: const Text(
                                   'بناء خطة مخصصة',
-                                  style: TextStyle(fontWeight: FontWeight.w800, decoration: TextDecoration.underline),
+                                  style: TextStyle(fontWeight: FontWeight.w700, decoration: TextDecoration.underline),
                                 ),
                               ),
                           ],
@@ -481,92 +372,69 @@ class StudentDetailScreen extends StatelessWidget {
                       ),
                   ],
                 ),
-
-              // ── سجل الدفعات ─────────────────────────────────────────────────
-              if (canFinance)
                 _Card(
-                  title: 'سجل الدفعات (${pays.length})',
-                  initiallyOpen: true,
-                  trailing: Text.rich(
-                    TextSpan(
-                      text: 'المقبوض: ',
-                      children: [
-                        TextSpan(
-                          text: money(totalPaid),
-                          style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading),
-                        ),
-                        if (totalDiscount > 0)
-                          TextSpan(
-                            text: '  + خصم ${money(totalDiscount)}',
-                            style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.success),
-                          ),
-                      ],
+                  title: 'الدفعات (${pays.length})',
+                  trailing: Text(
+                    money(totalPaid),
+                    style: TextStyle(
+                      fontFamily: AppText.family,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12.5,
+                      color: AppColors.heading,
                     ),
-                    style: const TextStyle(color: AppColors.muted, fontSize: 11),
                   ),
                   children: [
                     if (pays.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 16),
-                        child: Text(
-                          'لا توجد دفعات مسجلة حتى الآن',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: AppColors.muted, fontSize: 12),
-                        ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                        child: Text('لا توجد دفعات مسجلة حتى الآن', style: AppText.muted),
                       )
                     else
-                      for (final p in pays) _PaymentTile(payment: p, student: student),
+                      for (var i = 0; i < pays.length; i++) ...[
+                        _PaymentTile(payment: pays[i], student: student),
+                        if (i < pays.length - 1) const _Hairline(),
+                      ],
                   ],
                 ),
+              ],
 
-              // ── الحضور والالتزام: ملخص بسطر واحد كما في Center ──────────────
               if (marks.isNotEmpty && store.can('attendance'))
                 _Card(
-                  title: 'سجل الحضور والالتزام',
+                  title: 'الحضور والالتزام',
                   trailing: Text(
-                    'الالتزام: $rate%',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading),
+                    '$rate%',
+                    style: TextStyle(
+                      fontFamily: AppText.family,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                      color: AppColors.heading,
+                    ),
                   ),
                   children: [
-                    InfoStrip(
-                      // الأرقام تتقلّص ولا تطفح على الشاشات الضيقة
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 10, 18, 10),
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
-                          Expanded(
-                            child: FittedBox(fit: BoxFit.scaleDown, child: TallyText('حضور', present, AppColors.success)),
-                          ),
-                          const Text('•', style: TextStyle(color: AppColors.faint)),
-                          Expanded(
-                            child: FittedBox(fit: BoxFit.scaleDown, child: TallyText('غياب', absent, AppColors.danger)),
-                          ),
-                          const Text('•', style: TextStyle(color: AppColors.faint)),
-                          Expanded(
-                            child: FittedBox(fit: BoxFit.scaleDown, child: TallyText('مأذون', excused, const Color(0xFFD97706))),
-                          ),
+                          Expanded(child: _Tally('حضور', present, AppColors.success)),
+                          Expanded(child: _Tally('غياب', absent, AppColors.danger)),
+                          Expanded(child: _Tally('مأذون', excused, const Color(0xFFD97706))),
                         ],
                       ),
                     ),
-                    // آخر ما رُصد: الأيام الخمسة الأخيرة كما تعرض النسخة المكتبية
-                    // أحدث السجلات لا الجدول كاملاً
                     ..._recentAttendance(marks),
                   ],
                 ),
 
-              // ── الصفوف والمجموعات: مواد الشعبة ومعلموها في المدرسة، ومجموعات المركز ──
-              if (store.can('classes')) ...[StudentSubjectsCard(student: student), const SizedBox(height: 10)],
+              if (store.can('classes')) StudentSubjectsCard(student: student),
 
-              // ── الدرجات والتقييمات ─────────────────────────────────────────
               if (store.features.enableEvaluations && store.can('evaluations'))
                 _EvaluationsCard(studentId: student.id, evaluations: store.evaluationsOfStudent(student.id)),
 
               _AttachmentsCard(studentId: student.id),
 
-              // الحذف زر كامل العرض بلون التحذير في آخر الصفحة، بعيداً عن الإبهام:
-              // فعل لا رجعة فيه يُرى بوضوح ولا يُضغط سهواً
               if (store.can('students'))
                 Padding(
-                  padding: const EdgeInsets.only(top: 4),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                   child: SizedBox(
                     width: double.infinity,
                     height: 44,
@@ -575,18 +443,20 @@ class StudentDetailScreen extends StatelessWidget {
                         foregroundColor: AppColors.danger,
                         backgroundColor: Colors.white,
                         side: const BorderSide(color: AppColors.dangerBorder),
-                        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(Corner.field))),
+                        shape: const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(Corner.field)),
+                        ),
                       ),
                       icon: const Icon(Icons.delete_outline, size: 18),
-                      label: const Text('حذف الطالب', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                      label: const Text('حذف الطالب', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
                       onPressed: () async {
                         final blocked = store.countActivePayments(student.id);
                         if (blocked > 0) {
-                          // كويب: أرشفة بدل الحذف عند وجود سندات
                           final archive = await confirmSheet(
                             context,
                             title: 'لا يمكن حذف الطالب',
-                            message: 'له $blocked سند قبض (مقبوض أو ملغى). يمكن أرشفته بدل الحذف (تُسقط الأقساط المستقبلية ويُحتفظ بالسجل المالي).',
+                            message:
+                                'له $blocked سند قبض (مقبوض أو ملغى). يمكن أرشفته بدل الحذف (تُسقط الأقساط المستقبلية ويُحتفظ بالسجل المالي).',
                             confirmLabel: 'أرشفة',
                             confirmColor: AppColors.heading,
                           );
@@ -624,73 +494,104 @@ class StudentDetailScreen extends StatelessWidget {
   }
 }
 
+bool _hasExtraIdentity(Student student, DateTime? birth, String medical) {
+  return student.gender.trim().isNotEmpty ||
+      student.nationality.trim().isNotEmpty ||
+      student.birthPlace.trim().isNotEmpty ||
+      birth != null ||
+      student.healthStatus.trim().isNotEmpty ||
+      medical.isNotEmpty ||
+      student.housingStatus.trim().isNotEmpty ||
+      student.gpa.trim().isNotEmpty ||
+      student.previousSchool.trim().isNotEmpty ||
+      student.referralSource.trim().isNotEmpty ||
+      student.initialRating > 0;
+}
+
 // ═══ عناصر الصفحة ═══════════════════════════════════════════════════════════
 
-/// شريط الإجراءات الثابت: تسديد دفعة أولاً وأعرض، ثم تعديل البيانات.
-class _ActionBar extends StatelessWidget {
-  const _ActionBar({required this.showPay, required this.onPay, required this.showRefund, required this.onRefund, required this.onEdit});
+/// شريط أفعال ثابت قرب الإبهام: تسديد أولاً، ثم رد وتعديل.
+class _ThumbBar extends StatelessWidget {
+  const _ThumbBar({
+    required this.showPay,
+    required this.onPay,
+    required this.showRefund,
+    required this.onRefund,
+    required this.showEdit,
+    required this.onEdit,
+  });
 
   final bool showPay;
   final VoidCallback? onPay;
   final bool showRefund;
   final VoidCallback? onRefund;
+  final bool showEdit;
   final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: AppColors.line)),
-        ),
-        child: Row(
-          children: [
-            if (showPay)
-              Expanded(
-                flex: 3,
-                child: SizedBox(
-                  height: 44,
-                  child: PrimaryButton(label: 'تسديد دفعة', icon: Icons.credit_card, onPressed: onPay),
+    return Material(
+      color: Colors.white,
+      elevation: 10,
+      shadowColor: const Color(0xFF091E42).withValues(alpha: 0.12),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: Row(
+            children: [
+              if (showPay)
+                Expanded(
+                  flex: 3,
+                  child: PrimaryButton(
+                    label: 'تسديد دفعة',
+                    icon: Icons.credit_card,
+                    onPressed: onPay,
+                  ),
                 ),
-              ),
-            if (showPay && (showRefund || onEdit != null)) const SizedBox(width: 8),
-            if (showRefund)
-              Expanded(
-                flex: 2,
-                child: SizedBox(
-                  height: 44,
-                  child: GhostButton(label: 'رد مبلغ', icon: Icons.currency_exchange, onPressed: onRefund),
+              if (showPay && (showRefund || showEdit)) const SizedBox(width: 8),
+              if (showRefund)
+                Expanded(
+                  flex: 2,
+                  child: SizedBox(
+                    height: 44,
+                    child: GhostButton(label: 'رد مبلغ', onPressed: onRefund),
+                  ),
                 ),
-              ),
-            if (showRefund && onEdit != null) const SizedBox(width: 8),
-            if (onEdit != null)
-              Expanded(
-                flex: 2,
-                child: SizedBox(
-                  height: 44,
-                  child: GhostButton(label: 'تعديل البيانات', icon: Icons.edit_outlined, onPressed: onEdit),
+              if (showRefund && showEdit) const SizedBox(width: 8),
+              if (showEdit)
+                Expanded(
+                  flex: 2,
+                  child: SizedBox(
+                    height: 44,
+                    child: GhostButton(
+                      label: 'تعديل',
+                      icon: Icons.edit_outlined,
+                      onPressed: onEdit,
+                    ),
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// بطاقة مدمجة كبطاقات Center: عنوان وخط رفيع تحته، ثم المحتوى.
-/// بطاقة قسم في ملف الطالب، تُطوى بالضغط على عنوانها — المقابل لـ
-/// `CollapsibleSection` في StudentDetail.tsx.
-///
-/// الملف طويل: كل أقسامه مطويّة عند الفتح ويُفتح منها ما يُطلب، فيظهر الملف
-/// كله في شاشة واحدة بدل تمرير طويل. البطاقة بلا عنوان لا تُطوى.
+/// قسم قابل للطي — بطاقة بيضاء بحدّ خفيف من الثيم.
 class _Card extends StatefulWidget {
-  const _Card({this.title, this.trailing, this.initiallyOpen = false, required this.children});
+  const _Card({
+    this.title,
+    this.titleBadge,
+    this.trailing,
+    this.initiallyOpen = false,
+    required this.children,
+  });
 
   final String? title;
+  /// شارة بجانب العنوان — مثل «خصم 50%» عند الرسوم.
+  final Widget? titleBadge;
   final Widget? trailing;
   final bool initiallyOpen;
   final List<Widget> children;
@@ -700,87 +601,358 @@ class _Card extends StatefulWidget {
 }
 
 class _CardState extends State<_Card> {
-  late bool open = widget.initiallyOpen;
+  late bool open;
+
+  @override
+  void initState() {
+    super.initState();
+    open = widget.initiallyOpen;
+  }
 
   @override
   Widget build(BuildContext context) {
     final title = widget.title;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: AppCard(
-        padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (title != null) ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: () => setState(() => open = !open),
+    return Container(
+      margin: _cardMargin,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(Corner.card),
+        border: Border.all(color: AppColors.line),
+        boxShadow: cardShadow,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (title != null)
+            InkWell(
+              onTap: () => setState(() => open = !open),
+              child: Padding(
+                padding: _cardHeaderPad,
+                child: Row(
+                  children: [
+                    Expanded(
                       child: Row(
                         children: [
-                          // مغلق: سهم لأسفل (قابل للفتح). مفتوح: لأعلى.
-                          AnimatedRotation(
-                            turns: open ? 0.5 : 0,
-                            duration: const Duration(milliseconds: 150),
-                            child: const Icon(Icons.expand_more, size: 18, color: AppColors.faint),
-                          ),
-                          const SizedBox(width: 4),
-                          Expanded(
+                          Flexible(
                             child: Text(
                               title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
+                              style: AppText.cardTitle.copyWith(fontSize: 14, fontWeight: FontWeight.w700),
                             ),
                           ),
+                          if (widget.titleBadge != null) ...[
+                            const SizedBox(width: 8),
+                            widget.titleBadge!,
+                          ],
                         ],
                       ),
                     ),
-                  ),
-                  ?widget.trailing,
-                ],
-              ),
-              if (open)
-                const Padding(
-                  padding: EdgeInsets.only(top: 8, bottom: 8),
-                  child: Divider(height: 1, color: Color(0xFFF1F5F9)),
+                    if (widget.trailing != null) ...[
+                      const SizedBox(width: 8),
+                      widget.trailing!,
+                    ],
+                    const SizedBox(width: 4),
+                    // في RTL يظهر السهم يساراً — موضع الطي المألوف
+                    AnimatedRotation(
+                      turns: open ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 150),
+                      child: const Icon(Icons.expand_more, size: 22, color: AppColors.faint),
+                    ),
+                  ],
                 ),
-            ],
-            if (title == null || open) ...widget.children,
-          ],
-        ),
+              ),
+            ),
+          if (title != null && open)
+            const Divider(
+              height: 1,
+              thickness: 1,
+              color: AppColors.line,
+              indent: _cardHairlineInset,
+              endIndent: _cardHairlineInset,
+            ),
+          if (title == null || open) ...widget.children,
+        ],
       ),
     );
   }
 }
 
-/// آخر خمسة أيام مرصودة: بلاطتان في السطر كما في شبكة الحضور بالنسخة المكتبية.
-///
-/// السطر الكامل لتاريخ وحالة يترك نصف العرض فارغاً، فتُقسم البلاطات عمودين.
+class _Hairline extends StatelessWidget {
+  const _Hairline();
+
+  @override
+  Widget build(BuildContext context) => const Divider(
+        height: 1,
+        thickness: 1,
+        color: AppColors.line,
+        indent: _cardHairlineInset,
+        endIndent: _cardHairlineInset,
+      );
+}
+
+class _Tally extends StatelessWidget {
+  const _Tally(this.label, this.value, this.color);
+  final String label;
+  final int value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          '$value',
+          style: TextStyle(
+            fontFamily: AppText.family,
+            color: color,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+            height: 1.2,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(
+            fontFamily: AppText.family,
+            color: AppColors.muted,
+            fontSize: 11.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// ملخص مالي في كارد واحد — «مجدول» فقط عند وجود متبقٍ غير مستحق.
+class _FinanceStrip extends StatelessWidget {
+  const _FinanceStrip({
+    required this.student,
+    required this.totalPaid,
+    required this.dueNow,
+    required this.scheduledRemaining,
+    required this.isDebtor,
+    required this.previousYearsDue,
+    required this.pendingRequests,
+  });
+
+  final Student student;
+  final double totalPaid;
+  final double dueNow;
+  final double scheduledRemaining;
+  final bool isDebtor;
+  final double previousYearsDue;
+  final List<FinanceRequest> pendingRequests;
+
+  @override
+  Widget build(BuildContext context) {
+    final notes = student.notes.trim();
+    final showScheduled = scheduledRemaining > cent;
+
+    final String dueLabel;
+    final String dueValue;
+    final Color dueColor;
+    if (isDebtor) {
+      dueLabel = 'مستحق';
+      dueValue = money(dueNow);
+      dueColor = AppColors.danger;
+    } else if (student.balance > cent) {
+      dueLabel = 'له';
+      dueValue = money(student.balance);
+      dueColor = AppColors.amberDark;
+    } else {
+      dueLabel = 'الحالة';
+      dueValue = showScheduled ? 'لا مستحقات' : 'مسدد';
+      dueColor = AppColors.success;
+    }
+
+    final metrics = <({String label, String value, Color color})>[
+      (label: 'مقبوض', value: money(totalPaid), color: AppColors.success),
+      (label: dueLabel, value: dueValue, color: dueColor),
+      if (showScheduled)
+        (label: 'مجدول', value: money(scheduledRemaining), color: AppColors.amberDark),
+    ];
+
+    final hasFooter =
+        previousYearsDue > cent || pendingRequests.isNotEmpty || notes.isNotEmpty;
+
+    return AppCard(
+      margin: _cardMargin,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              for (var i = 0; i < metrics.length; i++) ...[
+                if (i > 0)
+                  Container(
+                    width: 1,
+                    height: 40,
+                    color: AppColors.line,
+                  ),
+                Expanded(
+                  child: _FinanceCell(
+                    label: metrics[i].label,
+                    value: metrics[i].value,
+                    color: metrics[i].color,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (hasFooter) ...[
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Divider(height: 1, thickness: 1, color: AppColors.line),
+            ),
+            if (previousYearsDue > cent)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                child: Text(
+                  'منها مستحق سنوات سابقة ${money(previousYearsDue)}',
+                  style: TextStyle(
+                    fontFamily: AppText.family,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.amberDark,
+                  ),
+                ),
+              ),
+            if (pendingRequests.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                child: Text(
+                  'بانتظار موافقة: ${pendingRequests.map((r) => financeRequestLabel(r.kind)).join('، ')}',
+                  style: TextStyle(
+                    fontFamily: AppText.family,
+                    color: AppColors.amberDark,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            if (notes.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.amberSoft,
+                    borderRadius: BorderRadius.circular(Corner.box),
+                    border: Border.all(color: AppColors.amberBorder),
+                  ),
+                  child: Text.rich(
+                    TextSpan(
+                      text: 'ملاحظة: ',
+                      style: TextStyle(
+                        fontFamily: AppText.family,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                        color: AppColors.amberDark,
+                      ),
+                      children: [
+                        TextSpan(
+                          text: notes,
+                          style: TextStyle(
+                            fontFamily: AppText.family,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.text,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _FinanceCell extends StatelessWidget {
+  const _FinanceCell({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Column(
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: AppText.family,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: AppColors.muted,
+            ),
+          ),
+          const SizedBox(height: 6),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              maxLines: 1,
+              style: TextStyle(
+                fontFamily: AppText.family,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+                color: color,
+                height: 1.15,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// شارة خصم مختصرة بجانب عنوان الرسوم — مثل ويب StudentDetail.
+String? _studentDiscountBadgeLabel(Student student) {
+  final discount = studentDiscountOf(student);
+  final legacyRate = student.academicDiscountRate;
+  if (discount != null && discount.value > 0) {
+    final isPercent = discount.percentage;
+    return isPercent ? 'خصم ${trimNum(discount.value)}%' : 'خصم ${money(discount.value)}';
+  }
+  if ((student.academicDiscountApplied || legacyRate > 0) && legacyRate > 0) {
+    return 'خصم ${trimNum(legacyRate)}%';
+  }
+  return null;
+}
+
+/// آخر أيام الحضور كصفوف قائمة مسطحة.
 List<Widget> _recentAttendance(List<AttendanceMark> marks) {
   final recent = [...marks]..sort((a, b) => b.date.compareTo(a.date));
   if (recent.isEmpty) return const [];
   final shown = recent.take(5).toList();
   return [
-    const _Rule(),
-    for (var i = 0; i < shown.length; i += 2)
-      Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Row(
-          children: [
-            Expanded(child: _AttendanceTile(mark: shown[i])),
-            const SizedBox(width: 6),
-            // الفردي الأخير يبقى بعرض بلاطة لا بعرض السطر
-            Expanded(child: i + 1 < shown.length ? _AttendanceTile(mark: shown[i + 1]) : const SizedBox.shrink()),
-          ],
-        ),
-      ),
+    for (final m in shown) ...[
+      _AttendanceTile(mark: m),
+      const _Hairline(),
+    ],
   ];
 }
 
-/// يوم واحد: تاريخه وحالته داخل بلاطة خفيفة.
+/// يوم واحد: تاريخ مقابل الحالة.
 class _AttendanceTile extends StatelessWidget {
   const _AttendanceTile({required this.mark});
 
@@ -788,20 +960,21 @@ class _AttendanceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-      decoration: _cellBox(),
+    return Padding(
+      padding: _cardRowPad,
       child: Row(
         children: [
           Expanded(
             child: Text(
               mark.date,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: AppColors.text),
+              style: TextStyle(
+                fontFamily: AppText.family,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.text,
+              ),
             ),
           ),
-          const SizedBox(width: 4),
           _AttendanceChip(status: mark.status),
         ],
       ),
@@ -837,151 +1010,6 @@ class _AttendanceChip extends StatelessWidget {
   }
 }
 
-/// تفصيل الرصيد: المقبوض مقابل المطالبات، ومنها المستحق اليوم.
-///
-/// الرصيد رقمٌ واحد يجمع أشياء عدة، فيبدو مخالفاً للحدس: طالبٌ سدّد كل ما استُحق
-/// عليه يبقى «عليه» قيمة أقساطه القادمة، لأن القسط المجدول مطالبة قائمة —
-/// هكذا تحسبه النسخة المكتبية. هذا السطر يُظهر الأرقام التي بُني منها.
-class _BalanceBreakdown extends StatelessWidget {
-  const _BalanceBreakdown({required this.student, required this.totalPaid, required this.installments});
-
-  final Student student;
-  final double totalPaid;
-  final List<Installment> installments;
-
-  @override
-  Widget build(BuildContext context) {
-    final store = StoreScope.of(context);
-    final dueSoFar = installments.where(isInstallmentDue).fold<double>(0, (a, i) => a + chargeableAmount(i));
-    final dues = installments.fold<double>(0, (a, i) => a + chargeableAmount(i));
-    final fees = store.enrollments
-        .where((e) => e.studentId == student.id && (e.status == 'active' || e.status == 'completed'))
-        .fold<double>(0, (a, e) => a + (e.appliedPrice ?? e.customPrice ?? 0));
-    final overdue = overdueByStudent(installments)[student.id] ?? 0;
-    if (dues == 0 && fees == 0 && totalPaid == 0) return const SizedBox.shrink();
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: AppColors.bg,
-          borderRadius: BorderRadius.circular(Corner.box),
-          border: Border.all(color: AppColors.line),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                [
-                  if (student.balance > 0) 'له رصيد ${money(student.balance)}',
-                  'المقبوض ${money(totalPaid)}',
-                  // المطالبة اليوم هي المستحق حتى تاريخه، والباقي مجدول لم يحن
-                  if (dues > 0) 'المستحق حتى اليوم ${money(dueSoFar)} من ${money(dues)}',
-                  if (fees > 0) 'رسوم التسجيل ${money(fees)}',
-                ].join('  ·  '),
-                maxLines: 2,
-                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: AppColors.muted),
-              ),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              overdue > 0 ? 'المستحق اليوم: ${money(overdue)}' : 'لا مستحق اليوم',
-              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: overdue > 0 ? AppColors.danger : AppColors.success),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// خصم رسوم الطالب — المقابل لشارة «خصم الرسوم» في StudentDetail.tsx.
-///
-/// تظهر لمن له خصم فقط: نسبته أو المبلغ المقطوع، وسببه — بلا «صافي شهري» من customMonthlyFee.
-class _DiscountBadge extends StatelessWidget {
-  const _DiscountBadge({required this.student});
-
-  final Student student;
-
-  @override
-  Widget build(BuildContext context) {
-    final discount = studentDiscountOf(student);
-    final legacyRate = student.academicDiscountRate;
-    final hasDiscount = discount != null || student.academicDiscountApplied || legacyRate > 0;
-    if (!hasDiscount) return const SizedBox.shrink();
-
-    final reason = (discount?.reason.isNotEmpty == true
-            ? discount!.reason
-            : student.planDiscountReason.isNotEmpty
-                ? student.planDiscountReason
-                : student.exceptionReason)
-        .trim();
-    final isPercent = discount?.percentage ?? (legacyRate > 0);
-    final value = discount?.value ?? legacyRate;
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: AppColors.amberSoft,
-          borderRadius: BorderRadius.circular(Corner.box),
-          border: Border.all(color: AppColors.amberBorder),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.sell_outlined, size: 15, color: AppColors.amberDark),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text.rich(
-                TextSpan(
-                  text: 'خصم على الأقساط',
-                  children: [
-                    if (value > 0)
-                      TextSpan(
-                        text: isPercent ? '  ${trimNum(value)}%' : '  ${money(value)} لكل قسط',
-                        style: TextStyle(fontFamily: 'monospace', color: AppColors.amberDark),
-                      ),
-                    if (reason.isNotEmpty)
-                      TextSpan(
-                        text: '  ($reason)',
-                        style: const TextStyle(color: AppColors.muted, fontWeight: FontWeight.w600),
-                      ),
-                  ],
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: AppColors.heading),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// خط رفيع يفصل مجموعتين داخل البطاقة الواحدة.
-class _Rule extends StatelessWidget {
-  const _Rule();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 6),
-      child: Divider(height: 1, color: Color(0xFFF1F5F9)),
-    );
-  }
-}
-
-/// صندوق خانة واحدة: خلفية رمادية خفيفة وإطار رفيع، ومحتوى في المنتصف.
-BoxDecoration _cellBox() => BoxDecoration(
-  borderRadius: BorderRadius.circular(Corner.box),
-  color: AppColors.bg,
-  border: Border.all(color: AppColors.line),
-);
-
 /// كلمة مرور بوابة — مطابقة لـ `SecretCode` في StudentDetail.tsx: مخفية بنقاط،
 /// وزرّا إظهار ونسخ، وتوليد لمن لا كلمة له.
 class _SecretCode extends StatefulWidget {
@@ -1013,59 +1041,54 @@ class _SecretCodeState extends State<_SecretCode> {
       onPressed: onTap,
     );
 
-    return Container(
-      padding: const EdgeInsetsDirectional.fromSTEB(10, 4, 4, 4),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(Corner.box),
-        color: AppColors.amberSoft,
-        border: Border.all(color: AppColors.amberBorder),
-      ),
+    return Padding(
+      padding: _cardRowPad,
       child: Row(
         children: [
-          Icon(Icons.key_outlined, size: 15, color: AppColors.amber),
-          const SizedBox(width: 6),
+          Icon(Icons.key_outlined, size: 16, color: AppColors.muted),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               widget.label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: AppColors.heading, fontSize: 12, fontWeight: FontWeight.w800),
+              style: AppText.body.copyWith(fontWeight: FontWeight.w600, fontSize: 13),
             ),
           ),
           if (code.isEmpty)
             widget.onGenerate == null
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                    child: Text('غير محدد', style: TextStyle(color: AppColors.faint, fontSize: 11.5)),
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    child: Text('غير محدد', style: AppText.muted),
                   )
                 : TextButton.icon(
                     onPressed: () {
                       widget.onGenerate!();
                       showAppSnack(context, 'تم توليد ${widget.label}');
                     },
-                    icon: Icon(Icons.autorenew, size: 15, color: AppColors.amber),
+                    icon: Icon(Icons.autorenew, size: 15, color: AppColors.accent),
                     label: Text(
                       'توليد',
-                      style: TextStyle(color: AppColors.amber, fontWeight: FontWeight.w800, fontSize: 12),
+                      style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w700, fontSize: 12),
                     ),
                   )
           else ...[
-            Container(
-              constraints: const BoxConstraints(minWidth: 76),
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(Corner.box),
-                border: Border.all(color: AppColors.line),
-              ),
-              child: Text(
-                visible ? code : '••••••',
-                textDirection: TextDirection.ltr,
-                style: TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w900, fontSize: 12.5, letterSpacing: 1.2, color: AppColors.heading),
+            Text(
+              visible ? code : '••••••',
+              textDirection: TextDirection.ltr,
+              style: TextStyle(
+                fontFamily: AppText.family,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                letterSpacing: visible ? 1 : 2,
+                color: AppColors.heading,
               ),
             ),
-            action(visible ? Icons.visibility_off_outlined : Icons.visibility_outlined, visible ? 'إخفاء' : 'إظهار', () => setState(() => visible = !visible)),
+            action(
+              visible ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+              visible ? 'إخفاء' : 'إظهار',
+              () => setState(() => visible = !visible),
+            ),
             action(Icons.copy_outlined, 'نسخ', () async {
               await Clipboard.setData(ClipboardData(text: code));
               if (context.mounted) showAppSnack(context, 'تم نسخ ${widget.label}');
@@ -1077,155 +1100,251 @@ class _SecretCodeState extends State<_SecretCode> {
   }
 }
 
-/// رقم تواصل في صندوق: العنوان، ثم الرقم منسّقاً، ثم أيقونتا الاتصال والواتساب.
-class _ContactCell extends StatelessWidget {
-  const _ContactCell({required this.label, required this.phone, this.prefix});
+/// صف تفاصيل: تسمية، ثم القيمة مع الأزرار متلاصقة في الطرف الآخر (بلا فراغ وسط).
+class _DetailRow extends StatelessWidget {
+  const _DetailRow({
+    required this.label,
+    this.value,
+    this.trailing,
+    this.ltr = false,
+    this.child,
+  });
+
   final String label;
-  final String phone;
-  final String? prefix;
+  final String? value;
+  final Widget? trailing;
+  final bool ltr;
+  final Widget? child;
 
   @override
   Widget build(BuildContext context) {
-    final number = phone.trim();
-    final display = number.isEmpty ? '—' : formatPhoneDisplay(number, prefix);
-    return Container(
-      padding: const EdgeInsets.fromLTRB(6, 9, 6, 2),
-      decoration: _cellBox(),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
+    final text = value?.trim() ?? '';
+    final empty = child == null && text.isEmpty;
+    final valueWidget = child ??
+        Text(
+          empty ? '—' : text,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.end,
+          textDirection: ltr ? TextDirection.ltr : null,
+          style: TextStyle(
+            fontFamily: AppText.family,
+            fontWeight: FontWeight.w700,
+            fontSize: 14,
+            height: 1.35,
+            letterSpacing: ltr ? 0.2 : 0,
+            color: empty ? AppColors.faint : AppColors.text,
           ),
-          const SizedBox(height: 3),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              display,
-              textDirection: TextDirection.ltr,
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, letterSpacing: 0.5, color: number.isEmpty ? AppColors.faint : AppColors.heading),
+        );
+
+    return Padding(
+      padding: _cardRowPad,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(label, style: AppText.label),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Flexible(child: valueWidget),
+                if (trailing != null) ...[
+                  const SizedBox(width: 4),
+                  trailing!,
+                ],
+              ],
             ),
           ),
-          if (number.isNotEmpty)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ContactIconButton(
-                  tooltip: 'اتصال',
-                  onTap: () => launchTel(number),
-                  child: const Icon(Icons.phone_outlined, size: 18, color: AppColors.muted),
-                ),
-                ContactIconButton(
-                  tooltip: 'واتساب',
-                  onTap: () => launchWa(number),
-                  child: const MessageCircleIcon(color: AppColors.success),
-                ),
-              ],
-            )
-          else
-            const SizedBox(height: 8),
         ],
       ),
     );
   }
 }
 
-/// حقل في الشبكة: عنوان صغير فوق قيمته.
-class _Field {
-  const _Field(this.label, this.value, {this.child, this.ltr = false, bool? wide}) : _wide = wide;
-
-  final String label;
-  final String value;
-  final Widget? child;
-  final bool ltr;
-  final bool? _wide;
-
-  /// النص الطويل وحده يأخذ السطر كاملاً؛ القصير خانة كبقيته فلا يبقى نصف السطر
-  /// فارغاً. «طبيعة السكن» و«ملاحظة قصيرة» كانا سطرين كاملين بلا داعٍ.
-  bool get wide => _wide ?? value.trim().length > 30;
+Widget _phoneActions(String phone) {
+  final number = phone.trim();
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      _ContactAction(
+        tooltip: 'اتصال',
+        onTap: () => launchTel(number),
+        background: AppColors.amberSoft,
+        border: AppColors.amberBorder,
+        child: Icon(Icons.call_rounded, size: 16, color: AppColors.amberDark),
+      ),
+      const SizedBox(width: 6),
+      _ContactAction(
+        tooltip: 'واتساب',
+        onTap: () => launchWa(number),
+        background: AppColors.successSoft,
+        border: AppColors.successBorder,
+        child: Icon(Icons.chat_rounded, size: 16, color: AppColors.success),
+      ),
+    ],
+  );
 }
 
-/// شبكة صناديق بثلاثة أعمدة، محتوى كل صندوق في منتصفه. الصف الأخير الناقص
-/// تتمدّد صناديقه لتملأ العرض بدل ترك فراغ، والنص الطويل صندوق بعرض السطر.
-class _FieldGrid extends StatelessWidget {
-  const _FieldGrid({required this.fields});
-  final List<_Field> fields;
+class _ContactAction extends StatelessWidget {
+  const _ContactAction({
+    required this.tooltip,
+    required this.onTap,
+    required this.background,
+    required this.border,
+    required this.child,
+  });
 
-  static const _columns = 3;
-  static const _gap = 6.0;
+  final String tooltip;
+  final VoidCallback onTap;
+  final Color background;
+  final Color border;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final rows = <Widget>[];
-    final pending = <_Field>[];
-
-    void flush() {
-      if (pending.isEmpty) return;
-      final cells = [...pending];
-      rows.add(
-        IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (var i = 0; i < cells.length; i++) ...[if (i > 0) const SizedBox(width: _gap), Expanded(child: _cell(cells[i]))],
-            ],
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(Corner.box),
+          child: Ink(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: BorderRadius.circular(Corner.box),
+              border: Border.all(color: border),
+            ),
+            child: Center(child: child),
           ),
         ),
-      );
-      pending.clear();
-    }
-
-    for (final f in fields) {
-      if (f.wide) {
-        flush();
-        rows.add(_cell(f));
-      } else {
-        pending.add(f);
-        if (pending.length == _columns) flush();
-      }
-    }
-    flush();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (var i = 0; i < rows.length; i++) ...[if (i > 0) const SizedBox(height: _gap), rows[i]],
-      ],
-    );
-  }
-
-  Widget _cell(_Field f) {
-    final empty = f.child == null && f.value.trim().isEmpty;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-      decoration: _cellBox(),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            f.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
-          ),
-          const SizedBox(height: 3),
-          f.child ??
-              Text(
-                empty ? '—' : f.value.trim(),
-                maxLines: f.wide ? 3 : 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                textDirection: f.ltr ? TextDirection.ltr : null,
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, height: 1.45, color: empty ? AppColors.faint : AppColors.text),
-              ),
-        ],
       ),
     );
+  }
+}
+
+/// صفوف «بيانات إضافية» بنفس نمط _DetailRow مع فواصل.
+List<Widget> _extraIdentityRows(Student student, DateTime? birth, String medical) {
+  final rows = <({String label, String? value, Widget? child, bool ltr})>[
+    if (student.gender.trim().isNotEmpty)
+      (label: 'الجنس', value: genderLabel(student.gender), child: null, ltr: false),
+    if (student.nationality.trim().isNotEmpty)
+      (label: 'الجنسية', value: student.nationality.trim(), child: null, ltr: false),
+    if (student.birthPlace.trim().isNotEmpty)
+      (label: 'مكان الولادة', value: student.birthPlace.trim(), child: null, ltr: false),
+    if (birth != null)
+      (label: 'تاريخ الميلاد', value: formatDate(birth), child: null, ltr: true),
+    if (student.healthStatus.trim().isNotEmpty)
+      (label: 'الحالة الصحية', value: student.healthStatus.trim(), child: null, ltr: false),
+    if (medical.isNotEmpty)
+      (label: 'تفاصيل الحالة الصحية', value: medical, child: null, ltr: false),
+    if (student.housingStatus.trim().isNotEmpty)
+      (label: 'طبيعة السكن', value: student.housingStatus.trim(), child: null, ltr: false),
+    if (student.gpa.trim().isNotEmpty)
+      (label: 'المعدل', value: student.gpa.trim(), child: null, ltr: true),
+    if (student.previousSchool.trim().isNotEmpty)
+      (label: 'المدرسة السابقة', value: student.previousSchool.trim(), child: null, ltr: false),
+    if (student.referralSource.trim().isNotEmpty)
+      (label: 'مصدر التعرف', value: student.referralSource.trim(), child: null, ltr: false),
+    if (student.initialRating > 0)
+      (
+        label: 'التقييم المبدئي',
+        value: null,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 1; i <= 5; i++)
+              Icon(
+                i <= student.initialRating ? Icons.star_rounded : Icons.star_outline_rounded,
+                size: 16,
+                color: i <= student.initialRating ? const Color(0xFFF59E0B) : AppColors.lineStrong,
+              ),
+          ],
+        ),
+        ltr: false,
+      ),
+  ];
+
+  return [
+    for (var i = 0; i < rows.length; i++) ...[
+      if (i > 0) const _Hairline(),
+      _DetailRow(
+        label: rows[i].label,
+        value: rows[i].value,
+        ltr: rows[i].ltr,
+        child: rows[i].child,
+      ),
+    ],
+  ];
+}
+
+/// إجراءات كارد الرسوم — ورقة سفلية بنفس لغة خصم/إعفاء القسط (لا قائمة منبثقة فارغة).
+Future<void> _showFeesActionSheet(BuildContext context, AppStore store, Student student) async {
+  final canDiscountPlan = !student.usesCustomPlan && student.gradeLevel.trim().isNotEmpty;
+  final canCustom = store.can('finance.discount');
+  final action = await showModalBottomSheet<String>(
+    context: context,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.dialog)),
+    ),
+    builder: (ctx) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const ListTile(
+            title: Text('إجراءات الرسوم', style: TextStyle(fontWeight: FontWeight.w800)),
+            subtitle: Text('خصم وخطة ورسوم إضافية'),
+          ),
+          const Divider(height: 1),
+          if (canDiscountPlan)
+            ListTile(
+              leading: Icon(Icons.percent, color: AppColors.amberDark),
+              title: const Text('خصم للطالب'),
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              onTap: () => Navigator.pop(ctx, 'discount'),
+            ),
+          ListTile(
+            leading: const Icon(Icons.add_card_outlined, color: AppColors.info),
+            title: const Text('رسم خاص'),
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            onTap: () => Navigator.pop(ctx, 'extra'),
+          ),
+          if (canCustom)
+            ListTile(
+              leading: Icon(Icons.tune, color: AppColors.heading),
+              title: Text(student.usesCustomPlan ? 'تعديل المخصصة' : 'خطة مخصصة'),
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              onTap: () => Navigator.pop(ctx, 'custom'),
+            ),
+          if (student.usesCustomPlan && canCustom)
+            ListTile(
+              leading: const Icon(Icons.undo, color: AppColors.muted),
+              title: const Text('رجوع لخطة المرحلة'),
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              onTap: () => Navigator.pop(ctx, 'return'),
+            ),
+        ],
+      ),
+    ),
+  );
+  if (action == null || !context.mounted) return;
+  switch (action) {
+    case 'discount':
+      await _showStudentDiscountSheet(context, store, student);
+    case 'extra':
+      await _showExtraChargeSheet(context, store, student);
+    case 'custom':
+      await _showCustomPlanSheet(context, store, student);
+    case 'return':
+      await _returnToGradePlan(context, store, student);
   }
 }
 
@@ -1301,7 +1420,7 @@ Future<void> _showStudentDiscountSheet(BuildContext context, AppStore store, Stu
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 autofocus: true,
                 onChanged: (_) => calculate(),
-                decoration: InputDecoration(labelText: percentage ? 'النسبة %' : 'المبلغ ₪'),
+                decoration: InputDecoration(labelText: percentage ? 'النسبة %' : 'المبلغ شيكل'),
               ),
               if (!percentage)
                 const Padding(
@@ -1400,7 +1519,7 @@ Future<void> _showExtraChargeSheet(BuildContext context, AppStore store, Student
                 controller: amount,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 onChanged: (_) => setModal(() {}),
-                decoration: const InputDecoration(labelText: 'المبلغ ₪'),
+                decoration: const InputDecoration(labelText: 'المبلغ شيكل'),
               ),
               const SizedBox(height: 8),
               const FieldLabel('تاريخ الاستحقاق'),
@@ -1582,12 +1701,42 @@ Future<void> _returnToGradePlan(BuildContext context, AppStore store, Student st
   );
 }
 
-Future<void> _showInstallmentActionSheet(BuildContext context, AppStore store, Installment installment) async {
+Future<void> _openInstallment(
+  BuildContext context,
+  AppStore store,
+  Student student,
+  Installment installment, {
+  required bool canCollect,
+  required bool canAdjust,
+}) async {
+  final payable = !installment.isExempt && !installment.isPaid && canCollect;
+  if (!payable && !canAdjust) return;
+
+  void goPay() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PaymentFormScreen(
+          studentId: student.id,
+          installmentId: installment.id,
+          amount: installment.remaining,
+        ),
+      ),
+    );
+  }
+
+  // قبض فقط بلا صلاحية تعديل → مباشرة لنموذج التسديد
+  if (payable && !canAdjust) {
+    goPay();
+    return;
+  }
+
   final hasDiscount = installment.isExempt || installment.discountAmount > cent;
   final action = await showModalBottomSheet<String>(
     context: context,
     backgroundColor: Colors.white,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.dialog))),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.dialog)),
+    ),
     builder: (ctx) => SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1597,41 +1746,55 @@ Future<void> _showInstallmentActionSheet(BuildContext context, AppStore store, I
             subtitle: Text('قيمة القسط: ${money(installment.amount + installment.discountAmount)}'),
           ),
           const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.percent, color: AppColors.info),
-            title: const Text('خصم بمبلغ'),
-            dense: true,
-            visualDensity: VisualDensity.compact,
-            onTap: () => Navigator.pop(ctx, 'amount'),
-          ),
-          ListTile(
-            leading: const Icon(Icons.volunteer_activism, color: AppColors.success),
-            title: const Text('إعفاء كامل'),
-            dense: true,
-            visualDensity: VisualDensity.compact,
-            onTap: () => Navigator.pop(ctx, 'exempt'),
-          ),
-          if (hasDiscount)
+          if (payable)
             ListTile(
-              leading: Icon(Icons.undo, color: AppColors.heading),
-              title: const Text('إزالة الخصم'),
+              leading: Icon(Icons.payments_outlined, color: AppColors.amberDark),
+              title: const Text('تسديد'),
               dense: true,
               visualDensity: VisualDensity.compact,
-              onTap: () => Navigator.pop(ctx, 'none'),
+              onTap: () => Navigator.pop(ctx, 'pay'),
             ),
-          if (InstallmentAdjustments.canRemove(installment))
+          if (canAdjust) ...[
             ListTile(
-              leading: const Icon(Icons.delete_outline, color: AppColors.danger),
-              title: const Text('حذف'),
+              leading: const Icon(Icons.percent, color: AppColors.info),
+              title: const Text('خصم بمبلغ'),
               dense: true,
               visualDensity: VisualDensity.compact,
-              onTap: () => Navigator.pop(ctx, 'remove'),
+              onTap: () => Navigator.pop(ctx, 'amount'),
             ),
+            ListTile(
+              leading: const Icon(Icons.volunteer_activism, color: AppColors.success),
+              title: const Text('إعفاء كامل'),
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              onTap: () => Navigator.pop(ctx, 'exempt'),
+            ),
+            if (hasDiscount)
+              ListTile(
+                leading: Icon(Icons.undo, color: AppColors.heading),
+                title: const Text('إزالة الخصم'),
+                dense: true,
+                visualDensity: VisualDensity.compact,
+                onTap: () => Navigator.pop(ctx, 'none'),
+              ),
+            if (InstallmentAdjustments.canRemove(installment))
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: AppColors.danger),
+                title: const Text('حذف'),
+                dense: true,
+                visualDensity: VisualDensity.compact,
+                onTap: () => Navigator.pop(ctx, 'remove'),
+              ),
+          ],
         ],
       ),
     ),
   );
   if (action == null || !context.mounted) return;
+  if (action == 'pay') {
+    goPay();
+    return;
+  }
   if (action == 'none') {
     try {
       InstallmentAdjustments(store).setDiscount(installment, const InstallmentDiscountInput.none());
@@ -1720,7 +1883,7 @@ Future<void> _showInstallmentAdjustmentForm(BuildContext context, AppStore store
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   autofocus: true,
                   onChanged: (_) => refreshPreview(),
-                  decoration: const InputDecoration(labelText: 'مبلغ الخصم ₪'),
+                  decoration: const InputDecoration(labelText: 'مبلغ الخصم شيكل'),
                 ),
               ],
               const SizedBox(height: 8),
@@ -1834,16 +1997,18 @@ List<Widget> _groupedInstallmentTiles({
       final suffix = key == currentYearKey ? ' (الحالية)' : '';
       out.add(
         Padding(
-          padding: const EdgeInsets.only(top: 4, bottom: 6),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: Text(
             '$label$suffix · ${groups[key]!.length} قسط',
-            style: TextStyle(color: AppColors.heading, fontWeight: FontWeight.w800, fontSize: 11.5),
+            style: AppText.label.copyWith(color: AppColors.heading, fontWeight: FontWeight.w800),
           ),
         ),
       );
     }
-    for (final inst in groups[key]!) {
-      out.add(_InstallmentTile(student: student, inst: inst, canCollect: canCollect, canAdjust: canAdjust));
+    final list = groups[key]!;
+    for (var i = 0; i < list.length; i++) {
+      out.add(_InstallmentTile(student: student, inst: list[i], canCollect: canCollect, canAdjust: canAdjust));
+      if (i < list.length - 1) out.add(const _Hairline());
     }
   }
   return out;
@@ -1909,23 +2074,23 @@ class _InstallmentTile extends StatelessWidget {
     final future = dateOnly(inst.dueDate).isAfter(dateOnly(DateTime.now()));
     final payable = !inst.isExempt && !inst.isPaid && canCollect;
     final store = StoreScope.of(context);
+    final tappable = payable || canAdjust;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+    return Material(
+      color: Colors.transparent,
       child: InkWell(
-        onTap: payable
-            ? () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => PaymentFormScreen(studentId: student.id, installmentId: inst.id, amount: inst.remaining),
-                  ),
-                );
-              }
+        onTap: tappable
+            ? () => _openInstallment(
+                  context,
+                  store,
+                  student,
+                  inst,
+                  canCollect: canCollect,
+                  canAdjust: canAdjust,
+                )
             : null,
-        onLongPress: canAdjust ? () => _showInstallmentActionSheet(context, store, inst) : null,
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: tileDecoration(white: !inst.isPaid && !inst.isExempt),
+        child: Padding(
+          padding: _cardRowPad,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1934,16 +2099,9 @@ class _InstallmentTile extends StatelessWidget {
                   Expanded(
                     child: Text(
                       inst.title,
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.text),
+                      style: AppText.cardTitle.copyWith(fontSize: 14),
                     ),
                   ),
-                  if (canAdjust)
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      tooltip: 'إجراءات القسط',
-                      icon: const Icon(Icons.more_vert, size: 19, color: AppColors.muted),
-                      onPressed: () => _showInstallmentActionSheet(context, store, inst),
-                    ),
                   if (inst.isExempt)
                     StatusChip.muted('معفى')
                   else if (inst.isPaid)
@@ -1956,69 +2114,48 @@ class _InstallmentTile extends StatelessWidget {
               ),
               if (inst.isExempt && inst.exemptReason.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                Text('إعفاء: ${inst.exemptReason}', style: const TextStyle(color: AppColors.faint, fontSize: 11)),
+                Text('إعفاء: ${inst.exemptReason}', style: AppText.muted.copyWith(fontSize: 12)),
               ] else if (!inst.isExempt && inst.discountAmount > cent) ...[
                 const SizedBox(height: 4),
                 Text(
                   'خصم ${money(inst.discountAmount)}${inst.discountReason.trim().isEmpty ? '' : ' — ${inst.discountReason.trim()}'}',
-                  style: const TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.w700),
+                  style: const TextStyle(color: AppColors.success, fontSize: 12, fontWeight: FontWeight.w700),
                 ),
               ],
               const SizedBox(height: 6),
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('استحقاق: ${formatDate(inst.dueDate)}', style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Align(
-                      alignment: AlignmentDirectional.centerEnd,
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 2,
-                        alignment: WrapAlignment.end,
-                        children: [
-                          if (inst.isExempt)
-                            const Text('المطلوب: 0', style: TextStyle(color: AppColors.muted, fontSize: 11))
-                          else ...[
-                            Text.rich(
-                              TextSpan(
-                                text: 'المطلوب: ',
-                                style: const TextStyle(color: AppColors.muted, fontSize: 11),
-                                children: [
-                                  if (inst.discountAmount > cent && (inst.originalAmount ?? 0) > cent)
-                                    TextSpan(
-                                      text: '${money(inst.originalAmount!)} ',
-                                      style: const TextStyle(
-                                        decoration: TextDecoration.lineThrough,
-                                        color: AppColors.faint,
-                                      ),
-                                    ),
-                                  TextSpan(
-                                    text: money(inst.amount),
-                                    style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.text),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (inst.paidAmount > cent && !inst.isPaid)
-                              Text('المسدد: ${money(inst.paidAmount)}', style: const TextStyle(color: AppColors.success, fontSize: 11)),
-                          ],
-                          if (!inst.isExempt && !inst.isPaid)
-                            Text(
-                              'المتبقي: ${money(inst.remaining)}',
-                              style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w800, fontSize: 11),
-                            ),
-                        ],
-                      ),
-                    ),
+                  Text(
+                    formatDate(inst.dueDate),
+                    style: AppText.muted.copyWith(fontSize: 12),
                   ),
+                  const Spacer(),
+                  if (inst.isExempt)
+                    Text('0', style: AppText.muted)
+                  else ...[
+                    if (!inst.isPaid)
+                      Text(
+                        money(inst.remaining),
+                        style: TextStyle(
+                          fontFamily: AppText.family,
+                          color: AppColors.danger,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13.5,
+                        ),
+                      )
+                    else
+                      Text(
+                        money(inst.amount),
+                        style: TextStyle(
+                          fontFamily: AppText.family,
+                          color: AppColors.success,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                  ],
                 ],
               ),
-              if (canAdjust) ...[
-                const SizedBox(height: 4),
-                Text('اضغط مطوّلاً لإجراءات الخصم والإعفاء', style: const TextStyle(color: AppColors.faint, fontSize: 10)),
-              ],
             ],
           ),
         ),
@@ -2048,47 +2185,44 @@ class _PaymentTile extends StatelessWidget {
       if (p.reversedByPaymentId != null && p.reversedByPaymentId!.isNotEmpty) 'معكوس',
     ];
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.all(10),
-      decoration: tileDecoration(),
+    return Padding(
+      padding: _cardRowPad,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              Icon(Icons.receipt_long_outlined, size: 15, color: AppColors.amber),
-              const SizedBox(width: 6),
               Expanded(
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Flexible(
-                      child: Text(
-                        p.receiptNumber,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textDirection: TextDirection.ltr,
-                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading),
-                      ),
+                    Text(
+                      p.receiptNumber,
+                      textDirection: TextDirection.ltr,
+                      style: AppText.cardTitle.copyWith(fontSize: 14),
                     ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        formatDate(p.date),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${formatDate(p.date)}  ·  ${meta.join('  ·  ')}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: AppText.family,
+                        color: p.cancelled ? AppColors.danger : AppColors.muted,
+                        fontSize: 12,
+                        height: 1.3,
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               Text(
                 money(p.amount),
                 style: TextStyle(
+                  fontFamily: AppText.family,
                   fontWeight: FontWeight.w800,
-                  fontSize: 12.5,
+                  fontSize: 14,
                   color: p.cancelled
                       ? AppColors.faint
                       : isNegative
@@ -2099,21 +2233,10 @@ class _PaymentTile extends StatelessWidget {
               ),
             ],
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: Divider(height: 1, color: AppColors.line),
-          ),
+          const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(
-                child: Text(
-                  meta.join('  •  '),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: p.cancelled ? AppColors.danger : AppColors.muted, fontSize: 11),
-                ),
-              ),
-              const SizedBox(width: 8),
+              const Spacer(),
               TileButton(
                 label: 'الوصل',
                 icon: const Icon(Icons.print_outlined, size: 13),
@@ -2123,7 +2246,7 @@ class _PaymentTile extends StatelessWidget {
                 onTap: () => ReceiptScreen.open(context, p),
               ),
               if (!p.cancelled) ...[
-                const SizedBox(width: 5),
+                const SizedBox(width: 6),
                 TileButton(
                   label: 'واتساب',
                   icon: const MessageCircleIcon(color: AppColors.success, size: 12),
@@ -2141,7 +2264,8 @@ class _PaymentTile extends StatelessWidget {
   }
 }
 
-/// الدرجات والتقييمات — مطابق لبطاقة «الدرجات والتقييمات» في StudentDetail.tsx.
+/// الدرجات والتقييمات — بترتيب الويب: لكل مادة سطرُها بنسبتها، وتحته تقييماتها
+/// سطراً سطراً: اسم التقييم، ودرجته من أصلها، وتاريخه.
 ///
 /// المعدل موزون لكل مادة على حدة وفق مخطط المدرسة، لا خلط بين المواد.
 class _EvaluationsCard extends StatelessWidget {
@@ -2149,156 +2273,159 @@ class _EvaluationsCard extends StatelessWidget {
   final String studentId;
   final List<Evaluation> evaluations;
 
+  /// لون النسبة: هادئ في الحالات الثلاث فلا يصرخ الملف بالألوان.
+  static Color _tone(double percent) {
+    if (percent >= 85) return const Color(0xFF2E7D57);
+    if (percent >= 60) return const Color(0xFF9A6700);
+    return const Color(0xFFA5484A);
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final grading = store.gradingForViewedYear;
     final scheme = grading.scheme.isEmpty ? store.gradingScheme : grading.scheme;
-    final summaries = store.subjectGradesOf(studentId);
+    final summaries = {for (final s in store.subjectGradesOf(studentId)) s.subjectId: s};
     final list = grading.mode == 'monthly'
         ? evaluations
         : evaluations.where((e) => !isMonthlyAverage(e)).toList();
 
-    Widget termLine(String label, TermGrade term) {
-      final avg = term.components.isEmpty || term.currentAverage == null
-          ? '—'
-          : term.isComplete
-          ? '${term.total.round()}%'
-          : '${term.currentAverage!.round()}% (حالي)';
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: AppColors.text),
-                ),
-              ),
-              Text(
-                avg,
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 11.5,
-                  fontFamily: 'monospace',
-                  color: term.isComplete ? AppColors.success : AppColors.amber,
-                ),
-              ),
-            ],
-          ),
-          for (final c in term.components)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${c.component.name} (${trimNum(c.component.weight)}%)',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 10.5, color: AppColors.muted),
-                    ),
-                  ),
-                  Text(
-                    c.achievedPercent == null ? '—' : '${c.achievedPercent!.round()}%',
-                    style: const TextStyle(fontSize: 10.5, fontFamily: 'monospace', color: AppColors.muted),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      );
+    // التقييمات مجموعة بموادها، والأحدث أولاً داخل كل مادة
+    final bySubject = <String, List<Evaluation>>{};
+    for (final e in list) {
+      bySubject.putIfAbsent(e.subjectId, () => []).add(e);
+    }
+    for (final rows in bySubject.values) {
+      rows.sort((a, b) => b.evaluationDate.compareTo(a.evaluationDate));
+    }
+
+    double? percentOf(String subjectId, List<Evaluation> rows) {
+      final fromScheme = summaries[subjectId]?.yearAverage;
+      if (fromScheme != null) return fromScheme;
+      if (rows.isEmpty) return null;
+      return rows.fold<double>(0, (a, e) => a + e.percent) / rows.length;
+    }
+
+    final percents = [
+      for (final e in bySubject.entries)
+        if (percentOf(e.key, e.value) != null) percentOf(e.key, e.value)!,
+    ];
+    final overall = percents.isEmpty ? null : percents.reduce((a, b) => a + b) / percents.length;
+
+    /// سطر الفصلين تحت اسم المادة — يظهر حين تكون المدرسة على مخطط فصول.
+    String? termsLine(String subjectId) {
+      if (grading.mode == 'monthly' || scheme.isEmpty) return null;
+      final s = summaries[subjectId];
+      if (s == null) return null;
+      String label(TermGrade t) {
+        if (t.components.isEmpty || t.currentAverage == null) return '—';
+        return t.isComplete ? '${t.total.round()}%' : '${t.currentAverage!.round()}% حالي';
+      }
+
+      return [
+        if (scheme.isConfigured('term_1')) 'الفصل الأول ${label(s.term1)}',
+        if (scheme.isConfigured('term_2')) 'الفصل الثاني ${label(s.term2)}',
+      ].join('  ·  ');
     }
 
     return _Card(
-      title: 'الدرجات والتقييمات (${list.length})',
+      title: 'التقييمات (${list.length})',
+      trailing: overall == null
+          ? null
+          : Text(
+              '${overall.round()}%',
+              style: TextStyle(
+                fontFamily: AppText.family,
+                color: _tone(overall),
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
       children: [
-        if (grading.mode != 'monthly' && !scheme.isEmpty && summaries.isNotEmpty) ...[
-          for (final s in summaries)
-            Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppColors.amberSoft,
-                borderRadius: BorderRadius.circular(Corner.box),
-                border: Border.all(color: const Color(0xFFFED7AA)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          s.subjectName,
-                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
-                        ),
-                      ),
-                      if (s.yearAverage != null)
-                        Text(
-                          'السنة: ${s.yearAverage!.round()}%',
-                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11, color: AppColors.success),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  if (scheme.isConfigured('term_1')) termLine('الفصل الأول', s.term1),
-                  if (scheme.isConfigured('term_1') && scheme.isConfigured('term_2')) const SizedBox(height: 6),
-                  if (scheme.isConfigured('term_2')) termLine('الفصل الثاني', s.term2),
-                ],
-              ),
-            ),
-          const _Rule(),
-        ],
-        if (list.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 14),
-            child: Text(
-              'لا توجد نتائج مسجلة حتى الآن',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.faint, fontSize: 12),
-            ),
+        if (bySubject.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+            child: Text('لا توجد نتائج مسجلة حتى الآن', style: AppText.muted),
           )
         else
-          for (final e in list)
-            Container(
-              margin: const EdgeInsets.only(bottom: 6),
-              padding: const EdgeInsets.all(10),
-              decoration: tileDecoration(),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          e.title,
-                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.text),
+          for (final entry in bySubject.entries) ...[
+            () {
+              final name = entry.key.isEmpty ? 'بدون مادة' : store.subjectName(entry.key);
+              final percent = percentOf(entry.key, entry.value);
+              final terms = termsLine(entry.key);
+              final tone = percent == null ? AppColors.muted : _tone(percent);
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(16, 9, 16, 9),
+                decoration: BoxDecoration(
+                  color: AppColors.sunken,
+                  border: BorderDirectional(start: BorderSide(color: tone, width: 3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: AppText.family,
+                              color: AppColors.heading,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
                         ),
-                      ),
-                      e.passed
-                          ? StatusChip.success('${trimNum(e.score)} / ${trimNum(e.maxScore)} (${e.percent}%)')
-                          : StatusChip.danger('${trimNum(e.score)} / ${trimNum(e.maxScore)} (${e.percent}%)'),
+                        if (percent != null)
+                          Text(
+                            '${percent.round()}%',
+                            style: TextStyle(
+                              fontFamily: AppText.family,
+                              color: tone,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                      ],
+                    ),
+                    if (terms != null && terms.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(terms, style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
                     ],
-                  ),
-                  const SizedBox(height: 5),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          [if (store.subjectName(e.subjectId).isNotEmpty) store.subjectName(e.subjectId), e.typeLabel].join('  •  '),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
-                        ),
+                  ],
+                ),
+              );
+            }(),
+            for (final e in entry.value)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        e.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: AppColors.text, fontSize: 12, fontWeight: FontWeight.w600),
                       ),
-                      if (e.evaluationDate.isNotEmpty) Text(e.evaluationDate, style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
-                    ],
-                  ),
-                ],
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${trimNum(e.score)}/${trimNum(e.maxScore)}',
+                      style: TextStyle(
+                        fontFamily: AppText.family,
+                        color: store.evaluationPassed(e) ? AppColors.text : const Color(0xFFA5484A),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
+          ],
       ],
     );
   }
@@ -2343,15 +2470,18 @@ class _AttachmentsCardState extends State<_AttachmentsCard> {
     return _Card(
       title: 'المرفقات والوثائق (${items.length})',
       children: [
-        Row(
-          children: [
-            for (var i = 0; i < items.length; i++) ...[
-              if (i > 0) const SizedBox(width: 10),
-              Expanded(
-                child: _Thumb(label: items[i].$1, data: items[i].$2),
-              ),
+        Padding(
+          padding: _cardRowPad,
+          child: Row(
+            children: [
+              for (var i = 0; i < items.length; i++) ...[
+                if (i > 0) const SizedBox(width: 10),
+                Expanded(
+                  child: _Thumb(label: items[i].$1, data: items[i].$2),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ],
     );

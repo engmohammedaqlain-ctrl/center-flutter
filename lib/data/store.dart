@@ -18,6 +18,7 @@ import 'local_db.dart';
 import 'monthly_averages.dart';
 import 'payment_methods.dart';
 import 'permissions.dart';
+import 'portal.dart';
 import 'system_features.dart';
 import 'phone.dart';
 import 'realtime.dart';
@@ -461,6 +462,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       // الأرصدة من السجلات عند كل إقلاع: الرقم المحفوظ قد يكون كتبه إصدار أقدم
       // بقاعدة حساب أخرى، فيبقى معروضاً حتى أول سحب أو حركة مالية
       recalculateAllBalances();
+      // مواءمة افتراضي قديم مع الويب قبل أول سحب للهوية
+      if (_isLegacyMobileDefault(institutionColors)) {
+        await db.setSetting(institutionColorsKey, null);
+        applyBrandColors();
+      }
     } finally {
       _loading = false;
     }
@@ -478,6 +484,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   static const _kReceiptLabel = 'device_receipt_label';
   static const _kLastUsername = 'last_entered_username';
   static const _kLastPortalId = 'last_entered_portal_id';
+
+  /// جلسة البوابة المحفوظة: رقم الهوية ورمز الدخول ومعرّف الحساب المختار —
+  /// إغلاق التطبيق لا يُخرج الطالب أو المعلم، كما لا يُخرج الإدارة.
+  static const _kPortalSession = 'portal_session';
   static const _kReceiptCounter = 'receipt_counter';
   static const _kDeviceUid = 'device_uid';
   static const _kDeviceCode = 'receipt_device_code';
@@ -967,6 +977,51 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     await db.setSetting(_kLastPortalId, id);
   }
 
+  /// جلسة البوابة المحفوظة على الجهاز، أو `null` إن لم تُحفظ.
+  ///
+  /// [user] هو الحساب كما وصل آخر مرة. وجوده يسمح بفتح البوابة بلا شبكة: التحقق
+  /// يمرّ على دالة السيرفر، فبدونه يبقى المعلم على شاشة الدخول ولو كانت كل
+  /// بيانات صفوفه محفوظة على جهازه.
+  ({String nationalId, String code, String userId, PortalUser? user})? get portalSession {
+    final raw = db.settings[_kPortalSession];
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      final id = '${map['national_id'] ?? ''}'.trim();
+      final code = '${map['code'] ?? ''}'.trim();
+      if (id.isEmpty || code.isEmpty) return null;
+      final userRaw = map['user'];
+      return (
+        nationalId: id,
+        code: code,
+        userId: '${map['user_id'] ?? ''}',
+        user: userRaw is Map ? PortalUser.fromJson(Map<String, dynamic>.from(userRaw)) : null,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> savePortalSession({
+    required String nationalId,
+    required String code,
+    required String userId,
+    PortalUser? user,
+  }) async {
+    await db.setSetting(
+      _kPortalSession,
+      jsonEncode({
+        'national_id': nationalId.trim(),
+        'code': code.trim(),
+        'user_id': userId,
+        if (user != null) 'user': user.toJson(),
+      }),
+    );
+  }
+
+  /// الخروج من البوابة: لا تُفتح من جديد حتى يُدخل الرمز.
+  Future<void> clearPortalSession() => db.setSetting(_kPortalSession, '');
+
   void _restoreSession() {
     final s = db.settings;
     // توكن الجلسة أولاً: كل قراءة من السحابة بعده تمرّ به لا بالمفتاح المنشور
@@ -1079,6 +1134,14 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       return InstitutionColors.defaults;
     }
   }
+
+  /// افتراضي الجوال القديم (كحلي/برتقالي) قبل مواءمته مع الويب — إن وُجد وحده
+  /// بلا ضبط صريح من السحابة يبقى الجهاز برتقالياً والويب أزرق.
+  static bool _isLegacyMobileDefault(InstitutionColors c) =>
+      c.sidebarBg.toUpperCase() == '#0B2545' &&
+      c.activeItem.toUpperCase() == '#E88C15' &&
+      c.primaryButton.toUpperCase() == '#0B2545' &&
+      c.actionButton.toUpperCase() == '#E88C15';
 
   // ── التقييمات والدرجات (المقابل لـ evaluations.service.ts) ────────────────
 
@@ -1816,6 +1879,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return computeTermGrade(evals, scheme, term, fullMark: fullMark);
   }
 
+  /// علامة النجاح التي ضبطتها المدرسة — 50% ما لم تُغيَّر.
+  double get gradingPassPercent => effectiveGradingSettings.passPercent;
+
+  /// هل نجح الطالب في هذا التقييم بعلامة نجاح المدرسة؟ `Evaluation.passed`
+  /// يفترض 50% لأنه لا يرى الإعدادات.
+  bool evaluationPassed(Evaluation e) => e.percent >= gradingPassPercent;
+
   /// ملخص علامات لكل مادة — مطابق لـ StudentDetail / StudentPortal على الويب.
   List<SubjectGradeSummary> subjectGradesOf(String studentId) {
     final student = studentById(studentId);
@@ -2511,8 +2581,42 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     scheduleAutoPull(Duration.zero);
   }
 
+  /// لا اتصال بالسحابة: المزامنة التلقائية متوقفة حتى يعود، والواجهة تعرض ذلك
+  /// بدل مؤشر يدور. التعديلات تبقى في الطابور وتُرفع فور عودة الاتصال.
+  bool offline = false;
+  Timer? _onlineWatch;
+  static const onlineProbeEvery = Duration(seconds: 20);
+
+  void _setOffline(bool value) {
+    if (offline == value) return;
+    offline = value;
+    notifyListeners();
+    _onlineWatch?.cancel();
+    _onlineWatch = null;
+    if (value) {
+      _onlineWatch = Timer.periodic(onlineProbeEvery, (_) async {
+        if (!autoSync) return;
+        if (await probeCloud()) _setOffline(false);
+      });
+    } else {
+      _pushFailures = 0;
+      scheduleAutoPush(Duration.zero);
+      scheduleAutoPull(Duration.zero);
+    }
+  }
+
+  /// فحص الاتصال قبل مزامنة يدوية — يحدّث [offline] ويعيد النتيجة.
+  Future<bool> checkOnline() async {
+    if (!networkEnabled) return true;
+    final online = await probeCloud();
+    _setOffline(!online);
+    return online;
+  }
+
   void stopAutoSync() {
     autoSync = false;
+    _onlineWatch?.cancel();
+    _onlineWatch = null;
     _pushFailures = 0;
     _autoPushTimer?.cancel();
     _autoPullTimer?.cancel();
@@ -2582,6 +2686,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         scheduleAutoPull();
       }
       return;
+    }
+    // بلا شبكة لا تبدأ مزامنة تدور حتى مهلتها: مراقبة الاتصال تعيدها فور عودته
+    if (networkEnabled) {
+      if (push && !pendingSyncs.any((a) => a.retryCount < maxSyncRetries)) return;
+      if (!await checkOnline() || !autoSync) return;
     }
     try {
       if (push) {
@@ -4610,7 +4719,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final after = installments.where((i) => i.studentId == studentId).fold<double>(0, (sum, i) => sum + chargeableAmount(i));
     _recordFinanceAudit(
       action: 'student_discount',
-      summary: 'خطة مخصصة: مجموع الأقساط ${before.round()} ← ${after.round()} ₪',
+      summary: 'خطة مخصصة: مجموع الأقساط ${before.round()} ← ${after.round()} شيكل',
       studentId: studentId,
       amount: ((before - after) * 100).round() / 100,
       reason: cleanReason,

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:center_mobile/data/portal.dart';
+import 'package:center_mobile/data/store.dart';
 import 'package:center_mobile/data/supabase.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -24,6 +25,8 @@ Map<String, dynamic> _parentChoice() => {
 
 void main() {
   tearDown(SupabaseAuth.clear);
+
+  group('بقاء جلسة البوابة', _sessionTests);
 
   group('دخول البوابة', () {
     test('ولي الأمر يدخل برقم هوية ابنه وكلمة مروره، فتُفتح جلسته', () async {
@@ -135,5 +138,24 @@ void main() {
       expect(result.users.first.roleLabel, 'ولي أمر');
       expect(SupabaseAuth.signedIn, isFalse, reason: 'الجلسة تُفتح بعد الاختيار');
     });
+  });
+}
+
+/// جلسة البوابة تبقى بعد إغلاق التطبيق، كجلسة الإدارة.
+void _sessionTests() {
+  test('الجلسة تُحفظ وتُقرأ وتُمسح عند الخروج', () async {
+    final s = AppStore.forTesting();
+
+    expect(s.portalSession, isNull, reason: 'لا جلسة قبل الدخول');
+
+    await s.savePortalSession(nationalId: '401092580', code: '246810', userId: 'student-1');
+    final saved = s.portalSession;
+    expect(saved?.nationalId, '401092580');
+    expect(saved?.code, '246810');
+    expect(saved?.userId, 'student-1');
+
+    await s.clearPortalSession();
+    expect(s.portalSession, isNull, reason: 'الخروج يُنهيها');
+    await s.flush();
   });
 }

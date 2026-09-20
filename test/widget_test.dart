@@ -38,7 +38,7 @@ void main() {
     await tester.pumpWidget(StoreScope(store: store, child: const CenterApp()));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('دخول الإدارة'));
+    await tester.tap(find.text('الإدارة'));
     await tester.pumpAndSettle();
 
     expect(find.text('تسجيل الدخول'), findsOneWidget);
@@ -59,7 +59,7 @@ void main() {
     // شريط التبويبين يحمل نصّين عربيين طويلين
     expect(tester.takeException(), isNull);
 
-    await tester.tap(find.text('دخول الإدارة'));
+    await tester.tap(find.text('الإدارة'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });

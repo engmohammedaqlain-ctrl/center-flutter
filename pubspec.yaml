@@ -78,6 +78,18 @@ flutter:
     - assets/logo.png
     - shorebird.yaml
 
+  fonts:
+    - family: ThmanyahSans
+      fonts:
+        - asset: assets/fonts/ThmanyahSans-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/ThmanyahSans-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/ThmanyahSans-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/ThmanyahSans-Black.ttf
+          weight: 900
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../data/fee_plan.dart';
 import '../data/grade_plan_sync.dart';
@@ -221,7 +221,7 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
                   ),
                 ],
                 end: [
-                  const FieldLabel('قيمة القسط (₪)'),
+                  const FieldLabel('قيمة القسط (شيكل)'),
                   TextField(
                     controller: amountCtl,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
