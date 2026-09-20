@@ -101,16 +101,6 @@ android {
             )
         }
     }
-
-    // APK منفصل لكل معمارية بدل fat APK يحمل كل الـ .so — أصغر بكثير على الجهاز.
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("armeabi-v7a", "arm64-v8a")
-            isUniversalApk = false
-        }
-    }
 }
 
 flutter {
