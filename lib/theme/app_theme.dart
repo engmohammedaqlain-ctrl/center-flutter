@@ -10,7 +10,7 @@ abstract final class AppText {
   /// عنوان شاشة أو قسم.
   static TextStyle get title => TextStyle(
         fontFamily: family,
-        fontSize: 17,
+        fontSize: 15,
         fontWeight: FontWeight.w700,
         color: AppColors.heading,
         height: 1.3,
@@ -20,7 +20,7 @@ abstract final class AppText {
   /// عنوان بطاقة أو صف في قائمة.
   static TextStyle get cardTitle => TextStyle(
         fontFamily: family,
-        fontSize: 15,
+        fontSize: 13.5,
         fontWeight: FontWeight.w700,
         color: AppColors.heading,
         height: 1.35,
@@ -29,35 +29,35 @@ abstract final class AppText {
   /// نص أساسي.
   static TextStyle get body => TextStyle(
         fontFamily: family,
-        fontSize: 14,
+        fontSize: 12.5,
         fontWeight: FontWeight.w400,
         color: AppColors.text,
-        height: 1.5,
+        height: 1.45,
       );
 
   /// نص ثانوي وشروح.
   static TextStyle get muted => TextStyle(
         fontFamily: family,
-        fontSize: 13,
+        fontSize: 11.5,
         fontWeight: FontWeight.w400,
         color: AppColors.muted,
-        height: 1.45,
+        height: 1.4,
       );
 
   /// تسمية حقل أو شارة.
   static TextStyle get label => TextStyle(
         fontFamily: family,
-        fontSize: 11.5,
+        fontSize: 10.5,
         fontWeight: FontWeight.w600,
         color: AppColors.muted,
-        height: 1.35,
-        letterSpacing: 0.2,
+        height: 1.3,
+        letterSpacing: 0.15,
       );
 
   /// رقم بارز — أرقام جدولية حيث يدعمها الخط.
   static TextStyle get figure => TextStyle(
         fontFamily: family,
-        fontSize: 18,
+        fontSize: 16,
         fontWeight: FontWeight.w900,
         color: AppColors.heading,
         height: 1.2,
@@ -156,7 +156,7 @@ abstract final class AppTheme {
           fontFamily: AppText.family,
           color: Colors.white,
           fontWeight: FontWeight.w700,
-          fontSize: 16,
+          fontSize: 14.5,
         ),
       ),
       // رجوع بأسلوب أحدث (سهم iOS الرفيع) بدل سهم Material العريض — لكل AppBar تلقائياً
@@ -174,7 +174,7 @@ abstract final class AppTheme {
         fillColor: AppColors.surface,
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        hintStyle: TextStyle(fontFamily: AppText.family, color: AppColors.faint, fontSize: 13),
+        hintStyle: TextStyle(fontFamily: AppText.family, color: AppColors.faint, fontSize: 12),
         labelStyle: AppText.muted,
         border: border(),
         enabledBorder: border(),
@@ -184,7 +184,7 @@ abstract final class AppTheme {
         errorStyle: TextStyle(
           fontFamily: AppText.family,
           color: AppColors.danger,
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: FontWeight.w600,
           height: 1.3,
         ),
@@ -196,13 +196,13 @@ abstract final class AppTheme {
           minimumSize: const Size(48, 44),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Corner.field)),
-          textStyle: const TextStyle(fontFamily: AppText.family, fontWeight: FontWeight.w700, fontSize: 14),
+          textStyle: const TextStyle(fontFamily: AppText.family, fontWeight: FontWeight.w700, fontSize: 13),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           minimumSize: const Size(44, 44),
-          textStyle: const TextStyle(fontFamily: AppText.family, fontWeight: FontWeight.w700, fontSize: 13),
+          textStyle: const TextStyle(fontFamily: AppText.family, fontWeight: FontWeight.w700, fontSize: 12),
         ),
       ),
       dialogTheme: DialogThemeData(

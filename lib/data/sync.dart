@@ -701,7 +701,7 @@ const tableConflictTarget = <String, String>{
 
 const maxSyncRetries = 5;
 const pushChunk = 50;
-const pullPageSize = 500;
+const pullPageSize = 10;
 const stampToleranceMs = 1000;
 
 String get supabaseUrl => SupabaseConfig.url;

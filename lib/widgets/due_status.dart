@@ -31,7 +31,7 @@ class DueStatus extends StatelessWidget {
       DueStatusKind.credit => ('له', AppColors.heading),
       DueStatusKind.clear => (clearLabel, AppColors.success),
     };
-    final showAmount = kind != DueStatusKind.clear || clearLabel != 'لا مستحق';
+    final showAmount = kind != DueStatusKind.clear || clearLabel != 'مسدد';
 
     return Column(
       crossAxisAlignment: endAligned ? CrossAxisAlignment.end : CrossAxisAlignment.start,

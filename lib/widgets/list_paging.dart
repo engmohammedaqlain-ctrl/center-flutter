@@ -4,7 +4,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 
 /// حجم الصفحة الافتراضي للقوائم الطويلة — يمنع بناء آلاف الصفوف دفعة واحدة.
-const kListPageSize = 50;
+const kListPageSize = 10;
 
 /// شريحة ظاهرة من القائمة: أول [visible] عنصراً.
 List<T> listPage<T>(List<T> items, int visible) {

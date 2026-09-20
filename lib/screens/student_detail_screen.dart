@@ -765,7 +765,7 @@ class _FinanceStrip extends StatelessWidget {
       dueColor = AppColors.amberDark;
     } else {
       dueLabel = 'الحالة';
-      dueValue = showScheduled ? 'لا مستحقات' : 'مسدد';
+      dueValue = 'مسدد';
       dueColor = AppColors.success;
     }
 
@@ -773,7 +773,7 @@ class _FinanceStrip extends StatelessWidget {
       (label: 'مقبوض', value: money(totalPaid), color: AppColors.success),
       (label: dueLabel, value: dueValue, color: dueColor),
       if (showScheduled)
-        (label: 'مجدول', value: money(scheduledRemaining), color: AppColors.amberDark),
+        (label: 'مجدول', value: money(scheduledRemaining), color: AppColors.muted),
     ];
 
     final hasFooter =
@@ -2138,7 +2138,7 @@ class _InstallmentTile extends StatelessWidget {
                         money(inst.remaining),
                         style: TextStyle(
                           fontFamily: AppText.family,
-                          color: AppColors.danger,
+                          color: future ? AppColors.muted : AppColors.danger,
                           fontWeight: FontWeight.w800,
                           fontSize: 13.5,
                         ),

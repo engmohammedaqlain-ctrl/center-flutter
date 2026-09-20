@@ -652,12 +652,13 @@ class AppUpdater extends ChangeNotifier {
     return Duration(seconds: ((total - received) / speed).ceil());
   }
 
-  /// يُستدعى مرة عند الإقلاع: يقرأ المحفوظ ثم يفحص إن حان الفحص.
+  /// يُستدعى مرة عند الإقلاع: يقرأ المحفوظ ثم يفحص في الخلفية.
   Future<void> start() => _starting ??= () async {
         if (!supported) return;
         await _load();
+        // الفحص الشبكي لا يحجز شاشة الإقلاع
         unawaited(checkPatch());
-        await check();
+        unawaited(check());
       }();
 
   /// قراءة الحالة المحفوظة — مرة واحدة، ينتظرها الإقلاع والفحص كلاهما.

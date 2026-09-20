@@ -459,9 +459,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       SupabaseAuth.onSessionChanged = _saveSession;
       SupabaseAuth.onSessionInvalid = _onSessionExpired;
       applyBrandColors();
-      // الأرصدة من السجلات عند كل إقلاع: الرقم المحفوظ قد يكون كتبه إصدار أقدم
-      // بقاعدة حساب أخرى، فيبقى معروضاً حتى أول سحب أو حركة مالية
-      recalculateAllBalances();
+      // الأرصدة ثقيلة مع عشرات الآلاف من السجلات: تُحسب بعد أول إطار لا أثناء الإقلاع
       // مواءمة افتراضي قديم مع الويب قبل أول سحب للهوية
       if (_isLegacyMobileDefault(institutionColors)) {
         await db.setSetting(institutionColorsKey, null);
@@ -474,6 +472,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     await _resolveSetupGate();
     ready = true;
     notifyListeners();
+    // بعد ظهور الواجهة — لا يجمّد شاشة الإقلاع
+    scheduleMicrotask(() {
+      recalculateAllBalances();
+      notifyListeners();
+    });
   }
 
   // ── الجلسة والإعدادات (المقابل لـ session.ts + currentUser.ts + institution.ts) ──
@@ -2159,14 +2162,43 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final tid = tenantId;
     if (tid == null) return;
     final stored = _storedColorsMap;
-    // لا تُحقَن ألوان النظام الافتراضية (البرتقالي) في صف السحابة قبل سحب هوية
-    // المنشأة: جهاز يدخل مدرسة جديدة كان يكتب #E88C15 فوق ألوانها ويُعيد رفعها.
-    final hasPalette = stored.containsKey('sidebarBg') ||
+    final bucket = extraCloud.putIfAbsent('institution_settings', () => []);
+    final i = bucket.indexWhere((e) => '${e['id']}' == tid);
+    final existing = i >= 0 ? bucket[i] : null;
+    final existingColors = existing?['colors'];
+    final existingMap = existingColors is Map ? Map<String, dynamic>.from(existingColors) : <String, dynamic>{};
+
+    final hasLocalPalette = stored.containsKey('sidebarBg') ||
         stored.containsKey('activeItem') ||
         stored.containsKey('actionButton') ||
         stored.containsKey('primaryButton') ||
         stored.containsKey('appBg');
-    final colorsPayload = hasPalette ? {...stored, ...institutionColors.toMap()} : Map<String, dynamic>.from(stored);
+    final hasExistingPalette = existingMap.containsKey('sidebarBg') ||
+        existingMap.containsKey('activeItem') ||
+        existingMap.containsKey('actionButton') ||
+        existingMap.containsKey('primaryButton') ||
+        existingMap.containsKey('appBg');
+
+    // ابدأ بألوان الصف القائم (سحابة/قرص) ثم أضِف مفاتيح `__` المحلية.
+    // بلا لوحة محلّية حقيقية لا تُحقَن ألوان النظام الافتراضية فوق السحابة —
+    // ذلك كان يمحو ثيم المنشأة عند أول دخول للجوال.
+    final colorsPayload = <String, dynamic>{
+      ...existingMap,
+      for (final e in stored.entries)
+        if (e.key.startsWith('__')) e.key: e.value,
+    };
+    if (hasLocalPalette) {
+      final local = institutionColors;
+      final wouldOverwriteCloud =
+          hasExistingPalette && _isSystemDefaultPalette(local) && !_isSystemDefaultPalette(InstitutionColors.fromMap(existingMap));
+      if (!wouldOverwriteCloud) {
+        colorsPayload.addAll(local.toMap());
+        for (final e in stored.entries) {
+          if (!e.key.startsWith('__')) colorsPayload[e.key] = e.value;
+        }
+      }
+    }
+
     final row = {
       'id': tid,
       // النظام مدرسي وحده: يُكتب ثابتاً ولا يُقرأ، لأن أجهزة لم تُحدَّث ما زالت تقرؤه
@@ -2177,8 +2209,6 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       'settings': settings.toMap(),
       'updated_at': _nowIso(),
     };
-    final bucket = extraCloud.putIfAbsent('institution_settings', () => []);
-    final i = bucket.indexWhere((e) => '${e['id']}' == tid);
     if (i >= 0) {
       bucket[i] = row;
       _queue('institution_settings', tid, 'UPDATE', row);
@@ -2187,6 +2217,15 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       _queue('institution_settings', tid, 'INSERT', row);
     }
     markDirty('institution_settings');
+  }
+
+  /// هل اللوحة هي افتراضي النظام (لا ضبط منشأة)؟
+  static bool _isSystemDefaultPalette(InstitutionColors c) {
+    final d = InstitutionColors.defaults;
+    return c.sidebarBg.toUpperCase() == d.sidebarBg.toUpperCase() &&
+        c.activeItem.toUpperCase() == d.activeItem.toUpperCase() &&
+        c.primaryButton.toUpperCase() == d.primaryButton.toUpperCase() &&
+        c.actionButton.toUpperCase() == d.actionButton.toUpperCase();
   }
 
   /// قراءة هوية المنشأة القادمة من السحابة إلى الإعدادات المحلية.
@@ -2463,14 +2502,50 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
     // الاستماع أولاً: لا يتوقف على نجاح خطوات الشبكة التي تليه
     await startRealtime();
+    // اسحب هوية المنشأة قبل أي كتابة محلية — وإلا رُفعت الألوان الافتراضية فوق السحابة
+    await _pullInstitutionIdentity();
+    await hydrateInstitution();
     await deviceReceiptCode();
     await primeReceiptCounter();
     // مرفقٌ تعثّر رفعه على جهاز بلا اتصال يُعاد الآن، وإلا بقي على الجهاز وحده
     unawaited(retryPendingAttachments());
     unawaited(flushPendingNotices());
-    // الدخول يرفع ما تراكم دون اتصال ويسحب ما فات، بلا فحصٍ كامل يسبقهما
+    // الدخول يسحب أولاً ثم يرفع — بلا رفعٍ فوري يسبق السحب
     startAutoSync();
     notifyListeners();
+  }
+
+  /// سحب صفّ الهوية وحده قبل المزامنة الكاملة — خفيف وسريع.
+  Future<void> _pullInstitutionIdentity() async {
+    final tid = tenantId;
+    if (tid == null || !networkEnabled) return;
+    try {
+      final rows = await supabaseSelect(
+        'institution_settings',
+        filters: {'id': 'eq.$tid'},
+      );
+      if (rows == null || rows.isEmpty) return;
+      final cleaned = [
+        for (final r in rows)
+          Map<String, dynamic>.from(r)
+            ..remove('tenant_id')
+            ..['sync_status'] = 'synced',
+      ];
+      putRows('institution_settings', cleaned);
+      // أسقط رفعاً معلّقاً بألوان افتراضية كان سيكتب فوق السحابة
+      final pending = pendingSyncs.where((p) => p.tableName == 'institution_settings' && p.recordId == tid).toList();
+      for (final p in pending) {
+        final colors = p.payload?['colors'];
+        if (colors is! Map) continue;
+        final local = InstitutionColors.fromMap(Map<String, dynamic>.from(colors));
+        if (_isSystemDefaultPalette(local)) {
+          pendingSyncs.remove(p);
+          markDirty(_pendingTable);
+        }
+      }
+    } catch (_) {
+      // بلا شبكة أو رفض: نُكمل بالهوية المحلية إن وُجدت
+    }
   }
 
   /// هل جلسة الدخول السحابية تطابق الجلسة المحلية؟ — `authMatchesLocalSession`.
@@ -2580,8 +2655,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   void startAutoSync() {
     if (autoSync || !networkEnabled || !loggedIn || isMasterAdmin) return;
     autoSync = true;
-    scheduleAutoPush(Duration.zero);
+    // السحب أولاً ثم الرفع بعد مهلة قصيرة — بلا سباق يرفع هويةً فارغة فوق السحابة
     scheduleAutoPull(Duration.zero);
+    scheduleAutoPush(const Duration(seconds: 2));
   }
 
   /// لا اتصال بالسحابة: المزامنة التلقائية متوقفة حتى يعود، والواجهة تعرض ذلك
@@ -3234,6 +3310,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   String _nowIso() => DateTime.now().toUtc().toIso8601String();
 
+  bool _batchNotify = false;
+  bool _queuedNotify = false;
+
   void _queue(String table, String recordId, String action, Map<String, dynamic>? payload) {
     // تعديل ثم تراجع عنه: السجل صار كما في السحابة، فتُسقط العملية المعلّقة
     // بدل رفعٍ لا يغيّر شيئاً وعدّادٍ يشير إلى تغيير غير موجود.
@@ -3242,61 +3321,83 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       pendingSyncs.removeWhere((p) => p.tableName == table && p.recordId == recordId);
       markRecord(table, recordId);
       if (had) markDirty(_pendingTable);
-      notifyListeners();
+      _notifyOrDefer();
       return;
     }
 
     queuePendingSync(pendingSyncs, tableName: table, recordId: recordId, action: action, payload: payload, tenantId: tenantId ?? '');
     markRecord(table, recordId, deleted: action == 'DELETE');
     markDirty(_pendingTable);
+    _notifyOrDefer();
+  }
+
+  void _notifyOrDefer() {
+    if (_batchNotify) {
+      _queuedNotify = true;
+      return;
+    }
     notifyListeners();
+  }
+
+  /// يجمع عدة كتابات في إخطار واجهة واحد — لمس الحضور كان يعيد بناء الشاشة مرتين.
+  void _withBatchedNotify(void Function() body) {
+    _batchNotify = true;
+    _queuedNotify = false;
+    try {
+      body();
+    } finally {
+      _batchNotify = false;
+      if (_queuedNotify) notifyListeners();
+    }
   }
 
   /// رصد حالة محددة لطالب في يوم. `null` يمسح الرصد.
   /// [ownerId] هو معرّف الصف (نظام مدرسة) أو المجموعة (نظام مركز).
   void setAttendance(String studentId, String date, String? status, {String? ownerId}) {
     requireSection('attendance');
-    final existing = markFor(ownerId, studentId, date);
+    _withBatchedNotify(() {
+      final existing = markFor(ownerId, studentId, date);
 
-    if (status == null) {
-      if (existing == null) return;
-      attendance.remove(existing);
-      _queue('attendance', existing.id, 'DELETE', null);
-      return;
-    }
-
-    // الجلسة تُنشأ عند الحاجة فقط، بعد التأكد من وجود ما يُرصد
-    final sessionId = ownerId == null || ownerId.isEmpty ? '' : sessionFor(ownerId, date).id;
-
-    if (existing != null) {
-      if (existing.status == status && (sessionId.isEmpty || existing.sessionId == sessionId)) {
-        _completeSession(ownerId, date);
-        return; // لا تغيير في السجل؛ الحصة تُكمَّل إن لم تكن
+      if (status == null) {
+        if (existing == null) return;
+        attendance.remove(existing);
+        _queue('attendance', existing.id, 'DELETE', null);
+        return;
       }
-      existing.status = status;
-      existing.markedByUserId = currentUserId;
-      if (sessionId.isNotEmpty) existing.sessionId = sessionId;
-      existing.updatedAt = _nowIso();
-      existing.syncStatus = 'pending';
-      _queue('attendance', existing.id, 'UPDATE', existing.toCloud());
-      _completeSession(ownerId, date);
-      return;
-    }
 
-    final mark = AttendanceMark(
-      id: attendanceIdFor(sessionId, studentId),
-      studentId: studentId,
-      date: date,
-      status: status,
-      sessionId: sessionId,
-      markedByUserId: currentUserId,
-      syncStatus: 'pending',
-      createdAt: _nowIso(),
-      updatedAt: _nowIso(),
-    );
-    attendance.add(mark);
-    _queue('attendance', mark.id, 'INSERT', mark.toCloud());
-    _completeSession(ownerId, date);
+      // الجلسة تُنشأ عند الحاجة فقط، بعد التأكد من وجود ما يُرصد
+      final sessionId = ownerId == null || ownerId.isEmpty ? '' : sessionFor(ownerId, date).id;
+
+      if (existing != null) {
+        if (existing.status == status && (sessionId.isEmpty || existing.sessionId == sessionId)) {
+          _completeSession(ownerId, date);
+          return; // لا تغيير في السجل؛ الحصة تُكمَّل إن لم تكن
+        }
+        existing.status = status;
+        existing.markedByUserId = currentUserId;
+        if (sessionId.isNotEmpty) existing.sessionId = sessionId;
+        existing.updatedAt = _nowIso();
+        existing.syncStatus = 'pending';
+        _queue('attendance', existing.id, 'UPDATE', existing.toCloud());
+        _completeSession(ownerId, date);
+        return;
+      }
+
+      final mark = AttendanceMark(
+        id: attendanceIdFor(sessionId, studentId),
+        studentId: studentId,
+        date: date,
+        status: status,
+        sessionId: sessionId,
+        markedByUserId: currentUserId,
+        syncStatus: 'pending',
+        createdAt: _nowIso(),
+        updatedAt: _nowIso(),
+      );
+      attendance.add(mark);
+      _queue('attendance', mark.id, 'INSERT', mark.toCloud());
+      _completeSession(ownerId, date);
+    });
   }
 
   /// دورة النقر: غير مرصود ← غائب ← حاضر ← غير مرصود.

@@ -1014,7 +1014,7 @@ class _FinanceChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final clear = shownBalance.abs() <= cent;
     if (clear) {
-      return StatusChip.success(hasPlan ? 'لا مستحق' : 'خالص');
+      return StatusChip.success(hasPlan ? 'مسدد' : 'خالص');
     }
 
     final due = shownBalance < 0;

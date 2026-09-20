@@ -59,7 +59,6 @@ class _ClassesScreenState extends State<ClassesScreen> {
         if (!tabs.contains(tier)) tier = 'all';
 
         final rooms = store.roomsInViewedYear.where((r) => tier == 'all' || tiers[r.id] == tier).toList();
-        final rosters = {for (final r in rooms) r.id: store.studentsOf(r)};
 
         // أقسام لكل مرحلة بترتيب الرسوم، والشعب داخلها أبجدياً
         final gradeOrder = store.gradeOptions;
@@ -112,7 +111,7 @@ class _ClassesScreenState extends State<ClassesScreen> {
                       child: _RoomCard(
                         room: room,
                         teacher: store.teacherById(room.teacherId),
-                        students: rosters[room.id]!,
+                        students: store.studentsOf(room),
                         canEdit: canEdit,
                         onOpen: () => Navigator.of(context).push(
                           MaterialPageRoute(builder: (_) => _ClassDetailScreen(roomId: room.id)),
@@ -178,11 +177,6 @@ class _ClassesScreenState extends State<ClassesScreen> {
 }
 
 // ═══ إجراءات الصف — من بطاقته ومن صفحته ═════════════════════════════════════
-
-int _roomSeats(Classroom room) {
-  final cap = room.capacity;
-  return cap > 0 ? cap : 30;
-}
 
 Future<void> _openRoomForm(BuildContext context, Classroom? room) {
   return Navigator.of(context).push(MaterialPageRoute(builder: (_) => RoomFormScreen(room: room)));
@@ -853,8 +847,6 @@ class _RoomCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    final seats = _roomSeats(room);
-    final full = students.length >= seats;
     final teacherCount = store.sectionTeacherIds(room).length;
     final grade = [
       room.gradeLevel.trim().isEmpty ? 'مرحلة غير محددة' : room.gradeLevel.trim(),
@@ -944,8 +936,8 @@ class _RoomCard extends StatelessWidget {
                                 )
                               : const Text('بدون مربي', style: TextStyle(color: AppColors.faint, fontSize: 12)),
                     ),
-                    const SizedBox(width: 8),
                     if (students.isEmpty && canEdit) ...[
+                      const SizedBox(width: 8),
                       TileButton(
                         label: 'إضافة طلاب',
                         icon: const Icon(Icons.group_add_outlined, size: 13),
@@ -954,28 +946,8 @@ class _RoomCard extends StatelessWidget {
                         border: AppColors.lineStrong,
                         onTap: () => _addStudents(context, room),
                       ),
-                      const SizedBox(width: 8),
                     ],
-                    Text(
-                      '${students.length} / $seats',
-                      style: TextStyle(
-                        fontFamily: AppText.family,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12.5,
-                        color: AppColors.heading,
-                      ),
-                    ),
                   ],
-                ),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(2),
-                  child: LinearProgressIndicator(
-                    value: (students.length / seats).clamp(0.0, 1.0),
-                    minHeight: 4,
-                    backgroundColor: AppColors.hover,
-                    color: full ? AppColors.danger : AppColors.success,
-                  ),
                 ),
               ],
             ),
@@ -1630,7 +1602,7 @@ class _RosterRow extends StatelessWidget {
                         : DueStatusKind.credit,
                 amount: shown.abs(),
                 scheduled: scheduled,
-                clearLabel: hasPlan ? 'لا مستحق' : 'خالص',
+                clearLabel: hasPlan ? 'مسدد' : 'خالص',
                 compact: true,
               )
             else
