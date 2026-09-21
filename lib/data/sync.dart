@@ -1148,6 +1148,9 @@ abstract class SyncLocalStore {
   /// إعادة حساب أرصدة الطلاب من سجلاتهم بعد السحب. تعيد عدد ما صُحِّح.
   int recalculateAllBalances();
 
+  /// كالسابق مع إفساح أطر الواجهة — للسحب الثقيل.
+  Future<int> recalculateAllBalancesYielding() async => recalculateAllBalances();
+
   /// منح سند رقماً جديداً متاحاً بعد تعارض رقمه مع سند آخر. يعيد الرقم الجديد،
   /// أو `null` إن لم يعد السند موجوداً.
   String? reissueReceiptNumber(String paymentId);
@@ -2031,10 +2034,10 @@ class SyncService {
     totalRemoved += await _applyRemoteDeletes(tenantId);
     await Future<void>.delayed(Duration.zero);
 
-    // أرصدة الطلاب تُعاد من السجلات بعد كل سحب: أجهزة مختلفة قد تكون كتبت
-    // أرقاماً مختلفة للرصيد نفسه، والحساب من السجلات يوحّدها بلا كتابة جديدة.
-    if (totalPulled > 0 || totalRemoved > 0) local.recalculateAllBalances();
-
+    // أرصدة الطلاب تُعاد من السجلات بعد كل سحب — بإفساح أطر كي لا تتجمّد الواجهة
+    if (totalPulled > 0 || totalRemoved > 0) {
+      await local.recalculateAllBalancesYielding();
+    }
     remotePendingIds.clear();
     lastRemoteCheck = DateTime.now();
     if (failedTables.isEmpty) {

@@ -325,8 +325,6 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx))),
-                    const SizedBox(width: 8),
                     Expanded(
                       child: PrimaryButton(
                         label: 'تمديد',
@@ -355,6 +353,8 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                               },
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx))),
                   ],
                 ),
               ],
@@ -399,8 +399,6 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx, false))),
-                  const SizedBox(width: 8),
                   Expanded(
                     child: PrimaryButton(
                       label: 'حذف نهائياً',
@@ -408,6 +406,8 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                       onPressed: tenantDeleteConfirmed(typed.text, t) ? () => Navigator.pop(ctx, true) : null,
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx, false))),
                 ],
               ),
             ],
@@ -638,8 +638,6 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                 const SizedBox(height: 14),
                 Row(
                   children: [
-                    Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx))),
-                    const SizedBox(width: 8),
                     Expanded(
                       child: PrimaryButton(
                         label: saving ? 'جارِ الحفظ...' : (existing == null ? 'إضافة' : 'حفظ'),
@@ -745,6 +743,8 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                               },
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx))),
                   ],
                 ),
               ],

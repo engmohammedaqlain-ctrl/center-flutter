@@ -63,6 +63,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   String? ownerId;
   int visibleCount = kListPageSize;
 
+  /// مسودّة الرصد قبل الحفظ — المفتاح معرّف الطالب، والقيمة الحالة أو null للمسح.
+  final Map<String, String?> _draft = {};
+  String _draftDate = '';
+  String _draftOwner = '';
+  bool _saving = false;
+
   /// فُتحت الشاشة من صفحة صف: الصف معروف في العنوان فلا تُعرض قوائم الاختيار.
   bool get _fixedClass => widget.initialOwnerId?.trim().isNotEmpty ?? false;
 
@@ -81,6 +87,58 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   String selectedDate = isoDate(DateTime.now());
 
   void _resetPage() => visibleCount = kListPageSize;
+
+  void _ensureDraftScope(String owner, String date) {
+    if (_draftOwner == owner && _draftDate == date) return;
+    _draft.clear();
+    _draftOwner = owner;
+    _draftDate = date;
+  }
+
+  String? _statusOf(AppStore store, String owner, String studentId, String date) {
+    if (_draftOwner == owner && _draftDate == date && _draft.containsKey(studentId)) {
+      return _draft[studentId];
+    }
+    return store.attendanceInSession(owner, studentId, date);
+  }
+
+  void _setDraft(String owner, String date, String studentId, String? status) {
+    _ensureDraftScope(owner, date);
+    setState(() => _draft[studentId] = status);
+  }
+
+  void _markAllDraftPresent(String owner, String date, List<Student> list) {
+    _ensureDraftScope(owner, date);
+    setState(() {
+      for (final s in list) {
+        _draft[s.id] = 'present';
+      }
+    });
+  }
+
+  Future<void> _saveDrafts(AppStore store) async {
+    if (_draft.isEmpty || _draftOwner.isEmpty || _draftDate.isEmpty || _saving) return;
+    final entries = Map<String, String?>.from(_draft);
+    final owner = _draftOwner;
+    final date = _draftDate;
+    setState(() => _saving = true);
+    try {
+      await runBusyOp(context, () async {
+        await Future<void>.delayed(Duration.zero);
+        for (final e in entries.entries) {
+          store.setAttendance(e.key, date, e.value, ownerId: owner);
+        }
+      }, message: 'جارٍ حفظ الرصد...');
+      if (!mounted) return;
+      setState(() {
+        _draft.clear();
+        _saving = false;
+      });
+      showAppSnack(context, 'تم حفظ الرصد');
+    } catch (_) {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -120,7 +178,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
         var present = 0, absent = 0, excused = 0, unmarked = 0;
         for (final s in list) {
-          switch (store.attendanceInSession(currentOwner, s.id, day.dateStr)) {
+          switch (_statusOf(store, currentOwner, s.id, day.dateStr)) {
             case 'present':
               present++;
             case 'absent':
@@ -140,30 +198,47 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             for (final d in week)
               d.dateStr: list.isEmpty
                   ? 0
-                  : list.where((s) => store.attendanceInSession(currentOwner, s.id, d.dateStr) != null).length /
+                  : list.where((s) => _statusOf(store, currentOwner, s.id, d.dateStr) != null).length /
                       list.length,
           };
         } else if (list.isNotEmpty) {
           _dayProgress = {
             ..._dayProgress,
-            day.dateStr: list.where((s) => store.attendanceInSession(currentOwner, s.id, day.dateStr) != null).length /
+            day.dateStr: list.where((s) => _statusOf(store, currentOwner, s.id, day.dateStr) != null).length /
                 list.length,
           };
         }
         final dayProgress = _dayProgress;
+        final dirty = _draft.isNotEmpty && _draftOwner == currentOwner && _draftDate == day.dateStr;
 
         return ThumbActionLayer(
           action: canEdit
+              ? (dirty
+                  ? ThumbAction(
+                      label: 'حفظ الرصد',
+                      icon: Icons.save_rounded,
+                      color: AppColors.amber,
+                      onPressed: list.isEmpty || currentOwner.isEmpty || _saving
+                          ? null
+                          : () => _saveDrafts(store),
+                    )
+                  : ThumbAction(
+                      label: 'الكل حاضر',
+                      icon: Icons.done_all,
+                      color: AppColors.success,
+                      onPressed: list.isEmpty || currentOwner.isEmpty
+                          ? null
+                          : () => _markAllDraftPresent(currentOwner, day.dateStr, list),
+                    ))
+              : null,
+          secondary: canEdit && dirty
               ? ThumbAction(
                   label: 'الكل حاضر',
                   icon: Icons.done_all,
                   color: AppColors.success,
                   onPressed: list.isEmpty || currentOwner.isEmpty
                       ? null
-                      : () {
-                          store.markAllPresent(day.dateStr, list, ownerId: currentOwner);
-                          showAppSnack(context, 'تم الحفظ');
-                        },
+                      : () => _markAllDraftPresent(currentOwner, day.dateStr, list),
                 )
               : null,
           child: Column(
@@ -226,21 +301,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                 itemCount: visible.length,
                                 itemBuilder: (context, i) {
                                   final student = visible[i];
+                                  final status = _statusOf(store, currentOwner, student.id, day.dateStr);
                                   return AttendanceStudentRow(
                                     // مفتاح يشمل اليوم والحالة: الصف يُعاد بناؤه عند
                                     // تغيّر رصده وحده، لا مع كل إخطار من المخزن
-                                    key: ValueKey('${student.id}|${day.dateStr}'),
+                                    key: ValueKey('${student.id}|${day.dateStr}|$status'),
                                     index: i + 1,
                                     student: student,
-                                    status: store.attendanceInSession(currentOwner, student.id, day.dateStr),
+                                    status: status,
                                     canEdit: canEdit,
                                     last: i == visible.length - 1,
-                                    onSet: (status) => store.setAttendance(
-                                      student.id,
-                                      day.dateStr,
-                                      status,
-                                      ownerId: currentOwner,
-                                    ),
+                                    onSet: (s) => _setDraft(currentOwner, day.dateStr, student.id, s),
                                   );
                                 },
                               ),
@@ -379,7 +450,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                   day: week[i],
                                   selected: week[i].dateStr == day.dateStr,
                                   progress: dayProgress[week[i].dateStr] ?? 0,
-                                  onTap: () => setState(() => selectedDate = week[i].dateStr),
+                                  onTap: () => setState(() {
+                                    if (selectedDate != week[i].dateStr) {
+                                      _draft.clear();
+                                      selectedDate = week[i].dateStr;
+                                    }
+                                  }),
                                 ),
                               ),
                             ),
@@ -493,6 +569,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     setState(() {
       grade = picked.$1;
       ownerId = picked.$2;
+      _draft.clear();
       _resetPage();
     });
   }

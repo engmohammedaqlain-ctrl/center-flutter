@@ -806,9 +806,10 @@ void main() {
 
       patches.fail = false;
       final before = patches.downloads;
-      await updater.checkPatch();
-      expect(updater.patchPhase, PatchPhase.ready, reason: 'العودة إلى التطبيق تعيد المحاولة بلا انتظار');
-      expect(patches.downloads, before + 1, reason: 'محاولة واحدة عند العودة');
+      // بعد فشل صامت لا يُعاد فوراً عند كل لمسة — force كفتح يدوي / مهلة منتهية
+      await updater.checkPatch(force: true);
+      expect(updater.patchPhase, PatchPhase.ready, reason: 'إعادة المحاولة بعد الفشل');
+      expect(patches.downloads, before + 1, reason: 'محاولة واحدة عند الإعادة');
     });
 
     test('لا تحديث صامت: لا شيء يُعرض', () async {

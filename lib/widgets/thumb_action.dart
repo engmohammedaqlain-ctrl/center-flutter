@@ -31,10 +31,13 @@ class ThumbAction {
 /// فتحتاج اليدين أو إعادة إمساك الهاتف. الزر يصغر إلى أيقونة أثناء التمرير
 /// للأسفل كي لا يحجب المحتوى، ويعود بنصه عند الصعود أو في أعلى القائمة.
 class ThumbActionLayer extends StatefulWidget {
-  const ThumbActionLayer({super.key, required this.child, this.action});
+  const ThumbActionLayer({super.key, required this.child, this.action, this.secondary});
 
   final Widget child;
   final ThumbAction? action;
+
+  /// زر ثانٍ فوق الرئيسي — مثل «الكل حاضر» بجانب «حفظ».
+  final ThumbAction? secondary;
 
   @override
   State<ThumbActionLayer> createState() => _ThumbActionLayerState();
@@ -59,17 +62,28 @@ class _ThumbActionLayerState extends State<ThumbActionLayer> {
   @override
   Widget build(BuildContext context) {
     final action = widget.action;
+    final secondary = widget.secondary;
     return Stack(
       children: [
         NotificationListener<ScrollNotification>(
           onNotification: _onScroll,
           child: widget.child,
         ),
-        if (action != null)
+        if (action != null || secondary != null)
           PositionedDirectional(
             start: 14,
             bottom: 14,
-            child: _ThumbButton(action: action, extended: _extended),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (secondary != null) ...[
+                  _ThumbButton(action: secondary, extended: _extended),
+                  const SizedBox(height: 8),
+                ],
+                if (action != null) _ThumbButton(action: action, extended: _extended),
+              ],
+            ),
           ),
       ],
     );

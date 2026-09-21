@@ -1628,14 +1628,14 @@ Future<void> _showCustomPlanSheet(BuildContext context, AppStore store, Student 
               Row(
                 children: [
                   Expanded(
-                    child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx, false)),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
                     child: PrimaryButton(
                       label: 'اعتماد الخطة المخصصة',
                       onPressed: () => Navigator.pop(ctx, true),
                     ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx, false)),
                   ),
                 ],
               ),

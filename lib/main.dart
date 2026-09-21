@@ -180,14 +180,11 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
     _maybePrompt();
   }
 
-  /// إصدار اختياري جديد يُعرض وحده مرة واحدة، بعد أن يُقلع المخزن فلا يغطي
-  /// شاشة الإقلاع. من أجّله يجده في القائمة السريعة.
+  /// إصدار اختياري جديد يُعرض وحده مرة واحدة عند الدخول، بعد استقرار الشاشة.
   void _maybePrompt() {
     if (_prompting || !mounted || !AppStore.instance.ready || !updater.shouldPrompt) return;
     _prompting = true;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // الورقة تُرفع بعد أن تستقر الشاشة الأولى: صعودها فوق انتقالٍ ما زال
-      // جارياً يبدو قفزة لا حركة
       await Future<void>.delayed(_settle);
       if (mounted && updater.shouldPrompt) await showUpdateSheet(context, checkNow: false);
       _prompting = false;
@@ -195,15 +192,14 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
   }
 
   /// ما يكفي لانتهاء انتقال شاشة الإقلاع قبل أن تُرفع ورقة التحديث فوقها.
-  static const _settle = Duration(milliseconds: 420);
+  static const _settle = Duration(milliseconds: 600);
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     updater.inForeground = state == AppLifecycleState.resumed;
     if (state != AppLifecycleState.resumed) return;
-    // جهازٌ يبقى التطبيق مفتوحاً عليه أياماً لا يُعاد إقلاعه ليفحص
-    unawaited(updater.check());
-    unawaited(updater.checkPatch());
+    // بلا فحص تحديثات عند كل عودة — كان يعلّق الفتح ويبحث بلا طائل.
+    // الفحص التلقائي مرة كل 6 ساعات عبر quietCheckAfterLaunch / القائمة اليدوية.
     final store = AppStore.instance;
     if (!store.loggedIn || store.isMasterAdmin || !store.networkEnabled) return;
     if (store.autoSync) {

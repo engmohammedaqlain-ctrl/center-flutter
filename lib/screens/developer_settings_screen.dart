@@ -715,8 +715,8 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
           decoration: const InputDecoration(hintText: '#0B2545'),
         ),
         actions: [
-          GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx)),
           PrimaryButton(label: 'تطبيق', onPressed: () => Navigator.pop(ctx, ctrl.text.trim())),
+          GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx)),
         ],
       ),
     );

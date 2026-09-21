@@ -326,97 +326,65 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
         )
       else
         for (final sec in sections)
-          Padding(padding: const EdgeInsets.only(bottom: 12), child: _studentSection(sec)),
-    ];
-  }
-
-  Widget _studentSection(CourseSection sec) {
-    final open = !closed.contains(sec.id);
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          InkWell(
-            onTap: () => setState(() => open ? closed.add(sec.id) : closed.remove(sec.id)),
-            borderRadius: BorderRadius.circular(Corner.card),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.bg,
-                borderRadius: open
-                    ? const BorderRadius.vertical(top: Radius.circular(Corner.card))
-                    : BorderRadius.circular(Corner.card),
-                border: open ? Border(bottom: BorderSide(color: AppColors.line)) : null,
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.layers_outlined, size: 16, color: AppColors.heading),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(
-                          sec.title,
-                          style: TextStyle(color: AppColors.heading, fontSize: 12, fontWeight: FontWeight.w900),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(Corner.card),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(Corner.card),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => _StudentSectionPage(
+                      section: sec,
+                      service: _service,
+                    ),
+                  ),
+                ),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(Corner.card),
+                    border: Border.all(color: AppColors.line),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.layers_outlined, size: 18, color: AppColors.heading),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              sec.title,
+                              style: TextStyle(
+                                fontFamily: AppText.family,
+                                color: AppColors.heading,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${sec.items.length} عنصر',
+                              style: TextStyle(
+                                fontFamily: AppText.family,
+                                color: AppColors.muted,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
                         ),
-
-                      ],
-                    ),
+                      ),
+                      const Icon(Icons.chevron_left, color: AppColors.faint),
+                    ],
                   ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '${sec.items.length} عنصر',
-                    style: TextStyle(
-                      color: AppColors.muted,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      fontFamily: 'monospace',
-                    ),
-                  ),
-                  Icon(open ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 18, color: AppColors.muted),
-                ],
+                ),
               ),
             ),
           ),
-          if (open)
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: sec.items.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 10),
-                      child: Text(
-                        'لا توجد مواد أو واجبات مضافة في هذه الوحدة',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: AppColors.faint, fontSize: 11),
-                      ),
-                    )
-                  : Column(
-                      children: [
-                        for (final it in sec.items)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: _ContentTile(
-                              item: it,
-                              onOpen: it.contentUrl.isEmpty
-                                  ? null
-                                  : () => openPortalMaterial(
-                                        context,
-                                        it.contentUrl,
-                                        service: _service,
-                                        fileName: it.fileName,
-                                      ),
-                            ),
-                          ),
-                      ],
-                    ),
-            ),
-        ],
-      ),
-    );
+    ];
   }
 
   // ── المواد ────────────────────────────────────────────────────────────────
@@ -1098,64 +1066,133 @@ class _SubjectGradesCard extends StatelessWidget {
   }
 }
 
-class _ContentTile extends StatelessWidget {
-  const _ContentTile({required this.item, this.onOpen});
+class _StudentSectionPage extends StatelessWidget {
+  const _StudentSectionPage({required this.section, required this.service});
 
-  final CourseItem item;
-  final VoidCallback? onOpen;
+  final CourseSection section;
+  final PortalService service;
 
   @override
   Widget build(BuildContext context) {
-    // لمس المادة كلها يفتحها — لا زرّ نصي في طرف كل سطر
-    return InkWell(
-      onTap: onOpen,
-      borderRadius: BorderRadius.circular(Corner.box),
-      child: Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: AppColors.bg,
-        borderRadius: BorderRadius.circular(Corner.box),
-        border: Border.all(color: AppColors.line),
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      appBar: AppBar(
+        titleSpacing: 0,
+        title: Text(
+          section.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
+        ),
       ),
-      child: Row(
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 28),
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text(
-                      item.title,
-                      style: TextStyle(color: AppColors.heading, fontSize: 12, fontWeight: FontWeight.w900),
-                    ),
-                    StatusChip.muted(item.typeLabel),
-                  ],
-                ),                if (item.description.trim().isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    item.description.trim(),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: AppColors.muted, fontSize: 10.5),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          if (onOpen != null) ...[
-            const SizedBox(width: 8),
-            Icon(
-              item.type == 'file' ? Icons.download_rounded : Icons.open_in_new_rounded,
-              size: 18,
-              color: AppColors.amberDark,
-            ),
-          ],
+          if (section.items.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 40),
+              child: Text(
+                'لا توجد مواد أو واجبات مضافة في هذه الوحدة',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: AppText.family, color: AppColors.faint, fontSize: 12),
+              ),
+            )
+          else
+            for (final it in section.items)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _ContentTile(
+                  item: it,
+                  service: service,
+                  onOpen: it.contentUrl.isEmpty
+                      ? null
+                      : () => openPortalMaterial(
+                            context,
+                            it.contentUrl,
+                            service: service,
+                            fileName: it.fileName,
+                          ),
+                ),
+              ),
         ],
       ),
+    );
+  }
+}
+
+class _ContentTile extends StatelessWidget {
+  const _ContentTile({required this.item, this.onOpen, this.service = const PortalService()});
+
+  final CourseItem item;
+  final VoidCallback? onOpen;
+  final PortalService service;
+
+  @override
+  Widget build(BuildContext context) {
+    final showImage = item.contentUrl.isNotEmpty &&
+        item.type != 'link' &&
+        portalLooksLikeImage(item.contentUrl, fileName: item.fileName);
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(Corner.card),
+      child: InkWell(
+        onTap: onOpen,
+        borderRadius: BorderRadius.circular(Corner.card),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(Corner.card),
+            border: Border.all(color: AppColors.line),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          item.title,
+                          style: TextStyle(
+                            fontFamily: AppText.family,
+                            color: AppColors.heading,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        StatusChip.muted(item.typeLabel),
+                      ],
+                    ),
+                  ),
+                  if (onOpen != null)
+                    Icon(
+                      item.type == 'file' ? Icons.download_rounded : Icons.open_in_new_rounded,
+                      size: 18,
+                      color: AppColors.amberDark,
+                    ),
+                ],
+              ),
+              if (item.description.trim().isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(
+                  item.description.trim(),
+                  style: TextStyle(
+                    fontFamily: AppText.family,
+                    color: AppColors.text,
+                    fontSize: 13,
+                    height: 1.65,
+                  ),
+                ),
+              ],
+              if (showImage)
+                PortalInlineImage(url: item.contentUrl, fileName: item.fileName, service: service),
+            ],
+          ),
+        ),
       ),
     );
   }

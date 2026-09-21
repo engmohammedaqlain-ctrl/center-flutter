@@ -134,9 +134,9 @@ void main() {
 
       await s.completeInitialSetup(s.users.first);
 
-      expect(s.autoPushScheduled, isTrue, reason: 'يُرفع فور إغلاق البوابة');
-      expect(s.lastAutoPushDelay, Duration.zero);
-      expect(s.lastAutoPullDelay, Duration.zero, reason: 'ويُسحب ما فات');
+      expect(s.autoPushScheduled, isTrue, reason: 'يُرفع بعد استقرار الواجهة');
+      expect(s.lastAutoPushDelay, const Duration(milliseconds: 800));
+      expect(s.lastAutoPullDelay, const Duration(milliseconds: 1200), reason: 'ويُسحب ما فات بلا تجميد');
       await s.flush();
     });
   });

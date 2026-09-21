@@ -204,9 +204,7 @@ class _PromotionSheetState extends State<_PromotionSheet> {
             const SizedBox(height: 14),
             Row(
               children: [
-                Expanded(child: GhostButton(label: 'إغلاق', onPressed: () => Navigator.pop(context))),
                 if (result == null && list.isNotEmpty) ...[
-                  const SizedBox(width: 8),
                   Expanded(
                     child: PrimaryButton(
                       label: running ? 'جارِ التنفيذ...' : 'تنفيذ الترقية',
@@ -215,7 +213,9 @@ class _PromotionSheetState extends State<_PromotionSheet> {
                       onPressed: running ? null : _run,
                     ),
                   ),
+                  const SizedBox(width: 8),
                 ],
+                Expanded(child: GhostButton(label: 'إغلاق', onPressed: () => Navigator.pop(context))),
               ],
             ),
           ],

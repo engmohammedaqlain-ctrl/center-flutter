@@ -263,7 +263,7 @@ void main() {
       expect(find.byType(AttendanceDaySummary), findsOneWidget);
       expect(find.byType(AttendanceStudentRow), findsNWidgets(2));
       expect(find.text('علي أبو حسنين'), findsOneWidget);
-      expect(find.text('حفظ كشف الحضور'), findsNothing, reason: 'كشف الإدارة يثبّت الرصد عند اللمس');
+      expect(find.text('حفظ الرصد'), findsNothing, reason: 'زر الحفظ يظهر بعد التعديل');
       expect(find.byTooltip('مزامنة'), findsOneWidget);
 
       // الدرجات: زر يفتح صفحة الرصد + اختيار النطاق للسجل
@@ -298,14 +298,18 @@ void main() {
 
       expect(fake.lastIncludeHidden, isTrue, reason: 'المعلم يرى المخفي ليُظهره');
       expect(find.text('الوحدة الأولى - النحو والصرف'), findsOneWidget);
+      expect(find.text('الوحدة الثانية - البلاغة'), findsOneWidget);
+      expect(find.text('مخفي'), findsOneWidget);
+
+      // كل وحدة تفتح صفحتها المنفصلة
+      await tester.tap(find.text('الوحدة الأولى - النحو والصرف'));
+      await tester.pumpAndSettle();
       expect(find.text('ورقة عمل / ملخص'), findsOneWidget);
       expect(find.text('واجب منزلي'), findsOneWidget);
       expect(find.text('فتح'), findsOneWidget, reason: 'زر فتح للمادة ذات الرابط وحدها');
-      // الوحدة الثانية تحت الطيّة ولا تُبنى قبل التمرير إليها
       expect(find.text('مادة'), findsWidgets, reason: 'زر إضافة مادة في رأس الوحدة');
-
-      await tester.scrollUntilVisible(find.text('مخفي'), 200, scrollable: find.byType(Scrollable).last);
-      expect(find.text('الوحدة الثانية - البلاغة'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
     });
   }
 
@@ -313,12 +317,14 @@ void main() {
     final fake = _FakePortal(teacher: _teacherData());
     await _pump(tester, TeacherPortalScreen(user: _teacherUser, onExit: () {}, service: fake));
 
-    // الأول في ملخّص اليوم، والثاني مفتاح أول طالب
-    await tester.tap(find.text('غائب').at(1));
+    await tester.tap(find.descendant(
+      of: find.byType(AttendanceStudentRow),
+      matching: find.text('غائب'),
+    ).first);
     await tester.pump();
+    expect(find.text('حفظ الرصد'), findsOneWidget);
 
-    // بلا زر: الرفع يتم بعد سكون اللمس
-    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.text('حفظ الرصد'));
     await tester.pumpAndSettle();
     expect(fake.savedAttendance, {'s1': 'absent'}, reason: 'من لم يُلمس يبقى غير مرصود كما عند الإدارة');
   });
@@ -394,7 +400,8 @@ void main() {
       of: find.byType(AttendanceStudentRow),
       matching: find.text('حاضر'),
     ));
-    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    await tester.tap(find.text('حفظ الرصد'));
     await tester.pumpAndSettle();
     expect(fake.savedAttendance, {'s2': 'present'});
     expect(fake.savedRoomId, 'r2', reason: 'يُكتب في كشف الشعبة المختارة لا شعبة أخرى');
@@ -499,7 +506,7 @@ void main() {
       expect(find.textContaining('المستلم:'), findsOneWidget);
     });
 
-    testWidgets('مودل الطالب: المنشور وحده، قابل للطي، بلا شارة «جديد» — عرض ${width.toInt()}', (tester) async {
+    testWidgets('مودل الطالب: المنشور وحده، صفحة منفصلة، بلا شارة «جديد» — عرض ${width.toInt()}', (tester) async {
       final fake = _FakePortal(student: _studentData(), sections: _sections());
       await _pump(tester, StudentPortalScreen(user: _studentUser, onExit: () {}, service: fake), width: width);
 
@@ -508,10 +515,12 @@ void main() {
       expect(find.text('الوحدة الثانية - البلاغة'), findsNothing);
       expect(find.text('2 عنصر'), findsOneWidget);
       expect(find.text('جديد'), findsNothing, reason: 'أُزيلت شارة جديد');
-      expect(find.byIcon(Icons.download_rounded), findsOneWidget, reason: 'الملف يُفتح بلمس سطره');
 
-      // طيّ الوحدة يخفي موادها
+      // فتح صفحة الوحدة يعرض موادها
       await tester.tap(find.text('الوحدة الأولى - النحو والصرف'));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.download_rounded), findsOneWidget, reason: 'الملف يُفتح بلمس سطره');
+      await tester.pageBack();
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.download_rounded), findsNothing);
     });

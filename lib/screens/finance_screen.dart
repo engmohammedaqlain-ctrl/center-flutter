@@ -2613,13 +2613,6 @@ Future<int> showPayrollSheet(
                 Row(
                   children: [
                     Expanded(
-                      child: GhostButton(
-                        label: 'إلغاء',
-                        onPressed: () => Navigator.pop(ctx, 0),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
                       flex: 2,
                       child: PrimaryButton(
                         label: 'صرف',
@@ -2644,6 +2637,13 @@ Future<int> showPayrollSheet(
                                   showAppSnack(ctx, e.message, error: true);
                                 }
                               },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: GhostButton(
+                        label: 'إلغاء',
+                        onPressed: () => Navigator.pop(ctx, 0),
                       ),
                     ),
                   ],

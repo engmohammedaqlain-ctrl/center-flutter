@@ -354,8 +354,6 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
             const SizedBox(height: 14),
             Row(
               children: [
-                Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(context, false))),
-                const SizedBox(width: 8),
                 Expanded(
                   child: PrimaryButton(
                     label: submitting
@@ -368,6 +366,8 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
                     onPressed: submitting ? null : _save,
                   ),
                 ),
+                const SizedBox(width: 8),
+                Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(context, false))),
               ],
             ),
           ],

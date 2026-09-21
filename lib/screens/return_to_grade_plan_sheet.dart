@@ -371,13 +371,6 @@ class _ReturnToGradePlanSheetState extends State<_ReturnToGradePlanSheet> {
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton(
-                    onPressed: busy ? null : () => Navigator.pop(context, false),
-                    child: const Text('إلغاء'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
                   child: FilledButton(
                     onPressed: busy ? null : _apply,
                     style: FilledButton.styleFrom(backgroundColor: AppColors.heading),
@@ -388,6 +381,13 @@ class _ReturnToGradePlanSheetState extends State<_ReturnToGradePlanSheet> {
                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                           )
                         : const Text('معاينة وتطبيق', style: TextStyle(fontWeight: FontWeight.w800)),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: busy ? null : () => Navigator.pop(context, false),
+                    child: const Text('إلغاء'),
                   ),
                 ),
               ],

@@ -100,7 +100,7 @@ class SelectField extends StatelessWidget {
   }
 }
 
-/// شريط الحفظ الثابت أسفل النموذج: إلغاء، ثم زر الحفظ أعرض منه.
+/// شريط الحفظ الثابت أسفل النموذج: الزر الأساسي يميناً، والإلغاء يساراً.
 class FormActionBar extends StatelessWidget {
   const FormActionBar({
     super.key,
@@ -131,12 +131,13 @@ class FormActionBar extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Expanded(child: GhostButton(label: 'إلغاء', onPressed: onCancel ?? () => Navigator.pop(context))),
-            const SizedBox(width: 10),
+            // في العربية (RTL) الابن الأول يمين: الأساسي يميناً والإلغاء يساراً
             Expanded(
               flex: 2,
               child: PrimaryButton(label: label, icon: icon, height: 44, busy: busy, onPressed: onSave),
             ),
+            const SizedBox(width: 10),
+            Expanded(child: GhostButton(label: 'إلغاء', onPressed: onCancel ?? () => Navigator.pop(context))),
           ],
         ),
       ),

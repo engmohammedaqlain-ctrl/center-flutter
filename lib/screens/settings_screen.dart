@@ -1168,18 +1168,18 @@ Future<List<String>?> showFeeStudentsSheet(
                 Row(
                   children: [
                     Expanded(
-                      child: GhostButton(
-                        label: 'إلغاء',
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
                       flex: 2,
                       child: PrimaryButton(
                         label: 'حفظ',
                         color: AppColors.navy,
                         onPressed: () => Navigator.pop(ctx, chosen.toList()),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: GhostButton(
+                        label: 'إلغاء',
+                        onPressed: () => Navigator.pop(ctx),
                       ),
                     ),
                   ],
@@ -1885,13 +1885,6 @@ Future<void> _addSection(BuildContext context, GradeFee f) async {
               Row(
                 children: [
                   Expanded(
-                    child: GhostButton(
-                      label: 'إلغاء',
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
                     flex: 2,
                     child: PrimaryButton(
                       label: 'حفظ الشعبة',
@@ -1928,6 +1921,13 @@ Future<void> _addSection(BuildContext context, GradeFee f) async {
                           showAppSnack(ctx, e.message, error: true);
                         }
                       },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: GhostButton(
+                      label: 'إلغاء',
+                      onPressed: () => Navigator.pop(ctx),
                     ),
                   ),
                 ],
@@ -2458,19 +2458,19 @@ Future<void> _pinUser(BuildContext context, AppUser u) async {
                 Row(
                   children: [
                     Expanded(
-                      child: GhostButton(
-                        label: 'إلغاء',
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
                       flex: 2,
                       child: PrimaryButton(
                         label: 'تثبيت على الجهاز',
                         icon: Icons.check,
                         height: 44,
                         onPressed: submit,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: GhostButton(
+                        label: 'إلغاء',
+                        onPressed: () => Navigator.pop(ctx),
                       ),
                     ),
                   ],

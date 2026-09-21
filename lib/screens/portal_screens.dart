@@ -1131,8 +1131,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   /// يجعل صفاً لم يُفتح كشفه يبدو مكتمل الحضور.
   String? _statusOf(String studentId) => marks[studentId];
 
-  /// لمسة الرصد تُثبت فوراً: على الجهاز أولاً، ثم إلى السحابة بعد سكون قصير.
-  /// لا زر حفظ — كشف الإدارة يعمل هكذا، والزر يوهم المعلم أن رصده لم يُسجَّل.
+  /// لمسة الرصد تُحدّث المسودّة فقط — الحفظ دفعة واحدة بزر «حفظ الرصد».
   void _setMark(String studentId, String? status) {
     final roomId = _attendanceRoomId;
     if (roomId.isEmpty) return;
@@ -1148,13 +1147,27 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
 
     unawaited(_offline.saveMarks(roomId, sessionDate, day));
     _duePush = (roomId: roomId, date: sessionDate, statuses: day, dirty: {..._dirtyMarks});
+    // بلا رفع تلقائي — ينتظر زر الحفظ
     _pushTimer?.cancel();
-    _pushTimer = Timer(const Duration(milliseconds: 400), () {
-      final dirty = {..._dirtyMarks};
-      _dirtyMarks.clear();
-      _duePush = null;
-      _pushMarks(roomId, sessionDate, day, changedStudentIds: dirty);
-    });
+    _pushTimer = null;
+  }
+
+  Future<void> _saveAttendanceNow() async {
+    final due = _duePush;
+    if (due == null && _dirtyMarks.isEmpty) return;
+    final roomId = due?.roomId ?? _attendanceRoomId;
+    final date = due?.date ?? sessionDate;
+    final statuses = due?.statuses ?? marks;
+    final dirty = due?.dirty ?? {..._dirtyMarks};
+    if (roomId.isEmpty) return;
+    _pushTimer?.cancel();
+    _dirtyMarks.clear();
+    _duePush = null;
+    await runBusyOp(
+      context,
+      () => _pushMarks(roomId, date, statuses, changedStudentIds: dirty),
+      message: 'جارٍ حفظ الرصد...',
+    );
   }
 
   /// رفع كشف يوم. ما لم يُرفع يُصفّ ليُرسل حين يعود الاتصال.
@@ -1323,19 +1336,28 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   Future<void> _newSection() async {
     final c = _current;
     if (c == null) return;
-    final created = await showModalBottomSheet<CourseSection>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
-      builder: (_) => _NewSectionSheet(
-        service: _service,
-        tenantId: widget.user.tenantId,
-        groupId: c.group.id,
-        initialTerm: term,
-        sortOrder: sections.length,
-        color: _Brand(data!.branding).primary,
-        rooms: c.rooms,
+    final created = await Navigator.of(context).push<CourseSection>(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            titleSpacing: 0,
+            title: const Text(
+              'إضافة قسم أو وحدة دراسية',
+              style: TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
+            ),
+          ),
+          body: _NewSectionSheet(
+            service: _service,
+            tenantId: widget.user.tenantId,
+            groupId: c.group.id,
+            initialTerm: term,
+            sortOrder: sections.length,
+            color: _Brand(data!.branding).primary,
+            rooms: c.rooms,
+            asPage: true,
+          ),
+        ),
       ),
     );
     if (created == null || !mounted) return;
@@ -1389,16 +1411,25 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   }
 
   Future<void> _newItem(CourseSection sec) async {
-    final created = await showModalBottomSheet<CourseItem>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
-      builder: (_) => _NewItemSheet(
-        service: _service,
-        tenantId: widget.user.tenantId,
-        section: sec,
-        color: _Brand(data!.branding).primary,
+    final created = await Navigator.of(context).push<CourseItem>(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            titleSpacing: 0,
+            title: const Text(
+              'إضافة مادة تعليمية / واجب',
+              style: TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
+            ),
+          ),
+          body: _NewItemSheet(
+            service: _service,
+            tenantId: widget.user.tenantId,
+            section: sec,
+            color: _Brand(data!.branding).primary,
+            asPage: true,
+          ),
+        ),
       ),
     );
     if (created == null || !mounted) return;
@@ -1406,9 +1437,14 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
           for (final s in sections) s.id == sec.id ? s.copyWith(items: [...s.items, created]) : s,
         ]);
     await _cacheSections();
-    final sent = await _writeOrQueue(
-      () => _service.saveItem(created),
-      {'kind': 'item_upsert', 'row': created.toCloud()},
+    if (!mounted) return;
+    final sent = await runBusyOp(
+      context,
+      () => _writeOrQueue(
+        () => _service.saveItem(created),
+        {'kind': 'item_upsert', 'row': created.toCloud()},
+      ),
+      message: 'جارٍ حفظ المادة...',
     );
     if (mounted) _flash(sent ? 'تمت إضافة المادة بنجاح' : 'حُفظت على الجهاز، سترفع عند عودة الاتصال');
   }
@@ -1471,16 +1507,23 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
           color: brand.primary,
           onPressed: _current == null ? null : _openEvaluationForm,
         ),
-      _ => ThumbAction(
-          label: 'الكل حاضر',
-          icon: Icons.done_all,
-          color: AppColors.success,
-          onPressed: _students().isEmpty ? null : _markAllPresent,
-        ),
+      _ => _dirtyMarks.isNotEmpty || _duePush != null
+          ? ThumbAction(
+              label: 'حفظ الرصد',
+              icon: Icons.save_rounded,
+              color: AppColors.amber,
+              onPressed: savingAttendance ? null : _saveAttendanceNow,
+            )
+          : ThumbAction(
+              label: 'الكل حاضر',
+              icon: Icons.done_all,
+              color: AppColors.success,
+              onPressed: _students().isEmpty ? null : _markAllPresent,
+            ),
     };
   }
 
-  /// رصد الجميع حاضرين — نفس إجراء شاشة الإدارة.
+  /// رصد الجميع حاضرين في المسودّة — يُحفظ بزر الحفظ.
   void _markAllPresent() {
     final roomId = _attendanceRoomId;
     if (roomId.isEmpty) return;
@@ -1492,12 +1535,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     unawaited(_offline.saveMarks(roomId, sessionDate, day));
     _duePush = (roomId: roomId, date: sessionDate, statuses: day, dirty: {..._dirtyMarks});
     _pushTimer?.cancel();
-    _pushTimer = Timer(const Duration(milliseconds: 300), () {
-      _dirtyMarks.clear();
-      _duePush = null;
-      // يوم كامل: بدون delta — كل الطلاب تغيّروا
-      _pushMarks(roomId, sessionDate, day);
-    });
+    _pushTimer = null;
   }
 
   // ── البناء ────────────────────────────────────────────────────────────────
@@ -1509,7 +1547,9 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: Column(
+      body: DefaultTextStyle.merge(
+        style: const TextStyle(fontFamily: AppText.family),
+        child: Column(
         children: [
           PortalChromeHeader(
             branding: branding,
@@ -1532,6 +1572,14 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                     // الإجراء الأساسي لكل تبويب في منطقة الإبهام، كشاشات الإدارة
                     : ThumbActionLayer(
                         action: _thumbAction(brand),
+                        secondary: tab == 'attendance' && (_dirtyMarks.isNotEmpty || _duePush != null)
+                            ? ThumbAction(
+                                label: 'الكل حاضر',
+                                icon: Icons.done_all,
+                                color: AppColors.success,
+                                onPressed: _students().isEmpty ? null : _markAllPresent,
+                              )
+                            : null,
                         child: RefreshIndicator(
                           onRefresh: _load,
                           color: brand.active,
@@ -1556,6 +1604,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
             onSelect: _selectTab,
           ),
         ],
+      ),
       ),
     );
   }
@@ -2072,25 +2121,85 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       else
         for (final sec in sections)
           Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _TeacherSectionCard(
-              section: sec,
-              rooms: _current?.rooms ?? const [],
-              onAddItem: () => _newItem(sec),
-              onCopy: () => _copySection(sec),
-              onToggle: () => _toggleVisibility(sec),
-              onDelete: () => _deleteSection(sec),
-              onEditRooms: (_current?.rooms.length ?? 0) > 1 ? () => _editSectionRooms(sec) : null,
-              onOpenItem: (it) => _openMaterial(
-                context,
-                it.contentUrl,
-                service: _service,
-                fileName: it.fileName,
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Material(
+              color: sec.isVisible ? Colors.white : const Color(0x33FFFBEB),
+              borderRadius: BorderRadius.circular(Corner.card),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(Corner.card),
+                onTap: () => _openSectionPage(sec),
+                child: Container(
+                  padding: const EdgeInsetsDirectional.fromSTEB(14, 12, 12, 12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(Corner.card),
+                    border: Border.all(color: sec.isVisible ? _C.line : _C.amber200),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              sec.title,
+                              style: const TextStyle(
+                                fontFamily: AppText.family,
+                                color: _C.navy,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [
+                                _Badge(sec.termLabel, fg: _C.muted, bg: _C.line, radius: Corner.chip),
+                                _Badge('${sec.items.length} عنصر', fg: _C.muted, bg: _C.line, radius: Corner.chip),
+                                if (!sec.isVisible)
+                                  const _Badge('مخفي', fg: _C.amber700, bg: _C.amber100, radius: Corner.chip),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.chevron_left, color: _C.faint),
+                    ],
+                  ),
+                ),
               ),
-              onDeleteItem: (it) => _deleteItem(sec, it),
             ),
           ),
     ];
+  }
+
+  Future<void> _openSectionPage(CourseSection sec) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => _TeacherSectionPage(
+          sectionId: sec.id,
+          liveSection: () => sections.where((s) => s.id == sec.id).firstOrNull ?? sec,
+          rooms: _current?.rooms ?? const [],
+          onAddItem: () => _newItem(sec),
+          onCopy: () => _copySection(sec),
+          onToggle: () => _toggleVisibility(sec),
+          onDelete: () async {
+            await _deleteSection(sec);
+            if (mounted) Navigator.of(context).pop();
+          },
+          onEditRooms: (_current?.rooms.length ?? 0) > 1 ? () => _editSectionRooms(sec) : null,
+          onOpenItem: (it) => _openMaterial(
+            context,
+            it.contentUrl,
+            service: _service,
+            fileName: it.fileName,
+          ),
+          onDeleteItem: (it) => _deleteItem(sec, it),
+          service: _service,
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   /// تعديل شعب الوحدة — كل الشعب = null في السحابة.
@@ -2689,10 +2798,11 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
   }
 }
 
-/// وحدة في مودل المعلم: تُطوى وتُفتح، وترويستها بإجراءاتها ثم موادها.
-class _TeacherSectionCard extends StatefulWidget {
-  const _TeacherSectionCard({
-    required this.section,
+/// صفحة وحدة المودل للمعلم — محتوى طويل يُقرأ براحة في شاشة مستقلة.
+class _TeacherSectionPage extends StatefulWidget {
+  const _TeacherSectionPage({
+    required this.sectionId,
+    required this.liveSection,
     required this.rooms,
     required this.onAddItem,
     required this.onCopy,
@@ -2700,266 +2810,237 @@ class _TeacherSectionCard extends StatefulWidget {
     required this.onDelete,
     required this.onOpenItem,
     required this.onDeleteItem,
+    required this.service,
     this.onEditRooms,
   });
 
-  final CourseSection section;
+  final String sectionId;
+  final CourseSection Function() liveSection;
   final List<PortalRoom> rooms;
-  final VoidCallback onAddItem;
+  final Future<void> Function() onAddItem;
   final VoidCallback onCopy;
-  final VoidCallback onToggle;
-  final VoidCallback onDelete;
+  final Future<void> Function() onToggle;
+  final Future<void> Function() onDelete;
   final ValueChanged<CourseItem> onOpenItem;
-  final ValueChanged<CourseItem> onDeleteItem;
+  final Future<void> Function(CourseItem) onDeleteItem;
   final VoidCallback? onEditRooms;
+  final PortalService service;
 
   @override
-  State<_TeacherSectionCard> createState() => _TeacherSectionCardState();
+  State<_TeacherSectionPage> createState() => _TeacherSectionPageState();
 }
 
-class _TeacherSectionCardState extends State<_TeacherSectionCard> {
-  bool open = true;
+class _TeacherSectionPageState extends State<_TeacherSectionPage> {
+  late CourseSection section = widget.liveSection();
+
+  Future<void> _refreshAfter(Future<void> Function() action) async {
+    await action();
+    if (!mounted) return;
+    setState(() => section = widget.liveSection());
+  }
 
   String get _roomsLabel {
-    final sec = widget.section;
-    if (sec.roomIds.isEmpty) return '';
+    if (section.roomIds.isEmpty) return 'كل الشعب';
     final names = [
-      for (final id in sec.roomIds)
+      for (final id in section.roomIds)
         widget.rooms.where((r) => r.id == id).map((r) => r.name).firstOrNull,
     ].whereType<String>().where((n) => n.trim().isNotEmpty);
-    return names.join('، ');
+    return names.isEmpty ? 'شعب محددةدة' : names.join('، ');
   }
 
   @override
   Widget build(BuildContext context) {
-    final sec = widget.section;
-    final roomsLabel = _roomsLabel;
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: sec.isVisible ? Colors.white : const Color(0x33FFFBEB),
-        borderRadius: BorderRadius.circular(Corner.card),
-        border: Border.all(color: sec.isVisible ? _C.line : _C.amber200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          InkWell(
-            onTap: () => setState(() => open = !open),
-            child: Container(
-              padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 8, 10),
-              decoration: BoxDecoration(
-                color: _C.bg,
-                border: open ? const Border(bottom: BorderSide(color: _C.line)) : null,
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Icon(
-                      open ? Icons.expand_less : Icons.expand_more,
-                      size: 20,
-                      color: _C.navy,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          sec.title,
-                          style: const TextStyle(color: _C.navy, fontSize: 13, fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 4,
-                          children: [
-                            _Badge(sec.termLabel, fg: _C.muted, bg: _C.line, radius: Corner.chip),
-                            _Badge(
-                              '${sec.items.length} عنصر',
-                              fg: _C.muted,
-                              bg: _C.line,
-                              radius: Corner.chip,
-                            ),
-                            if (!sec.isVisible)
-                              const _Badge('مخفي', fg: _C.amber700, bg: _C.amber100, radius: Corner.chip),
-                            if (roomsLabel.isNotEmpty)
-                              _Badge(roomsLabel, fg: _C.blue700, bg: _C.blue50, radius: Corner.chip),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+    final sec = section;
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      appBar: AppBar(
+        titleSpacing: 0,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              sec.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
             ),
-          ),
-          if (open) ...[
-            Padding(
-              padding: const EdgeInsetsDirectional.fromSTEB(8, 6, 8, 0),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _Soft(
-                      label: 'مادة',
-                      icon: Icons.add,
-                      fg: _C.navy,
-                      height: 30,
-                      radius: Corner.field,
-                      onTap: widget.onAddItem,
-                    ),
-                    if (widget.onEditRooms != null)
-                      _iconAction(Icons.meeting_room_outlined, 'الشعب', _C.muted, widget.onEditRooms!),
-                    _iconAction(Icons.copy_outlined, 'نسخ القسم لمواد أخرى', _C.muted, widget.onCopy),
-                    _iconAction(
-                      sec.isVisible ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                      sec.isVisible ? 'إخفاء القسم عن الطلاب' : 'إظهار القسم للطلاب',
-                      sec.isVisible ? _C.muted : _C.amber600,
-                      widget.onToggle,
-                    ),
-                    _iconAction(Icons.delete_outline, 'حذف القسم', _C.rose600, widget.onDelete),
-                  ],
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: sec.items.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 10),
-                      child: Text(
-                        'لا توجد مواد أو واجبات مضافة في هذه الوحدة',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: _C.faint, fontSize: 11),
-                      ),
-                    )
-                  : Column(
-                      children: [
-                        for (final it in sec.items)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: _ItemTile(
-                              item: it,
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (it.contentUrl.isNotEmpty)
-                                    _Soft(
-                                      label: 'فتح',
-                                      icon: it.type == 'file'
-                                          ? Icons.description_outlined
-                                          : Icons.open_in_new,
-                                      fg: _C.navy,
-                                      height: 28,
-                                      radius: Corner.field,
-                                      onTap: () => widget.onOpenItem(it),
-                                    ),
-                                  _iconAction(
-                                    Icons.delete_outline,
-                                    'حذف المادة',
-                                    _C.rose600,
-                                    () => widget.onDeleteItem(it),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
+            Text(
+              _roomsLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontFamily: AppText.family, color: Colors.white.withValues(alpha: 0.72), fontSize: 11, fontWeight: FontWeight.w500),
             ),
           ],
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 28),
+        children: [
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _Soft(
+                label: 'مادة',
+                icon: Icons.add,
+                fg: _C.navy,
+                height: 34,
+                radius: Corner.field,
+                onTap: () => _refreshAfter(widget.onAddItem),
+              ),
+              if (widget.onEditRooms != null)
+                _Soft(
+                  label: 'الشعب',
+                  icon: Icons.meeting_room_outlined,
+                  fg: _C.muted,
+                  height: 34,
+                  radius: Corner.field,
+                  onTap: () => _refreshAfter(() async {
+                    widget.onEditRooms!();
+                  }),
+                ),
+              _Soft(label: 'نسخ', icon: Icons.copy_outlined, fg: _C.muted, height: 34, radius: Corner.field, onTap: widget.onCopy),
+              _Soft(
+                label: sec.isVisible ? 'إخفاء' : 'إظهار',
+                icon: sec.isVisible ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                fg: sec.isVisible ? _C.muted : _C.amber600,
+                height: 34,
+                radius: Corner.field,
+                onTap: () => _refreshAfter(widget.onToggle),
+              ),
+              _Soft(label: 'حذف', icon: Icons.delete_outline, fg: _C.rose600, height: 34, radius: Corner.field, onTap: widget.onDelete),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (sec.items.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 40),
+              child: Text(
+                'لا توجد مواد أو واجبات مضافة في هذه الوحدة',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: AppText.family, color: _C.faint, fontSize: 12),
+              ),
+            )
+          else
+            for (final it in sec.items)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _ItemTile(
+                  item: it,
+                  service: widget.service,
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (it.contentUrl.isNotEmpty)
+                        _Soft(
+                          label: 'فتح',
+                          icon: it.type == 'file' ? Icons.description_outlined : Icons.open_in_new,
+                          fg: _C.navy,
+                          height: 28,
+                          radius: Corner.field,
+                          onTap: () => widget.onOpenItem(it),
+                        ),
+                      IconButton(
+                        tooltip: 'حذف المادة',
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                        padding: EdgeInsets.zero,
+                        icon: const Icon(Icons.delete_outline, size: 16, color: _C.rose600),
+                        onPressed: () => _refreshAfter(() => widget.onDeleteItem(it)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
         ],
       ),
     );
   }
-
-  Widget _iconAction(IconData icon, String tooltip, Color color, VoidCallback onTap) => IconButton(
-        tooltip: tooltip,
-        visualDensity: VisualDensity.compact,
-        constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-        padding: EdgeInsets.zero,
-        icon: Icon(icon, size: 16, color: color),
-        onPressed: onTap,
-      );
 }
 
 /// مادة تعليمية: نوعها وعنوانها ووصفها وموعد تسليمها، مقابل إجراءاتها.
 class _ItemTile extends StatelessWidget {
-  const _ItemTile({required this.item, required this.trailing});
+  const _ItemTile({required this.item, required this.trailing, this.service = const PortalService()});
 
   final CourseItem item;
   final Widget trailing;
+  final PortalService service;
 
   @override
   Widget build(BuildContext context) {
     final colors = _itemTypeColors(item.type);
     final overdue = item.isOverdue();
+    final showImage = item.contentUrl.isNotEmpty &&
+        item.type != 'link' &&
+        portalLooksLikeImage(item.contentUrl, fileName: item.fileName);
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFAFAFA),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(Corner.box),
         border: Border.all(color: _C.line),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _Badge(item.typeLabel, fg: colors.fg, bg: colors.bg, radius: Corner.chip),
-                    Text(
-                      item.title,
-                      style: const TextStyle(color: _C.text, fontSize: 12, fontWeight: FontWeight.w800),
-                    ),
-                  ],
-                ),
-                if (item.description.trim().isNotEmpty) ...[
-                  const SizedBox(height: 5),
-                  Text(
-                    item.description.trim(),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: _C.slate600, fontSize: 11, height: 1.6),
-                  ),
-                ],
-                if (item.type == 'assignment' && item.dueDate.isNotEmpty) ...[
-                  const SizedBox(height: 5),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.calendar_today_outlined, size: 12, color: _C.faint),
-                      const SizedBox(width: 4),
-                      // بجوار زر «فتح» يضيق العمود: الموعد ينكسر سطراً ولا يطفح
-                      Flexible(
-                        child: Text(
-                          'تاريخ التسليم: ${item.dueDate}${overdue ? ' (منتهٍ)' : ''}',
-                          style: TextStyle(
-                            color: overdue ? _C.faint : _C.emerald700,
-                            fontSize: 10.5,
-                            fontWeight: overdue ? FontWeight.w500 : FontWeight.w800,
-                            fontFamily: _mono,
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        _Badge(item.typeLabel, fg: colors.fg, bg: colors.bg, radius: Corner.chip),
+                        Text(
+                          item.title,
+                          style: const TextStyle(
+                            fontFamily: AppText.family,
+                            color: _C.text,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
                           ),
+                        ),
+                      ],
+                    ),
+                    if (item.description.trim().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        item.description.trim(),
+                        style: const TextStyle(
+                          fontFamily: AppText.family,
+                          color: _C.slate600,
+                          fontSize: 12.5,
+                          height: 1.65,
                         ),
                       ),
                     ],
-                  ),
-                ],
-              ],
-            ),
+                    if (item.type == 'assignment' && item.dueDate.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'تاريخ التسليم: ${item.dueDate}${overdue ? ' (منتهٍ)' : ''}',
+                        style: TextStyle(
+                          fontFamily: AppText.family,
+                          color: overdue ? _C.faint : _C.emerald700,
+                          fontSize: 11,
+                          fontWeight: overdue ? FontWeight.w500 : FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              trailing,
+            ],
           ),
-          const SizedBox(width: 8),
-          trailing,
+          if (showImage)
+            PortalInlineImage(url: item.contentUrl, fileName: item.fileName, service: service),
         ],
       ),
     );
@@ -2982,17 +3063,16 @@ Widget _sheetFrame(BuildContext context, {required String title, required List<W
             Row(
               children: [
                 Expanded(
-                  child: Text(title, style: const TextStyle(color: _C.navy, fontSize: 13, fontWeight: FontWeight.w900)),
+                  child: Text(title, style: const TextStyle(fontFamily: AppText.family, color: _C.navy, fontSize: 13, fontWeight: FontWeight.w900)),
                 ),
                 IconButton(
                   visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.close, size: 18, color: _C.faint),
+                  icon: const Icon(Icons.close, size: 18),
                   onPressed: () => Navigator.pop(context),
                 ),
               ],
             ),
-            const Divider(height: 1, color: _C.line),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             ...children,
           ],
         ),
@@ -3006,12 +3086,12 @@ Widget _sheetActions(BuildContext context, {required String label, required Colo
     padding: const EdgeInsets.only(top: 14),
     child: Row(
       children: [
-        Expanded(child: _Soft(label: 'إلغاء', onTap: () => Navigator.pop(context), height: 40, radius: Corner.field)),
-        const SizedBox(width: 8),
         Expanded(
           flex: 2,
           child: _Solid(label: busy ? 'جارٍ الحفظ...' : label, color: color, busy: busy, onTap: onSave, height: 40, radius: Corner.field),
         ),
+        const SizedBox(width: 8),
+        Expanded(child: _Soft(label: 'إلغاء', onTap: () => Navigator.pop(context), height: 40, radius: Corner.field)),
       ],
     ),
   );
@@ -3026,6 +3106,7 @@ class _NewSectionSheet extends StatefulWidget {
     required this.sortOrder,
     required this.color,
     this.rooms = const [],
+    this.asPage = false,
   });
 
   final PortalService service;
@@ -3035,6 +3116,7 @@ class _NewSectionSheet extends StatefulWidget {
   final int sortOrder;
   final Color color;
   final List<PortalRoom> rooms;
+  final bool asPage;
 
   @override
   State<_NewSectionSheet> createState() => _NewSectionSheetState();
@@ -3079,10 +3161,7 @@ class _NewSectionSheetState extends State<_NewSectionSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return _sheetFrame(
-      context,
-      title: 'إضافة قسم أو وحدة دراسية',
-      children: [
+    final form = <Widget>[
         const _Label('عنوان الوحدة / القسم:'),
         _Input(
           controller: title,
@@ -3105,14 +3184,14 @@ class _NewSectionSheetState extends State<_NewSectionSheet> {
         ),
         if (widget.rooms.length > 1) ...[
           const SizedBox(height: 12),
-          const _Label('الشعب:'),
+          const _Label('الشعب المستهدفة (فارغ الكل = كل الشعب):'),
           Wrap(
             spacing: 6,
             runSpacing: 6,
             children: [
               for (final r in widget.rooms)
                 FilterChip(
-                  label: Text(r.name, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
+                  label: Text(r.name, style: const TextStyle(fontFamily: AppText.family, fontSize: 11, fontWeight: FontWeight.w800)),
                   selected: selectedRooms.contains(r.id),
                   onSelected: (on) {
                     setState(() {
@@ -3133,8 +3212,14 @@ class _NewSectionSheetState extends State<_NewSectionSheet> {
           ),
         ],
         _sheetActions(context, label: 'حفظ القسم', color: widget.color, busy: busy, onSave: _save),
-      ],
-    );
+    ];
+    if (widget.asPage) {
+      return ListView(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.viewInsetsOf(context).bottom),
+        children: form,
+      );
+    }
+    return _sheetFrame(context, title: 'إضافة قسم أو وحدة دراسية', children: form);
   }
 }
 
@@ -3203,12 +3288,19 @@ class _SectionRoomsSheetState extends State<_SectionRoomsSheet> {
 }
 
 class _NewItemSheet extends StatefulWidget {
-  const _NewItemSheet({required this.service, required this.tenantId, required this.section, required this.color});
+  const _NewItemSheet({
+    required this.service,
+    required this.tenantId,
+    required this.section,
+    required this.color,
+    this.asPage = false,
+  });
 
   final PortalService service;
   final String tenantId;
   final CourseSection section;
   final Color color;
+  final bool asPage;
 
   @override
   State<_NewItemSheet> createState() => _NewItemSheetState();
@@ -3338,10 +3430,7 @@ class _NewItemSheetState extends State<_NewItemSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return _sheetFrame(
-      context,
-      title: 'إضافة مادة تعليمية / واجب',
-      children: [
+    final form = <Widget>[
         const _Label('نوع العنصر:'),
         _Select<String>(
           value: type,
@@ -3404,7 +3493,11 @@ class _NewItemSheetState extends State<_NewItemSheet> {
         ],
         const SizedBox(height: 12),
         const _Label('وصف أو تعليمات إضافية (اختياري):'),
-        _Input(controller: description, hint: 'اكتب أرقام الصفحات أو ملاحظات الدراسة...', maxLines: 2),
+        _Input(
+          controller: description,
+          hint: 'اكتب أرقام الصفحات أو ملاحظات الدراسة...',
+          maxLines: widget.asPage ? 8 : 2,
+        ),
         if (error != null) ...[
           const SizedBox(height: 10),
           Container(
@@ -3424,8 +3517,14 @@ class _NewItemSheetState extends State<_NewItemSheet> {
           ),
         ],
         _sheetActions(context, label: 'حفظ المادة', color: widget.color, busy: busy, onSave: _save),
-      ],
-    );
+    ];
+    if (widget.asPage) {
+      return ListView(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.viewInsetsOf(context).bottom),
+        children: form,
+      );
+    }
+    return _sheetFrame(context, title: 'إضافة مادة تعليمية / واجب', children: form);
   }
 }
 

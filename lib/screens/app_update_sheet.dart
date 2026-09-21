@@ -173,7 +173,9 @@ class UpdatePanel extends StatelessWidget {
 
             Row(
               children: [
+                Expanded(flex: 2, child: available ? _actionButton(u, release) : _checkButton(u, checking)),
                 if (onLater != null) ...[
+                  const SizedBox(width: 8),
                   Expanded(
                     child: GhostButton(
                       // التنزيل يستمر بعد الإغلاق، والشريط أعلى التطبيق يتابعه
@@ -181,9 +183,7 @@ class UpdatePanel extends StatelessWidget {
                       onPressed: onLater,
                     ),
                   ),
-                  const SizedBox(width: 8),
                 ],
-                Expanded(flex: 2, child: available ? _actionButton(u, release) : _checkButton(u, checking)),
               ],
             ),
           ],

@@ -191,8 +191,6 @@ class _SectionStudentsSheetState extends State<_SectionStudentsSheet> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(context, 0))),
-                  const SizedBox(width: 8),
                   Expanded(
                     child: PrimaryButton(
                       label: saving
@@ -205,6 +203,8 @@ class _SectionStudentsSheetState extends State<_SectionStudentsSheet> {
                       onPressed: selected.isEmpty || saving ? null : () => _save(store),
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(context, 0))),
                 ],
               ),
             ],

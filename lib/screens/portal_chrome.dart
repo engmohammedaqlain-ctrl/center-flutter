@@ -261,11 +261,89 @@ class _PortalNavTile extends StatelessWidget {
   }
 }
 
-bool _looksLikeImage(String url, {String fileName = ''}) {
+bool portalLooksLikeImage(String url, {String fileName = ''}) {
   final name = fileName.toLowerCase();
   if (RegExp(r'\.(jpe?g|png|webp|gif)$').hasMatch(name)) return true;
   final path = url.toLowerCase().split('?').first;
   return RegExp(r'\.(jpe?g|png|webp|gif)$').hasMatch(path);
+}
+
+bool _looksLikeImage(String url, {String fileName = ''}) =>
+    portalLooksLikeImage(url, fileName: fileName);
+
+/// صورة مرفقة تحت نص المادة — كعرض فيسبوك: كلام ثم صورة بعرض الصفحة.
+class PortalInlineImage extends StatefulWidget {
+  const PortalInlineImage({
+    super.key,
+    required this.url,
+    this.fileName = '',
+    this.service = const PortalService(),
+  });
+
+  final String url;
+  final String fileName;
+  final PortalService service;
+
+  @override
+  State<PortalInlineImage> createState() => _PortalInlineImageState();
+}
+
+class _PortalInlineImageState extends State<PortalInlineImage> {
+  String? _resolved;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  Future<void> _resolve() async {
+    final target = await widget.service.materialOpenUrl(widget.url);
+    if (!mounted) return;
+    if (target == null || target.isEmpty) {
+      setState(() => _failed = true);
+      return;
+    }
+    setState(() => _resolved = polishExternalLink(target));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_failed) return const SizedBox.shrink();
+    final src = _resolved;
+    if (src == null) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 8),
+        child: SizedBox(
+          height: 120,
+          child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(Corner.box),
+        child: AspectRatio(
+          aspectRatio: 16 / 10,
+          child: Image.network(
+            src,
+            fit: BoxFit.cover,
+            width: double.infinity,
+            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            loadingBuilder: (context, child, progress) {
+              if (progress == null) return child;
+              return const ColoredBox(
+                color: AppColors.hover,
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// فتح مادة دراسية داخل التطبيق قدر الإمكان (صورة / تبويب داخلي)، لا المتصفح الخارجي.

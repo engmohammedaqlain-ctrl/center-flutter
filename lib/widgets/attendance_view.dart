@@ -88,7 +88,7 @@ class AttendanceDayChip extends StatelessWidget {
   }
 }
 
-/// ملخّص اليوم: التاريخ، وحلقة اكتمال الرصد، وشريط مقسّم بالحالات مع أعدادها.
+/// ملخّص اليوم: التاريخ ونسبة الحضور المختصرة «5 من 30».
 class AttendanceDaySummary extends StatelessWidget {
   const AttendanceDaySummary({
     super.key,
@@ -106,198 +106,61 @@ class AttendanceDaySummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final marked = total - unmarked;
-    final ratio = total == 0 ? 0.0 : marked / total;
     final done = total > 0 && unmarked == 0;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(Corner.card),
         border: Border.all(color: AppColors.line),
         boxShadow: cardShadow,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${day.dayName} ${day.date.day} ${gregorianMonths[day.date.month - 1]}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: AppText.family,
-                        color: AppColors.heading,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Icon(
-                          done ? Icons.check_circle_rounded : Icons.pending_outlined,
-                          size: 14,
-                          color: done ? attendancePresentColor : AppColors.faint,
-                        ),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: Text(
-                            done ? 'اكتمل الرصد' : '$marked من $total مرصود',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontFamily: AppText.family,
-                              color: done ? attendancePresentColor : AppColors.muted,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${day.dayName} ${day.date.day} ${gregorianMonths[day.date.month - 1]}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: AppText.family,
+                    color: AppColors.heading,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              _CompletionRing(ratio: ratio, done: done),
-            ],
-          ),
-          const SizedBox(height: 14),
-          // شريط مقسّم: كل حالة بعرض نسبتها
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: SizedBox(
-              height: 8,
-              child: total == 0
-                  ? const ColoredBox(color: AppColors.hover)
-                  : Row(
-                      children: [
-                        for (final (count, color) in [
-                          (present, attendancePresentColor),
-                          (absent, attendanceAbsentColor),
-                          (excused, attendanceExcusedColor),
-                          (unmarked, AppColors.hover),
-                        ])
-                          if (count > 0)
-                            Expanded(
-                              flex: count,
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 250),
-                                color: color,
-                              ),
-                            ),
-                      ],
-                    ),
+                const SizedBox(height: 4),
+                Text(
+                  done ? 'اكتمل الرصد' : '$marked من $total مرصود',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: AppText.family,
+                    color: done ? attendancePresentColor : AppColors.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(child: _Legend(key: const ValueKey('legend-present'), label: 'حاضر', value: present, color: attendancePresentColor)),
-              Expanded(child: _Legend(key: const ValueKey('legend-absent'), label: 'غائب', value: absent, color: attendanceAbsentColor)),
-              Expanded(child: _Legend(key: const ValueKey('legend-excused'), label: 'مأذون', value: excused, color: attendanceExcusedColor)),
-              Expanded(child: _Legend(key: const ValueKey('legend-unmarked'), label: 'غير مرصود', value: unmarked, color: attendanceUnmarkedColor)),
-            ],
+          // رقم مختصر: حاضر من الإجمالي — بدل بطاقات الحاضر/الغائب الأربع
+          Text(
+            '$present من $total',
+            style: TextStyle(
+              fontFamily: AppText.family,
+              color: AppColors.heading,
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
           ),
         ],
       ),
-    );
-  }
-}
-
-/// حلقة نسبة اكتمال الرصد، وعلامة صحّ عند الاكتمال.
-class _CompletionRing extends StatelessWidget {
-  const _CompletionRing({required this.ratio, required this.done});
-
-  final double ratio;
-  final bool done;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = done ? attendancePresentColor : AppColors.amber;
-    return SizedBox(
-      width: 42,
-      height: 42,
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(end: ratio),
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeOutCubic,
-        builder: (context, value, _) => Stack(
-          alignment: Alignment.center,
-          children: [
-            SizedBox.expand(
-              child: CircularProgressIndicator(
-                value: value,
-                strokeWidth: 3.5,
-                strokeCap: StrokeCap.round,
-                backgroundColor: AppColors.hover,
-                color: color,
-              ),
-            ),
-            done
-                ? Icon(Icons.check_rounded, size: 17, color: color)
-                : Text(
-                    '${(value * 100).round()}%',
-                    style: TextStyle(
-                      fontFamily: AppText.family,
-                      color: AppColors.heading,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// عدد حالة واحدة تحت الشريط: رقم كبير متحرّك، ونقطة بلونها واسمها تحته.
-class _Legend extends StatelessWidget {
-  const _Legend({super.key, required this.label, required this.value, required this.color});
-
-  final String label;
-  final int value;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        AnimatedCount(
-          value,
-          duration: const Duration(milliseconds: 400),
-          style: TextStyle(
-            fontFamily: AppText.family,
-            color: AppColors.heading,
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            height: 1.1,
-          ),
-        ),
-        const SizedBox(height: 3),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(width: 7, height: 7, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-            const SizedBox(width: 4),
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: AppColors.muted, fontSize: 11, fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
-        ),
-      ],
     );
   }
 }

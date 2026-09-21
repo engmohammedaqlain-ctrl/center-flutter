@@ -747,6 +747,66 @@ void showAppSnack(BuildContext context, String msg, {bool error = false}) {
 
 OverlayEntry? _toast;
 
+/// طبقة تحميل شفافة فوق الشاشة أثناء عملية — بدل تجميد بلا مؤشر.
+Future<T> runBusyOp<T>(
+  BuildContext context,
+  Future<T> Function() op, {
+  String message = 'جارٍ التحميل...',
+}) async {
+  final overlay = Overlay.maybeOf(context, rootOverlay: true);
+  OverlayEntry? entry;
+  if (overlay != null) {
+    entry = OverlayEntry(
+      builder: (_) => Material(
+        color: Colors.black.withValues(alpha: 0.35),
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 40),
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(Corner.card),
+              boxShadow: cardShadow,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    color: AppColors.amber,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: AppText.family,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    color: AppColors.heading,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    overlay.insert(entry);
+  }
+  try {
+    // إطار واحد لرسم اللودنغ قبل العمل الثقيل على نفس العزل
+    await Future<void>.delayed(Duration.zero);
+    return await op();
+  } finally {
+    entry?.remove();
+  }
+}
+
 class _Toast extends StatefulWidget {
   const _Toast({required this.message, required this.error, required this.onDone});
 
@@ -877,8 +937,7 @@ Future<bool> confirmSheet(
             const SizedBox(height: 14),
             Row(
               children: [
-                Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx, false))),
-                const SizedBox(width: 8),
+                // RTL: الأول يمين — التأكيد يميناً والإلغاء يساراً
                 Expanded(
                   child: PrimaryButton(
                     label: confirmLabel,
@@ -886,6 +945,8 @@ Future<bool> confirmSheet(
                     onPressed: () => Navigator.pop(ctx, true),
                   ),
                 ),
+                const SizedBox(width: 8),
+                Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx, false))),
               ],
             ),
           ],

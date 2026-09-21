@@ -478,21 +478,21 @@ class _GradePlanSyncSheetState extends State<GradePlanSyncSheet> {
             const SizedBox(height: 12),
             Row(
               children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: busy ? null : () => Navigator.pop(context),
-                    child: const Text('إلغاء'),
-                  ),
-                ),
                 if (!p.isEmpty) ...[
-                  const SizedBox(width: 8),
                   Expanded(
                     child: FilledButton(
                       onPressed: busy ? null : _apply,
                       child: Text(busy ? 'جارِ التطبيق...' : 'تطبيق'),
                     ),
                   ),
+                  const SizedBox(width: 8),
                 ],
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: busy ? null : () => Navigator.pop(context),
+                    child: const Text('إلغاء'),
+                  ),
+                ),
               ],
             ),
           ],

@@ -129,13 +129,15 @@ UpdateAction decideUpdate({required int installed, required AppRelease? release}
 /// جلب وصف أحدث إصدار من الاستضافة.
 ///
 /// يعيد `null` عند أي تعذّر — انقطاع أو ملف تالف: التحديث ميزةٌ إضافية لا
-/// تُعطّل تطبيقاً يعمل بلا إنترنت أصلاً.
+/// تُعطّل تطبيقاً يعمل بلا إنترنت أصلاً. مهلة قصيرة كي لا يُحبس الإقلاع.
 Future<AppRelease?> fetchLatestRelease(String manifestUrl, {http.Client? client}) async {
   final url = manifestUrl.trim();
   if (url.isEmpty) return null;
   final http = client ?? _defaultClient();
   try {
-    final res = await http.get(Uri.parse(url), headers: {'Cache-Control': 'no-cache'});
+    final res = await http
+        .get(Uri.parse(url), headers: {'Cache-Control': 'no-cache'})
+        .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 400) return null;
     return AppRelease.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
   } catch (_) {
@@ -652,13 +654,12 @@ class AppUpdater extends ChangeNotifier {
     return Duration(seconds: ((total - received) / speed).ceil());
   }
 
-  /// يُستدعى مرة عند الإقلاع: يقرأ المحفوظ ثم يفحص في الخلفية.
+  /// يُستدعى مرة عند الإقلاع: يقرأ المحفوظ ثم يفحص بصمت في الخلفية.
   Future<void> start() => _starting ??= () async {
         if (!supported) return;
         await _load();
-        // الفحص الشبكي لا يحجز شاشة الإقلاع
-        unawaited(checkPatch());
-        unawaited(check());
+        // فحص واحد صامت — بلا Shorebird تلقائي (كان ينزّل ويعلّق الفتح)
+        await check(silent: true);
       }();
 
   /// قراءة الحالة المحفوظة — مرة واحدة، ينتظرها الإقلاع والفحص كلاهما.
@@ -704,13 +705,14 @@ class AppUpdater extends ChangeNotifier {
     } catch (_) {}
   }
 
-  /// فحص الاستضافة. بلا [force] لا يُعاد قبل [checkEvery] من آخر فحص ناجح.
-  Future<UpdateAction> check({bool force = false}) {
+  /// فحص الاستضافة. بلا [force] لا يُعاد قبل [checkEvery] من آخر محاولة (نجحت أو فشلت).
+  /// [silent] لا يبدّل طور الواجهة — لفحص الخلفية بعد الإقلاع.
+  Future<UpdateAction> check({bool force = false, bool silent = false}) {
     if (!supported) return Future.value(UpdateAction.none);
-    return _checking ??= _check(force).whenComplete(() => _checking = null);
+    return _checking ??= _check(force, silent).whenComplete(() => _checking = null);
   }
 
-  Future<UpdateAction> _check(bool force) async {
+  Future<UpdateAction> _check(bool force, bool silent) async {
     await _load();
     final last = lastChecked;
     if (!force && last != null && _clock().difference(last) < checkEvery) return action;
@@ -720,7 +722,7 @@ class AppUpdater extends ChangeNotifier {
     }
 
     // تنزيلٌ جارٍ أو متوقف أو حزمة جاهزة: الفحص لا يمسح حالتها من الشاشة
-    final quiet = phase != UpdatePhase.idle && phase != UpdatePhase.failed;
+    final quiet = silent || (phase != UpdatePhase.idle && phase != UpdatePhase.failed);
     if (!quiet) {
       phase = UpdatePhase.checking;
       error = null;
@@ -728,6 +730,16 @@ class AppUpdater extends ChangeNotifier {
     }
 
     final fetched = await fetchLatestRelease(manifestUrl, client: _client());
+    // حتى عند الفشل يُثبَّت الوقت كي لا يُعاد الفحص في كل فتح ويعلّق التطبيق
+    lastChecked = _clock();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kCheckedAt, lastChecked!.toIso8601String());
+      if (fetched != null) {
+        await prefs.setString(_kRelease, jsonEncode(fetched.toJson()));
+      }
+    } catch (_) {}
+
     if (fetched != null) {
       // إصدار أحدث نُشر بعد تنزيلٍ سابق: الحزمة الجاهزة أو الناقصة لم تعد المطلوبة
       final replaced = release != null && release!.versionCode != fetched.versionCode;
@@ -739,12 +751,6 @@ class AppUpdater extends ChangeNotifier {
         phase = UpdatePhase.idle;
       }
       release = fetched;
-      lastChecked = _clock();
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_kRelease, jsonEncode(fetched.toJson()));
-        await prefs.setString(_kCheckedAt, lastChecked!.toIso8601String());
-      } catch (_) {}
     }
 
     if (!quiet) {
@@ -936,10 +942,9 @@ class AppUpdater extends ChangeNotifier {
         patchPhase = PatchPhase.ready;
       }
     } catch (_) {
-      // انقطاعٌ أثناء التنزيل الصامت لا يُقلق المستخدم برسالة: يُعاد عند العودة
-      // إلى التطبيق، وShorebird يستكمل ما نزل
+      // انقطاعٌ أثناء التنزيل الصامت لا يُقلق المستخدم — يُعاد بعد المهلة لا فوراً
       patchPhase = PatchPhase.none;
-      _patchCheckedAt = null;
+      _patchCheckedAt ??= _clock();
     }
     notifyListeners();
   }

@@ -227,8 +227,6 @@ Future<void> _assignTeacher(BuildContext context, Classroom room) async {
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx))),
-                  const SizedBox(width: 10),
                   Expanded(
                     flex: 2,
                     child: PrimaryButton(
@@ -256,6 +254,8 @@ Future<void> _assignTeacher(BuildContext context, Classroom room) async {
                       },
                     ),
                   ),
+                  const SizedBox(width: 10),
+                  Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx))),
                 ],
               ),
             ],
@@ -587,8 +587,6 @@ class _SubjectTeachersSheetState extends State<_SubjectTeachersSheet> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(context))),
-                      const SizedBox(width: 10),
                       Expanded(
                         flex: 2,
                         child: PrimaryButton(
@@ -598,6 +596,8 @@ class _SubjectTeachersSheetState extends State<_SubjectTeachersSheet> {
                           onPressed: subjects.isEmpty ? null : _save,
                         ),
                       ),
+                      const SizedBox(width: 10),
+                      Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(context))),
                     ],
                   ),
                 ],

@@ -265,13 +265,6 @@ Future<bool> showGeneralIncomeSheet(
                   Row(
                     children: [
                       Expanded(
-                        child: GhostButton(
-                          label: 'إلغاء',
-                          onPressed: () => Navigator.pop(ctx, false),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
                         flex: 2,
                         child: PrimaryButton(
                           label: 'حفظ وإصدار الوصل',
@@ -324,6 +317,13 @@ Future<bool> showGeneralIncomeSheet(
                               showAppSnack(ctx, e.message, error: true);
                             }
                           },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: GhostButton(
+                          label: 'إلغاء',
+                          onPressed: () => Navigator.pop(ctx, false),
                         ),
                       ),
                     ],

@@ -596,6 +596,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         } else {
           putRows(entry.key, entry.value);
         }
+        // إفساح إطار بين الجداول — تحميل المنشآت الكبيرة كان يحبس شاشة الإقلاع
+        await Future<void>.delayed(Duration.zero);
       }
       _restoreSession();
       // كل تجديد للتوكن يُحفظ فوراً: السحابة تُدوّر توكن التجديد، والقديم يُرفض
@@ -616,8 +618,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     ready = true;
     notifyListeners();
     // بعد ظهور الواجهة — لا يجمّد شاشة الإقلاع
-    scheduleMicrotask(() {
-      recalculateAllBalances();
+    scheduleMicrotask(() async {
+      await recalculateAllBalancesYielding();
       notifyListeners();
     });
   }
@@ -2798,11 +2800,12 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// بعد أن تستقر ردود الاشتراك لكل الجداول.
   void handleRealtimeJoined() {
     if (autoSync) {
-      // الاشتراك يعني أن الاتصال عاد: ما تعثّر رفعه لا ينتظر بقية مهلته، والسحب
-      // فوري كما عند `SUBSCRIBED` في النسخة المكتبية
+      // الاشتراك يعني أن الاتصال عاد — مهلة قصيرة كي لا يتجمّد الإطار مع واجهة المستخدم
       _pushFailures = 0;
-      if (pendingSyncs.any((a) => a.retryCount < maxSyncRetries)) scheduleAutoPush(Duration.zero);
-      scheduleAutoPull(Duration.zero);
+      if (pendingSyncs.any((a) => a.retryCount < maxSyncRetries)) {
+        scheduleAutoPush(const Duration(milliseconds: 800));
+      }
+      scheduleAutoPull(const Duration(milliseconds: 1200));
       unawaited(retryPendingAttachments());
       unawaited(flushPendingNotices());
       return;
@@ -2860,8 +2863,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   void startAutoSync() {
     if (autoSync || !networkEnabled || !loggedIn || isMasterAdmin) return;
     autoSync = true;
-    // السحب أولاً ثم الرفع بعد مهلة قصيرة — بلا سباق يرفع هويةً فارغة فوق السحابة
-    scheduleAutoPull(Duration.zero);
+    // مهلة بعد الرسم الأول — سحب فوري كان يجمّد الواجهة فور الدخول
+    scheduleAutoPull(const Duration(milliseconds: 800));
     scheduleAutoPush(const Duration(seconds: 2));
   }
 
@@ -2883,9 +2886,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         if (await probeCloud()) _setOffline(false);
       });
     } else {
+      // عودة الاتصال لا تشعل سحباً ثقيلاً في نفس لحظة الإشعار
       _pushFailures = 0;
-      scheduleAutoPush(Duration.zero);
-      scheduleAutoPull(Duration.zero);
+      scheduleAutoPush(const Duration(milliseconds: 800));
+      scheduleAutoPull(const Duration(milliseconds: 1500));
     }
   }
 
@@ -2955,8 +2959,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final last = _lastResumePull;
     if (last != null && at.difference(last) < _resumePullGap) return;
     _lastResumePull = at;
-    scheduleAutoPush(Duration.zero);
-    scheduleAutoPull(Duration.zero);
+    scheduleAutoPush(const Duration(milliseconds: 600));
+    scheduleAutoPull(const Duration(milliseconds: 1000));
   }
 
   Future<void> _runAuto({required bool push}) async {
@@ -5431,6 +5435,24 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// داعي لجولة كتابة جديدة تُشعل تضارباً آخر. تعيد عدد الأرصدة المصحَّحة.
   @override
   int recalculateAllBalances() {
+    var corrected = 0;
+    var installmentsFixed = false;
+    _recalculateAllBalancesSync(
+      onCorrected: () => corrected++,
+      onInstallmentsFixed: () => installmentsFixed = true,
+    );
+    if (installmentsFixed) markDirty('installments');
+    if (corrected > 0) markDirty('students');
+    if (corrected > 0 || installmentsFixed) notifyListeners();
+    return corrected;
+  }
+
+  /// كالمزامنة أعلاه مع إفساح إطار كل عشرات الطلاب — لا يحبس الواجهة ثوانٍ.
+  @override
+  Future<int> recalculateAllBalancesYielding() async {
+    var corrected = 0;
+    var installmentsFixed = false;
+    var n = 0;
     final paymentsByStudent = <String, List<Payment>>{};
     for (final p in payments) {
       if (p.studentId.isEmpty) continue;
@@ -5446,18 +5468,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       if (e.studentId.isEmpty) continue;
       (enrollmentsByStudent[e.studentId] ??= []).add(e);
     }
-
     const none = <Never>[];
-    var corrected = 0;
-    var installmentsFixed = false;
-
     for (final student in students) {
       final pays = paymentsByStudent[student.id] ?? none;
       final insts = installmentsByStudent[student.id] ?? none;
       final enrs = enrollmentsByStudent[student.id] ?? none;
-
-      // المسدَّد من كل قسط مشتقٌّ من السندات: دفعةٌ تغطي أكثر من شهر وإلغاءُ سندٍ
-      // يعطيان النتيجة نفسها على كل جهاز، بلا رفع — كلٌّ يصل إليها من السجلات
       final allocated = allocatePaymentsToInstallments(insts, pays);
       for (final inst in insts) {
         final paid = allocated[inst.id] ?? 0;
@@ -5467,19 +5482,59 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         inst.status = status;
         installmentsFixed = true;
       }
-
       final computed = balanceFrom(enrollments: enrs, installments: insts, payments: pays);
-      // فرق أقل من قرش لا يستحق كتابة
-      if ((student.balance - computed).abs() <= 0.01) continue;
-      student.balance = computed;
-      student.updatedAt = _nowIso();
-      corrected++;
+      if ((student.balance - computed).abs() > 0.01) {
+        student.balance = computed;
+        student.updatedAt = _nowIso();
+        corrected++;
+      }
+      if (++n % 40 == 0) await Future<void>.delayed(Duration.zero);
     }
-
     if (installmentsFixed) markDirty('installments');
     if (corrected > 0) markDirty('students');
     if (corrected > 0 || installmentsFixed) notifyListeners();
     return corrected;
+  }
+
+  void _recalculateAllBalancesSync({
+    required void Function() onCorrected,
+    required void Function() onInstallmentsFixed,
+  }) {
+    final paymentsByStudent = <String, List<Payment>>{};
+    for (final p in payments) {
+      if (p.studentId.isEmpty) continue;
+      (paymentsByStudent[p.studentId] ??= []).add(p);
+    }
+    final installmentsByStudent = <String, List<Installment>>{};
+    for (final i in installments) {
+      if (i.studentId.isEmpty) continue;
+      (installmentsByStudent[i.studentId] ??= []).add(i);
+    }
+    final enrollmentsByStudent = <String, List<StudentEnrollment>>{};
+    for (final e in enrollments) {
+      if (e.studentId.isEmpty) continue;
+      (enrollmentsByStudent[e.studentId] ??= []).add(e);
+    }
+    const none = <Never>[];
+    for (final student in students) {
+      final pays = paymentsByStudent[student.id] ?? none;
+      final insts = installmentsByStudent[student.id] ?? none;
+      final enrs = enrollmentsByStudent[student.id] ?? none;
+      final allocated = allocatePaymentsToInstallments(insts, pays);
+      for (final inst in insts) {
+        final paid = allocated[inst.id] ?? 0;
+        final status = installmentStatusFor(chargeableAmount(inst), paid);
+        if ((inst.paidAmount - paid).abs() <= cent && inst.status == status) continue;
+        inst.paidAmount = paid;
+        inst.status = status;
+        onInstallmentsFixed();
+      }
+      final computed = balanceFrom(enrollments: enrs, installments: insts, payments: pays);
+      if ((student.balance - computed).abs() <= 0.01) continue;
+      student.balance = computed;
+      student.updatedAt = _nowIso();
+      onCorrected();
+    }
   }
 
   /// كتابة الرصيد وسداد الأقساط كما تقتضيها السجلات — المقابل لـ
@@ -6763,11 +6818,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (tid != null) await db.setSetting(initialSetupKey(tid), 'true');
     await db.setSetting(_kSetupPending, null);
     _setupPending = false;
-    await flush();
-    // ما تراكم أثناء التهيئة يُرفع الآن: المزامنة التلقائية تمتنع ما دامت
-    // البوابة مفتوحة، فكان حساب مدير المنشأة يبقى معلّقاً حتى أول تعديل تالٍ
-    resumeAutoSync();
+    // إشعار الواجهة أولاً — زر الاستمرار لا ينتظر قرصاً ومزامنة ثقيلة
     notifyListeners();
+    await flush();
+    // ما تراكم أثناء التهيئة يُرفع بعد استقرار الشاشة الأولى
+    resumeAutoSync();
   }
 
   /// استئناف المزامنة بعد أن تُغلق بوابة التهيئة.
@@ -6776,8 +6831,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       startAutoSync();
       return;
     }
-    scheduleAutoPush(Duration.zero);
-    scheduleAutoPull(Duration.zero);
+    scheduleAutoPush(const Duration(milliseconds: 800));
+    scheduleAutoPull(const Duration(milliseconds: 1200));
   }
 
   /// إعادة فتح التهيئة (لتغيير هوية الجهاز لاحقاً من الإعدادات).
