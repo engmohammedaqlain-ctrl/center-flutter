@@ -293,38 +293,6 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
               color: AppColors.amber,
             ),
           ),
-          const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-            decoration: BoxDecoration(
-              color: AppColors.bg,
-              borderRadius: BorderRadius.circular(Corner.box),
-              border: Border.all(color: AppColors.line),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _step(
-                  icon: Icons.check_circle_rounded,
-                  label: 'تسجيل الدخول',
-                  state: _StepState.done,
-                ),
-                const SizedBox(height: 10),
-                _step(
-                  icon: Icons.downloading_rounded,
-                  label: pct >= 100 ? 'اكتمل التنزيل' : 'تنزيل الطلاب والصفوف والمالية ($pct%)',
-                  state: pct >= 100 ? _StepState.done : _StepState.active,
-                ),
-                const SizedBox(height: 10),
-                _step(
-                  icon: Icons.badge_outlined,
-                  label: 'اختيار هوية الجهاز',
-                  state: _StepState.pending,
-                ),
-              ],
-            ),
-          ),
           const SizedBox(height: 14),
           Text(
             'يمكنك تصغير التطبيق — يظهر إشعار بالنسبة، ويُنبَّهك عند الانتهاء.',
@@ -333,53 +301,6 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _step({required IconData icon, required String label, required _StepState state}) {
-    final Color color;
-    final Color bg;
-    switch (state) {
-      case _StepState.done:
-        color = AppColors.success;
-        bg = AppColors.successSoft;
-      case _StepState.active:
-        color = AppColors.amberDark;
-        bg = AppColors.amberSoft;
-      case _StepState.pending:
-        color = AppColors.faint;
-        bg = Colors.white;
-    }
-    return Row(
-      children: [
-        Container(
-          width: 28,
-          height: 28,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: bg,
-            shape: BoxShape.circle,
-            border: Border.all(color: state == _StepState.pending ? AppColors.line : color.withValues(alpha: 0.35)),
-          ),
-          child: Icon(icon, size: 15, color: color),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            label,
-            textAlign: TextAlign.start,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontFamily: AppText.family,
-              color: state == _StepState.pending ? AppColors.muted : AppColors.heading,
-              fontSize: 12.5,
-              fontWeight: state == _StepState.pending ? FontWeight.w600 : FontWeight.w600,
-              height: 1.35,
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -581,7 +502,3 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
     );
   }
 }
-
-enum _StepState { done, active, pending }
-
-
