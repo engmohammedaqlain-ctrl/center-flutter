@@ -1822,49 +1822,69 @@ class SyncService {
     report(percent: 1, table: tables.first, done: 0, phase: PullProgressPhase.fetching);
 
     var fetchedCount = 0;
+    var fetchedRowsSoFar = 0;
     final fetched = await mapPooled(
       tables,
       pullConcurrency,
       (cloud) async {
         final result = await _fetchTableChanges(cloud, tenantId);
         fetchedCount++;
-        // الجلب حتى 80٪ — التطبيق المحلي يأخذ الباقي
-        final pct = ((fetchedCount / tables.length) * 80).floor();
+        fetchedRowsSoFar += result.rows?.length ?? 0;
+        // الجلب 1–40٪ بعدد الجداول (الشبكة متقاربة)، والسجلات تُبلَّغ للواجهة
+        final pct = (1 + (fetchedCount / tables.length) * 39).floor();
         report(
-          percent: pct.clamp(1, 80),
+          percent: pct.clamp(1, 40),
           table: cloud,
           done: fetchedCount,
           phase: PullProgressPhase.fetching,
-          records: totalPulled,
+          records: fetchedRowsSoFar,
         );
         return result;
       },
     );
 
+    final totalRows = fetched.fold<int>(0, (sum, f) => sum + (f.rows?.length ?? 0));
+    final rowDenom = totalRows > 0 ? totalRows : tables.length;
+    var rowsApplied = 0;
     var applied = 0;
+
     for (final f in fetched) {
       final cloud = f.cloud;
       applied++;
+      final tableRows = f.rows?.length ?? 0;
+
+      int applyPercent() {
+        // التطبيق 40–95٪ بوزن السجلات: طلاب 11 ألف يحرّكون الشريط، لا جدول المالية بـ 29
+        if (totalRows > 0) {
+          return (40 + (rowsApplied / rowDenom) * 55).floor().clamp(40, 95);
+        }
+        return (40 + (applied / tables.length) * 55).floor().clamp(40, 95);
+      }
+
       if (f.error != null) {
         failedTables[cloud] = f.error!;
+        rowsApplied += tableRows;
         report(
-          percent: 80 + ((applied / tables.length) * 15).floor(),
+          percent: applyPercent(),
           table: cloud,
           done: applied,
           phase: PullProgressPhase.applying,
           records: totalPulled,
         );
+        await Future<void>.delayed(Duration.zero);
         continue;
       }
       final rows = f.rows;
       if (rows == null) {
+        rowsApplied += tableRows;
         report(
-          percent: 80 + ((applied / tables.length) * 15).floor(),
+          percent: applyPercent(),
           table: cloud,
           done: applied,
           phase: PullProgressPhase.applying,
           records: totalPulled,
         );
+        await Future<void>.delayed(Duration.zero);
         continue;
       }
 
@@ -1901,10 +1921,36 @@ class SyncService {
           toWrite.add(rest);
         }
 
-        if (toWrite.isNotEmpty) {
-          local.putRows(cloud, toWrite);
+        // دفعات مع إفساح للإطار: جدول الطلاب الكبير لا يحبس الواجهة دفعة واحدة
+        const chunkSize = 1500;
+        final baseRows = rowsApplied;
+        if (toWrite.isEmpty) {
+          rowsApplied = baseRows + tableRows;
+          report(
+            percent: applyPercent(),
+            table: cloud,
+            done: applied,
+            phase: PullProgressPhase.applying,
+            records: totalPulled,
+          );
+        } else {
+          for (var i = 0; i < toWrite.length; i += chunkSize) {
+            final end = i + chunkSize > toWrite.length ? toWrite.length : i + chunkSize;
+            final chunk = toWrite.sublist(i, end);
+            local.putRows(cloud, chunk);
+            totalPulled += chunk.length;
+            rowsApplied = baseRows + ((end / toWrite.length) * tableRows).floor();
+            report(
+              percent: applyPercent(),
+              table: cloud,
+              done: applied,
+              phase: PullProgressPhase.applying,
+              records: totalPulled,
+            );
+            await Future<void>.delayed(Duration.zero);
+          }
+          rowsApplied = baseRows + tableRows;
           local.rememberServerStamps(cloud, stamps);
-          totalPulled += toWrite.length;
         }
 
         // الجلب الكامل يعرف السحابة كلها: سجلٌ مُزامَن غائب عنها حُذف هناك. وما
@@ -1928,15 +1974,17 @@ class SyncService {
         await _setCursor(tenantId, cloud, f.maxStamp);
       } catch (err) {
         failedTables[cloud] = describeSupabaseError(err, cloud);
+        rowsApplied += tableRows;
+        report(
+          percent: applyPercent(),
+          table: cloud,
+          done: applied,
+          phase: PullProgressPhase.applying,
+          records: totalPulled,
+        );
       }
 
-      report(
-        percent: 80 + ((applied / tables.length) * 15).floor(),
-        table: cloud,
-        done: applied,
-        phase: PullProgressPhase.applying,
-        records: totalPulled,
-      );
+      await Future<void>.delayed(Duration.zero);
     }
 
     report(
@@ -1947,6 +1995,7 @@ class SyncService {
       records: totalPulled,
     );
     totalRemoved += await _applyRemoteDeletes(tenantId);
+    await Future<void>.delayed(Duration.zero);
 
     // أرصدة الطلاب تُعاد من السجلات بعد كل سحب: أجهزة مختلفة قد تكون كتبت
     // أرقاماً مختلفة للرصيد نفسه، والحساب من السجلات يوحّدها بلا كتابة جديدة.

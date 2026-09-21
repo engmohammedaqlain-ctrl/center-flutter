@@ -56,6 +56,7 @@ class _FakePortal extends PortalService {
     required String date,
     required Map<String, String> statuses,
     required PortalUser teacher,
+    Set<String>? changedStudentIds,
   }) async {
     savedRoomId = roomId;
     savedAttendance = statuses;

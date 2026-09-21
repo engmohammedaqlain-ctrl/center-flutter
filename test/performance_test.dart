@@ -134,4 +134,73 @@ void main() {
     sw.stop();
     expect(sw.elapsedMilliseconds, lessThan(120), reason: '${sw.elapsedMilliseconds}ms');
   });
+
+  test('putRows upsert stays linear for thousands of students', () {
+    final s = AppStore.forTesting();
+    for (var i = 0; i < 5000; i++) {
+      s.students.add(
+        Student(
+          id: 'u-$i',
+          fullName: 'طالب $i',
+          gradeLevel: 'عاشر',
+          section: 'أ',
+          phone: '0599$i',
+          parentName: 'ولي',
+          parentPhone: '0598$i',
+          balance: 0,
+        ),
+      );
+    }
+
+    final batch = [
+      for (var i = 0; i < 2000; i++)
+        {
+          'id': i.isEven ? 'u-$i' : 'new-$i',
+          'full_name': 'محدث $i',
+          'grade_level': 'عاشر',
+          'section': 'أ',
+          'phone': '0599$i',
+          'parent_name': 'ولي',
+          'parent_phone': '0598$i',
+          'balance': 0,
+          'sync_status': 'synced',
+        },
+    ];
+
+    final sw = Stopwatch()..start();
+    s.putRows('students', batch);
+    sw.stop();
+
+    expect(sw.elapsedMilliseconds, lessThan(500), reason: 'putRows ${sw.elapsedMilliseconds}ms لـ 2k فوق 5k');
+    expect(s.students.length, greaterThan(5000));
+  });
+
+  test('studentsInViewedYear is cached until data changes', () async {
+    final s = await bigSchool(FakeDisk());
+    final first = s.studentsInViewedYear;
+    final sw = Stopwatch()..start();
+    for (var i = 0; i < 200; i++) {
+      expect(identical(s.studentsInViewedYear, first), isTrue);
+    }
+    sw.stop();
+    expect(sw.elapsedMilliseconds, lessThan(30), reason: '${sw.elapsedMilliseconds}ms');
+
+    s.notifyListeners();
+    expect(identical(s.studentsInViewedYear, first), isFalse, reason: 'تغيّر البيانات يبطل التخزين');
+  });
+
+  test('local attendance mark stays under a frame budget', () async {
+    final s = await bigSchool(FakeDisk());
+    await Future<void>.delayed(Duration.zero);
+    final room = s.rooms.first;
+    final student = s.studentsOf(room).first;
+    final date = isoDate(DateTime.now());
+
+    final sw = Stopwatch()..start();
+    for (var i = 0; i < 50; i++) {
+      s.setAttendance(student.id, date, i.isEven ? 'absent' : 'present', ownerId: room.id);
+    }
+    sw.stop();
+    expect(sw.elapsedMilliseconds, lessThan(800), reason: '50 رصدة محلية: ${sw.elapsedMilliseconds}ms');
+  });
 }

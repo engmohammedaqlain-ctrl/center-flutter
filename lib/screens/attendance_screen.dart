@@ -66,6 +66,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   /// فُتحت الشاشة من صفحة صف: الصف معروف في العنوان فلا تُعرض قوائم الاختيار.
   bool get _fixedClass => widget.initialOwnerId?.trim().isNotEmpty ?? false;
 
+  /// اكتمال أيام الشريط: يُعاد عند تغيّر الشعبة/الأسبوع، ويُحدَّث يوم اليوم المختار فقط عند الرصد.
+  String _progressKey = '';
+  Map<String, double> _dayProgress = {};
+
   @override
   void initState() {
     super.initState();
@@ -128,14 +132,25 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           }
         }
 
-        // اكتمال رصد كل يوم في الشريط: نقطة خضراء للمكتمل وبلون المأذون للجزئي
-        final dayProgress = <String, double>{
-          for (final d in week)
-            d.dateStr: list.isEmpty
-                ? 0
-                : list.where((s) => store.attendanceInSession(currentOwner, s.id, d.dateStr) != null).length /
-                    list.length,
-        };
+        // شريط الأيام: يُبنى عند تغيّر الشعبة/الأسبوع، ويُحدَّث يوم الرصد الحالي فقط
+        final progressKey = '$currentOwner|$weekOffset|${list.length}';
+        if (_progressKey != progressKey) {
+          _progressKey = progressKey;
+          _dayProgress = {
+            for (final d in week)
+              d.dateStr: list.isEmpty
+                  ? 0
+                  : list.where((s) => store.attendanceInSession(currentOwner, s.id, d.dateStr) != null).length /
+                      list.length,
+          };
+        } else if (list.isNotEmpty) {
+          _dayProgress = {
+            ..._dayProgress,
+            day.dateStr: list.where((s) => store.attendanceInSession(currentOwner, s.id, day.dateStr) != null).length /
+                list.length,
+          };
+        }
+        final dayProgress = _dayProgress;
 
         return ThumbActionLayer(
           action: canEdit

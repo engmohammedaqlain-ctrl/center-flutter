@@ -1429,11 +1429,15 @@ class PortalService {
   ///
   /// سجل الطالب القائم يُحدَّث بمعرّفه نفسه: التصالح على (الكشف، الطالب) مع
   /// معرّف جديد كان يستبدل المفتاح الأساسي فيبقى السجل القديم يتيماً على الأجهزة.
+  ///
+  /// [changedStudentIds] إن وُجدت: تُرفع أرصدة هؤلاء فقط (delta) بدل يوم كامل،
+  /// فيبقى لمس الحضور سريعاً على الشبكة الضعيفة.
   Future<void> saveAttendance({
     required String roomId,
     required String date,
     required Map<String, String> statuses,
     required PortalUser teacher,
+    Set<String>? changedStudentIds,
   }) async {
     final sessionId = await _roomSessionFor(roomId, date);
     final now = _nowIso();
@@ -1453,18 +1457,31 @@ class PortalService {
       }
     ]);
 
-    if (statuses.isEmpty) return;
+    final toUpsert = changedStudentIds == null
+        ? statuses
+        : {
+            for (final id in changedStudentIds)
+              if (statuses.containsKey(id)) id: statuses[id]!,
+          };
+    if (toUpsert.isEmpty) return;
+
     final existing = await supabaseSelect(
       'attendance',
-      filters: {'session_id': 'eq.$sessionId'},
+      filters: {
+        'session_id': 'eq.$sessionId',
+        if (changedStudentIds != null && changedStudentIds.isNotEmpty)
+          'student_id': _inList(changedStudentIds),
+      },
       columns: 'id,student_id',
     );
-    final idOf = {for (final r in existing ?? const <Map<String, dynamic>>[]) '${r['student_id']}': '${r['id']}'};
+    final idOf = {
+      for (final r in existing ?? const <Map<String, dynamic>>[]) '${r['student_id']}': '${r['id']}',
+    };
 
     await supabaseUpsert(
       'attendance',
       [
-        for (final entry in statuses.entries)
+        for (final entry in toUpsert.entries)
           {
             'id': idOf[entry.key] ?? attendanceIdFor(sessionId, entry.key),
             'session_id': sessionId,
@@ -1577,9 +1594,9 @@ class PortalService {
     List<String>? roomIds,
   }) async {
     final patch = <String, dynamic>{
-      ?'title': title,
-      ?'term': term,
-      ?'is_visible': isVisible,
+      if (title != null) 'title': title,
+      if (term != null) 'term': term,
+      if (isVisible != null) 'is_visible': isVisible,
       if (roomIds != null) 'room_ids': roomIds.isEmpty ? null : roomIds,
     };
     if (patch.isEmpty) return;

@@ -74,6 +74,7 @@ class _OnlinePortal extends PortalService {
     required String date,
     required Map<String, String> statuses,
     required PortalUser teacher,
+    Set<String>? changedStudentIds,
   }) async {
     attendanceCalls.add((roomId: roomId, date: date, statuses: statuses, teacherId: teacher.id));
   }
@@ -119,6 +120,7 @@ class _DeadPortal extends PortalService {
     required String date,
     required Map<String, String> statuses,
     required PortalUser teacher,
+    Set<String>? changedStudentIds,
   }) async =>
       throw Exception('offline');
 

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
@@ -126,16 +127,13 @@ class SqflitePersistence implements Persistence {
 
   @override
   Future<Map<String, List<Map<String, dynamic>>>> loadAll() async {
-    final out = <String, List<Map<String, dynamic>>>{};
     final rows = await _require.query('records', columns: ['table_name', 'data']);
-    for (final r in rows) {
-      final table = '${r['table_name']}';
-      final decoded = jsonDecode('${r['data']}');
-      if (decoded is Map<String, dynamic>) {
-        out.putIfAbsent(table, () => []).add(decoded);
-      }
-    }
-    return out;
+    if (rows.isEmpty) return {};
+    // فك JSON خارج خيط الواجهة: مدرسة بـ 11 ألف طالب كانت تجمّد السبلاش ثوانٍ
+    final encoded = <(String, String)>[
+      for (final r in rows) ('${r['table_name']}', '${r['data']}'),
+    ];
+    return Isolate.run(() => _decodeRecordRows(encoded));
   }
 
   @override
@@ -208,4 +206,18 @@ class SqflitePersistence implements Persistence {
     await _db?.close();
     _db = null;
   }
+}
+
+/// فك صفوف القرص في isolate منفصل — يُستدعى من [SqflitePersistence.loadAll] فقط.
+Map<String, List<Map<String, dynamic>>> _decodeRecordRows(List<(String, String)> encoded) {
+  final out = <String, List<Map<String, dynamic>>>{};
+  for (final (table, data) in encoded) {
+    final decoded = jsonDecode(data);
+    if (decoded is Map<String, dynamic>) {
+      out.putIfAbsent(table, () => []).add(decoded);
+    } else if (decoded is Map) {
+      out.putIfAbsent(table, () => []).add(Map<String, dynamic>.from(decoded));
+    }
+  }
+  return out;
 }

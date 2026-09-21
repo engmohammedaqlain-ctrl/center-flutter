@@ -779,8 +779,17 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   ///
   /// من سنته الحالية هي العام المعروض يظهر بسجله. ومن أنهى هذا العام وانتقل
   /// يظهر بلقطته (صف/شعبة/حالة) فلا يختفي المُرقّى من السنة المغلقة.
+  List<Student>? _studentsYearCache;
+  String? _studentsYearCacheId;
+  int _studentsYearRev = -1;
+
   List<Student> get studentsInViewedYear {
     final yearId = viewedAcademicYearId;
+    if (_studentsYearCache != null &&
+        _studentsYearRev == _rev &&
+        _studentsYearCacheId == yearId) {
+      return _studentsYearCache!;
+    }
     final snapshotOf = {
       for (final y in studentYears.where((y) => y.academicYearId == yearId)) y.studentId: y,
     };
@@ -799,6 +808,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         'status': snap.status,
       }));
     }
+    _studentsYearCache = result;
+    _studentsYearRev = _rev;
+    _studentsYearCacheId = yearId;
     return result;
   }
 
@@ -1474,17 +1486,12 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
   }
 
-  /// كتابة ما تغيّر وحده بعد دمجه مع أحدث نسخة في السحابة — كـ `writeSettings` في الويب.
-  ///
-  /// جهاز يعدّل رسم الحجز وآخر يعدّل العلامات: كلٌّ يبني تعديله على نسخة السحابة
-  /// كي لا يكتب نسخته القديمة من الآخر فوقه. مفاتيح لا تعرفها هذه النسخة تبقى.
+  /// كتابة ما تغيّر محلياً فوراً ثم دمج السحابة في الخلفية — استجابة الإدارة
+  /// لا تنتظر الشبكة. جهاز يعدّل رسم الحجز وآخر العلامات: الدمج الخلفي يبقي
+  /// مفاتيح الآخر، والمفتاح المحلّي يبقى هو الأحدث عند التعارض.
   Future<void> _writeSettings(AppSettings Function(AppSettings prev) update) async {
     final localMap = _storedSettingsMap;
-    final cloud = await _latestCloudSettingsMap();
-    final prev = AppSettings.fromMap({
-      ...localMap,
-      if (cloud != null) ...cloud,
-    });
+    final prev = AppSettings.fromMap(localMap);
     final next = update(prev);
     final nextMap = next.toMap();
     final prevByYear = prev.gradingByYear;
@@ -1500,6 +1507,19 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     };
     final merged = AppSettings.fromMap(mergedMap);
     await db.setSetting(institutionSettingsKey, jsonEncode(merged.toMap()));
+    _persistInstitutionRow();
+    notifyListeners();
+    unawaited(_mergeCloudSettingsInBackground());
+  }
+
+  /// دمج مفاتيح سحابية لم تُمسّ محلياً — بلا حجب الواجهة.
+  Future<void> _mergeCloudSettingsInBackground() async {
+    final cloud = await _latestCloudSettingsMap();
+    if (cloud == null || cloud.isEmpty) return;
+    final local = _storedSettingsMap;
+    final merged = <String, dynamic>{...cloud, ...local};
+    if (jsonEncode(merged) == jsonEncode(local)) return;
+    await db.setSetting(institutionSettingsKey, jsonEncode(AppSettings.fromMap(merged).toMap()));
     _persistInstitutionRow();
     notifyListeners();
   }
@@ -2680,7 +2700,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   // مطابقة لـ `startAutoSync` في sync.ts: رفعٌ بعد كل تعديل، وسحبٌ عند إشارة جهاز
   // آخر وعند الدخول والعودة إلى التطبيق. كانت المزامنة بزرٍّ يدوي يسبقه فحصٌ كامل
   // لكل الجداول، فبدا الرفع والسحب بطيئين ولم تصل تعديلات الأجهزة الأخرى وحدها.
-  static const autoPushDelay = Duration(seconds: 3);
+  static const autoPushDelay = Duration(seconds: 1);
   static const autoPullDelay = Duration(milliseconds: 1500);
   static const _resumePullGap = Duration(seconds: 60);
 
@@ -3192,11 +3212,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       if (existing == null) return;
       final path = '${existing['storage_path'] ?? ''}';
       _notices.removeWhere((r) => '${r['id']}' == recordId);
-      // الملف قبل الصف: صفٌّ حُذف وملفه باقٍ يترك صورة إشعار بلا صاحب
-      if (path.isNotEmpty) await storageRemove(noticeBucket, [path]);
       _queue('finance_attachments', recordId, 'DELETE', null);
       markDirty('finance_attachments');
       notifyListeners();
+      // حذف الملف السحابي في الخلفية — الواجهة لا تنتظر التخزين
+      if (path.isNotEmpty) unawaited(storageRemove(noticeBucket, [path]));
       return;
     }
 
@@ -3215,7 +3235,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     markDirty('finance_attachments');
     notifyListeners();
 
-    await _uploadNotice(row);
+    // الرفع في الخلفية: السند يظهر فوراً والصورة تلحق بالاتصال
+    unawaited(_uploadNotice(row));
   }
 
   /// رفع صورة إشعار ثم تسجيل مسارها في الصف المتزامن. يفشل بصمت بلا اتصال:
@@ -6804,13 +6825,26 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
     // جدول الحضور السحابي لا يحمل عمود تاريخ؛ اليوم المرصود في الجلسة المرتبطة
     if (table == 'attendance') rows = _withSessionDates(rows);
-    void upsertList<T>(List<T> list, T Function(Map<String, dynamic>) parse, String Function(T) idOf, void Function(int, T) setAt, void Function(T) add) {
+
+    // خريطة id→فهرس مرة واحدة: كان indexWhere لكل صف يصير O(n²) عند سحب آلاف الطلاب
+    void upsertList<T>(
+      List<T> list,
+      T Function(Map<String, dynamic>) parse,
+      String Function(T) idOf,
+      void Function(int, T) setAt,
+      void Function(T) add,
+    ) {
+      final indexById = <String, int>{
+        for (var i = 0; i < list.length; i++) idOf(list[i]): i,
+      };
       for (final r in rows) {
         final item = parse(r);
-        final i = list.indexWhere((e) => idOf(e) == idOf(item));
-        if (i >= 0) {
+        final id = idOf(item);
+        final i = indexById[id];
+        if (i != null) {
           setAt(i, item);
         } else {
+          indexById[id] = list.length;
           add(item);
         }
       }
@@ -6856,11 +6890,16 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         upsertList(financeAudit, FinanceAuditEntry.fromCloud, (e) => e.id, (i, e) => financeAudit[i] = e, financeAudit.add);
       default:
         final bucket = extraCloud.putIfAbsent(table, () => []);
+        final indexById = <String, int>{
+          for (var i = 0; i < bucket.length; i++) '${bucket[i]['id']}': i,
+        };
         for (final r in rows) {
-          final i = bucket.indexWhere((e) => '${e['id']}' == '${r['id']}');
-          if (i >= 0) {
+          final id = '${r['id']}';
+          final i = indexById[id];
+          if (i != null) {
             bucket[i] = r;
           } else {
+            indexById[id] = bucket.length;
             bucket.add(r);
           }
         }

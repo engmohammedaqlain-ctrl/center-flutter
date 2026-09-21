@@ -789,7 +789,10 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   Timer? _pushTimer;
 
   /// كشف ينتظر دفعه بعد السكون — يُرفع فوراً إن غادر المعلم الشاشة قبله.
-  ({String roomId, String date, Map<String, String> statuses})? _duePush;
+  ({String roomId, String date, Map<String, String> statuses, Set<String> dirty})? _duePush;
+
+  /// طلاب تغيّر رصدهم منذ آخر رفع — delta بدل يوم كامل.
+  final _dirtyMarks = <String>{};
 
   Map<String, String> get marks => weekMarks[sessionDate] ?? const {};
 
@@ -914,13 +917,16 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   }
 
   /// رفع أخير بلا لمس الحالة — الشاشة لم تعد موجودة.
-  Future<void> _pushOnLeave(({String roomId, String date, Map<String, String> statuses}) due) async {
+  Future<void> _pushOnLeave(
+    ({String roomId, String date, Map<String, String> statuses, Set<String> dirty}) due,
+  ) async {
     try {
       await _service.saveAttendance(
         roomId: due.roomId,
         date: due.date,
         statuses: due.statuses,
         teacher: widget.user,
+        changedStudentIds: due.dirty.isEmpty ? null : due.dirty,
       );
     } catch (_) {
       await _offline.queueAttendance(
@@ -1138,18 +1144,27 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       day[studentId] = status;
     }
     setState(() => weekMarks = {...weekMarks, sessionDate: day});
+    _dirtyMarks.add(studentId);
 
     unawaited(_offline.saveMarks(roomId, sessionDate, day));
-    _duePush = (roomId: roomId, date: sessionDate, statuses: day);
+    _duePush = (roomId: roomId, date: sessionDate, statuses: day, dirty: {..._dirtyMarks});
     _pushTimer?.cancel();
-    _pushTimer = Timer(const Duration(milliseconds: 700), () {
+    _pushTimer = Timer(const Duration(milliseconds: 400), () {
+      final dirty = {..._dirtyMarks};
+      _dirtyMarks.clear();
       _duePush = null;
-      _pushMarks(roomId, sessionDate, day);
+      _pushMarks(roomId, sessionDate, day, changedStudentIds: dirty);
     });
   }
 
   /// رفع كشف يوم. ما لم يُرفع يُصفّ ليُرسل حين يعود الاتصال.
-  Future<void> _pushMarks(String roomId, String date, Map<String, String> statuses) async {
+  /// الواجهة لا تُحجز: الرصد محلي فوري، والمزامنة تُظهر فقط على زر المزامنة.
+  Future<void> _pushMarks(
+    String roomId,
+    String date,
+    Map<String, String> statuses, {
+    Set<String>? changedStudentIds,
+  }) async {
     if (mounted) setState(() => savingAttendance = true);
     try {
       await _service.saveAttendance(
@@ -1157,6 +1172,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         date: date,
         statuses: statuses,
         teacher: widget.user,
+        changedStudentIds: changedStudentIds,
       );
       if (!mounted) return;
       setState(() {
@@ -1470,11 +1486,16 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     if (roomId.isEmpty) return;
     final day = {for (final s in _students()) s.id: 'present'};
     setState(() => weekMarks = {...weekMarks, sessionDate: day});
+    _dirtyMarks
+      ..clear()
+      ..addAll(day.keys);
     unawaited(_offline.saveMarks(roomId, sessionDate, day));
-    _duePush = (roomId: roomId, date: sessionDate, statuses: day);
+    _duePush = (roomId: roomId, date: sessionDate, statuses: day, dirty: {..._dirtyMarks});
     _pushTimer?.cancel();
-    _pushTimer = Timer(const Duration(milliseconds: 400), () {
+    _pushTimer = Timer(const Duration(milliseconds: 300), () {
+      _dirtyMarks.clear();
       _duePush = null;
+      // يوم كامل: بدون delta — كل الطلاب تغيّروا
       _pushMarks(roomId, sessionDate, day);
     });
   }

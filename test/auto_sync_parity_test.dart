@@ -57,7 +57,7 @@ Future<void> _finish(WidgetTester tester, AppStore store) async {
 }
 
 void main() {
-  testWidgets('تعديل محلي: رفع بعد ٣ ثوانٍ لا قبلها، ثم إشارة changed', (tester) async {
+  testWidgets('تعديل محلي: رفع بعد ثانية لا قبلها، ثم إشارة changed', (tester) async {
     final store = _store();
     final seen = <http.Request>[];
 
@@ -65,7 +65,7 @@ void main() {
       store.upsertRoom(Classroom(id: 'room-auto', name: 'شعبة (د)', gradeLevel: 'عاشر', teacherId: ''));
       expect(store.lastAutoPushDelay, AppStore.autoPushDelay);
 
-      await tester.pump(const Duration(milliseconds: 2900));
+      await tester.pump(const Duration(milliseconds: 900));
       expect(seen.where((r) => r.method == 'POST'), isEmpty, reason: 'التعديلات المتتالية تُجمع');
 
       await tester.pump(const Duration(milliseconds: 200));
@@ -86,9 +86,10 @@ void main() {
     await http.runWithClient(() async {
       for (var i = 0; i < 3; i++) {
         store.upsertRoom(Classroom(id: 'room-$i', name: 'شعبة $i', gradeLevel: 'عاشر', teacherId: ''));
-        await tester.pump(const Duration(seconds: 2));
+        // أقصر من مهلة الرفع حتى تُجمَّع في دفعة واحدة
+        await tester.pump(const Duration(milliseconds: 400));
       }
-      await tester.pump(const Duration(seconds: 3));
+      await tester.pump(AppStore.autoPushDelay + const Duration(milliseconds: 200));
       await tester.pump();
       await tester.pump();
     }, () => _cloud(seen));

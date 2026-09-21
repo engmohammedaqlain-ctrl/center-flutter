@@ -49,7 +49,13 @@ void main() {
     final tenantId = s.currentTenant!.id;
     final seen = <http.BaseRequest>[];
 
-    await http.runWithClient(() => s.saveFinanceAttachment('pay-1', 'payment', _png), () => _cloud(seen));
+    await http.runWithClient(() async {
+      await s.saveFinanceAttachment('pay-1', 'payment', _png);
+      // الرفع في الخلفية: ننتظر اكتماله بلا ربط واجهة المستخدم به
+      for (var i = 0; i < 50 && s.financeAttachment('pay-1')?['sync_status'] != 'synced'; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
+    }, () => _cloud(seen));
 
     final upload = seen.firstWhere((r) => r.url.path.contains('/storage/v1/object/finance-notices/'));
     expect(upload.url.path, endsWith('$tenantId/pay-1.png'));
@@ -83,8 +89,13 @@ void main() {
 
     await http.runWithClient(() async {
       await s.saveFinanceAttachment('pay-3', 'payment', _png);
+      for (var i = 0; i < 50 && s.financeAttachment('pay-3')?['sync_status'] != 'synced'; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
       await s.saveFinanceAttachment('pay-3', 'payment', null);
-      await Future<void>.delayed(Duration.zero);
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
     }, () => _cloud(seen));
 
     expect(s.financeAttachment('pay-3'), isNull);
@@ -126,6 +137,12 @@ void main() {
     await http.runWithClient(() async {
       await s.saveFinanceAttachment('exp-1', 'expense', _png);
       await s.saveFinanceAttachment('pay-out-1', 'payout', _png);
+      for (var i = 0; i < 50 &&
+          (s.financeAttachment('exp-1')?['sync_status'] != 'synced' ||
+              s.financeAttachment('pay-out-1')?['sync_status'] != 'synced');
+          i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
     }, () => _cloud(seen));
 
     expect(s.financeAttachment('exp-1')!['record_type'], 'expense');
