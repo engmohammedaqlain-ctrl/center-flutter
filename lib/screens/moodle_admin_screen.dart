@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../data/academic_matching.dart';
 import '../data/portal.dart';
@@ -9,6 +8,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/widgets.dart';
+import 'portal_chrome.dart';
 
 /// إدارة مواد المودل للموظف — المقابل لـ `pages/MoodleAdminPage.tsx`.
 ///
@@ -136,17 +136,12 @@ class _MoodleAdminScreenState extends State<MoodleAdminScreen> {
 
   Future<void> _openItem(CourseItem item) async {
     if (item.contentUrl.isEmpty) return;
-    try {
-      final url = await _service.materialOpenUrl(item.contentUrl) ?? item.contentUrl;
-      final uri = Uri.tryParse(url);
-      if (uri == null || !await canLaunchUrl(uri)) {
-        if (mounted) showAppSnack(context, 'تعذّر فتح الرابط', error: true);
-        return;
-      }
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      if (mounted) showAppSnack(context, 'تعذّر فتح الملف', error: true);
-    }
+    await openPortalMaterial(
+      context,
+      item.contentUrl,
+      service: _service,
+      fileName: item.fileName,
+    );
   }
 
   @override

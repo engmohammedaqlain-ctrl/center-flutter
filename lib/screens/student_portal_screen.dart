@@ -163,17 +163,19 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     if (gid == null || gid.isEmpty) return;
     final token = ++_moodleToken;
     setState(() => loadingMoodle = true);
+    final roomId = data?.subjects.where((s) => s.groupId == gid).map((s) => s.roomId).firstOrNull ?? '';
     try {
       final list = await _service.groupSections(
         tenantId: user.tenantId,
         groupId: gid,
         term: term,
         includeHidden: false,
+        roomId: roomId.isEmpty ? null : roomId,
       );
       if (!mounted || token != _moodleToken) return;
       setState(() {
         sections = list;
-        closed.clear();
+        closed.removeWhere((id) => list.every((s) => s.id != id));
         loadingMoodle = false;
       });
     } catch (_) {
@@ -401,7 +403,12 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                               item: it,
                               onOpen: it.contentUrl.isEmpty
                                   ? null
-                                  : () => openPortalMaterial(context, it.contentUrl, service: _service),
+                                  : () => openPortalMaterial(
+                                        context,
+                                        it.contentUrl,
+                                        service: _service,
+                                        fileName: it.fileName,
+                                      ),
                             ),
                           ),
                       ],
@@ -1126,10 +1133,8 @@ class _ContentTile extends StatelessWidget {
                       style: TextStyle(color: AppColors.heading, fontSize: 12, fontWeight: FontWeight.w900),
                     ),
                     StatusChip.muted(item.typeLabel),
-                    if (item.isNew()) StatusChip.amber('جديد'),
                   ],
-                ),
-                if (item.description.trim().isNotEmpty) ...[
+                ),                if (item.description.trim().isNotEmpty) ...[
                   const SizedBox(height: 3),
                   Text(
                     item.description.trim(),

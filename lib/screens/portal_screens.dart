@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
 import '../data/grading.dart';
@@ -704,29 +703,14 @@ class _TermSwitch extends StatelessWidget {
       _ => (fg: _C.slate700, bg: _C.soft),
     };
 
-/// فتح ملف مادة: يُوقَّع رابطه لساعة قبل فتحه، فالحاوية خاصة.
-Future<void> _openMaterial(BuildContext context, String url, {PortalService service = const PortalService()}) async {
-  final target = await service.materialOpenUrl(url);
-  if (!context.mounted) return;
-  if (target == null || target.isEmpty) {
-    showAppSnack(context, 'تعذّر فتح الملف', error: true);
-    return;
-  }
-  await _openUrl(context, target);
-}
-
-Future<void> _openUrl(BuildContext context, String url) async {
-  var ok = false;
-  final uri = Uri.tryParse(url.trim());
-  if (uri != null) {
-    try {
-      ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      ok = false;
-    }
-  }
-  if (!ok && context.mounted) showAppSnack(context, 'تعذّر فتح الرابط', error: true);
-}
+/// فتح ملف مادة داخل التطبيق — صورٌ معاينة، وروابط يوتيوب/درايف في تبويب داخلي.
+Future<void> _openMaterial(
+  BuildContext context,
+  String url, {
+  PortalService service = const PortalService(),
+  String fileName = '',
+}) =>
+    openPortalMaterial(context, url, service: service, fileName: fileName);
 
 /// حالة تحميل أو خطأ بشكل Center.
 Widget _loadingView() => const Center(
@@ -1335,6 +1319,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         initialTerm: term,
         sortOrder: sections.length,
         color: _Brand(data!.branding).primary,
+        rooms: c.rooms,
       ),
     );
     if (created == null || !mounted) return;
@@ -1991,26 +1976,28 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('الشعبة الحالية:', style: TextStyle(color: _C.muted, fontSize: 11, fontWeight: FontWeight.w800)),
+            const Text('المادة / المجموعة:', style: TextStyle(color: _C.muted, fontSize: 11, fontWeight: FontWeight.w800)),
             const SizedBox(height: 5),
             _Select<String>(
               value: groupId,
               height: 36,
               items: classes.isEmpty
-                  ? const [DropdownMenuItem(value: '', child: Text('لا توجد شعب مسندة لك'))]
+                  ? const [DropdownMenuItem(value: '', child: Text('لا توجد مواد مسندة لك'))]
                   : [
                       for (final k in classes)
                         DropdownMenuItem(
                           value: k.group.id,
                           child: Text(
                             [
-                              k.roomName.trim().isNotEmpty
-                                  ? k.roomName.trim()
-                                  : cleanGroupName(k.group.name, k.group.gradeLevel),
-                              if (k.subjectName.trim().isNotEmpty) '(${k.subjectName.trim()})',
+                              if (k.subjectName.trim().isNotEmpty) k.subjectName.trim(),
+                              if (k.roomName.trim().isNotEmpty) '— ${k.roomName.trim()}',
+                              if (k.subjectName.trim().isEmpty)
+                                (k.roomName.trim().isNotEmpty
+                                    ? k.roomName.trim()
+                                    : cleanGroupName(k.group.name, k.group.gradeLevel)),
                               if (k.group.gradeLevel.trim().isNotEmpty)
-                                '— ${k.group.gradeLevel.trim()}',
-                            ].join(' '),
+                                '(${k.group.gradeLevel.trim()})',
+                            ].where((e) => e.toString().trim().isNotEmpty).join(' '),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -2067,15 +2054,54 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
             padding: const EdgeInsets.only(bottom: 12),
             child: _TeacherSectionCard(
               section: sec,
+              rooms: _current?.rooms ?? const [],
               onAddItem: () => _newItem(sec),
               onCopy: () => _copySection(sec),
               onToggle: () => _toggleVisibility(sec),
               onDelete: () => _deleteSection(sec),
-              onOpenItem: (it) => _openMaterial(context, it.contentUrl, service: _service),
+              onEditRooms: (_current?.rooms.length ?? 0) > 1 ? () => _editSectionRooms(sec) : null,
+              onOpenItem: (it) => _openMaterial(
+                context,
+                it.contentUrl,
+                service: _service,
+                fileName: it.fileName,
+              ),
               onDeleteItem: (it) => _deleteItem(sec, it),
             ),
           ),
     ];
+  }
+
+  /// تعديل شعب الوحدة — كل الشعب = null في السحابة.
+  Future<void> _editSectionRooms(CourseSection sec) async {
+    final rooms = _current?.rooms ?? const <PortalRoom>[];
+    if (rooms.length <= 1) return;
+    final picked = await showModalBottomSheet<List<String>>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
+      builder: (_) => _SectionRoomsSheet(
+        title: sec.title,
+        rooms: rooms,
+        selected: sec.roomIds.isEmpty ? rooms.map((r) => r.id).toList() : [...sec.roomIds],
+        color: _Brand(data!.branding).primary,
+      ),
+    );
+    if (picked == null || !mounted) return;
+    final allSelected = rooms.every((r) => picked.contains(r.id));
+    final roomIds = allSelected ? const <String>[] : picked;
+    setState(() => sections = [
+          for (final s in sections) s.id == sec.id ? s.copyWith(roomIds: roomIds) : s,
+        ]);
+    await _cacheSections();
+    await _writeOrQueue(
+      () => _service.updateSection(sec.id, roomIds: roomIds),
+      {
+        'kind': 'section_upsert',
+        'row': sections.firstWhere((s) => s.id == sec.id).toCloud(),
+      },
+    );
+    if (mounted) _flash('حُفظت الشعب');
   }
 }
 
@@ -2642,29 +2668,51 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
   }
 }
 
-/// وحدة في مودل المعلم: ترويستها بإجراءاتها، ثم موادها.
-class _TeacherSectionCard extends StatelessWidget {
+/// وحدة في مودل المعلم: تُطوى وتُفتح، وترويستها بإجراءاتها ثم موادها.
+class _TeacherSectionCard extends StatefulWidget {
   const _TeacherSectionCard({
     required this.section,
+    required this.rooms,
     required this.onAddItem,
     required this.onCopy,
     required this.onToggle,
     required this.onDelete,
     required this.onOpenItem,
     required this.onDeleteItem,
+    this.onEditRooms,
   });
 
   final CourseSection section;
+  final List<PortalRoom> rooms;
   final VoidCallback onAddItem;
   final VoidCallback onCopy;
   final VoidCallback onToggle;
   final VoidCallback onDelete;
   final ValueChanged<CourseItem> onOpenItem;
   final ValueChanged<CourseItem> onDeleteItem;
+  final VoidCallback? onEditRooms;
+
+  @override
+  State<_TeacherSectionCard> createState() => _TeacherSectionCardState();
+}
+
+class _TeacherSectionCardState extends State<_TeacherSectionCard> {
+  bool open = true;
+
+  String get _roomsLabel {
+    final sec = widget.section;
+    if (sec.roomIds.isEmpty) return '';
+    final names = [
+      for (final id in sec.roomIds)
+        widget.rooms.where((r) => r.id == id).map((r) => r.name).firstOrNull,
+    ].whereType<String>().where((n) => n.trim().isNotEmpty);
+    return names.join('، ');
+  }
 
   @override
   Widget build(BuildContext context) {
-    final sec = section;
+    final sec = widget.section;
+    final roomsLabel = _roomsLabel;
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -2675,100 +2723,134 @@ class _TeacherSectionCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 6, 8),
-            decoration: const BoxDecoration(
-              color: _C.bg,
-              border: Border(bottom: BorderSide(color: _C.line)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.layers_outlined, size: 16, color: _C.navy),
-                const SizedBox(width: 6),
-                // أربعة إجراءات في الطرف لا تتسع مع عنوان وشارتين في سطر واحد عند
-                // 320 بكسل: العنوان وشاراته ينكسران تحت بعضها والإجراءات ثابتة
-                Expanded(
-                  child: Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text(
-                        sec.title,
-                        style: const TextStyle(color: _C.navy, fontSize: 12, fontWeight: FontWeight.w900),
-                      ),
-                      _Badge(sec.termLabel, fg: _C.muted, bg: _C.line, radius: Corner.chip),
-                      if (!sec.isVisible) const _Badge('مخفي', fg: _C.amber700, bg: _C.amber100, radius: Corner.chip),
-                    ],
+          InkWell(
+            onTap: () => setState(() => open = !open),
+            child: Container(
+              padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 8, 10),
+              decoration: BoxDecoration(
+                color: _C.bg,
+                border: open ? const Border(bottom: BorderSide(color: _C.line)) : null,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(
+                      open ? Icons.expand_less : Icons.expand_more,
+                      size: 20,
+                      color: _C.navy,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 4),
-                InkWell(
-                  onTap: onAddItem,
-                  borderRadius: BorderRadius.circular(Corner.field),
-                  child: Container(
-                    height: 28,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    decoration: BoxDecoration(color: const Color(0x0D0B2545), borderRadius: BorderRadius.circular(Corner.field)),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.add, size: 13, color: _C.navy),
-                        SizedBox(width: 3),
-                        Text('مادة', style: TextStyle(color: _C.navy, fontSize: 11, fontWeight: FontWeight.w800)),
+                        Text(
+                          sec.title,
+                          style: const TextStyle(color: _C.navy, fontSize: 13, fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            _Badge(sec.termLabel, fg: _C.muted, bg: _C.line, radius: Corner.chip),
+                            _Badge(
+                              '${sec.items.length} عنصر',
+                              fg: _C.muted,
+                              bg: _C.line,
+                              radius: Corner.chip,
+                            ),
+                            if (!sec.isVisible)
+                              const _Badge('مخفي', fg: _C.amber700, bg: _C.amber100, radius: Corner.chip),
+                            if (roomsLabel.isNotEmpty)
+                              _Badge(roomsLabel, fg: _C.blue700, bg: _C.blue50, radius: Corner.chip),
+                          ],
+                        ),
                       ],
                     ),
                   ),
-                ),
-                _iconAction(Icons.copy_outlined, 'نسخ القسم لمواد أخرى', _C.muted, onCopy),
-                _iconAction(
-                  sec.isVisible ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                  sec.isVisible ? 'إخفاء القسم عن الطلاب' : 'إظهار القسم للطلاب',
-                  sec.isVisible ? _C.muted : _C.amber600,
-                  onToggle,
-                ),
-                _iconAction(Icons.delete_outline, 'حذف القسم', _C.rose600, onDelete),
-              ],
+                ],
+              ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: sec.items.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 10),
-                    child: Text(
-                      'لا توجد مواد أو واجبات مضافة في هذه الوحدة',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: _C.faint, fontSize: 11),
+          if (open) ...[
+            Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(8, 6, 8, 0),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _Soft(
+                      label: 'مادة',
+                      icon: Icons.add,
+                      fg: _C.navy,
+                      height: 30,
+                      radius: Corner.field,
+                      onTap: widget.onAddItem,
                     ),
-                  )
-                : Column(
-                    children: [
-                      for (final it in sec.items)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: _ItemTile(
-                            item: it,
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (it.contentUrl.isNotEmpty)
-                                  _Soft(
-                                    label: 'فتح',
-                                    icon: it.type == 'file' ? Icons.description_outlined : Icons.open_in_new,
-                                    fg: _C.navy,
-                                    height: 28,
-                                    radius: Corner.field,
-                                    onTap: () => onOpenItem(it),
+                    if (widget.onEditRooms != null)
+                      _iconAction(Icons.meeting_room_outlined, 'الشعب', _C.muted, widget.onEditRooms!),
+                    _iconAction(Icons.copy_outlined, 'نسخ القسم لمواد أخرى', _C.muted, widget.onCopy),
+                    _iconAction(
+                      sec.isVisible ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                      sec.isVisible ? 'إخفاء القسم عن الطلاب' : 'إظهار القسم للطلاب',
+                      sec.isVisible ? _C.muted : _C.amber600,
+                      widget.onToggle,
+                    ),
+                    _iconAction(Icons.delete_outline, 'حذف القسم', _C.rose600, widget.onDelete),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: sec.items.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 10),
+                      child: Text(
+                        'لا توجد مواد أو واجبات مضافة في هذه الوحدة',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: _C.faint, fontSize: 11),
+                      ),
+                    )
+                  : Column(
+                      children: [
+                        for (final it in sec.items)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _ItemTile(
+                              item: it,
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (it.contentUrl.isNotEmpty)
+                                    _Soft(
+                                      label: 'فتح',
+                                      icon: it.type == 'file'
+                                          ? Icons.description_outlined
+                                          : Icons.open_in_new,
+                                      fg: _C.navy,
+                                      height: 28,
+                                      radius: Corner.field,
+                                      onTap: () => widget.onOpenItem(it),
+                                    ),
+                                  _iconAction(
+                                    Icons.delete_outline,
+                                    'حذف المادة',
+                                    _C.rose600,
+                                    () => widget.onDeleteItem(it),
                                   ),
-                                _iconAction(Icons.delete_outline, 'حذف المادة', _C.rose600, () => onDeleteItem(it)),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                    ],
-                  ),
-          ),
+                      ],
+                    ),
+            ),
+          ],
         ],
       ),
     );
@@ -2922,6 +3004,7 @@ class _NewSectionSheet extends StatefulWidget {
     required this.initialTerm,
     required this.sortOrder,
     required this.color,
+    this.rooms = const [],
   });
 
   final PortalService service;
@@ -2930,6 +3013,7 @@ class _NewSectionSheet extends StatefulWidget {
   final String initialTerm;
   final int sortOrder;
   final Color color;
+  final List<PortalRoom> rooms;
 
   @override
   State<_NewSectionSheet> createState() => _NewSectionSheetState();
@@ -2938,6 +3022,7 @@ class _NewSectionSheet extends StatefulWidget {
 class _NewSectionSheetState extends State<_NewSectionSheet> {
   final title = TextEditingController();
   late String term = widget.initialTerm == 'general' ? 'other' : widget.initialTerm;
+  late List<String> selectedRooms = [for (final r in widget.rooms) r.id];
   String? titleError;
   bool busy = false;
 
@@ -2952,8 +3037,10 @@ class _NewSectionSheetState extends State<_NewSectionSheet> {
       setState(() => titleError = 'يرجى إدخال عنوان الوحدة');
       return;
     }
-    // تُبنى بمعرّفها هنا ويتولّى الرفع من فتح الورقة: هكذا تُنشأ الوحدة بلا
-    // شبكة أيضاً، وتُرفع بالمعرّف نفسه حين يعود الاتصال
+    final allSelected =
+        widget.rooms.isEmpty || widget.rooms.every((r) => selectedRooms.contains(r.id));
+    // كل الشعب → فارغ في السحابة: شعبة تُضاف لاحقاً ترى الوحدة تلقائياً
+    final roomIds = allSelected || widget.rooms.length <= 1 ? const <String>[] : [...selectedRooms];
     Navigator.pop(
       context,
       CourseSection(
@@ -2964,6 +3051,7 @@ class _NewSectionSheetState extends State<_NewSectionSheet> {
         title: title.text.trim(),
         sortOrder: widget.sortOrder,
         createdAt: DateTime.now().toIso8601String(),
+        roomIds: roomIds,
       ),
     );
   }
@@ -2994,7 +3082,100 @@ class _NewSectionSheetState extends State<_NewSectionSheet> {
           ],
           onChanged: (v) => setState(() => term = v ?? term),
         ),
+        if (widget.rooms.length > 1) ...[
+          const SizedBox(height: 12),
+          const _Label('الشعب:'),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final r in widget.rooms)
+                FilterChip(
+                  label: Text(r.name, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
+                  selected: selectedRooms.contains(r.id),
+                  onSelected: (on) {
+                    setState(() {
+                      if (on) {
+                        selectedRooms = [...selectedRooms, r.id];
+                      } else if (selectedRooms.length > 1) {
+                        selectedRooms = [for (final id in selectedRooms) if (id != r.id) id];
+                      }
+                    });
+                  },
+                  selectedColor: widget.color.withValues(alpha: 0.15),
+                  checkmarkColor: widget.color,
+                  side: BorderSide(color: selectedRooms.contains(r.id) ? widget.color : _C.line),
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+            ],
+          ),
+        ],
         _sheetActions(context, label: 'حفظ القسم', color: widget.color, busy: busy, onSave: _save),
+      ],
+    );
+  }
+}
+
+/// اختيار شعب وحدة قائمة.
+class _SectionRoomsSheet extends StatefulWidget {
+  const _SectionRoomsSheet({
+    required this.title,
+    required this.rooms,
+    required this.selected,
+    required this.color,
+  });
+
+  final String title;
+  final List<PortalRoom> rooms;
+  final List<String> selected;
+  final Color color;
+
+  @override
+  State<_SectionRoomsSheet> createState() => _SectionRoomsSheetState();
+}
+
+class _SectionRoomsSheetState extends State<_SectionRoomsSheet> {
+  late List<String> selected = [...widget.selected];
+
+  @override
+  Widget build(BuildContext context) {
+    return _sheetFrame(
+      context,
+      title: 'الشعب — ${widget.title}',
+      children: [
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final r in widget.rooms)
+              FilterChip(
+                label: Text(r.name, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
+                selected: selected.contains(r.id),
+                onSelected: (on) {
+                  setState(() {
+                    if (on) {
+                      selected = [...selected, r.id];
+                    } else if (selected.length > 1) {
+                      selected = [for (final id in selected) if (id != r.id) id];
+                    }
+                  });
+                },
+                selectedColor: widget.color.withValues(alpha: 0.15),
+                checkmarkColor: widget.color,
+                side: BorderSide(color: selected.contains(r.id) ? widget.color : _C.line),
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+          ],
+        ),
+        _sheetActions(
+          context,
+          label: 'حفظ',
+          color: widget.color,
+          busy: false,
+          onSave: () => Navigator.pop(context, selected),
+        ),
       ],
     );
   }

@@ -268,12 +268,35 @@ void main() {
       expect(old.isNew(now), isFalse);
     });
 
-    test('القسم يمرّ عبر شكل السحابة، والمخفي يبقى مخفياً', () {
-      const sec = CourseSection(id: 'c1', tenantId: 't', groupId: 'g', term: 'term_2', title: 'الوحدة الأولى', isVisible: false);
+    test('القسم يمرّ عبر شكل السحابة، والمخفي يبقى مخفياً، والشعب تُحفظ', () {
+      const sec = CourseSection(
+        id: 'c1',
+        tenantId: 't',
+        groupId: 'g',
+        term: 'term_2',
+        title: 'الوحدة الأولى',
+        isVisible: false,
+        roomIds: ['r1', 'r2'],
+      );
       final back = CourseSection.fromCloud(sec.toCloud());
       expect(back.isVisible, isFalse);
       expect(back.termLabel, 'الفصل الثاني');
+      expect(back.roomIds, ['r1', 'r2']);
       expect(CourseSection.fromCloud(const {'id': 'x', 'term': 'general'}).termLabel, 'أخرى');
+      expect(sectionVisibleToRoom(sec, 'r1'), isTrue);
+      expect(sectionVisibleToRoom(sec, 'r9'), isFalse);
+      expect(sectionVisibleToRoom(sec.copyWith(roomIds: const []), 'r9'), isTrue);
+    });
+
+    test('تطبيع روابط يوتيوب ودرايف للفتح داخل التطبيق', () {
+      expect(
+        polishExternalLink('https://youtu.be/abc123'),
+        'https://www.youtube.com/watch?v=abc123',
+      );
+      expect(
+        polishExternalLink('https://drive.google.com/file/d/FILEID/view?usp=sharing'),
+        'https://drive.google.com/file/d/FILEID/preview',
+      );
     });
 
     test('مسار الملف في الحاوية يُستخرج من رابطه العام فقط', () {

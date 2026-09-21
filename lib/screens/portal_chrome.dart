@@ -261,11 +261,19 @@ class _PortalNavTile extends StatelessWidget {
   }
 }
 
-/// فتح مادة دراسية عبر رابط موقَّع إن لزم.
+bool _looksLikeImage(String url, {String fileName = ''}) {
+  final name = fileName.toLowerCase();
+  if (RegExp(r'\.(jpe?g|png|webp|gif)$').hasMatch(name)) return true;
+  final path = url.toLowerCase().split('?').first;
+  return RegExp(r'\.(jpe?g|png|webp|gif)$').hasMatch(path);
+}
+
+/// فتح مادة دراسية داخل التطبيق قدر الإمكان (صورة / تبويب داخلي)، لا المتصفح الخارجي.
 Future<void> openPortalMaterial(
   BuildContext context,
   String url, {
   PortalService service = const PortalService(),
+  String fileName = '',
 }) async {
   final target = await service.materialOpenUrl(url);
   if (!context.mounted) return;
@@ -273,9 +281,41 @@ Future<void> openPortalMaterial(
     showAppSnack(context, 'تعذّر فتح الملف', error: true);
     return;
   }
+
+  final polished = polishExternalLink(target);
+  final isStorage = PortalService.materialPath(url) != null;
+
+  if (_looksLikeImage(polished, fileName: fileName) ||
+      (isStorage && _looksLikeImage(url, fileName: fileName))) {
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.92),
+      builder: (ctx) => _InAppImageViewer(url: polished),
+    );
+    return;
+  }
+
+  final uri = Uri.tryParse(polished);
+  if (uri == null) {
+    showAppSnack(context, 'تعذّر فتح الرابط', error: true);
+    return;
+  }
+
+  // PDF الموقَّع وروابط يوتيوب/درايف: تبويب داخل التطبيق (Custom Tabs / SFSafari)
   var ok = false;
-  final uri = Uri.tryParse(target.trim());
-  if (uri != null) {
+  try {
+    ok = await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+  } catch (_) {
+    ok = false;
+  }
+  if (!ok) {
+    try {
+      ok = await launchUrl(uri, mode: LaunchMode.inAppWebView);
+    } catch (_) {
+      ok = false;
+    }
+  }
+  if (!ok) {
     try {
       ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {
@@ -283,6 +323,61 @@ Future<void> openPortalMaterial(
     }
   }
   if (!ok && context.mounted) showAppSnack(context, 'تعذّر فتح الرابط', error: true);
+}
+
+/// معاينة صورة داخل التطبيق مع تكبير/تصغير — بلا متصفح خارجي.
+class _InAppImageViewer extends StatelessWidget {
+  const _InAppImageViewer({required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(12),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: InteractiveViewer(
+              minScale: 0.8,
+              maxScale: 4,
+              child: Center(
+                child: Image.network(
+                  url,
+                  fit: BoxFit.contain,
+                  loadingBuilder: (context, child, progress) {
+                    if (progress == null) return child;
+                    return const SizedBox(
+                      width: 36,
+                      height: 36,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    );
+                  },
+                  errorBuilder: (_, _, _) => const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'تعذّر عرض الصورة',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          PositionedDirectional(
+            top: 4,
+            end: 4,
+            child: IconButton(
+              style: IconButton.styleFrom(backgroundColor: Colors.black54),
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.close, color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// سند القبض بهوية الجوال.

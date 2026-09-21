@@ -216,6 +216,7 @@ class PortalSubject {
     this.startTime = '',
     this.endTime = '',
     this.roomName = '',
+    this.roomId = '',
   });
 
   final String groupId;
@@ -226,6 +227,9 @@ class PortalSubject {
   final String startTime;
   final String endTime;
   final String roomName;
+
+  /// شعبة هذا الطالب داخل المادة — لتصفية وحدات المودل حسب `room_ids`.
+  final String roomId;
 }
 
 /// تقييم معلم لطالب في مادة.
@@ -654,7 +658,7 @@ class CourseItem {
     return dueDate.compareTo(isoDate(now ?? DateTime.now())) < 0;
   }
 
-  /// أُضيف خلال آخر 48 ساعة — شارة «جديد» عند الطالب.
+  /// أُضيف خلال آخر 48 ساعة — كان لشارة «جديد»؛ بقي للاختبارات والمزامنة.
   bool isNew([DateTime? now]) {
     final created = DateTime.tryParse(createdAt);
     if (created == null) return false;
@@ -694,7 +698,59 @@ class CourseItem {
       );
 }
 
-/// وحدة أو قسم دراسي لشعبة في فصل.
+/// تطبيع روابط يوتيوب ودرايف وغيرها لتُفتح بسلاسة داخل التطبيق.
+String polishExternalLink(String url) {
+  final uri = Uri.tryParse(url.trim());
+  if (uri == null || !uri.hasScheme) return url.trim();
+  final host = uri.host.toLowerCase();
+
+  if (host == 'youtu.be' || host == 'www.youtu.be') {
+    final id = uri.pathSegments.where((s) => s.isNotEmpty).firstOrNull;
+    if (id != null && id.isNotEmpty) {
+      return Uri.https('www.youtube.com', '/watch', {'v': id}).toString();
+    }
+  }
+  if (host.contains('youtube.com') || host.contains('youtube-nocookie.com')) {
+    final v = uri.queryParameters['v'];
+    if (v != null && v.isNotEmpty) {
+      return Uri.https('www.youtube.com', '/watch', {'v': v}).toString();
+    }
+    final shorts = RegExp(r'/shorts/([^/?]+)').firstMatch(uri.path);
+    if (shorts != null) {
+      return Uri.https('www.youtube.com', '/watch', {'v': shorts[1]}).toString();
+    }
+  }
+
+  if (host.contains('drive.google.com')) {
+    final file = RegExp(r'/file/d/([^/]+)').firstMatch(uri.path);
+    if (file != null) {
+      return 'https://drive.google.com/file/d/${file[1]}/preview';
+    }
+    final openId = uri.queryParameters['id'];
+    if (openId != null && openId.isNotEmpty) {
+      return 'https://drive.google.com/file/d/$openId/preview';
+    }
+  }
+
+  if (host.contains('docs.google.com') ||
+      host.contains('sheets.google.com') ||
+      host.contains('slides.google.com')) {
+    final path = uri.path;
+    if (path.contains('/edit') || path.endsWith('/view') || path.contains('/view')) {
+      return url.replaceFirst(RegExp(r'/(edit|view)[^/]*'), '/preview');
+    }
+  }
+
+  return url.trim();
+}
+
+/// وحدة بلا شعب محددة لكل شعب المادة؛ وإلا لشعبها وحدها — مطابق لـ `sectionVisibleToRoom`.
+bool sectionVisibleToRoom(CourseSection section, String? roomId) {
+  if (section.roomIds.isEmpty) return true;
+  return roomId != null && roomId.isNotEmpty && section.roomIds.contains(roomId);
+}
+
+/// وحدة أو قسم دراسي لمادة (مجموعة) في فصل — وقد تُخصَّص لشعب معيّنة.
 class CourseSection {
   const CourseSection({
     required this.id,
@@ -706,6 +762,7 @@ class CourseSection {
     this.isVisible = true,
     this.createdAt = '',
     this.items = const [],
+    this.roomIds = const [],
   });
 
   final String id;
@@ -718,9 +775,20 @@ class CourseSection {
   final String createdAt;
   final List<CourseItem> items;
 
+  /// شعب الوحدة من شعب المادة؛ فارغ = كل شعب المادة.
+  final List<String> roomIds;
+
   String get termLabel => academicTermLabels[term] ?? term;
 
-  CourseSection copyWith({bool? isVisible, List<CourseItem>? items}) => CourseSection(
+  /// الوحدة لكل الشعب (لا تقييد).
+  bool get forAllRooms => roomIds.isEmpty;
+
+  CourseSection copyWith({
+    bool? isVisible,
+    List<CourseItem>? items,
+    List<String>? roomIds,
+  }) =>
+      CourseSection(
         id: id,
         tenantId: tenantId,
         groupId: groupId,
@@ -730,6 +798,7 @@ class CourseSection {
         isVisible: isVisible ?? this.isVisible,
         createdAt: createdAt,
         items: items ?? this.items,
+        roomIds: roomIds ?? this.roomIds,
       );
 
   Map<String, dynamic> toCloud() => {
@@ -740,6 +809,7 @@ class CourseSection {
         'title': title,
         'sort_order': sortOrder,
         'is_visible': isVisible,
+        'room_ids': roomIds.isEmpty ? null : roomIds,
         'created_at': createdAt.isEmpty ? _nowIso() : createdAt,
       };
 
@@ -752,6 +822,11 @@ class CourseSection {
         sortOrder: (m['sort_order'] as num?)?.toInt() ?? 0,
         isVisible: m['is_visible'] != false,
         createdAt: '${m['created_at'] ?? ''}',
+        roomIds: [
+          if (m['room_ids'] is List)
+            for (final id in m['room_ids'] as List)
+              if ('$id'.trim().isNotEmpty) '$id',
+        ],
       );
 }
 
@@ -1003,6 +1078,23 @@ class PortalService {
       if ('${e['status'] ?? 'active'}' != 'active') continue;
       final gid = '${e['group_id']}';
       final g = groupById[gid];
+      final groupRoomIds = g == null
+          ? const <String>[]
+          : Group.fromCloud(g).allRoomIds;
+      final groupRooms = [
+        for (final id in groupRoomIds)
+          if (roomName[id] != null) (id: id, name: roomName[id]!),
+      ];
+      // تسجيله مختوم بشعبته، وإلا فبالاسم — لا تخمين بأول شعبة
+      final enrollRoom = '${e['room_id'] ?? ''}'.trim();
+      final studentSection = student.section.trim().toLowerCase();
+      final ({String id, String name})? own = groupRooms.length <= 1
+          ? (groupRooms.isEmpty ? null : groupRooms.first)
+          : groupRooms.where((r) => r.id == enrollRoom).firstOrNull ??
+              groupRooms
+                  .where((r) => studentSection.isNotEmpty && r.name.trim().toLowerCase() == studentSection)
+                  .firstOrNull;
+      final r = own ?? (groupRooms.isEmpty ? null : groupRooms.first);
       subjects.add(PortalSubject(
         groupId: gid,
         subjectName: g == null ? 'مادة دراسية' : (subjectName['${g['subject_id']}'] ?? 'مادة دراسية'),
@@ -1011,7 +1103,8 @@ class PortalService {
         days: [for (final d in (g?['days'] as List? ?? const [])) int.tryParse('$d') ?? 0],
         startTime: '${g?['start_time'] ?? ''}',
         endTime: '${g?['end_time'] ?? ''}',
-        roomName: g == null ? '' : (roomName['${g['room_id']}'] ?? ''),
+        roomName: r?.name ?? '',
+        roomId: own?.id ?? '',
       ));
     }
 
@@ -1414,12 +1507,15 @@ class PortalService {
 
   // ── المودل (المقابل لـ moodle.service.ts) ─────────────────────────────────
 
-  /// وحدات شعبة مع موادها — `fetchGroupSections`. «أخرى» تشمل القيمة القديمة `general`.
+  /// وحدات مادة مع موادها — `fetchGroupSections`. «أخرى» تشمل القيمة القديمة `general`.
+  ///
+  /// [roomId] شعبة الطالب: يرى وحدات كل الشعب ووحدات شعبته. بلا شعبة (المعلم) = الكل.
   Future<List<CourseSection>> groupSections({
     required String tenantId,
     required String groupId,
     String term = 'all',
     bool includeHidden = false,
+    String? roomId,
   }) async {
     final filters = <String, String>{'tenant_id': 'eq.$tenantId', 'group_id': 'eq.$groupId'};
     if (term == 'other' || term == 'general') {
@@ -1431,7 +1527,11 @@ class PortalService {
 
     final rows = await supabaseSelect('course_sections', filters: filters, order: 'sort_order.asc,created_at.asc');
     if (rows == null || rows.isEmpty) return const [];
-    final sections = rows.map(CourseSection.fromCloud).toList();
+    var sections = rows.map(CourseSection.fromCloud).toList();
+    if (roomId != null && roomId.isNotEmpty) {
+      sections = [for (final s in sections) if (sectionVisibleToRoom(s, roomId)) s];
+    }
+    if (sections.isEmpty) return const [];
 
     final itemRows = await supabaseSelect(
       'course_items',
@@ -1452,6 +1552,7 @@ class PortalService {
     required String term,
     required String title,
     int sortOrder = 0,
+    List<String>? roomIds,
   }) async {
     final section = CourseSection(
       id: _uuid.v4(),
@@ -1461,9 +1562,28 @@ class PortalService {
       title: title.trim(),
       sortOrder: sortOrder,
       createdAt: _nowIso(),
+      roomIds: roomIds ?? const [],
     );
     await supabaseUpsert('course_sections', [section.toCloud()]);
     return section;
+  }
+
+  /// تحديث شعب الوحدة أو عنوانها — فارغ = كل شعب المادة.
+  Future<void> updateSection(
+    String sectionId, {
+    String? title,
+    String? term,
+    bool? isVisible,
+    List<String>? roomIds,
+  }) async {
+    final patch = <String, dynamic>{
+      ?'title': title,
+      ?'term': term,
+      ?'is_visible': isVisible,
+      if (roomIds != null) 'room_ids': roomIds.isEmpty ? null : roomIds,
+    };
+    if (patch.isEmpty) return;
+    await supabaseUpdate('course_sections', {'id': 'eq.$sectionId'}, patch);
   }
 
   /// كتابة وحدة جاهزة (بمعرّفها) — تسمح ببنائها على الجهاز ثم رفعها لاحقاً.

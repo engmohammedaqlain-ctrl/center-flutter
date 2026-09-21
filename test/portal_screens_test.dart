@@ -41,6 +41,7 @@ class _FakePortal extends PortalService {
     required String groupId,
     String term = 'all',
     bool includeHidden = false,
+    String? roomId,
   }) async {
     lastIncludeHidden = includeHidden;
     return includeHidden ? sections : sections.where((s) => s.isVisible).toList();
@@ -281,7 +282,7 @@ void main() {
       // المودل: فارغ بإطار متقطع ودعوة لإضافة أول وحدة
       await tester.tap(find.text('المودل'));
       await tester.pumpAndSettle();
-      expect(find.text('الشعبة الحالية:'), findsOneWidget);
+      expect(find.text('المادة / المجموعة:'), findsOneWidget);
       expect(find.text('إضافة وحدة / قسم'), findsOneWidget);
       expect(find.text('الفصل الأول'), findsOneWidget);
       expect(find.text('لا توجد وحدات مضافة لهذه المادة في هذا الفصل'), findsOneWidget);
@@ -497,7 +498,7 @@ void main() {
       expect(find.textContaining('المستلم:'), findsOneWidget);
     });
 
-    testWidgets('مودل الطالب: المنشور وحده، بشارة «جديد» وزر عرض الملف — عرض ${width.toInt()}', (tester) async {
+    testWidgets('مودل الطالب: المنشور وحده، قابل للطي، بلا شارة «جديد» — عرض ${width.toInt()}', (tester) async {
       final fake = _FakePortal(student: _studentData(), sections: _sections());
       await _pump(tester, StudentPortalScreen(user: _studentUser, onExit: () {}, service: fake), width: width);
 
@@ -505,7 +506,7 @@ void main() {
       expect(find.text('الوحدة الأولى - النحو والصرف'), findsOneWidget);
       expect(find.text('الوحدة الثانية - البلاغة'), findsNothing);
       expect(find.text('2 عنصر'), findsOneWidget);
-      expect(find.text('جديد'), findsOneWidget, reason: 'أُضيف الآن');
+      expect(find.text('جديد'), findsNothing, reason: 'أُزيلت شارة جديد');
       expect(find.byIcon(Icons.download_rounded), findsOneWidget, reason: 'الملف يُفتح بلمس سطره');
 
       // طيّ الوحدة يخفي موادها

@@ -64,6 +64,7 @@ class _OnlinePortal extends PortalService {
     required String groupId,
     String term = 'all',
     bool includeHidden = false,
+    String? roomId,
   }) async =>
       sections;
 
@@ -108,6 +109,7 @@ class _DeadPortal extends PortalService {
     required String groupId,
     String term = 'all',
     bool includeHidden = false,
+    String? roomId,
   }) async =>
       throw Exception('offline');
 

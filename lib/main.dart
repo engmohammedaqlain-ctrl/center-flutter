@@ -356,14 +356,23 @@ class _LoginScreenState extends State<LoginScreen> {
     unawaited(_restorePortal());
   }
 
-  /// جلسة بوابة محفوظة: يُعاد التحقق بها بصمت فتُفتح البوابة مباشرةً.
-  ///
-  /// الفشل نوعان لا واحد: رفضٌ من السيرفر (رمز غُيّر أو حساب أُوقف) فتُنهى
-  /// الجلسة، وتعذّرُ وصولٍ إليه فتُفتح البوابة بالحساب المحفوظ على الجهاز.
-  /// خلطهما كان يُخرج المعلم من حسابه لمجرد فتحه التطبيق بلا إنترنت.
+  /// جلسة بوابة محفوظة: تُفتح فوراً بالحساب على الجهاز، ثم يُجدَّد التحقق
+  /// في الخلفية. انتظار الشبكة كان يُبطئ الإقلاع ويعطي انطباع دخولٍ جديد.
   Future<void> _restorePortal() async {
     final saved = _appStore.portalSession;
     if (saved == null) return;
+
+    // فتح فوري إن وُجد حساب محفوظ — بعد إطار الرسم حتى لا يُقفل الملاح
+    if (saved.user != null) {
+      portalId.text = saved.nationalId;
+      portalCode.text = saved.code;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _openPortal(saved.user!, code: saved.code, restored: true);
+      });
+      unawaited(_refreshPortalInBackground(saved));
+      return;
+    }
 
     PortalLoginResult result;
     try {
@@ -376,10 +385,9 @@ class _LoginScreenState extends State<LoginScreen> {
     final account = result.ok
         ? (result.users.where((u) => u.id == saved.userId).firstOrNull ??
             (result.users.length == 1 ? result.users.first : null))
-        : (result.offline ? saved.user : null);
+        : null;
 
     if (account == null) {
-      // لم يصل ردّ ولا يوجد حساب محفوظ: تبقى الجلسة لمحاولة لاحقة
       if (!result.ok && !result.offline) await _appStore.clearPortalSession();
       setState(() => restoring = false);
       return;
@@ -388,6 +396,39 @@ class _LoginScreenState extends State<LoginScreen> {
     portalId.text = saved.nationalId;
     portalCode.text = saved.code;
     _openPortal(account, code: saved.code, restored: true);
+  }
+
+  /// تجديد صامت: يحدّث بيانات الحساب، أو يُخرج عند رفض السيرفر للهوية.
+  Future<void> _refreshPortalInBackground(
+    ({String nationalId, String code, String userId, PortalUser? user}) saved,
+  ) async {
+    PortalLoginResult result;
+    try {
+      result = await const PortalService().login(saved.nationalId, saved.code);
+    } catch (_) {
+      return; // بلا شبكة: الجلسة المحلية كافية
+    }
+    if (!mounted) return;
+
+    if (!result.ok) {
+      if (result.offline) return;
+      await _appStore.clearPortalSession();
+      await PortalOffline(_appStore.db).clear();
+      await supabaseSignOut();
+      if (mounted && Navigator.of(context).canPop()) Navigator.of(context).pop();
+      return;
+    }
+
+    final account = result.users.where((u) => u.id == saved.userId).firstOrNull ??
+        (result.users.length == 1 ? result.users.first : null);
+    if (account == null) return;
+
+    await _appStore.savePortalSession(
+      nationalId: account.nationalId.isEmpty ? saved.nationalId : account.nationalId,
+      code: saved.code,
+      userId: account.id,
+      user: account,
+    );
   }
 
   Future<void> _portalSubmit() async {

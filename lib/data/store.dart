@@ -180,6 +180,57 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return _bucketsCache!;
   }
 
+  /// ترقيع الفهارس بعد تعديل سجلٍّ واحد بدل بنائها من جديد.
+  ///
+  /// كان كل إخطار يُبطل الفهارس، فلمسةُ حضورٍ واحدة تُعيد المرور على عشرات
+  /// آلاف الأرصدة والجلسات. الفهارس هنا تُرقَّع مكانها، فتبقى صالحة بلا مسح.
+  /// تُستعمل مع التعديلات المفردة وحدها؛ أي تغيير جملة يترك الإبطال يعمل.
+  /// [wasValid] تُلتقط **قبل** التعديل: الإخطار يبطل الفهارس، فلو سُئلنا بعده
+  /// لوجدناها باطلة دائماً ولما رُقّعت أبداً.
+  void _keepIndexes(bool wasValid, void Function() patch) {
+    if (!wasValid) return; // لم تكن مبنية أصلاً: تُبنى عند أول قراءة
+    patch();
+    _indexRev = _rev;
+  }
+
+  /// إدخال رصدٍ في فهارسه بمفاتيحه الثلاثة.
+  void _indexMark(AttendanceMark a) {
+    _markAny[looseKey(a.studentId, a.date)] = a;
+    final owners = a.sessionId.isEmpty ? null : _sessionOwners[a.sessionId];
+    if (owners == null || owners.isEmpty) {
+      _markLoose[looseKey(a.studentId, a.date)] = a;
+      return;
+    }
+    _markLoose.remove(looseKey(a.studentId, a.date));
+    for (final owner in owners) {
+      _markOwned[ownedKey(owner, a.studentId, a.date)] = a;
+    }
+  }
+
+  /// إخراج رصدٍ من فهارسه — يُستدعى عند حذفه.
+  void _unindexMark(AttendanceMark a) {
+    _markAny.remove(looseKey(a.studentId, a.date));
+    _markLoose.remove(looseKey(a.studentId, a.date));
+    final owners = a.sessionId.isEmpty ? null : _sessionOwners[a.sessionId];
+    for (final owner in owners ?? const <String>{}) {
+      _markOwned.remove(ownedKey(owner, a.studentId, a.date));
+    }
+  }
+
+  /// إدخال جلسة في فهرسها — لازمٌ قبل فهرسة أرصدتها.
+  void _indexSession(ClassSession sess) {
+    final owners = <String>{};
+    if (sess.groupId.isNotEmpty) {
+      owners.add(sess.groupId);
+      _sessionIndex[sessionKey(sess.groupId, sess.sessionDate)] = sess;
+    }
+    if (sess.roomId.isNotEmpty) {
+      owners.add(sess.roomId);
+      _sessionIndex[sessionKey(sess.roomId, sess.sessionDate)] = sess;
+    }
+    _sessionOwners[sess.id] = owners;
+  }
+
   void _rebuildIndexes() {
     if (_indexRev == _rev) return;
     _indexRev = _rev;
@@ -3371,29 +3422,44 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// [ownerId] هو معرّف الصف (نظام مدرسة) أو المجموعة (نظام مركز).
   void setAttendance(String studentId, String date, String? status, {String? ownerId}) {
     requireSection('attendance');
+
+    // ما تغيّر في هذه اللمسة، ليُرقَّع في الفهارس بدل إعادة بنائها كاملةً
+    final wasValid = _indexRev == _rev;
+    AttendanceMark? removed;
+    AttendanceMark? touched;
+    ClassSession? createdSession;
+
     _withBatchedNotify(() {
       final existing = markFor(ownerId, studentId, date);
 
       if (status == null) {
         if (existing == null) return;
         attendance.remove(existing);
+        removed = existing;
         _queue('attendance', existing.id, 'DELETE', null);
         return;
       }
 
       // الجلسة تُنشأ عند الحاجة فقط، بعد التأكد من وجود ما يُرصد
-      final sessionId = ownerId == null || ownerId.isEmpty ? '' : sessionFor(ownerId, date).id;
+      var sessionId = '';
+      if (ownerId != null && ownerId.isNotEmpty) {
+        final before = sessions.length;
+        final sess = sessionFor(ownerId, date);
+        sessionId = sess.id;
+        if (sessions.length != before) createdSession = sess;
+      }
 
       if (existing != null) {
         if (existing.status == status && (sessionId.isEmpty || existing.sessionId == sessionId)) {
           _completeSession(ownerId, date);
-          return; // لا تغيير في السجل؛ الحصة تُكمَّل إن لم تكن
+          return; // لا تغيير في السجل؛ الحصة تُكمَّل إن لم تكن
         }
         existing.status = status;
         existing.markedByUserId = currentUserId;
         if (sessionId.isNotEmpty) existing.sessionId = sessionId;
         existing.updatedAt = _nowIso();
         existing.syncStatus = 'pending';
+        touched = existing;
         _queue('attendance', existing.id, 'UPDATE', existing.toCloud());
         _completeSession(ownerId, date);
         return;
@@ -3411,8 +3477,15 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         updatedAt: _nowIso(),
       );
       attendance.add(mark);
+      touched = mark;
       _queue('attendance', mark.id, 'INSERT', mark.toCloud());
       _completeSession(ownerId, date);
+    });
+
+    _keepIndexes(wasValid, () {
+      if (createdSession != null) _indexSession(createdSession!);
+      if (removed != null) _unindexMark(removed!);
+      if (touched != null) _indexMark(touched!);
     });
   }
 
@@ -3437,7 +3510,22 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   int markAllPresent(String date, List<Student> list, {String? ownerId}) {
     requireSection('attendance');
     if (list.isEmpty) return 0;
-    final sessionId = ownerId == null || ownerId.isEmpty ? '' : sessionFor(ownerId, date).id;
+
+    // الفهارس صالحة الآن؟ إذاً تُرقَّع مع كل رصد وتبقى صالحة. كانت تسقط مع كل
+    // طالب فتُعاد على عشرات الآلاف — مرة لكل طالب في الكشف.
+    var keepIndex = _indexRev == _rev;
+
+    var sessionId = '';
+    if (ownerId != null && ownerId.isNotEmpty) {
+      final before = sessions.length;
+      final sess = sessionFor(ownerId, date);
+      sessionId = sess.id;
+      if (sessions.length != before && keepIndex) {
+        _indexSession(sess);
+        _indexRev = _rev;
+      }
+      keepIndex = keepIndex && _indexRev == _rev;
+    }
 
     final now = _nowIso();
     var changed = 0;
@@ -3455,6 +3543,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         existing.syncStatus = 'pending';
         queuePendingSync(pendingSyncs, tableName: 'attendance', recordId: existing.id, action: 'UPDATE', payload: existing.toCloud());
         markRecord('attendance', existing.id);
+        if (keepIndex) {
+          _indexMark(existing);
+          _indexRev = _rev;
+        }
         changed++;
         continue;
       }
@@ -3473,14 +3565,19 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       attendance.add(mark);
       queuePendingSync(pendingSyncs, tableName: 'attendance', recordId: mark.id, action: 'INSERT', payload: mark.toCloud());
       markRecord('attendance', mark.id);
+      if (keepIndex) {
+        _indexMark(mark);
+        _indexRev = _rev;
+      }
       changed++;
-      // الفهرس يسقط مع كل markRecord، فيُعاد بناؤه لطالب التالي
     }
 
     _completeSession(ownerId, date);
     if (changed > 0) {
       markDirty(_pendingTable);
       notifyListeners();
+      // الإخطار يُبطل الفهارس، وقد رُقّعت سجلاً سجلاً أثناء الحلقة
+      if (keepIndex) _indexRev = _rev;
     }
     return changed;
   }

@@ -88,6 +88,9 @@ void main() {
 
     await http.runWithClient(() async {
       await tester.pumpWidget(StoreScope(store: store, child: const CenterApp()));
+      // تفتح البوابة فوراً ثم يرفض السيرفر في الخلفية فيُغلق الحساب
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
       await tester.pumpAndSettle();
 
       expect(find.byType(TeacherPortalScreen), findsNothing);
