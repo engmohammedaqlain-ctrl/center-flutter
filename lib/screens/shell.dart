@@ -864,11 +864,11 @@ class _NavItem extends StatelessWidget {
   }
 }
 
-/// يُجمّد الشاشة المخفية بدل إعادة بنائها.
+/// يُجمّد الشاشة المخفية بدل إعادة بنائها، ولا يبني تبويباً لم يُفتح بعد.
 ///
-/// `IndexedStack` يُبقي الأقسام الخمسة في الشجرة، وكلٌّ منها يستمع للمخزن،
-/// فأي رصد حضور كان يُعيد بناء الطلاب والمالية والصفوف والإعدادات معه.
-/// حفظ الشجرة المبنية وإعادتها كما هي يُبقي الحالة ويُلغي ذلك العمل.
+/// `IndexedStack` يُبقي الأقسام في الشجرة؛ بناء الكل عند الإقلاع كان يشغّل
+/// `TableGate` للحضور والمالية معاً فيثقل القرص ويفشل التحميل أحياناً.
+/// التبويب يُبنى أول زيارة فقط، ثم يُجمَّد عند الإخفاء.
 class _FrozenWhenHidden extends StatefulWidget {
   const _FrozenWhenHidden({required this.visible, required this.child});
 
@@ -881,14 +881,17 @@ class _FrozenWhenHidden extends StatefulWidget {
 
 class _FrozenWhenHiddenState extends State<_FrozenWhenHidden> {
   Widget? _frozen;
+  var _visited = false;
 
   @override
   Widget build(BuildContext context) {
     if (widget.visible) {
+      _visited = true;
       _frozen = null;
       return widget.child;
     }
-    // أول إخفاء بعد الظهور: نحتفظ بآخر شجرة ونعيدها دون إعادة بناء
+    if (!_visited) return const SizedBox.shrink();
+    // إخفاء بعد زيارة: نحتفظ بآخر شجرة دون إعادة بناء
     return _frozen ??= widget.child;
   }
 }

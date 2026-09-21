@@ -69,8 +69,18 @@ class _TableGateState extends State<TableGate> {
         _loading = false;
         _error = null;
       });
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('TableGate ensureTables(${widget.tables}): $e\n$st');
       if (!mounted) return;
+      // إن اكتمل التحميل رغم الخطأ (جزئي/متزامن) اعرض المحتوى
+      if (store.tablesReady(widget.tables)) {
+        setState(() {
+          _ready = true;
+          _loading = false;
+          _error = null;
+        });
+        return;
+      }
       setState(() {
         _loading = false;
         _error = 'تعذّر تحميل البيانات';
@@ -85,8 +95,11 @@ class _TableGateState extends State<TableGate> {
       final store = StoreScope.of(context);
       if (store.tablesReady(widget.tables)) {
         _ready = true;
+        _error = null;
       }
     }
+
+    if (_ready) return widget.child;
 
     if (_error != null) {
       return Center(
@@ -98,7 +111,7 @@ class _TableGateState extends State<TableGate> {
               Text(
                 _error!,
                 textAlign: TextAlign.center,
-                style: TextStyle(fontFamily: AppText.family, color: AppColors.muted, fontWeight: FontWeight.w700),
+                style: TextStyle(fontFamily: AppText.family, color: AppColors.muted, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 12),
               TextButton(
@@ -117,35 +130,32 @@ class _TableGateState extends State<TableGate> {
         ),
       );
     }
-    if (!_ready) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: 36,
-              height: 36,
-              child: CircularProgressIndicator(
-                strokeWidth: 3,
-                color: AppColors.amber,
-                // قيمة ثابتة: مؤشر واضح بلا Ticker يعيق الاختبارات
-                value: 0.7,
-              ),
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 36,
+            height: 36,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              color: AppColors.amber,
+              // في الاختبارات بلا Ticker مستمر؛ في التشغيل يدور طبيعي
+              value: const bool.fromEnvironment('FLUTTER_TEST') ? 0.7 : null,
             ),
-            const SizedBox(height: 14),
-            Text(
-              widget.message,
-              style: TextStyle(
-                fontFamily: AppText.family,
-                color: AppColors.muted,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            widget.message,
+            style: TextStyle(
+              fontFamily: AppText.family,
+              color: AppColors.muted,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
             ),
-          ],
-        ),
-      );
-    }
-    return widget.child;
+          ),
+        ],
+      ),
+    );
   }
 }

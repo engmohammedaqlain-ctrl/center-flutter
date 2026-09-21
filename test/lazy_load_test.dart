@@ -91,6 +91,28 @@ void main() {
       expect(s.tablesReady(const ['expenses']), isTrue);
       expect(s.expenses, isNotEmpty);
     });
+
+    test('ensureTables يحمّل التقييمات المؤجّلة من القرص', () async {
+      final disk = FakeDisk();
+      await disk.saveTable('student_evaluations', [
+        {
+          'id': 'e1',
+          'student_id': 's1',
+          'group_id': 'g1',
+          'score': 18,
+          'max_score': 20,
+          'sync_status': 'synced',
+        },
+      ]);
+      final s = AppStore.forTesting();
+      await s.bootstrap(disk);
+      expect(s.tablesReady(const ['student_evaluations']), isFalse);
+      expect(s.evaluations, isEmpty);
+
+      await s.ensureTables(const ['student_evaluations']);
+      expect(s.tablesReady(const ['student_evaluations']), isTrue);
+      expect(s.evaluations, isNotEmpty);
+    });
   });
 
   group('TableGate', () {

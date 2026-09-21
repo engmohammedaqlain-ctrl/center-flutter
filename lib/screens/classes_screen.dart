@@ -22,8 +22,8 @@ import 'section_students_sheet.dart';
 
 /// الصفوف والشعب — المقابل لـ `pages/SchoolClasses.tsx`.
 ///
-/// شريط المراحل أعلى الشاشة، ثم بطاقة لكل صف: الاسم والمرحلة والمربي والإشغال.
-/// «صف جديد» زر ثابت في متناول الإبهام، والصف يُفتح صفحةً بعنوانه.
+/// شريط المراحل أعلى الشاشة، ثم بطاقة قابلة للطي لكل مرحلة دراسية:
+/// تُفتح فتُظهر شعبها. الشعب المغلقة لا تُحسب كشوف طلابها — أخفّ على الرسم.
 class ClassesScreen extends StatefulWidget {
   const ClassesScreen({super.key});
 
@@ -33,6 +33,9 @@ class ClassesScreen extends StatefulWidget {
 
 class _ClassesScreenState extends State<ClassesScreen> {
   String tier = 'all';
+
+  /// مراحل مفتوحة — فارغة = الكل مطوي حتى يفتح المستخدم.
+  final _openGrades = <String>{};
 
   static const _tierLabels = {
     'all': 'الكل',
@@ -49,87 +52,97 @@ class _ClassesScreenState extends State<ClassesScreen> {
       tables: const ['rooms', 'students', 'student_years', 'teachers'],
       message: 'جارٍ تحميل الصفوف...',
       child: ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
-        if (!store.canOpenSection('classes')) {
-          return NoAccess(section: 'classes', roleName: store.roleName);
-        }
+        listenable: store,
+        builder: (context, _) {
+          if (!store.canOpenSection('classes')) {
+            return NoAccess(section: 'classes', roleName: store.roleName);
+          }
 
-        final canEdit = store.can('classes');
-        final tiers = {for (final r in store.roomsInViewedYear) r.id: classTier(store, r)};
-        int countOf(String id) => id == 'all' ? store.roomsInViewedYear.length : tiers.values.where((t) => t == id).length;
-        // رياض الأطفال تظهر حين يوجد لها صف فقط، كما في Center
-        final tabs = _tierLabels.keys.where((id) => id != 'kindergarten' || countOf(id) > 0).toList();
-        if (!tabs.contains(tier)) tier = 'all';
+          final canEdit = store.can('classes');
+          final tiers = {for (final r in store.roomsInViewedYear) r.id: classTier(store, r)};
+          int countOf(String id) => id == 'all' ? store.roomsInViewedYear.length : tiers.values.where((t) => t == id).length;
+          // رياض الأطفال تظهر حين يوجد لها صف فقط، كما في Center
+          final tabs = _tierLabels.keys.where((id) => id != 'kindergarten' || countOf(id) > 0).toList();
+          if (!tabs.contains(tier)) tier = 'all';
 
-        final rooms = store.roomsInViewedYear.where((r) => tier == 'all' || tiers[r.id] == tier).toList();
+          final rooms = store.roomsInViewedYear.where((r) => tier == 'all' || tiers[r.id] == tier).toList();
 
-        // أقسام لكل مرحلة بترتيب الرسوم، والشعب داخلها أبجدياً
-        final gradeOrder = store.gradeOptions;
-        final byGrade = <String, List<Classroom>>{};
-        for (final r in rooms) {
-          final g = r.gradeLevel.trim().isEmpty ? 'مرحلة غير محددة' : r.gradeLevel.trim();
-          (byGrade[g] ??= []).add(r);
-        }
-        for (final list in byGrade.values) {
-          list.sort((a, b) => a.name.compareTo(b.name));
-        }
-        final orderedGrades = [
-          ...gradeOrder.where(byGrade.containsKey),
-          ...byGrade.keys.where((g) => !gradeOrder.contains(g)).toList()..sort(),
-        ];
-        final listItems = <Object>[];
-        for (final g in orderedGrades) {
-          listItems.add(g);
-          listItems.addAll(byGrade[g]!);
-        }
+          // أقسام لكل مرحلة بترتيب الرسوم، والشعب داخلها أبجدياً
+          final gradeOrder = store.gradeOptions;
+          final byGrade = <String, List<Classroom>>{};
+          for (final r in rooms) {
+            final g = r.gradeLevel.trim().isEmpty ? 'مرحلة غير محددة' : r.gradeLevel.trim();
+            (byGrade[g] ??= []).add(r);
+          }
+          for (final list in byGrade.values) {
+            list.sort((a, b) => a.name.compareTo(b.name));
+          }
+          final orderedGrades = [
+            ...gradeOrder.where(byGrade.containsKey),
+            ...byGrade.keys.where((g) => !gradeOrder.contains(g)).toList()..sort(),
+          ];
 
-        return ThumbActionLayer(
-          action: canEdit
-              ? ThumbAction(label: 'صف جديد', icon: Icons.add, onPressed: () => _openRoomForm(context, null))
-              : null,
-          child: Column(
-            children: [
-              _tierBar(tabs, countOf),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(0, 8, 0, thumbActionClearance),
-                  itemCount: rooms.isEmpty ? 1 : listItems.length,
-                  itemBuilder: (context, i) {
-                    if (rooms.isEmpty) {
-                      return const SizedBox(
-                        height: 220,
-                        child: EmptyState(message: 'لا توجد شعب أو صفوف مسجلة في هذه المرحلة.'),
-                      );
-                    }
-                    final item = listItems[i];
-                    if (item is String) {
-                      return Padding(
-                        padding: EdgeInsets.fromLTRB(16, i > 0 ? 16 : 6, 16, 8),
-                        child: _GradeSectionHeader(title: item),
-                      );
-                    }
-                    final room = item as Classroom;
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                      child: _RoomCard(
-                        room: room,
-                        teacher: store.teacherById(room.teacherId),
-                        students: store.studentsOf(room),
-                        canEdit: canEdit,
-                        onOpen: () => Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => _ClassDetailScreen(roomId: room.id)),
+          return ThumbActionLayer(
+            action: canEdit
+                ? ThumbAction(label: 'صف جديد', icon: Icons.add, onPressed: () => _openRoomForm(context, null))
+                : null,
+            child: Column(
+              children: [
+                _tierBar(tabs, countOf),
+                Expanded(
+                  child: rooms.isEmpty
+                      ? const EmptyState(message: 'لا توجد شعب أو صفوف مسجلة في هذه المرحلة.')
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(16, 10, 16, thumbActionClearance),
+                          itemCount: orderedGrades.length,
+                          itemBuilder: (context, i) {
+                            final grade = orderedGrades[i];
+                            final gradeRooms = byGrade[grade]!;
+                            final open = _openGrades.contains(grade);
+                            return Padding(
+                              padding: EdgeInsets.only(bottom: i == orderedGrades.length - 1 ? 0 : 10),
+                              child: _GradeFold(
+                                title: grade,
+                                roomCount: gradeRooms.length,
+                                open: open,
+                                onToggle: () => setState(() {
+                                  if (open) {
+                                    _openGrades.remove(grade);
+                                  } else {
+                                    _openGrades.add(grade);
+                                  }
+                                }),
+                                child: open
+                                    ? Column(
+                                        children: [
+                                          for (var j = 0; j < gradeRooms.length; j++) ...[
+                                            if (j > 0)
+                                              const Divider(height: 1, thickness: 1, color: AppColors.line, indent: 14, endIndent: 14),
+                                            _RoomRow(
+                                              room: gradeRooms[j],
+                                              teacher: store.teacherById(gradeRooms[j].teacherId),
+                                              students: store.studentsOf(gradeRooms[j]),
+                                              canEdit: canEdit,
+                                              onOpen: () => Navigator.of(context).push(
+                                                MaterialPageRoute(
+                                                  builder: (_) => _ClassDetailScreen(roomId: gradeRooms[j].id),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      )
+                                    : null,
+                              ),
+                            );
+                          },
                         ),
-                      ),
-                    );
-                  },
                 ),
-              ),
-            ],
-          ),
-        );
-      },
-    ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -153,7 +166,10 @@ class _ClassesScreenState extends State<ClassesScreen> {
             final id = tabs[i];
             final on = tier == id;
             return InkWell(
-              onTap: () => setState(() => tier = id),
+              onTap: () => setState(() {
+                tier = id;
+                _openGrades.clear();
+              }),
               borderRadius: BorderRadius.circular(Corner.field),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -654,51 +670,181 @@ List<PopupMenuEntry<String>> _manageItems(Teacher? teacher) => [
       _menuItem('delete', Icons.delete_outline, 'حذف الصف', danger: true),
     ];
 
-// ═══ بطاقة الصف ════════════════════════════════════════════════════════════
+// ═══ بطاقة المرحلة القابلة للطي ═══════════════════════════════════════════════
 
-/// عنوان مرحلة رسمي بسيط: شريط هوية + الاسم + خط يمتد ليملأ السطر.
-class _GradeSectionHeader extends StatelessWidget {
-  const _GradeSectionHeader({required this.title});
+/// مرحلة دراسية تُطوى وتُفتح — بنفس روح أقسام ملف الطالب.
+class _GradeFold extends StatelessWidget {
+  const _GradeFold({
+    required this.title,
+    required this.roomCount,
+    required this.open,
+    required this.onToggle,
+    this.child,
+  });
+
   final String title;
+  final int roomCount;
+  final bool open;
+  final VoidCallback onToggle;
+  final Widget? child;
+
+  String get _roomsLabel => switch (roomCount) {
+        1 => 'شعبة واحدة',
+        2 => 'شعبتان',
+        <= 10 => '$roomCount شعب',
+        _ => '$roomCount شعبة',
+      };
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 3,
-          height: 16,
-          decoration: BoxDecoration(
-            color: AppColors.amber,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Text(
-          title,
-          style: TextStyle(
-            fontFamily: AppText.family,
-            fontWeight: FontWeight.w600,
-            fontSize: 13,
-            color: AppColors.heading,
-            letterSpacing: 0.2,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Container(
-            height: 1,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.lineStrong,
-                  AppColors.line.withValues(alpha: 0),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(Corner.card),
+        border: Border.all(color: AppColors.line),
+        boxShadow: cardShadow,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            onTap: onToggle,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 3,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: AppColors.amber,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.cardTitle.copyWith(fontSize: 13.5, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  Text(
+                    _roomsLabel,
+                    style: const TextStyle(
+                      fontFamily: AppText.family,
+                      color: AppColors.muted,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  AnimatedRotation(
+                    turns: open ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 160),
+                    child: const Icon(Icons.expand_more, size: 22, color: AppColors.faint),
+                  ),
                 ],
               ),
             ),
           ),
+          if (open && child != null) ...[
+            const Divider(height: 1, thickness: 1, color: AppColors.line),
+            child!,
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// صف شعبة داخل المرحلة المفتوحة — صف قائمة بلا ظل داخلي.
+class _RoomRow extends StatelessWidget {
+  const _RoomRow({
+    required this.room,
+    required this.teacher,
+    required this.students,
+    required this.canEdit,
+    required this.onOpen,
+  });
+
+  final Classroom room;
+  final Teacher? teacher;
+  final List<Student> students;
+  final bool canEdit;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final store = StoreScope.of(context);
+    final teacherCount = store.sectionTeacherIds(room).length;
+    final meta = [
+      if (teacher != null) teacher!.name,
+      if (teacher == null) 'بدون مربي',
+      if (teacherCount > 0) _teachersLabel(teacherCount),
+    ].join('  ·  ');
+
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: onOpen,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(room.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: _titleStyle),
+                    const SizedBox(height: 3),
+                    Text(meta, maxLines: 1, overflow: TextOverflow.ellipsis, style: _metaStyle),
+                  ],
+                ),
+              ),
+              Text(
+                '${students.length}/${room.capacity > 0 ? room.capacity : 30}',
+                textDirection: TextDirection.ltr,
+                style: TextStyle(
+                  fontFamily: AppText.family,
+                  color: AppColors.heading,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+              if (students.isEmpty && canEdit) ...[
+                const SizedBox(width: 6),
+                IconButton(
+                  tooltip: 'إضافة طلاب',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  icon: Icon(Icons.group_add_outlined, size: 20, color: AppColors.navy),
+                  onPressed: () => _addStudents(context, room),
+                ),
+              ],
+              IconButton(
+                tooltip: 'خيارات الصف',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                icon: const Icon(Icons.more_horiz, size: 22, color: AppColors.muted),
+                onPressed: () => _showRoomActionsSheet(
+                  context,
+                  store: store,
+                  room: room,
+                  students: students,
+                  teacher: teacher,
+                  canEdit: canEdit,
+                ),
+              ),
+            ],
+          ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -819,136 +965,6 @@ Future<void> _showRoomActionsSheet(
       await _assignSubjectTeachers(context, room);
     case 'delete':
       await _confirmDeleteRoom(context, room);
-  }
-}
-
-/// الصف: الاسم والمرحلة، ثم المربي والإشغال — بلا تنبيه مستحقات في القائمة.
-class _RoomCard extends StatelessWidget {
-  const _RoomCard({
-    required this.room,
-    required this.teacher,
-    required this.students,
-    required this.canEdit,
-    required this.onOpen,
-  });
-
-  final Classroom room;
-  final Teacher? teacher;
-  final List<Student> students;
-  final bool canEdit;
-  final VoidCallback onOpen;
-
-  @override
-  Widget build(BuildContext context) {
-    final store = StoreScope.of(context);
-    final teacherCount = store.sectionTeacherIds(room).length;
-    final grade = [
-      room.gradeLevel.trim().isEmpty ? 'مرحلة غير محددة' : room.gradeLevel.trim(),
-      if (teacherCount > 0) _teachersLabel(teacherCount),
-    ].join('  ·  ');
-
-    final shape = BorderRadius.circular(Corner.card);
-    return Material(
-      color: Colors.transparent,
-      borderRadius: shape,
-      child: InkWell(
-        borderRadius: shape,
-        onTap: onOpen,
-        child: Ink(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: shape,
-            border: Border.all(color: AppColors.line),
-            boxShadow: cardShadow,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(room.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: _titleStyle),
-                          const SizedBox(height: 3),
-                          Text(grade, maxLines: 1, overflow: TextOverflow.ellipsis, style: _metaStyle),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'خيارات الصف',
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                      icon: const Icon(Icons.more_horiz, size: 22, color: AppColors.muted),
-                      onPressed: () => _showRoomActionsSheet(
-                        context,
-                        store: store,
-                        room: room,
-                        students: students,
-                        teacher: teacher,
-                        canEdit: canEdit,
-                      ),
-                    ),
-                  ],
-                ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 10),
-                  child: Divider(height: 1, color: AppColors.line),
-                ),
-                Row(
-                  children: [
-                    Icon(Icons.school_outlined, size: 15, color: teacher == null ? AppColors.faint : AppColors.muted),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: teacher != null
-                          ? Text(
-                              teacher!.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontFamily: AppText.family,
-                                color: AppColors.text,
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            )
-                          : canEdit
-                              ? Align(
-                                  alignment: AlignmentDirectional.centerStart,
-                                  child: TileButton(
-                                    label: 'تعيين مربي',
-                                    icon: const Icon(Icons.add, size: 13),
-                                    color: AppColors.amber,
-                                    background: AppColors.amberSoft,
-                                    border: AppColors.amberBorder,
-                                    onTap: () => _assignTeacher(context, room),
-                                  ),
-                                )
-                              : const Text('بدون مربي', style: TextStyle(color: AppColors.faint, fontSize: 12)),
-                    ),
-                    if (students.isEmpty && canEdit) ...[
-                      const SizedBox(width: 8),
-                      TileButton(
-                        label: 'إضافة طلاب',
-                        icon: const Icon(Icons.group_add_outlined, size: 13),
-                        color: AppColors.navy,
-                        background: Colors.white,
-                        border: AppColors.lineStrong,
-                        onTap: () => _addStudents(context, room),
-                      ),
-                    ],
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
   }
 }
 

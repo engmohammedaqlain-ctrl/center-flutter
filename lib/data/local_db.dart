@@ -160,8 +160,12 @@ class SqflitePersistence implements Persistence {
     final encoded = <(String, String)>[
       for (final r in rows) (table, '${r['data']}'),
     ];
-    final decoded = await Isolate.run(() => _decodeRecordRows(encoded));
-    return decoded[table] ?? const [];
+    try {
+      final decoded = await Isolate.run(() => _decodeRecordRows(encoded));
+      return decoded[table] ?? const [];
+    } catch (_) {
+      return _decodeRecordRows(encoded)[table] ?? const [];
+    }
   }
 
   @override
@@ -179,7 +183,13 @@ class SqflitePersistence implements Persistence {
     final encoded = <(String, String)>[
       for (final r in rows) ('${r['table_name']}', '${r['data']}'),
     ];
-    final decoded = await Isolate.run(() => _decodeRecordRows(encoded));
+    Map<String, List<Map<String, dynamic>>> decoded;
+    try {
+      decoded = await Isolate.run(() => _decodeRecordRows(encoded));
+    } catch (_) {
+      // فشل الخيط المنفصل (ذاكرة/منصّة): فكّ على الخيط الحالي بدل إسقاط التحميل
+      decoded = _decodeRecordRows(encoded);
+    }
     return {for (final t in wanted) t: decoded[t] ?? <Map<String, dynamic>>[]};
   }
 
@@ -280,11 +290,15 @@ class SqflitePersistence implements Persistence {
 Map<String, List<Map<String, dynamic>>> _decodeRecordRows(List<(String, String)> encoded) {
   final out = <String, List<Map<String, dynamic>>>{};
   for (final (table, data) in encoded) {
-    final decoded = jsonDecode(data);
-    if (decoded is Map<String, dynamic>) {
-      out.putIfAbsent(table, () => []).add(decoded);
-    } else if (decoded is Map) {
-      out.putIfAbsent(table, () => []).add(Map<String, dynamic>.from(decoded));
+    try {
+      final decoded = jsonDecode(data);
+      if (decoded is Map<String, dynamic>) {
+        out.putIfAbsent(table, () => []).add(decoded);
+      } else if (decoded is Map) {
+        out.putIfAbsent(table, () => []).add(Map<String, dynamic>.from(decoded));
+      }
+    } catch (_) {
+      // صف تالف على القرص — تخطَّه بدل إسقاط الجدول كله
     }
   }
   return out;

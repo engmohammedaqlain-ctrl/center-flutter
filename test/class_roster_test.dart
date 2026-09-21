@@ -156,9 +156,66 @@ void main() {
 
       final updated = s.roomById(room.id)!;
       expect(updated.teacherId, 't-homeroom');
-      expect(updated.name, 'شعبة (أ)', reason: 'اسم الشعبة يُنقّى عند الحفظ');
-      expect(student.section, 'شعبة (أ)', reason: 'شعبة الطالب تتبع الاسم الجديد');
+      expect(updated.name, 'عاشر (أ)', reason: 'تعيين المربي لا يعيد تعقيم الاسم فيفصل الطلاب');
+      expect(student.section, 'عاشر (أ)');
       expect(s.studentsOf(updated).map((e) => e.id), [student.id]);
+    });
+
+    test('شعبة الطالب القديمة تطابق الصف بعد التعقيم', () {
+      final s = _store();
+      final room = Classroom(
+        id: s.newId(),
+        name: 'شعبة (أ)',
+        gradeLevel: 'عاشر',
+        capacity: 25,
+        teacherId: '',
+      );
+      s.rooms.add(room);
+      final student = _student(s, section: 'أ', grade: 'عاشر');
+      expect(s.studentsOf(room).map((e) => e.id), [student.id]);
+    });
+
+    test('تنقية اسم فيه المرحلة لا تقطع قوس الشعبة', () {
+      expect(sanitizeSectionName('ثاني عشر أدبي - شعبة (3)', 'ثاني عشر أدبي'), 'شعبة (3)');
+      expect(sanitizeSectionName('شعبة (3)', 'ثاني عشر أدبي'), 'شعبة (3)');
+      expect(sanitizeSectionName('شعبة (3', 'عاشر'), 'شعبة (3)');
+    });
+
+    test('طالب بقسم قديم يظهر في الصف حتى لو تعقّم الاسم', () {
+      final s = _store();
+      final room = _room(s, 'شعبة (3)', grade: 'ثاني عشر أدبي');
+      final student = _student(s, section: 'ثاني عشر أدبي - شعبة (3)', grade: 'ثاني عشر أدبي');
+      expect(s.studentsOf(room).map((e) => e.id), [student.id]);
+    });
+
+    test('إصلاح الأقسام اليتيمة يوحّد اسم الطالب مع الصف ويرفعه', () async {
+      final s = _store();
+      // صف فسد قوسه + طالب بالاسم الكامل للمرحلة
+      final room = Classroom(
+        id: s.newId(),
+        name: 'شعبة (3',
+        gradeLevel: 'ثاني عشر أدبي',
+        capacity: 25,
+        teacherId: 't1',
+      );
+      s.rooms.add(room);
+      final student = _student(s, section: 'ثاني عشر أدبي - شعبة (3)', grade: 'ثاني عشر أدبي');
+      // المطابقة المرنة قد تُظهره؛ الإصلاح يوحّد النص للسحابة
+      expect(s.studentsOf(room).map((e) => e.id), [student.id]);
+
+      final n = await s.migrateOrphanedSections();
+      expect(n, greaterThan(0));
+      expect(room.name, 'شعبة (3)');
+      expect(student.section, 'شعبة (3)');
+      expect(s.studentsOf(room).map((e) => e.id), [student.id]);
+      expect(
+        s.pendingSyncs.any((p) => p.tableName == 'students' && p.recordId == student.id),
+        isTrue,
+      );
+      expect(
+        s.pendingSyncs.any((p) => p.tableName == 'rooms' && p.recordId == room.id),
+        isTrue,
+      );
     });
   });
 }

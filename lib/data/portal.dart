@@ -1055,7 +1055,8 @@ class PortalService {
       branding(user.tenantId),
       supabaseSelect('enrollments', filters: byStudent),
       supabaseSelect('groups', filters: tenant),
-      supabaseSelect('teachers', filters: tenant, columns: 'id,name'),
+      // أسماء المعلمين عبر portal_teachers (RLS للطالب) — جدول teachers محجوب عنه
+      supabaseSelect('portal_teachers', filters: tenant, columns: 'id,name'),
       supabaseSelect('subjects', filters: tenant, columns: 'id,name'),
       supabaseSelect('rooms', filters: tenant, columns: 'id,name'),
       supabaseSelect('installments', filters: byStudent),

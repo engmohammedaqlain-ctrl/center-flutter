@@ -145,8 +145,9 @@ String trimNum(num value) =>
 String _gradeCore(String grade) =>
     grade.replaceAll(RegExp(r'\s*(ذكور|إناث|بنين|بنات)\s*'), ' ').trim();
 
+// الأطول أولاً — وإلا «ثاني عشر» يبتلع «ثاني عشر أدبي» ويترك «أدبي» في الاسم.
 const _gradeWords =
-    r'\(?(12 علمي|11 علمي|11 أدبي|12 أدبي|ثاني عشر|حادي عشر|توجيهي|عاشر|تاسع|ثامن|سابع|سادس|خامس|رابع|ثالث|ثاني|أول)\)?';
+    r'\(?(ثاني عشر علمي|ثاني عشر أدبي|ثاني عشر|حادي عشر علمي|حادي عشر أدبي|حادي عشر|توجيهي علمي|توجيهي أدبي|توجيهي|12 علمي|11 علمي|11 أدبي|12 أدبي|عاشر|تاسع|ثامن|سابع|سادس|خامس|رابع|ثالث|ثاني|أول)\)?';
 const _branchWords =
     r'\(?(علمي|أدبي|شرعي|صناعي|تجاري|ريادة|أعمال|بنين|بنات|ذكور|إناث)\)?';
 
@@ -185,21 +186,30 @@ String studentStatusLabel(String status) =>
 ///
 /// المرحلة محدَّدة في حقلها، فكتابتها داخل الاسم تُنتج «ثاني عشر علمي — ثاني عشر
 /// علمي (أ)» في الكشوف والجداول. «أ» أو «عاشر أ» أو «شعبة أ» كلها ← «شعبة (أ)».
+///
+/// لا تُقصّ الأقواس من أطراف الاسم: قصّ `)` كان يحوّل «شعبة (3)» إلى «شعبة (3»
+/// فيفصل الطلاب عن صفوفهم بعد تعيين المربي.
 String sanitizeSectionName(String rawName, [String gradeLevel = '']) {
   if (rawName.trim().isEmpty) return '';
-  var clean = rawName.trim().replaceAll(RegExp(r'^(فصل|صف)\s+'), '').trim();
+  var clean = rawName.trim().replaceAll(RegExp(r'^(فصل|صف)\s+', caseSensitive: false), '').trim();
 
   final grade = _gradeCore(gradeLevel);
   if (grade.isNotEmpty) {
-    clean = clean.replaceAll(RegExp(RegExp.escape(grade)), '').trim();
+    clean = clean.replaceAll(RegExp(RegExp.escape(grade), caseSensitive: false), '').trim();
   }
 
-  clean = clean.replaceAll(RegExp(_gradeWords), '').trim();
-  clean = clean.replaceAll(RegExp(_branchWords), '').trim();
-  clean = clean.replaceAll(RegExp(r'^[(\-\s]+|[)\-\s]+$'), '').trim();
+  clean = clean.replaceAll(RegExp(_gradeWords, caseSensitive: false), '').trim();
+  clean = clean.replaceAll(RegExp(_branchWords, caseSensitive: false), '').trim();
+  // فواصل فقط — بلا أقواس، مطابقة لـ utils.ts في الويب
+  clean = clean.replaceAll(RegExp(r'^[-\s–—]+|[-\s–—]+$'), '').trim();
 
   if (RegExp(r'^[\u0621-\u064A0-9]$').hasMatch(clean)) return 'شعبة ($clean)';
+  if (RegExp(r'^\([\u0621-\u064A0-9]\)$').hasMatch(clean)) return 'شعبة $clean';
   if (clean.isEmpty) return 'شعبة (1)';
+  // بيانات فسدت بالقص القديم: أكمل القوس الناقص
+  if (RegExp(r'^(شعبة|قاعة|مجموعة|غرفة)\s*\([^)]+$').hasMatch(clean)) {
+    clean = '$clean)';
+  }
   if (RegExp(r'^(شعبة|قاعة|مجموعة|غرفة)').hasMatch(clean)) return clean;
   return 'شعبة $clean';
 }

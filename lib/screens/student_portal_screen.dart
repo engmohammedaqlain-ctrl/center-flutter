@@ -46,6 +46,9 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
   /// الابن الذي يُفتح ملفه الآن، أثناء انتظار تبديله.
   String? switchingChildId;
 
+  /// توسيع قائمة الأقساط — الافتراضي أول ثلاثة؛ الأهم ملخّص الدفع أعلاه.
+  bool _feesExpanded = false;
+
   late String tab = isParent ? 'attendance' : 'moodle';
 
   String? moodleGroupId;
@@ -616,6 +619,11 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
   List<Widget> _financialTab() {
     final f = data!.finance;
     final owes = f.currentDue > 0;
+    const previewCount = 3;
+    final all = f.installments;
+    final showAll = _feesExpanded || all.length <= previewCount;
+    final visible = showAll ? all : all.take(previewCount).toList();
+    final hidden = all.length - visible.length;
 
     return [
       _PortalSummary(
@@ -629,13 +637,13 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
         ],
       ),
       const SizedBox(height: Gap.lg),
-      if (f.installments.isEmpty)
+      if (all.isEmpty)
         EmptyState(message: 'لا توجد أقساط مسجلة حالياً')
       else ...[
         Padding(
           padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
           child: Text(
-            'الرسوم (${f.installments.length})',
+            'الرسوم (${all.length})',
             style: TextStyle(
               fontFamily: AppText.family,
               color: AppColors.heading,
@@ -654,17 +662,17 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
           ),
           child: Column(
             children: [
-              for (var i = 0; i < f.installments.length; i++)
+              for (var i = 0; i < visible.length; i++)
                 _PortalRow(
-                  title: f.installments[i].title,
-                  meta: 'استحقاق ${portalDayLabel(f.installments[i].dueDate)}',
-                  last: i == f.installments.length - 1,
+                  title: visible[i].title,
+                  meta: 'استحقاق ${portalDayLabel(visible[i].dueDate)}',
+                  last: i == visible.length - 1 && hidden == 0,
                   trailing: Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        money(f.installments[i].amount),
+                        money(visible[i].amount),
                         style: TextStyle(
                           fontFamily: AppText.family,
                           color: AppColors.heading,
@@ -673,8 +681,35 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                         ),
                       ),
                       const SizedBox(height: 3),
-                      _installmentChip(f.installments[i]),
+                      _installmentChip(visible[i]),
                     ],
+                  ),
+                ),
+              if (hidden > 0 || (_feesExpanded && all.length > previewCount))
+                InkWell(
+                  onTap: () => setState(() => _feesExpanded = !_feesExpanded),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          _feesExpanded ? 'عرض أقل' : 'عرض المزيد ($hidden)',
+                          style: TextStyle(
+                            fontFamily: AppText.family,
+                            color: AppColors.amberDark,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          _feesExpanded ? Icons.expand_less : Icons.expand_more,
+                          size: 18,
+                          color: AppColors.amberDark,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
             ],

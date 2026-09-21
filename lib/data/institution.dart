@@ -35,6 +35,9 @@ const paymentSnapshotKey = 'payment_snapshots_frozen_v1';
 /// `sanitizeExistingGroupAndRoomNames` في db.ts
 const sectionNameMigrationKey = 'section_names_sanitized_v1';
 
+/// إصلاح طلاب انفصلوا عن صفوفهم بعد تعقيم خاطئ عند تعيين المربي.
+const sectionOrphanRepairKey = 'section_orphan_repair_v1';
+
 /// ربط التسجيلات القائمة بشعبها — مطابق لترقية v10 في db.ts
 const enrollmentRoomMigrationKey = 'enrollment_room_link_v1';
 

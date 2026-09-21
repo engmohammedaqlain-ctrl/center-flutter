@@ -44,7 +44,7 @@ class AttendanceDayChip extends StatelessWidget {
         height: 58,
         decoration: BoxDecoration(
           color: selected ? AppColors.amber : Colors.transparent,
-          borderRadius: BorderRadius.circular(Corner.dialog),
+          borderRadius: BorderRadius.circular(Corner.field),
           boxShadow: selected
               ? [BoxShadow(color: AppColors.amber.withValues(alpha: 0.18), blurRadius: 8, offset: const Offset(0, 2))]
               : null,

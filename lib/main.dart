@@ -146,6 +146,9 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
   final updater = AppUpdater.instance;
   bool _prompting = false;
 
+  /// بعد أول إقلاع ناجح لا نُعيد شاشة الشعار إن ومضت الجاهزية عند العودة من الخلفية.
+  bool _booted = false;
+
   /// ما يهمّ الإقلاعَ من حالة التحديث. ما عداه — نسبة التنزيل وسرعته — يتغيّر
   /// مئات المرات في الدقيقة، وإعادةُ بناء التطبيق كلّه لأجله تُبطئ التنزيل نفسه
   /// وتُقطّع الحركة. الشريط أعلى الشاشة يستمع وحده لذلك.
@@ -219,23 +222,31 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
         // قرار التحديث يُنتظر مع إقلاع المخزن: بدونه تُعرض شاشة الدخول ثم تُقلب
         // بعد جزءٍ من الثانية إلى شاشة التحديث، فيرى المستخدم واجهتين لا واحدة
         if (!store.ready || !updater.loaded) {
-          screen = const SplashScreen();
+          // بعد الإقلاع الأول: خلفية بيضاء بدل إعادة الشعار عند العودة من الخلفية
+          screen = _booted
+              ? const ColoredBox(color: Colors.white, child: SizedBox.expand())
+              : const SplashScreen();
         } else if (updater.action == UpdateAction.mandatory) {
+          _booted = true;
           // قبل الدخول وبعده: إصدارٌ لم يعد مقبولاً لا يرفع ولا يسحب
           screen = const MandatoryUpdateScreen();
         } else if (!store.loggedIn) {
+          _booted = true;
           screen = const LoginScreen();
         } else if (store.isMasterAdmin) {
+          _booted = true;
           screen = const DeveloperScreen();
         } else if (store.needsInitialSetup) {
+          _booted = true;
           // جهاز جديد: التهيئة وتحديد الصلاحية تسبقان أي شاشة عمل
           screen = const DeviceSetupScreen();
         } else {
+          _booted = true;
           screen = const AppShell();
         }
 
         return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 260),
+          duration: _booted ? Duration.zero : const Duration(milliseconds: 260),
           switchInCurve: Curves.easeOut,
           child: KeyedSubtree(key: ValueKey(screen.runtimeType), child: screen),
         );
@@ -497,7 +508,10 @@ class _LoginScreenState extends State<LoginScreen> {
       // ولا تبقى كشوف صفوفه معروضة لمن يدخل بعده
       await PortalOffline(_appStore.db).clear();
       await supabaseSignOut();
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        setState(() => restoring = false);
+        Navigator.of(context).pop();
+      }
     }
 
     Widget page(BuildContext _) => account.isTeacher
@@ -512,10 +526,15 @@ class _LoginScreenState extends State<LoginScreen> {
           )
         : MaterialPageRoute<void>(builder: page);
 
-    // شاشة الإقلاع تُطفأ بعد الخروج من البوابة لا قبل فتحها
+    // شاشة الإقلاع تبقى تحت البوابة حتى تُدفع فوقها، ثم تُطفأ كي لا تُعاد عند الخروج
     Navigator.of(context).push(route).then((_) {
-      if (mounted && restoring) setState(() => restoring = false);
+      if (mounted) setState(() => restoring = false);
     });
+    if (restored && restoring) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => restoring = false);
+      });
+    }
   }
 
   Future<void> _submit() async {
@@ -537,8 +556,10 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final store = _appStore;
-    // جلسة محفوظة قيد الاستعادة: شاشة الإقلاع نفسها تبقى حتى تُفتح البوابة
-    if (restoring) return const SplashScreen();
+    // جلسة محفوظة: خلفية بيضاء قصيرة لا شعار ثانٍ — الشعار ظهر في إقلاع المخزن
+    if (restoring) {
+      return const ColoredBox(color: Colors.white, child: SizedBox.expand());
+    }
     return AuthFrame(
       title: store.institutionName.isEmpty ? appName : store.institutionName,
       subtitle: 'بوابة تسجيل الدخول الرسمية',

@@ -327,10 +327,6 @@ class _FinanceScreenState extends State<FinanceScreen> {
           child: Column(
             children: [
               _segments(store, showExpenses),
-              if (hero != null)
-                Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 2), child: hero)
-              else
-                const SizedBox(width: double.infinity),
               Expanded(
                 child: PageView.builder(
                   controller: _pages,
@@ -343,6 +339,14 @@ class _FinanceScreenState extends State<FinanceScreen> {
                     final body = _bodyOf(tabs[i], context, store, allDues, q);
                     return CustomScrollView(
                       slivers: [
+                        // الكارد الكبيرة تمرّ مع السجل؛ البحث والفلترة وحدهما مثبتان
+                        if (hero != null)
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 12, 12, 2),
+                              child: hero,
+                            ),
+                          ),
                         if (body.toolbar != null)
                           SliverPersistentHeader(pinned: true, delegate: _PinnedBar(child: body.toolbar!)),
                         ...body.slivers,

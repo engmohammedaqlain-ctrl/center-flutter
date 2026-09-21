@@ -138,12 +138,30 @@ bool belongsToSection({
   return isSameGrade(grade, roomGrade);
 }
 
-bool studentBelongsToRoom(Student student, Classroom room) => belongsToSection(
-      section: student.section,
-      grade: student.gradeLevel,
-      roomName: room.name,
-      roomGrade: room.gradeLevel,
-    );
+bool studentBelongsToRoom(Student student, Classroom room) {
+  if (belongsToSection(
+    section: student.section,
+    grade: student.gradeLevel,
+    roomName: room.name,
+    roomGrade: room.gradeLevel,
+  )) {
+    return true;
+  }
+  // بيانات قديمة: الشعبة عُقّمت في الصف وبقي عند الطالب الاسم السابق («أ» مقابل «شعبة (أ)»)
+  // أو العكس بعد مزامنة — نقارن الشكلَين بعد التنقية.
+  final section = student.section.trim();
+  if (section.isEmpty) return false;
+  final grade = student.gradeLevel.trim().isNotEmpty ? student.gradeLevel : room.gradeLevel;
+  final studentSan = sanitizeSectionName(section, grade);
+  final roomSan = sanitizeSectionName(room.name, room.gradeLevel);
+  if (studentSan.isEmpty) return false;
+  final nameMatches = isSameSectionName(studentSan, room.name) ||
+      isSameSectionName(studentSan, roomSan) ||
+      (roomSan.isNotEmpty && isSameSectionName(section, roomSan));
+  if (!nameMatches) return false;
+  if (normalizeAcademicText(room.gradeLevel).isEmpty) return true;
+  return isSameGrade(student.gradeLevel, room.gradeLevel);
+}
 
 /// مجموعة مادة مدرسية: بلا جدول أسبوعي ولا رسوم شهرية.
 ///

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+: أيقونة شفافة حتى لا يظهر شعار بلا نص قبل SplashScreen في Flutter -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <size android:width="288dp" android:height="288dp" />
+    <solid android:color="@android:color/transparent" />
+</shape>

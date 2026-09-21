@@ -96,6 +96,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   final _ensureInFlight = <String, Future<void>>{};
 
+  /// تسلسل تحميل القرص: استعلامات متزامنة على SQLite كانت تفشل أحياناً عند فتح عدة بوابات.
+  Future<void> _diskLoadTail = Future<void>.value();
+
   /// تحميل جداول من القرص إلى الذاكرة عند أول حاجة — مع لودنغ الشاشة.
   Future<void> ensureTables(Iterable<String> tables) async {
     final missing = [
@@ -116,7 +119,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
 
     if (toFetch.isNotEmpty) {
-      final job = _loadTablesFromDisk(toFetch);
+      final job = _enqueueDiskLoad(toFetch);
       for (final t in toFetch) {
         _ensureInFlight[t] = job;
       }
@@ -133,39 +136,52 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (waiters.isNotEmpty) await Future.wait(waiters);
   }
 
+  Future<void> _enqueueDiskLoad(List<String> tables) {
+    final run = _diskLoadTail.then((_) => _loadTablesFromDisk(tables));
+    // لا تُسقط السلسلة إن فشل تحميل — التالي ينتظر اكتماله فقط
+    _diskLoadTail = run.catchError((_) {});
+    return run;
+  }
+
   Future<void> _loadTablesFromDisk(List<String> tables) async {
     final data = await db.loadTables(tables);
     _loading = true;
     try {
       for (final table in tables) {
-        final rows = data[table] ?? const <Map<String, dynamic>>[];
-        if (table == _stampsTable) {
-          for (final row in rows) {
-            final parts = '${row['id'] ?? ''}'.split('|');
-            if (parts.length != 2) continue;
-            serverStamps.putIfAbsent(parts[0], () => {})[parts[1]] = '${row['stamp'] ?? ''}';
+        try {
+          final rows = data[table] ?? const <Map<String, dynamic>>[];
+          if (table == _stampsTable) {
+            for (final row in rows) {
+              final parts = '${row['id'] ?? ''}'.split('|');
+              if (parts.length != 2) continue;
+              serverStamps.putIfAbsent(parts[0], () => {})[parts[1]] = '${row['stamp'] ?? ''}';
+            }
+          } else if (table == _pendingTable) {
+            pendingSyncs
+              ..clear()
+              ..addAll(rows.map(PendingSync.fromJson));
+          } else if (table == 'tenants') {
+            tenants
+              ..clear()
+              ..addAll(rows.map(Tenant.fromCloud));
+          } else if (rows.isEmpty) {
+            // لا شيء
+          } else {
+            // دفعات صغيرة + إفساح: جدول حضور كبير كان يوقف دوران أزرار التحميل ثوانٍ
+            await prepareApply(table);
+            const chunk = 100;
+            for (var i = 0; i < rows.length; i += chunk) {
+              final end = i + chunk > rows.length ? rows.length : i + chunk;
+              putRows(table, rows.sublist(i, end));
+              await Future<void>.delayed(Duration.zero);
+            }
           }
-        } else if (table == _pendingTable) {
-          pendingSyncs
-            ..clear()
-            ..addAll(rows.map(PendingSync.fromJson));
-        } else if (table == 'tenants') {
-          tenants
-            ..clear()
-            ..addAll(rows.map(Tenant.fromCloud));
-        } else if (rows.isEmpty) {
-          // لا شيء
-        } else {
-          // دفعات صغيرة + إفساح: جدول حضور كبير كان يوقف دوران أزرار التحميل ثوانٍ
-          await prepareApply(table);
-          const chunk = 100;
-          for (var i = 0; i < rows.length; i += chunk) {
-            final end = i + chunk > rows.length ? rows.length : i + chunk;
-            putRows(table, rows.sublist(i, end));
-            await Future<void>.delayed(Duration.zero);
-          }
+          loadedTables.add(table);
+        } catch (e, st) {
+          // جدول فاسد لا يمنع فتح الشاشة — نُعلّمه محمّلاً بما تيسّر
+          debugPrint('ensureTables($table): $e\n$st');
+          loadedTables.add(table);
         }
-        loadedTables.add(table);
         await Future<void>.delayed(Duration.zero);
       }
     } finally {
@@ -2919,6 +2935,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     await migrateAttendanceIds();
     await migratePaymentSnapshots();
     await migrateSectionNames();
+    await migrateOrphanedSections();
     await migrateEnrollmentRooms();
     await migrateWithdrawnStatus();
     dedupeAttendance();
@@ -3301,6 +3318,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     attendanceIdMigrationKey,
     paymentSnapshotKey,
     sectionNameMigrationKey,
+    sectionOrphanRepairKey,
     enrollmentRoomMigrationKey,
     withdrawnStatusMigrationKey,
     _kDeviceUser,
@@ -6622,20 +6640,24 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   void upsertRoom(Classroom r) {
     requireSection('classes', ['settings']);
     if (r.name.trim().isEmpty) throw StoreException('يرجى إدخال اسم الصف / الشعبة');
-    // المرحلة في حقلها: تكرارها داخل اسم الشعبة يُنتج «ثاني عشر علمي (ثاني عشر علمي أ)»
-    r.name = r.gradeLevel.trim().isEmpty ? r.name.trim() : sanitizeSectionName(r.name, r.gradeLevel);
-    if (r.academicYearId.isEmpty) r.academicYearId = viewedAcademicYearId;
     r.updatedAt = _nowIso();
     r.syncStatus = 'pending';
     final i = rooms.indexWhere((e) => e.id == r.id);
     if (i >= 0) {
       final existing = rooms[i];
       final oldName = existing.name.trim();
+      // الويب يعقّم الاسم عند تغييره فقط — تعيين المربي كان يعيد التعقيم فيفصل
+      // اسم الصف عن حقل section لدى الطلاب فيفرغ الكشف على الجوال وحده.
+      final nameUnchanged = r.name.trim() == oldName;
+      if (nameUnchanged) {
+        r.name = existing.name;
+      } else {
+        r.name = r.gradeLevel.trim().isEmpty ? r.name.trim() : sanitizeSectionName(r.name, r.gradeLevel);
+      }
+      if (r.academicYearId.isEmpty) r.academicYearId = viewedAcademicYearId;
       r.createdAt = existing.createdAt;
       if (r.academicYearId.isEmpty) r.academicYearId = existing.academicYearId;
-      // انقل الطلاب بالاسم القديم قبل استبدال الصف — وإلا studentsOfRoom
-      // يبحث بالاسم الجديد فلا يجد أحداً ويُفرغ الكشف (تعيين مربي يمرّ من هنا).
-      if (oldName.isNotEmpty && oldName != r.name) {
+      if (!nameUnchanged && oldName.isNotEmpty && oldName != r.name) {
         _renameStudentSection(
           Classroom(
             id: existing.id,
@@ -6650,6 +6672,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       rooms[i] = r;
       _queue('rooms', r.id, 'UPDATE', r.toCloud());
     } else {
+      // مرحلة في حقلها: تكرارها داخل اسم الشعبة يُنتج أسماء مزدوجة في الكشوف
+      r.name = r.gradeLevel.trim().isEmpty ? r.name.trim() : sanitizeSectionName(r.name, r.gradeLevel);
+      if (r.academicYearId.isEmpty) r.academicYearId = viewedAcademicYearId;
       r.createdAt = _nowIso();
       rooms.add(r);
       _queue('rooms', r.id, 'INSERT', r.toCloud());
@@ -6757,6 +6782,92 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       markDirty(_pendingTable);
     }
     await db.setSetting(sectionNameMigrationKey, 'true');
+    return changed;
+  }
+
+  /// إعادة ربط الطلاب الذين انفصل قسمهم عن اسم الصف بعد تعقيم خاطئ.
+  ///
+  /// تعيين المربي كان يعيد تنقية الاسم ويقطع القوس الختامي أو يترك عند الطالب
+  /// شكلاً قديماً؛ المطابقة وحدها لا تُصلِح السحابة — نوحّد النص ونرفعه.
+  Future<int> migrateOrphanedSections() async {
+    if (db.settings[sectionOrphanRepairKey] == 'true') return 0;
+
+    var changed = 0;
+    final now = _nowIso();
+
+    // 1) أسماء صفوف فسدت أو تحتاج إعادة تنقية بالمنطق الصحيح
+    for (final r in List.of(rooms)) {
+      if (r.gradeLevel.trim().isEmpty) continue;
+      final clean = sanitizeSectionName(r.name, r.gradeLevel);
+      if (clean.isEmpty || clean == r.name) continue;
+      final oldName = r.name.trim();
+      r.name = clean;
+      r.updatedAt = now;
+      r.syncStatus = 'pending';
+      queuePendingSync(pendingSyncs, tableName: 'rooms', recordId: r.id, action: 'UPDATE', payload: r.toCloud());
+      _renameStudentSection(
+        Classroom(
+          id: r.id,
+          name: oldName,
+          gradeLevel: r.gradeLevel,
+          teacherId: r.teacherId,
+          academicYearId: r.academicYearId,
+        ),
+        clean,
+      );
+      changed++;
+    }
+
+    // 2) طلاب قسمهم لا يطابق أي صف حرفياً لكن يطابق بعد التنقية صفاً واحداً
+    for (final s in students) {
+      if (s.status == 'archived') continue;
+      final section = s.section.trim();
+      if (section.isEmpty) continue;
+
+      final sameYear = (Classroom r) =>
+          r.academicYearId.isEmpty || s.academicYearId.isEmpty || r.academicYearId == s.academicYearId;
+
+      final exact = rooms.where((r) => sameYear(r) && studentBelongsToRoom(s, r)).toList();
+      if (exact.length == 1) {
+        final room = exact.first;
+        if (s.section.trim() == room.name.trim()) continue;
+        s.section = room.name;
+        s.updatedAt = now;
+        s.syncStatus = 'pending';
+        queuePendingSync(pendingSyncs, tableName: 'students', recordId: s.id, action: 'UPDATE', payload: s.toCloud());
+        changed++;
+        continue;
+      }
+      if (exact.isNotEmpty) continue;
+
+      final grade = s.gradeLevel.trim();
+      final san = sanitizeSectionName(section, grade);
+      if (san.isEmpty) continue;
+      final candidates = rooms.where((r) {
+        if (!sameYear(r)) return false;
+        if (grade.isNotEmpty && r.gradeLevel.trim().isNotEmpty && !isSameGrade(grade, r.gradeLevel)) {
+          return false;
+        }
+        final roomSan = sanitizeSectionName(r.name, r.gradeLevel);
+        return isSameSectionName(san, r.name) || isSameSectionName(san, roomSan);
+      }).toList();
+      if (candidates.length != 1) continue;
+
+      s.section = candidates.first.name;
+      s.updatedAt = now;
+      s.syncStatus = 'pending';
+      queuePendingSync(pendingSyncs, tableName: 'students', recordId: s.id, action: 'UPDATE', payload: s.toCloud());
+      changed++;
+    }
+
+    if (changed > 0) {
+      markDirty('rooms');
+      markDirty('students');
+      markDirty(_pendingTable);
+      notifyListeners();
+      scheduleAutoPush();
+    }
+    await db.setSetting(sectionOrphanRepairKey, 'true');
     return changed;
   }
 

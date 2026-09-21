@@ -10,6 +10,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/list_paging.dart';
+import '../widgets/table_gate.dart';
 import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import 'evaluation_form_sheet.dart';
@@ -45,27 +46,31 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
-        if (!store.features.enableEvaluations || !store.can('evaluations')) {
-          return Scaffold(
-            appBar: AppBar(title: const Text('الدرجات والتقييمات')),
-            body: NoAccess(section: 'evaluations', roleName: store.roleName),
-          );
-        }
+    return TableGate(
+      tables: const ['student_evaluations', 'rooms', 'students', 'groups'],
+      message: 'جارٍ تحميل الدرجات...',
+      child: ListenableBuilder(
+        listenable: store,
+        builder: (context, _) {
+          if (!store.features.enableEvaluations || !store.can('evaluations')) {
+            return Scaffold(
+              appBar: AppBar(title: const Text('الدرجات والتقييمات')),
+              body: NoAccess(section: 'evaluations', roleName: store.roleName),
+            );
+          }
 
-        final grading = store.gradingForViewedYear;
-        if (grading.mode == 'monthly') {
-          return Scaffold(
-            backgroundColor: Colors.white,
-            appBar: AppBar(title: const Text('الدرجات والتقييمات')),
-            body: const _MonthlyGradesPanel(),
-          );
-        }
+          final grading = store.gradingForViewedYear;
+          if (grading.mode == 'monthly') {
+            return Scaffold(
+              backgroundColor: Colors.white,
+              appBar: AppBar(title: const Text('الدرجات والتقييمات')),
+              body: const _MonthlyGradesPanel(),
+            );
+          }
 
-        return _weightedBody(store);
-      },
+          return _weightedBody(store);
+        },
+      ),
     );
   }
 

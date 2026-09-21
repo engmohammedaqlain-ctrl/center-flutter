@@ -17,6 +17,7 @@ import '../theme/app_theme.dart';
 import '../widgets/custom_plan_rows.dart';
 import '../widgets/form_layout.dart';
 import '../widgets/panels.dart';
+import '../widgets/table_gate.dart';
 import '../widgets/widgets.dart';
 import 'payment_form_screen.dart';
 import 'receipt_screen.dart';
@@ -49,34 +50,44 @@ class StudentDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
-        // الملف يُفتح من المالية والصفوف أيضاً، فتُحرس الشاشة نفسها لا زرّ الوصول وحده
-        if (!store.can('students')) {
-          return Scaffold(
-            backgroundColor: Colors.white,
-            appBar: AppBar(title: const Text('ملف الطالب')),
-            body: NoAccess(section: 'students', roleName: store.roleName),
-          );
-        }
-        final student = store.studentById(studentId);
-        if (student == null) {
-          return Scaffold(
-            backgroundColor: Colors.white,
-            appBar: AppBar(title: const Text('ملف الطالب')),
-            body: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('لم يتم العثور على ملف الطالب', style: TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 10),
-                  GhostButton(label: 'العودة لقائمة الطلاب', onPressed: () => Navigator.pop(context)),
-                ],
+    // ملف الطالب يعرض مالية وحضوراً ودرجات — جداول مؤجّلة تُحمَّل هنا إن لم تُفتح شاشاتها بعد
+    return TableGate(
+      tables: const [
+        'payments',
+        'installments',
+        'sessions',
+        'attendance',
+        'student_evaluations',
+      ],
+      message: 'جارٍ تحميل ملف الطالب...',
+      child: ListenableBuilder(
+        listenable: store,
+        builder: (context, _) {
+          // الملف يُفتح من المالية والصفوف أيضاً، فتُحرس الشاشة نفسها لا زرّ الوصول وحده
+          if (!store.can('students')) {
+            return Scaffold(
+              backgroundColor: Colors.white,
+              appBar: AppBar(title: const Text('ملف الطالب')),
+              body: NoAccess(section: 'students', roleName: store.roleName),
+            );
+          }
+          final student = store.studentById(studentId);
+          if (student == null) {
+            return Scaffold(
+              backgroundColor: Colors.white,
+              appBar: AppBar(title: const Text('ملف الطالب')),
+              body: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('لم يتم العثور على ملف الطالب', style: TextStyle(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 10),
+                    GhostButton(label: 'العودة لقائمة الطلاب', onPressed: () => Navigator.pop(context)),
+                  ],
+                ),
               ),
-            ),
-          );
-        }
+            );
+          }
 
         // الأحدث أولاً: آخر سند هو ما يُبحث عنه عادةً
         final pays = store.paymentsOf(student.id);
@@ -490,6 +501,7 @@ class StudentDetailScreen extends StatelessWidget {
           ),
         );
       },
+    ),
     );
   }
 }
