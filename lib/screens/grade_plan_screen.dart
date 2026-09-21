@@ -141,6 +141,7 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
   Future<void> _save() async {
     final store = StoreScope.of(context);
     setState(() => busy = true);
+    await yieldUi(2);
     try {
       final draft = _draftFee();
       store.updateGradeFee(draft);

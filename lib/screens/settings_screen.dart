@@ -229,6 +229,7 @@ class _AcademicYearsTabState extends State<_AcademicYearsTab> {
 
   Future<void> _saveDates(AppStore store, AcademicYear current) async {
     setState(() => busy = true);
+    await yieldUi(2);
     try {
       await store.updateAcademicYear(
         current.id,

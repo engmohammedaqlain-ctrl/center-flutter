@@ -343,7 +343,14 @@ class PrimaryButton extends StatelessWidget {
           textStyle: const TextStyle(fontFamily: AppText.family, fontWeight: FontWeight.w700, fontSize: 13.5),
         ),
         child: busy
-            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                // طبقة مستقلة: إعادة بناء الأب لا تعيد تشغيل الأنيميشن من الصفر
+                child: RepaintBoundary(
+                  child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white),
+                ),
+              )
             // النص لا يطفح حين يضيق الزر: يُقصَّ بنقاط في الزر الممتد، ويصغر قليلاً
             // في الزر الحر — الذي قد لا يعرف عرضاً أقصى داخل صفّ فلا يصلح له القصّ
             : expand
@@ -799,11 +806,19 @@ Future<T> runBusyOp<T>(
     overlay.insert(entry);
   }
   try {
-    // إطار واحد لرسم اللودنغ قبل العمل الثقيل على نفس العزل
+    // إطاران لرسم اللودنغ وبدء دورانه قبل أي عمل ثقيل على نفس العزل
+    await Future<void>.delayed(Duration.zero);
     await Future<void>.delayed(Duration.zero);
     return await op();
   } finally {
     entry?.remove();
+  }
+}
+
+/// إفساح إطار (أو أكثر) للواجهة — بعد `setState(busy: true)` وقبل العمل الثقيل.
+Future<void> yieldUi([int frames = 1]) async {
+  for (var i = 0; i < frames; i++) {
+    await Future<void>.delayed(Duration.zero);
   }
 }
 

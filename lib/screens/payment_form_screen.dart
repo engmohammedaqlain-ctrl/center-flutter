@@ -229,6 +229,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
     });
     if (errors.report(context) || selected == null) return;
     setState(() => busy = true);
+    await yieldUi(2);
     final open = _openOf(
       store.installments.where((i) => i.studentId == selected.id).toList(),
     );

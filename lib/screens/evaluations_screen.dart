@@ -474,6 +474,7 @@ class _MonthlyGradesPanelState extends State<_MonthlyGradesPanel> {
   Future<void> _save(AppStore store, List<Student> students, Map<String, Evaluation> saved) async {
     if (busy) return;
     setState(() => busy = true);
+    await yieldUi(2);
     try {
       final entries = <({String studentId, double? score})>[];
       for (final s in students) {
@@ -516,6 +517,7 @@ class _MonthlyGradesPanelState extends State<_MonthlyGradesPanel> {
     );
     if (!ok) return;
     setState(() => busy = true);
+    await yieldUi(2);
     try {
       final r = store.applyMonthlyRewards(month, studentIds: eligibleIds);
       if (!mounted) return;

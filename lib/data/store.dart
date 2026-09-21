@@ -153,8 +153,17 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
           tenants
             ..clear()
             ..addAll(rows.map(Tenant.fromCloud));
+        } else if (rows.isEmpty) {
+          // لا شيء
         } else {
-          putRows(table, rows);
+          // دفعات صغيرة + إفساح: جدول حضور كبير كان يوقف دوران أزرار التحميل ثوانٍ
+          await prepareApply(table);
+          const chunk = 100;
+          for (var i = 0; i < rows.length; i += chunk) {
+            final end = i + chunk > rows.length ? rows.length : i + chunk;
+            putRows(table, rows.sublist(i, end));
+            await Future<void>.delayed(Duration.zero);
+          }
         }
         loadedTables.add(table);
         await Future<void>.delayed(Duration.zero);
@@ -528,21 +537,20 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// الحقول المتغيّرة دائماً لا تدخل البصمة، وإلا لاختلفت من غير سبب.
   static const _volatile = {'updated_at', 'created_at', 'sync_status', 'synced_at', 'tenant_id'};
 
-  /// بصمة FNV-1a بطول 64 بتّاً على المفاتيح مرتبةً وقيمها، بلا بناء نصّ JSON.
+  /// بصمة FNV-1a بـ 32 بتّاً على المفاتيح مرتبةً وقيمها، بلا بناء نصّ JSON.
   ///
-  /// تُقارَن بصمتا السجل نفسه قبل التعديل وبعده، فاحتمال التصادم ≈ 2⁻⁶⁴ لكل
-  /// مقارنة. كل قيمة تُسبق بوسم نوعها: النص «null» غير القيمة الفارغة، و0 غير 0.0
-  /// كما كان الترميز يفرّق بينهما.
+  /// 32 بت كافٍ للمقارنة المحلية (نفس السجل قبل/بعد)، ويعمل على الويب حيث
+  /// JavaScript لا يمثّل ثوابت 64 بت بدقّة. كل قيمة تُسبق بوسم نوعها.
   int _fingerprint(Map<String, dynamic> row) {
     final keys = row.keys.where((k) => !_volatile.contains(k)).toList()..sort();
-    var h = 0xcbf29ce484222325;
+    var h = 0x811c9dc5;
     void mix(String text) {
       for (var i = 0; i < text.length; i++) {
         h ^= text.codeUnitAt(i);
-        h *= 0x100000001b3;
+        h = (h * 0x01000193) & 0xffffffff;
       }
       h ^= 0x1f; // فاصل بين الأجزاء
-      h *= 0x100000001b3;
+      h = (h * 0x01000193) & 0xffffffff;
     }
 
     for (final k in keys) {
@@ -579,7 +587,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   void _scheduleFlush() {
     _flushTimer?.cancel();
-    _flushTimer = Timer(const Duration(milliseconds: 350), () {
+    // مهلة أطول قليلاً: تفريغ القرص أثناء دوران زر التحميل كان يوقف المؤشر
+    _flushTimer = Timer(const Duration(milliseconds: 700), () {
       unawaited(flush());
     });
   }
@@ -598,15 +607,21 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _deletedRecords.clear();
 
     for (final t in tables) {
-      await db.saveTable(t, _rowsForPersist(t));
+      // بناء الصفوف قد يطول على جداول كبيرة — إفساح قبل وبعد الكتابة
+      final rows = await _rowsForPersistYielding(t);
+      await db.saveTable(t, rows);
       records.remove(t);
       deletes.remove(t);
+      await Future<void>.delayed(Duration.zero);
     }
     for (final entry in deletes.entries) {
       await db.deleteRecords(entry.key, entry.value.toList());
+      await Future<void>.delayed(Duration.zero);
     }
     for (final entry in records.entries) {
-      await db.saveRecords(entry.key, _rowsForPersist(entry.key, only: entry.value));
+      final rows = await _rowsForPersistYielding(entry.key, only: entry.value);
+      await db.saveRecords(entry.key, rows);
+      await Future<void>.delayed(Duration.zero);
     }
   }
 
@@ -641,6 +656,43 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
     if (table == 'tenants') return tenants.map((e) => e.toCloud()).toList();
     return allOf(table);
+  }
+
+  /// كـ [_rowsForPersist] مع إفساح كل بضع مئات صفوف كي لا يتوقف مؤشر الزر.
+  Future<List<Map<String, dynamic>>> _rowsForPersistYielding(String table, {Set<String>? only}) async {
+    if (only != null && only.isNotEmpty) {
+      final out = <Map<String, dynamic>>[];
+      var n = 0;
+      for (final id in only) {
+        final row = recordOf(table, id);
+        if (row != null) out.add(row);
+        if (++n % 200 == 0) await Future<void>.delayed(Duration.zero);
+      }
+      return out;
+    }
+    if (table == _stampsTable || table == _pendingTable || table == 'tenants') {
+      return _rowsForPersist(table);
+    }
+    final entry = _listFor(table);
+    if (entry == null) {
+      // جداول في extraCloud أو غير مفهرسة
+      final all = allOf(table);
+      if (all.length < 250) return all;
+      final out = <Map<String, dynamic>>[];
+      for (var i = 0; i < all.length; i++) {
+        out.add(all[i]);
+        if ((i + 1) % 200 == 0) await Future<void>.delayed(Duration.zero);
+      }
+      return out;
+    }
+    final (list, idOf) = entry;
+    final out = <Map<String, dynamic>>[];
+    for (var i = 0; i < list.length; i++) {
+      final row = recordOf(table, idOf(list[i]));
+      if (row != null) out.add(row);
+      if ((i + 1) % 200 == 0) await Future<void>.delayed(Duration.zero);
+    }
+    return out;
   }
 
   /// تصفير كل البيانات المحلية مع الإبقاء على الإعدادات والجلسة.
@@ -5640,7 +5692,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return corrected;
   }
 
-  /// كالمزامنة أعلاه مع إفساح إطار كل عشرات الطلاب — لا يحبس الواجهة ثوانٍ.
+  /// كالمزامنة أعلاه مع إفساح إطار كل بضعة طلاب — لا يحبس الواجهة ثوانٍ.
   @override
   Future<int> recalculateAllBalancesYielding() async {
     if (!tablesReady(const ['students', 'payments', 'installments'])) return 0;
@@ -5648,19 +5700,25 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     var installmentsFixed = false;
     var n = 0;
     final paymentsByStudent = <String, List<Payment>>{};
+    var bi = 0;
     for (final p in payments) {
       if (p.studentId.isEmpty) continue;
       (paymentsByStudent[p.studentId] ??= []).add(p);
+      if (++bi % 250 == 0) await Future<void>.delayed(Duration.zero);
     }
     final installmentsByStudent = <String, List<Installment>>{};
+    bi = 0;
     for (final i in installments) {
       if (i.studentId.isEmpty) continue;
       (installmentsByStudent[i.studentId] ??= []).add(i);
+      if (++bi % 250 == 0) await Future<void>.delayed(Duration.zero);
     }
     final enrollmentsByStudent = <String, List<StudentEnrollment>>{};
+    bi = 0;
     for (final e in enrollments) {
       if (e.studentId.isEmpty) continue;
       (enrollmentsByStudent[e.studentId] ??= []).add(e);
+      if (++bi % 250 == 0) await Future<void>.delayed(Duration.zero);
     }
     const none = <Never>[];
     for (final student in students) {
@@ -5682,7 +5740,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         student.updatedAt = _nowIso();
         corrected++;
       }
-      if (++n % 40 == 0) await Future<void>.delayed(Duration.zero);
+      if (++n % 15 == 0) await Future<void>.delayed(Duration.zero);
     }
     if (installmentsFixed) markDirty('installments');
     if (corrected > 0) markDirty('students');
@@ -7337,7 +7395,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       return; // صالحة من المزامنة السابقة
     }
 
-    const slice = 4000;
+    const slice = 500;
     for (var attempt = 0; attempt < 3; attempt++) {
       final rev = tableRev(table);
       final map = <String, int>{};
