@@ -30,6 +30,22 @@ class FakeDisk implements Persistence {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> loadTable(String table) async {
+    final raw = _tables[table];
+    if (raw == null) return const [];
+    return (jsonDecode(raw) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  @override
+  Future<Map<String, List<Map<String, dynamic>>>> loadTables(Iterable<String> tables) async {
+    final out = <String, List<Map<String, dynamic>>>{};
+    for (final table in tables) {
+      out[table] = await loadTable(table);
+    }
+    return out;
+  }
+
+  @override
   Future<void> saveTable(String table, List<Map<String, dynamic>> rows) async {
     writes++;
     _tables[table] = jsonEncode(rows);

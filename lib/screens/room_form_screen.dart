@@ -75,6 +75,7 @@ class _RoomFormScreenState extends State<RoomFormScreen> {
           capacity: seats > 0 ? seats : 30,
           notes: notes.text.trim(),
           tier: tier,
+          academicYearId: widget.room?.academicYearId ?? '',
         ),
       );
       showAppSnack(context, widget.room == null ? 'تم إضافة "$trimmed"' : 'تم تعديل "$trimmed"');

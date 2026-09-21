@@ -136,7 +136,7 @@ void main() {
 
       expect(s.autoPushScheduled, isTrue, reason: 'يُرفع بعد استقرار الواجهة');
       expect(s.lastAutoPushDelay, const Duration(milliseconds: 800));
-      expect(s.lastAutoPullDelay, const Duration(milliseconds: 1200), reason: 'ويُسحب ما فات بلا تجميد');
+      expect(s.lastAutoPullDelay, AppStore.reconnectPullDelay, reason: 'سحب مؤجّل بعد التهيئة كي لا تتجمّد الواجهة');
       await s.flush();
     });
   });

@@ -16,9 +16,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// | تعديل محلي           | رفع بعد ٣ ث           | رفع بعد ٣ ث           |
 /// | رفع ناجح             | إشارة changed         | إشارة changed         |
 /// | إشارة من جهاز آخر    | سحب بعد ١٫٥ ث         | سحب بعد ١٫٥ ث         |
-/// | الانضمام للقناة       | سحب فوري              | سحب فوري              |
+/// | الانضمام للقناة       | سحب فوري              | سحب مؤجّل ٨ ث         |
 /// | العودة للتطبيق       | سحب، مرة كل ٦٠ ث      | سحب، مرة كل ٦٠ ث      |
-/// | عودة الاتصال         | رفع وسحب فوريان       | رفع وسحب فوريان       |
+/// | عودة الاتصال         | رفع وسحب فوريان       | رفع سريع + سحب ٨ ث    |
 
 /// متجر بمزامنة تلقائية ومنشأة مسجّلة، وطابور فارغ.
 AppStore _store() {
@@ -109,16 +109,16 @@ void main() {
     await _finish(tester, store);
   });
 
-  testWidgets('الانضمام للقناة: سحب فوري', (tester) async {
+  testWidgets('الانضمام للقناة: سحب مؤجّل حتى تهدأ الواجهة', (tester) async {
     final store = _store();
     store.handleRealtimeJoined();
 
-    expect(store.lastAutoPullDelay, Duration.zero);
+    expect(store.lastAutoPullDelay, AppStore.reconnectPullDelay);
     expect(store.lastAutoPushDelay, isNull, reason: 'لا شيء ينتظر الرفع');
     await _finish(tester, store);
   });
 
-  testWidgets('عودة الاتصال: رفع وسحب فوريان لما تعثّر', (tester) async {
+  testWidgets('عودة الاتصال: رفع سريع وسحب مؤجّل لما تعثّر', (tester) async {
     final store = _store();
     store.pendingSyncs.add(PendingSync(
       id: 900,
@@ -130,24 +130,24 @@ void main() {
     ));
     store.handleRealtimeJoined();
 
-    expect(store.lastAutoPushDelay, Duration.zero);
-    expect(store.lastAutoPullDelay, Duration.zero);
+    expect(store.lastAutoPushDelay, AppStore.reconnectPushDelay);
+    expect(store.lastAutoPullDelay, AppStore.reconnectPullDelay);
     await _finish(tester, store);
   });
 
-  testWidgets('العودة للتطبيق: سحب، ولا أكثر من مرة في الدقيقة', (tester) async {
+  testWidgets('العودة للتطبيق: سحب مؤجّل، ولا أكثر من مرة في الدقيقة', (tester) async {
     final store = _store();
     final t0 = DateTime(2026, 9, 15, 10);
 
     store.pullOnResume(t0);
-    expect(store.lastAutoPullDelay, Duration.zero);
+    expect(store.lastAutoPullDelay, AppStore.reconnectPullDelay);
 
     store.lastAutoPullDelay = null;
     store.pullOnResume(t0.add(const Duration(seconds: 59)));
     expect(store.lastAutoPullDelay, isNull, reason: 'أقل من دقيقة على آخر سحب');
 
     store.pullOnResume(t0.add(const Duration(seconds: 61)));
-    expect(store.lastAutoPullDelay, Duration.zero);
+    expect(store.lastAutoPullDelay, AppStore.reconnectPullDelay);
     await _finish(tester, store);
   });
 

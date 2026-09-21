@@ -20,6 +20,12 @@ abstract class Persistence {
   /// كل الجداول المخزّنة: اسم الجدول → صفوفه.
   Future<Map<String, List<Map<String, dynamic>>>> loadAll();
 
+  /// صفوف جدول واحد — للتحميل الكسول بعد إقلاع بالنواة فقط.
+  Future<List<Map<String, dynamic>>> loadTable(String table);
+
+  /// عدة جداول دفعة واحدة.
+  Future<Map<String, List<Map<String, dynamic>>>> loadTables(Iterable<String> tables);
+
   /// استبدال محتوى جدول كامل (حذف ثم إدراج دفعة واحدة).
   Future<void> saveTable(String table, List<Map<String, dynamic>> rows);
 
@@ -53,6 +59,12 @@ class NoPersistence implements Persistence {
 
   @override
   Future<Map<String, List<Map<String, dynamic>>>> loadAll() async => {};
+
+  @override
+  Future<List<Map<String, dynamic>>> loadTable(String table) async => const [];
+
+  @override
+  Future<Map<String, List<Map<String, dynamic>>>> loadTables(Iterable<String> tables) async => {};
 
   @override
   Future<void> saveTable(String table, List<Map<String, dynamic>> rows) async {}
@@ -134,6 +146,41 @@ class SqflitePersistence implements Persistence {
       for (final r in rows) ('${r['table_name']}', '${r['data']}'),
     ];
     return Isolate.run(() => _decodeRecordRows(encoded));
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> loadTable(String table) async {
+    final rows = await _require.query(
+      'records',
+      columns: ['data'],
+      where: 'table_name = ?',
+      whereArgs: [table],
+    );
+    if (rows.isEmpty) return const [];
+    final encoded = <(String, String)>[
+      for (final r in rows) (table, '${r['data']}'),
+    ];
+    final decoded = await Isolate.run(() => _decodeRecordRows(encoded));
+    return decoded[table] ?? const [];
+  }
+
+  @override
+  Future<Map<String, List<Map<String, dynamic>>>> loadTables(Iterable<String> tables) async {
+    final wanted = tables.where((t) => t.isNotEmpty).toSet();
+    if (wanted.isEmpty) return {};
+    final placeholders = List.filled(wanted.length, '?').join(',');
+    final rows = await _require.query(
+      'records',
+      columns: ['table_name', 'data'],
+      where: 'table_name IN ($placeholders)',
+      whereArgs: wanted.toList(),
+    );
+    if (rows.isEmpty) return {for (final t in wanted) t: <Map<String, dynamic>>[]};
+    final encoded = <(String, String)>[
+      for (final r in rows) ('${r['table_name']}', '${r['data']}'),
+    ];
+    final decoded = await Isolate.run(() => _decodeRecordRows(encoded));
+    return {for (final t in wanted) t: decoded[t] ?? <Map<String, dynamic>>[]};
   }
 
   /// الصفوف الصالحة للكتابة مرمَّزةً نصاً — الترميز خارج خيط الواجهة.

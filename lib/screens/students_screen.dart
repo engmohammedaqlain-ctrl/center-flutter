@@ -9,6 +9,7 @@ import '../widgets/animated_count.dart';
 import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import '../widgets/list_paging.dart';
+import '../widgets/table_gate.dart';
 import 'return_to_grade_plan_sheet.dart';
 import 'student_detail_screen.dart';
 import 'student_form_screen.dart';
@@ -150,7 +151,10 @@ class _StudentsScreenState extends State<StudentsScreen> {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    return ListenableBuilder(
+    return TableGate(
+      tables: const ['students', 'student_years', 'installments'],
+      message: 'جارٍ تحميل الطلاب...',
+      child: ListenableBuilder(
       listenable: store,
       builder: (context, _) {
         if (!store.canOpenSection('students')) {
@@ -485,6 +489,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
           ),
         );
       },
+    ),
     );
   }
 

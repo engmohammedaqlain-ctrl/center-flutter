@@ -128,5 +128,37 @@ void main() {
 
       expect(s.studentsOf(tenth), isEmpty, reason: 'طالب مرحلة أخرى');
     });
+
+    test('تعيين مربي لا يُفرغ الصف ولو تنقّى اسم الشعبة', () {
+      final s = _store();
+      // اسم قديم فيه المرحلة — التنقية تُحوّله إلى «شعبة (أ)»
+      final room = Classroom(
+        id: s.newId(),
+        name: 'عاشر (أ)',
+        gradeLevel: 'عاشر',
+        teacherId: '',
+        capacity: 25,
+      );
+      s.rooms.add(room);
+      final student = _student(s, section: 'عاشر (أ)');
+      expect(s.studentsOf(room), hasLength(1));
+
+      s.upsertRoom(
+        Classroom(
+          id: room.id,
+          name: room.name,
+          gradeLevel: room.gradeLevel,
+          teacherId: 't-homeroom',
+          capacity: room.capacity,
+          academicYearId: room.academicYearId,
+        ),
+      );
+
+      final updated = s.roomById(room.id)!;
+      expect(updated.teacherId, 't-homeroom');
+      expect(updated.name, 'شعبة (أ)', reason: 'اسم الشعبة يُنقّى عند الحفظ');
+      expect(student.section, 'شعبة (أ)', reason: 'شعبة الطالب تتبع الاسم الجديد');
+      expect(s.studentsOf(updated).map((e) => e.id), [student.id]);
+    });
   });
 }

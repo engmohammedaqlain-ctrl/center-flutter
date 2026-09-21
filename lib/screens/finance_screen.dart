@@ -10,6 +10,7 @@ import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/form_layout.dart';
 import '../widgets/list_paging.dart';
+import '../widgets/table_gate.dart';
 import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import 'expense_form_sheet.dart';
@@ -205,7 +206,10 @@ class _FinanceScreenState extends State<FinanceScreen> {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    return ListenableBuilder(
+    return TableGate(
+      tables: const ['payments', 'installments', 'expenses', 'teacher_payouts'],
+      message: 'جارٍ تحميل المالية...',
+      child: ListenableBuilder(
       listenable: store,
       builder: (context, _) {
         if (!store.canOpenSection('finance')) {
@@ -217,16 +221,28 @@ class _FinanceScreenState extends State<FinanceScreen> {
         if (tab == _Tab.expenses && !showExpenses) tab = _Tab.dues;
 
         final q = search.text.trim().toLowerCase();
-        final allDues = store.dueItems().where((d) {
-          final inst = d.installmentId == null
-              ? null
-              : store.installments.where((i) => i.id == d.installmentId).firstOrNull;
-          return _matchesFinancePeriod(
-            store,
-            yearId: inst?.academicYearId,
-            dueDate: isoDate(d.dueDate),
-          );
-        }).toList();
+        // المستحقات تُحسب لتبويب المستحقات فقط — لا في كل تبديل
+        final List<DueItem> allDues;
+        if (tab == _Tab.dues) {
+          final byId = <String, Installment>{
+            for (final i in store.installments) i.id: i,
+          };
+          allDues = store.dueItems().where((d) {
+            final inst = d.installmentId == null ? null : byId[d.installmentId!];
+            return _matchesFinancePeriod(
+              store,
+              yearId: inst?.academicYearId,
+              dueDate: isoDate(d.dueDate),
+            );
+          }).toList();
+        } else {
+          allDues = const [];
+        }
+
+        // صافي الفترة للتبويبات التي تعرضه فقط
+        final net = (tab == _Tab.payments || tab == _Tab.expenses)
+            ? _periodNet(store)
+            : (received: 0.0, spent: 0.0, net: 0.0);
 
         // زر «+» واحد يفتح ورقة تختار منها العملية، بدل أزرار ثانوية متفرقة
         final ThumbAction? action = switch (tab) {
@@ -295,14 +311,13 @@ class _FinanceScreenState extends State<FinanceScreen> {
               : null,
         };
 
-        final net = _periodNet(store);
         final tabs = _visibleTabs(showExpenses);
         final index = tabs.indexOf(tab).clamp(0, tabs.length - 1);
-        // اختيار القسم من المفتاح يحرّك الصفحات إليه، والسحب يحرّك المفتاح
+        // تبديل فوري بلا أنيميشن صفحي يبني صفحتين معاً
         if (_pages.hasClients && (_pages.page ?? index).round() != index) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted || !_pages.hasClients) return;
-            _pages.animateToPage(index, duration: const Duration(milliseconds: 320), curve: Curves.easeOutCubic);
+            _pages.jumpToPage(index);
           });
         }
         final hero = _hero(store, allDues, net, showExpenses);
@@ -311,27 +326,23 @@ class _FinanceScreenState extends State<FinanceScreen> {
           action: action,
           child: Column(
             children: [
-              // الأقسام مفتاح مقسّم ثابت أعلى الشاشة — نمط الجوال لا شبكة بطاقات الويب
               _segments(store, showExpenses),
-              AnimatedSize(
-                duration: const Duration(milliseconds: 320),
-                curve: Curves.easeOutCubic,
-                alignment: Alignment.topCenter,
-                child: hero == null
-                    ? const SizedBox(width: double.infinity)
-                    : Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 2), child: hero),
-              ),
+              if (hero != null)
+                Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 2), child: hero)
+              else
+                const SizedBox(width: double.infinity),
               Expanded(
                 child: PageView.builder(
                   controller: _pages,
                   itemCount: tabs.length,
                   onPageChanged: (i) => _openTab(tabs[i]),
                   itemBuilder: (context, i) {
-                    // البحث يخص القسم المفتوح وحده، فلا يُصفّي جيرانه أثناء السحب
-                    final body = _bodyOf(tabs[i], context, store, allDues, tabs[i] == tab ? q : '');
+                    if (tabs[i] != tab) {
+                      return const SizedBox.shrink();
+                    }
+                    final body = _bodyOf(tabs[i], context, store, allDues, q);
                     return CustomScrollView(
                       slivers: [
-                        // البحث والتصفية يبقيان ظاهرين عند التمرير، والملخص يصعد
                         if (body.toolbar != null)
                           SliverPersistentHeader(pinned: true, delegate: _PinnedBar(child: body.toolbar!)),
                         ...body.slivers,
@@ -344,6 +355,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
           ),
         );
       },
+    ),
     );
   }
 
@@ -1524,19 +1536,14 @@ class _Hero extends StatelessWidget {
   final String? period;
   final VoidCallback? onPeriod;
 
-  static const _duration = Duration(milliseconds: 420);
-
   @override
   Widget build(BuildContext context) {
     final tone = _toneOf(tab);
     final i = tab.index;
-    return AnimatedContainer(
+    return Container(
       key: const ValueKey('finance-hero'),
-      duration: _duration,
-      curve: Curves.easeOutCubic,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        // الزوايا تتبدّل قليلاً مع القسم فيبدو الانتقال حيّاً
         borderRadius: BorderRadiusDirectional.only(
           topStart: Radius.circular(i.isEven ? 20 : 12),
           topEnd: Radius.circular(i.isEven ? 12 : 20),
@@ -1554,10 +1561,7 @@ class _Hero extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // دائرتان زخرفيتان تنتقلان مع القسم
-          AnimatedPositionedDirectional(
-            duration: _duration,
-            curve: Curves.easeOutCubic,
+          PositionedDirectional(
             end: -40.0 + i * 30,
             top: -60.0 + i * 12,
             child: Container(
@@ -1566,9 +1570,7 @@ class _Hero extends StatelessWidget {
               decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.07)),
             ),
           ),
-          AnimatedPositionedDirectional(
-            duration: _duration,
-            curve: Curves.easeOutCubic,
+          PositionedDirectional(
             end: 70.0 - i * 18,
             bottom: -70.0 + i * 8,
             child: Container(
@@ -1577,18 +1579,10 @@ class _Hero extends StatelessWidget {
               decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.05)),
             ),
           ),
-          // أيقونة القسم علامةً مائية
           PositionedDirectional(
             end: 14,
             bottom: 10,
-            child: AnimatedSwitcher(
-              duration: _duration,
-              transitionBuilder: (child, a) => FadeTransition(
-                opacity: a,
-                child: ScaleTransition(scale: Tween(begin: 0.7, end: 1.0).animate(a), child: child),
-              ),
-              child: Icon(tone.icon, key: ValueKey(tab), size: 46, color: Colors.white.withValues(alpha: 0.14)),
-            ),
+            child: Icon(tone.icon, key: ValueKey(tab), size: 46, color: Colors.white.withValues(alpha: 0.14)),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
@@ -1610,7 +1604,6 @@ class _Hero extends StatelessWidget {
                         ),
                       ),
                     ),
-                    // الفترة في الطرف المقابل للعنوان
                     if (period != null) ...[
                       const SizedBox(width: 8),
                       ConstrainedBox(
@@ -1650,33 +1643,18 @@ class _Hero extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 6),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
-                  switchInCurve: Curves.easeOutCubic,
-                  transitionBuilder: (child, a) => FadeTransition(
-                    opacity: a,
-                    child: SlideTransition(
-                      position: Tween(begin: const Offset(0, 0.25), end: Offset.zero).animate(a),
-                      child: child,
-                    ),
-                  ),
-                  layoutBuilder: (current, previous) => Stack(
-                    alignment: AlignmentDirectional.centerStart,
-                    children: [...previous, ?current],
-                  ),
-                  child: FittedBox(
-                    key: ValueKey('$tab|$value'),
-                    fit: BoxFit.scaleDown,
-                    alignment: AlignmentDirectional.centerStart,
-                    child: Text(
-                      value,
-                      style: const TextStyle(
-                        fontFamily: AppText.family,
-                        color: Colors.white,
-                        fontSize: 30,
-                        fontWeight: FontWeight.w800,
-                        height: 1.15,
-                      ),
+                FittedBox(
+                  key: ValueKey('$tab|$value'),
+                  fit: BoxFit.scaleDown,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    value,
+                    style: const TextStyle(
+                      fontFamily: AppText.family,
+                      color: Colors.white,
+                      fontSize: 30,
+                      fontWeight: FontWeight.w800,
+                      height: 1.15,
                     ),
                   ),
                 ),

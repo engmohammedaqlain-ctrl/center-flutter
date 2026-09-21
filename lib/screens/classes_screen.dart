@@ -12,6 +12,7 @@ import '../widgets/due_status.dart';
 import '../widgets/list_paging.dart';
 import '../widgets/panels.dart';
 import '../widgets/thumb_action.dart';
+import '../widgets/table_gate.dart';
 import '../widgets/widgets.dart';
 import 'attendance_print.dart';
 import 'attendance_screen.dart';
@@ -44,7 +45,10 @@ class _ClassesScreenState extends State<ClassesScreen> {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    return ListenableBuilder(
+    return TableGate(
+      tables: const ['rooms', 'students', 'student_years', 'teachers'],
+      message: 'جارٍ تحميل الصفوف...',
+      child: ListenableBuilder(
       listenable: store,
       builder: (context, _) {
         if (!store.canOpenSection('classes')) {
@@ -125,6 +129,7 @@ class _ClassesScreenState extends State<ClassesScreen> {
           ),
         );
       },
+    ),
     );
   }
 
@@ -244,6 +249,7 @@ Future<void> _assignTeacher(BuildContext context, Classroom room) async {
                               capacity: room.capacity,
                               notes: room.notes,
                               tier: room.tier,
+                              academicYearId: room.academicYearId,
                             ),
                           );
                           Navigator.pop(ctx);

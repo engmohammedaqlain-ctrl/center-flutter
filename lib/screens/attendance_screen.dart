@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/list_paging.dart';
 import '../widgets/attendance_view.dart';
+import '../widgets/table_gate.dart';
 import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import 'attendance_print.dart';
@@ -143,7 +144,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    return ListenableBuilder(
+    return TableGate(
+      tables: const ['rooms', 'students', 'sessions', 'attendance'],
+      message: 'جارٍ تحميل الحضور...',
+      child: ListenableBuilder(
       listenable: store,
       builder: (context, _) {
         if (!store.canOpenSection('attendance')) {
@@ -334,6 +338,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           ),
         );
       },
+    ),
     );
   }
 

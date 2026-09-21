@@ -55,6 +55,120 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// قبله تُعرض شاشة الإقلاع بدل واجهة فارغة أو شاشة دخول خاطئة.
   bool ready = false;
 
+  /// جداول محمّلة في الذاكرة — الباقي يُجلب عند فتح الشاشة عبر [ensureTables].
+  final loadedTables = <String>{};
+
+  /// نواة الإقلاع: ما يكفي لتسجيل الدخول والهيكل (طلاب/صفوف) بلا حضور ومالية.
+  static const bootstrapCoreTables = <String>[
+    _stampsTable,
+    _pendingTable,
+    'tenants',
+    'users',
+    'academic_years',
+    'institution_settings',
+    'subjects',
+    'rooms',
+    'teachers',
+    'grade_fees',
+    'groups',
+    'students',
+    'student_years',
+    'enrollments',
+  ];
+
+  /// جداول ثقيلة تُؤجَّل حتى تطلبها الشاشة أو يطبّقها السحب وهي محمّلة.
+  static const deferredTables = <String>{
+    'attendance',
+    'sessions',
+    'payments',
+    'installments',
+    'student_attachments',
+    'finance_attachments',
+    'teacher_payouts',
+    'expenses',
+    'audit_log',
+    'finance_requests',
+    'student_evaluations',
+    'class_announcements',
+  };
+
+  bool tablesReady(Iterable<String> tables) => tables.every(loadedTables.contains);
+
+  final _ensureInFlight = <String, Future<void>>{};
+
+  /// تحميل جداول من القرص إلى الذاكرة عند أول حاجة — مع لودنغ الشاشة.
+  Future<void> ensureTables(Iterable<String> tables) async {
+    final missing = [
+      for (final t in tables)
+        if (t.isNotEmpty && !loadedTables.contains(t)) t,
+    ];
+    if (missing.isEmpty) return;
+
+    final waiters = <Future<void>>[];
+    final toFetch = <String>[];
+    for (final t in missing) {
+      final inflight = _ensureInFlight[t];
+      if (inflight != null) {
+        waiters.add(inflight);
+      } else {
+        toFetch.add(t);
+      }
+    }
+
+    if (toFetch.isNotEmpty) {
+      final job = _loadTablesFromDisk(toFetch);
+      for (final t in toFetch) {
+        _ensureInFlight[t] = job;
+      }
+      waiters.add(job);
+      try {
+        await job;
+      } finally {
+        for (final t in toFetch) {
+          _ensureInFlight.remove(t);
+        }
+      }
+    }
+
+    if (waiters.isNotEmpty) await Future.wait(waiters);
+  }
+
+  Future<void> _loadTablesFromDisk(List<String> tables) async {
+    final data = await db.loadTables(tables);
+    _loading = true;
+    try {
+      for (final table in tables) {
+        final rows = data[table] ?? const <Map<String, dynamic>>[];
+        if (table == _stampsTable) {
+          for (final row in rows) {
+            final parts = '${row['id'] ?? ''}'.split('|');
+            if (parts.length != 2) continue;
+            serverStamps.putIfAbsent(parts[0], () => {})[parts[1]] = '${row['stamp'] ?? ''}';
+          }
+        } else if (table == _pendingTable) {
+          pendingSyncs
+            ..clear()
+            ..addAll(rows.map(PendingSync.fromJson));
+        } else if (table == 'tenants') {
+          tenants
+            ..clear()
+            ..addAll(rows.map(Tenant.fromCloud));
+        } else {
+          putRows(table, rows);
+        }
+        loadedTables.add(table);
+        await Future<void>.delayed(Duration.zero);
+      }
+    } finally {
+      _loading = false;
+    }
+    if (tables.any((t) => t == 'payments' || t == 'installments') &&
+        tablesReady(const ['payments', 'installments'])) {
+      await recalculateAllBalancesYielding();
+    }
+    notifyListeners();
+  }
+
   bool loggedIn = false;
   bool isMasterAdmin = false;
   String institutionName = '';
@@ -104,6 +218,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   final _deletedRecords = <String, Set<String>>{};
   Timer? _flushTimer;
   bool _loading = false;
+
+  /// أثناء تطبيق سحب السحابة: لا تُجدول كتابة قرص لكل دفعة، ولا تُعاد رسم الواجهة لكل صف.
+  bool _applyingPull = false;
+  final _pullTouched = <String>{};
 
   /// كل الجداول التي يملكها المخزن، بنفس أسماء السحابة.
   static const ownedTables = [
@@ -319,6 +437,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   void markDirty(String table) {
     _touchTable(table);
     if (_loading) return;
+    if (_applyingPull) {
+      _pullTouched.add(table);
+      return;
+    }
     _dirty.add(table);
     _scheduleFlush();
     // كل عملية تدخل طابور الرفع تُرفع تلقائياً، من أي مسار جاءت. مسارات كثيرة
@@ -331,6 +453,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   void markRecord(String table, String id, {bool deleted = false}) {
     _touchTable(table);
     if (_loading) return;
+    if (_applyingPull) {
+      _pullTouched.add(table);
+      return;
+    }
     if (_dirty.contains(table)) return; // الجدول كله سيُكتب على أي حال
     if (deleted) {
       _dirtyRecords.putIfAbsent(table, () => {}).remove(id);
@@ -542,6 +668,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
     await db.wipeData();
     _dirty.clear();
+    loadedTables.clear();
     notifyListeners();
   }
 
@@ -557,6 +684,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
           tenants.add(t);
         }
       }
+      loadedTables.add('tenants');
       markDirty('tenants');
       return;
     }
@@ -569,7 +697,39 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   @override
-  void notifySync() => notifyListeners();
+  void notifySync() => _notifyOrDefer();
+
+  @override
+  void beginPullApply() {
+    _applyingPull = true;
+    _batchNotify = true;
+    _pullTouched.clear();
+  }
+
+  @override
+  Future<void> endPullApply() async {
+    _applyingPull = false;
+    _batchNotify = false;
+    if (_pullTouched.isNotEmpty) {
+      _dirty.addAll(_pullTouched);
+      _pullTouched.clear();
+      _scheduleFlush();
+    }
+    if (_queuedNotify) {
+      _queuedNotify = false;
+      notifyListeners();
+    }
+  }
+
+  @override
+  bool hydrateOnPull(String table) =>
+      !deferredTables.contains(table) || loadedTables.contains(table);
+
+  @override
+  Future<void> persistPullOnly(String table, List<Map<String, dynamic>> rows) async {
+    if (rows.isEmpty) return;
+    await db.saveRecords(table, rows);
+  }
 
   /// تحميل كل ما على القرص إلى الذاكرة، ثم استعادة الجلسة.
   Future<void> bootstrap(Persistence persistence) async {
@@ -577,34 +737,39 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     await db.open();
     _loading = true;
     try {
-      final data = await db.loadAll();
-      for (final entry in data.entries) {
-        if (entry.key == _stampsTable) {
-          for (final row in entry.value) {
+      // النواة فقط — الحضور والمالية تُحمَّل عند فتح شاشاتها
+      final data = await db.loadTables(bootstrapCoreTables);
+      for (final table in bootstrapCoreTables) {
+        final rows = data[table] ?? const <Map<String, dynamic>>[];
+        if (table == _stampsTable) {
+          for (final row in rows) {
             final parts = '${row['id'] ?? ''}'.split('|');
             if (parts.length != 2) continue;
             serverStamps.putIfAbsent(parts[0], () => {})[parts[1]] = '${row['stamp'] ?? ''}';
           }
-        } else if (entry.key == _pendingTable) {
+        } else if (table == _pendingTable) {
           pendingSyncs
             ..clear()
-            ..addAll(entry.value.map(PendingSync.fromJson));
-        } else if (entry.key == 'tenants') {
+            ..addAll(rows.map(PendingSync.fromJson));
+        } else if (table == 'tenants') {
           tenants
             ..clear()
-            ..addAll(entry.value.map(Tenant.fromCloud));
-        } else {
-          putRows(entry.key, entry.value);
+            ..addAll(rows.map(Tenant.fromCloud));
+        } else if (rows.isNotEmpty || table != 'institution_settings') {
+          putRows(table, rows);
         }
-        // إفساح إطار بين الجداول — تحميل المنشآت الكبيرة كان يحبس شاشة الإقلاع
+        loadedTables.add(table);
         await Future<void>.delayed(Duration.zero);
+      }
+      // institution_settings قد تكون فارغة — تبقى مُعلَّمة محمّلة
+      if (!loadedTables.contains('institution_settings')) {
+        loadedTables.add('institution_settings');
       }
       _restoreSession();
       // كل تجديد للتوكن يُحفظ فوراً: السحابة تُدوّر توكن التجديد، والقديم يُرفض
       SupabaseAuth.onSessionChanged = _saveSession;
       SupabaseAuth.onSessionInvalid = _onSessionExpired;
       applyBrandColors();
-      // الأرصدة ثقيلة مع عشرات الآلاف من السجلات: تُحسب بعد أول إطار لا أثناء الإقلاع
       // مواءمة افتراضي قديم مع الويب قبل أول سحب للهوية
       if (_isLegacyMobileDefault(institutionColors)) {
         await db.setSetting(institutionColorsKey, null);
@@ -617,11 +782,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     await _resolveSetupGate();
     ready = true;
     notifyListeners();
-    // بعد ظهور الواجهة — لا يجمّد شاشة الإقلاع
-    scheduleMicrotask(() async {
-      await recalculateAllBalancesYielding();
-      notifyListeners();
-    });
+    // الأرصدة بعد تحميل الأقساط والمدفوعات فقط — لا عند الإقلاع
   }
 
   // ── الجلسة والإعدادات (المقابل لـ session.ts + currentUser.ts + institution.ts) ──
@@ -1772,10 +1933,18 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   ///
   /// أقساطهم التي لم يحن موعدها، ناقصاً ما دفعوه مقدماً. رقمٌ للإدارة وحدها:
   /// لا يُطالَب به قبل موعده، ولذلك لا يدخل في «المستحق».
+  String? _projectRemainingStamp;
+  double? _projectRemainingCached;
+
   double projectRemainingYear({DateTime? today}) {
     final day = today ?? DateTime.now();
-    var total = 0.0;
+    final stamp =
+        '$viewedAcademicYearId|${day.year}-${day.month}-${day.day}|${installments.length}|${students.length}';
+    if (_projectRemainingStamp == stamp && _projectRemainingCached != null) {
+      return _projectRemainingCached!;
+    }
 
+    var total = 0.0;
     for (final student in students.where((s) => s.status == 'active')) {
       var scheduled = 0.0;
       for (final i in installments.where((i) => i.studentId == student.id)) {
@@ -1785,6 +1954,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       final projected = scheduled - credit;
       if (projected > 0) total += projected;
     }
+    _projectRemainingStamp = stamp;
+    _projectRemainingCached = total;
     return total;
   }
 
@@ -2800,12 +2971,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// بعد أن تستقر ردود الاشتراك لكل الجداول.
   void handleRealtimeJoined() {
     if (autoSync) {
-      // الاشتراك يعني أن الاتصال عاد — مهلة قصيرة كي لا يتجمّد الإطار مع واجهة المستخدم
-      _pushFailures = 0;
-      if (pendingSyncs.any((a) => a.retryCount < maxSyncRetries)) {
-        scheduleAutoPush(const Duration(milliseconds: 800));
-      }
-      scheduleAutoPull(const Duration(milliseconds: 1200));
+      _scheduleAfterReconnect();
       unawaited(retryPendingAttachments());
       unawaited(flushPendingNotices());
       return;
@@ -2825,10 +2991,16 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   static const autoPullDelay = Duration(milliseconds: 1500);
   static const _resumePullGap = Duration(seconds: 60);
 
+  /// بعد رجوع النت: ارفع سريعاً ما علّق، وأجّل السحب حتى تهدأ الواجهة.
+  /// سحبٌ ثقيل فور الاتصال كان يجمّد الشاشة أثناء تسجيل حضور أو حفظ دفعة.
+  static const reconnectPushDelay = Duration(milliseconds: 800);
+  static const reconnectPullDelay = Duration(seconds: 8);
+
   bool autoSync = false;
   Timer? _autoPushTimer;
   Timer? _autoPullTimer;
   DateTime? _lastResumePull;
+  DateTime? _lastReconnectArm;
 
   /// محاولات الرفع المتتالية التي تعثّرت بانقطاع — تحدد مهلة المحاولة التالية.
   int _pushFailures = 0;
@@ -2837,6 +3009,21 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   static const pushRetryDelays = [Duration(seconds: 5), Duration(seconds: 15), Duration(seconds: 30), Duration(seconds: 60)];
 
   static Duration pushRetryDelay(int failures) => pushRetryDelays[(failures - 1).clamp(0, pushRetryDelays.length - 1)];
+
+  /// رفع الطابور سريعاً وسحب مؤجّل — من رجوع النت أو إعادة الاشتراك، مرة واحدة.
+  void _scheduleAfterReconnect() {
+    final now = DateTime.now();
+    // الاشتراك و`_setOffline(false)` يصلان معاً غالباً — لا نُعيد تسليح المؤقتين
+    if (_lastReconnectArm != null && now.difference(_lastReconnectArm!) < const Duration(seconds: 2)) {
+      return;
+    }
+    _lastReconnectArm = now;
+    _pushFailures = 0;
+    if (pendingSyncs.any((a) => a.retryCount < maxSyncRetries)) {
+      scheduleAutoPush(reconnectPushDelay);
+    }
+    scheduleAutoPull(reconnectPullDelay);
+  }
 
   @visibleForTesting
   bool get autoPushScheduled => _autoPushTimer?.isActive ?? false;
@@ -2886,10 +3073,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         if (await probeCloud()) _setOffline(false);
       });
     } else {
-      // عودة الاتصال لا تشعل سحباً ثقيلاً في نفس لحظة الإشعار
-      _pushFailures = 0;
-      scheduleAutoPush(const Duration(milliseconds: 800));
-      scheduleAutoPull(const Duration(milliseconds: 1500));
+      // عودة الاتصال: ارفع ما علّق، وأجّل السحب الثقيل
+      _scheduleAfterReconnect();
     }
   }
 
@@ -2960,7 +3145,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (last != null && at.difference(last) < _resumePullGap) return;
     _lastResumePull = at;
     scheduleAutoPush(const Duration(milliseconds: 600));
-    scheduleAutoPull(const Duration(milliseconds: 1000));
+    // سحب بعد استقرار الشاشة — لا مع أول لمسة بعد فتح التطبيق
+    scheduleAutoPull(reconnectPullDelay);
   }
 
   Future<void> _runAuto({required bool push}) async {
@@ -2994,6 +3180,12 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         _pushFailures = next.stalled ? _pushFailures + 1 : 0;
         if (next.delay != null) scheduleAutoPush(next.delay!);
       } else {
+        // لا تسحب وأنت ترفع طابوراً: السحب يتجمّد الواجهة فوق عمليات المستخدم
+        if (pendingSyncs.any((a) => a.retryCount < maxSyncRetries)) {
+          scheduleAutoPush(const Duration(milliseconds: 500));
+          scheduleAutoPull(reconnectPullDelay);
+          return;
+        }
         await sync.pull();
       }
     } catch (_) {
@@ -5435,6 +5627,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// داعي لجولة كتابة جديدة تُشعل تضارباً آخر. تعيد عدد الأرصدة المصحَّحة.
   @override
   int recalculateAllBalances() {
+    if (!tablesReady(const ['students', 'payments', 'installments'])) return 0;
     var corrected = 0;
     var installmentsFixed = false;
     _recalculateAllBalancesSync(
@@ -5450,6 +5643,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// كالمزامنة أعلاه مع إفساح إطار كل عشرات الطلاب — لا يحبس الواجهة ثوانٍ.
   @override
   Future<int> recalculateAllBalancesYielding() async {
+    if (!tablesReady(const ['students', 'payments', 'installments'])) return 0;
     var corrected = 0;
     var installmentsFixed = false;
     var n = 0;
@@ -6377,13 +6571,26 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     r.syncStatus = 'pending';
     final i = rooms.indexWhere((e) => e.id == r.id);
     if (i >= 0) {
-      final oldName = rooms[i].name.trim();
-      r.createdAt = rooms[i].createdAt;
-      if (r.academicYearId.isEmpty) r.academicYearId = rooms[i].academicYearId;
+      final existing = rooms[i];
+      final oldName = existing.name.trim();
+      r.createdAt = existing.createdAt;
+      if (r.academicYearId.isEmpty) r.academicYearId = existing.academicYearId;
+      // انقل الطلاب بالاسم القديم قبل استبدال الصف — وإلا studentsOfRoom
+      // يبحث بالاسم الجديد فلا يجد أحداً ويُفرغ الكشف (تعيين مربي يمرّ من هنا).
+      if (oldName.isNotEmpty && oldName != r.name) {
+        _renameStudentSection(
+          Classroom(
+            id: existing.id,
+            name: oldName,
+            gradeLevel: existing.gradeLevel,
+            teacherId: existing.teacherId,
+            academicYearId: existing.academicYearId.isEmpty ? r.academicYearId : existing.academicYearId,
+          ),
+          r.name,
+        );
+      }
       rooms[i] = r;
       _queue('rooms', r.id, 'UPDATE', r.toCloud());
-      // شعبة الطلاب تتبع اسم الصف: إبقاؤها على الاسم القديم كان يُفرغ الصف من طلابه
-      if (oldName.isNotEmpty && oldName != r.name) _renameStudentSection(rooms[i], r.name);
     } else {
       r.createdAt = _nowIso();
       rooms.add(r);
@@ -6832,7 +7039,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       return;
     }
     scheduleAutoPush(const Duration(milliseconds: 800));
-    scheduleAutoPull(const Duration(milliseconds: 1200));
+    scheduleAutoPull(reconnectPullDelay);
   }
 
   /// إعادة فتح التهيئة (لتغيير هوية الجهاز لاحقاً من الإعدادات).
@@ -7155,6 +7362,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   @override
   void putRows(String table, List<Map<String, dynamic>> rows) {
+    loadedTables.add(table);
     final revBefore = tableRev(table);
     // فهارس الحضور صالحة الآن؟ إذاً تُرقَّع بالصفوف الواصلة بدل بنائها من جديد
     // الجلسات تُعاد فهرستها كاملةً: تغيّر تاريخ جلسة أو شعبتها يترك مفاتيح قديمة
@@ -7283,6 +7491,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   @override
   void removeIds(String table, List<String> ids) {
+    if (ids.isEmpty) return;
+    // جدول مؤجّل غير محمّل: احذف من القرص فقط
+    if (deferredTables.contains(table) && !loadedTables.contains(table)) {
+      forgetServerStamps(table, ids);
+      unawaited(db.deleteRecords(table, ids));
+      return;
+    }
     markDirty(table);
     forgetServerStamps(table, ids);
     final set = ids.toSet();

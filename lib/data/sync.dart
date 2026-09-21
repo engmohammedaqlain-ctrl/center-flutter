@@ -1125,6 +1125,12 @@ abstract class SyncLocalStore {
   List<Map<String, dynamic>> allOf(String table);
   void putRows(String table, List<Map<String, dynamic>> rows);
 
+  /// إن false يُكتب السحب للقرص فقط بلا حشو الذاكرة (جداول مؤجّلة غير مفتوحة).
+  bool hydrateOnPull(String table) => true;
+
+  /// حفظ صفوف سحب لجدول غير محمّل في الذاكرة.
+  Future<void> persistPullOnly(String table, List<Map<String, dynamic>> rows) async {}
+
   /// ختم السيرفر المحفوظ لسجل، أو `null` إن لم يصل من السحابة بعد.
   String? serverStamp(String table, String id);
 
@@ -1141,6 +1147,12 @@ abstract class SyncLocalStore {
   /// تهيئة تطبيق جدولٍ قبل دفعاته: بناء ما يلزم على شرائح تُفسح للإطار.
   /// بلا ذلك تتحمّل أول دفعة كلفة البناء كلها في إطار واحد.
   Future<void> prepareApply(String table) async {}
+
+  /// بداية تطبيق دفعات السحب: إيقاف تفريغ القرص وإشعارات الواجهة لكل صف.
+  void beginPullApply() {}
+
+  /// نهاية التطبيق: تفريغ واحد للقرص وإشعار واحد للواجهة.
+  Future<void> endPullApply() async {}
 
   /// ما يجري بعد اكتمال سحب: قراءة الإعدادات التي وصلت مع الصفوف.
   Future<void> onPulled();
@@ -1883,6 +1895,8 @@ class SyncService {
     var rowsApplied = 0;
     var applied = 0;
 
+    local.beginPullApply();
+    try {
     for (final f in fetched) {
       final cloud = f.cloud;
       applied++;
@@ -1956,10 +1970,28 @@ class SyncService {
           toWrite.add(rest);
         }
 
-        // دفعات مع إفساح للإطار: جدول الطلاب الكبير لا يحبس الواجهة دفعة واحدة.
-        // 1500 صفٍّ كانت تستغرق أكثر من إطارين؛ 300 تبقى داخل إطار واحد تقريباً
-        const chunkSize = 300;
+        // دفعات أصغر مع إفساح للإطار: لا يحبس الواجهة أثناء عمل المستخدم
+        const chunkSize = 120;
         final baseRows = rowsApplied;
+        if (!local.hydrateOnPull(cloud)) {
+          // مؤجّل وغير مفتوح: قرص فقط — الشاشة تحمّله لاحقاً بـ ensureTables
+          if (toWrite.isNotEmpty) {
+            await local.persistPullOnly(cloud, toWrite);
+            totalPulled += toWrite.length;
+            local.rememberServerStamps(cloud, stamps);
+          }
+          rowsApplied = baseRows + tableRows;
+          report(
+            percent: applyPercent(),
+            table: cloud,
+            done: applied,
+            phase: PullProgressPhase.applying,
+            records: totalPulled,
+          );
+          await _setCursor(tenantId, cloud, f.maxStamp);
+          await Future<void>.delayed(Duration.zero);
+          continue;
+        }
         if (toWrite.isNotEmpty) await local.prepareApply(cloud);
         if (toWrite.isEmpty) {
           rowsApplied = baseRows + tableRows;
@@ -2055,6 +2087,9 @@ class SyncService {
       removed: totalRemoved,
       failedTables: failedTables,
     );
+    } finally {
+      await local.endPullApply();
+    }
   }
 
   /// الشقّ الشبكي من سحب جدول: ما تغيّر منذ مؤشره، بلا لمس للبيانات المحلية.
