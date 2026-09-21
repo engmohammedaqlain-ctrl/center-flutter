@@ -211,6 +211,7 @@ class _VoucherSheet extends StatelessWidget {
                           child: Image.memory(
                             base64Decode(store.institutionStamp.split(',').last),
                             fit: BoxFit.contain,
+                            cacheHeight: (64 * MediaQuery.devicePixelRatioOf(context)).round(),
                           ),
                         )
                       else
@@ -425,7 +426,12 @@ class _NoticeImage extends StatelessWidget {
           padding: const EdgeInsets.only(top: 8),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(Corner.box),
-            child: Image.memory(base64Decode(image.split(',').last), height: 150, fit: BoxFit.cover),
+            child: Image.memory(
+              base64Decode(image.split(',').last),
+              height: 150,
+              fit: BoxFit.cover,
+              cacheHeight: (150 * MediaQuery.devicePixelRatioOf(context)).round(),
+            ),
           ),
         );
       },

@@ -222,31 +222,39 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // النسبة تصل من المزامنة دفعةً عند اكتمال كل جدول، فتقفز 5 نقاط مرة
+          // واحدة. تُعرض منزلقةً إلى قيمتها الجديدة: ما يراه المستخدم تقدّمٌ
+          // متصل لا قفزات، والرقم نفسه هو الرقم الحقيقي.
           SizedBox(
             width: 72,
             height: 72,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                SizedBox.expand(
-                  child: CircularProgressIndicator(
-                    value: pct <= 0 ? null : pct / 100,
-                    strokeWidth: 3.5,
-                    strokeCap: StrokeCap.round,
-                    backgroundColor: AppColors.hover,
-                    color: AppColors.amber,
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: pct / 100),
+              duration: const Duration(milliseconds: 650),
+              curve: Curves.easeOut,
+              builder: (context, value, _) => Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox.expand(
+                    child: CircularProgressIndicator(
+                      value: pct <= 0 ? null : value,
+                      strokeWidth: 3.5,
+                      strokeCap: StrokeCap.round,
+                      backgroundColor: AppColors.hover,
+                      color: AppColors.amber,
+                    ),
                   ),
-                ),
-                Text(
-                  '$pct%',
-                  style: TextStyle(
-                    fontFamily: AppText.family,
-                    color: AppColors.heading,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
+                  Text(
+                    '${(value * 100).round()}%',
+                    style: TextStyle(
+                      fontFamily: AppText.family,
+                      color: AppColors.heading,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 18),

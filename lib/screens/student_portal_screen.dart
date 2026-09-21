@@ -1132,8 +1132,9 @@ class _PortalSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = valueColor ?? AppColors.heading;
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(Corner.card),
@@ -1143,109 +1144,110 @@ class _PortalSummary extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: Text(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // العنوان فوق الرقم لا بجانبه: الرقم هو ما يُقرأ أولاً، وكان
+                // يتزاحم مع عنوانه على سطر واحد فيصغر كلاهما
+                Text(
                   label,
-                  maxLines: 2,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontFamily: AppText.family,
                     color: AppColors.muted,
-                    fontSize: 12.5,
+                    fontSize: 11.5,
                     fontWeight: FontWeight.w700,
-                    height: 1.3,
+                    letterSpacing: 0.2,
                   ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Flexible(
-                child: FittedBox(
+                const SizedBox(height: 4),
+                FittedBox(
                   fit: BoxFit.scaleDown,
-                  alignment: AlignmentDirectional.centerEnd,
+                  alignment: AlignmentDirectional.centerStart,
                   child: Text(
                     value,
                     style: TextStyle(
                       fontFamily: AppText.family,
-                      color: valueColor ?? AppColors.heading,
-                      fontSize: 26,
-                      fontWeight: FontWeight.w800,
-                      height: 1.1,
+                      color: accent,
+                      fontSize: 34,
+                      fontWeight: FontWeight.w900,
+                      height: 1.05,
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          if (ratio != null) ...[
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: ratio!.clamp(0.0, 1.0),
-                minHeight: 6,
-                backgroundColor: AppColors.hover,
-                color: const Color(0xFF2E7D57),
-              ),
-            ),
-          ],
-          if (parts.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            // التفاصيل شرائح متلاصقة: النقطة والاسم والرقم في سطر واحد، فلا
-            // يبقى نصف البطاقة فارغاً تحت أعمدة متباعدة
-            LayoutBuilder(
-              builder: (context, box) => Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final p in parts)
-                  Container(
-                    // شريحة أطول من السطر تُقصّ بدل أن تطفح
-                    constraints: BoxConstraints(maxWidth: box.maxWidth),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppColors.sunken,
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 7,
-                          height: 7,
-                          decoration: BoxDecoration(color: p.color, shape: BoxShape.circle),
-                        ),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            p.label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            p.value,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontFamily: AppText.family,
-                              color: AppColors.heading,
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ],
+                if (ratio != null) ...[
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(5),
+                    child: LinearProgressIndicator(
+                      value: ratio!.clamp(0.0, 1.0),
+                      minHeight: 8,
+                      backgroundColor: AppColors.sunken,
+                      color: accent,
                     ),
                   ),
+                ],
               ],
+            ),
+          ),
+          if (parts.isNotEmpty)
+            // شريط مقسوم بعدد التفاصيل: يملأ عرض البطاقة بدل شرائح صغيرة
+            // تترك نصفها فارغاً، وكل خانة تحمل رقمها فوق اسمها
+            Container(
+              decoration: const BoxDecoration(
+                color: AppColors.sunken,
+                border: Border(top: BorderSide(color: AppColors.line)),
+              ),
+              child: Row(
+                children: [
+                  for (var i = 0; i < parts.length; i++)
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
+                        decoration: BoxDecoration(
+                          border: i == parts.length - 1
+                              ? null
+                              : const BorderDirectional(end: BorderSide(color: AppColors.line)),
+                        ),
+                        child: Column(
+                          children: [
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                parts[i].value,
+                                maxLines: 1,
+                                style: TextStyle(
+                                  fontFamily: AppText.family,
+                                  color: parts[i].color,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1.1,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                parts[i].label,
+                                maxLines: 1,
+                                style: const TextStyle(
+                                  color: AppColors.muted,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
-          ],
         ],
       ),
     );

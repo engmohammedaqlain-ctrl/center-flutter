@@ -408,14 +408,22 @@ class GhostButton extends StatelessWidget {
 
 /// شعار المنشأة، أو أيقونة افتراضية إن لم يُرفع شعار.
 /// فكّ شعار المنشأة المخزّن كـ Base64 (مع بادئة data: أو بدونها).
+/// آخر شعار فُكّ ترميزه. الشعار نصّ base64 طويل، وفكّه في كل بناء كان يجري
+/// مئات المرات في الدقيقة — مرة لكل إخطار من المخزن في ترويسة كل شاشة.
+String? _lastLogoSrc;
+Uint8List? _lastLogoBytes;
+
 Uint8List? decodeLogo(String logo) {
   if (logo.isEmpty) return null;
+  if (identical(_lastLogoSrc, logo) || _lastLogoSrc == logo) return _lastLogoBytes;
   try {
     final comma = logo.indexOf(',');
-    return base64Decode(comma >= 0 ? logo.substring(comma + 1) : logo);
+    _lastLogoBytes = base64Decode(comma >= 0 ? logo.substring(comma + 1) : logo);
   } catch (_) {
-    return null;
+    _lastLogoBytes = null;
   }
+  _lastLogoSrc = logo;
+  return _lastLogoBytes;
 }
 
 /// شعار المنشأة داخل إطار أبيض — مطابق لصندوق الشعار في `MobileHeader`.
@@ -453,13 +461,28 @@ class InstitutionBadge extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(radius > 2 ? radius - 2 : 0),
         // المنشأة بلا شعار تُعرض بشعار النظام كما في تطبيق سطح المكتب
+        // يُفكّ بحجم العرض لا بحجمه الأصلي: شعار كبير كان يُفرد في الذاكرة
+        // بملايين البكسلات ليُعرض في مربّع لا يتجاوز بضع عشرات
         child: bytes == null
-            ? Image.asset('assets/logo.png', fit: BoxFit.contain)
-            : Image.memory(bytes, fit: BoxFit.contain, gaplessPlayback: true),
+            ? Image.asset(
+                'assets/logo.png',
+                fit: BoxFit.contain,
+                cacheWidth: _cachePx(context, size),
+              )
+            : Image.memory(
+                bytes,
+                fit: BoxFit.contain,
+                gaplessPlayback: true,
+                cacheWidth: _cachePx(context, size),
+              ),
       ),
     );
   }
 }
+
+/// عرض الصورة بالبكسل الفعلي للشاشة — ما فوقه ذاكرة تُهدر بلا فرق مرئي.
+int _cachePx(BuildContext context, double logicalSize) =>
+    (logicalSize * MediaQuery.devicePixelRatioOf(context)).round().clamp(16, 512);
 
 /// شاشة "لا تملك صلاحية" — أوضح من إخفاء صامت يُربك المستخدم.
 /// مطابقة لمكوّن `NoAccess` في App.tsx.

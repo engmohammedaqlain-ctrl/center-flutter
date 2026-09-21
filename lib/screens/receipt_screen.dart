@@ -183,6 +183,7 @@ class _ReceiptSheet extends StatelessWidget {
                           child: Image.memory(
                             base64Decode(store.institutionStamp.split(',').last),
                             fit: BoxFit.contain,
+                            cacheHeight: (64 * MediaQuery.devicePixelRatioOf(context)).round(),
                           ),
                         )
                       else
@@ -550,7 +551,12 @@ class _NoticeRow extends StatelessWidget {
               const SizedBox(height: 6),
               ClipRRect(
                 borderRadius: BorderRadius.circular(Corner.box),
-                child: Image.memory(base64Decode(image.split(',').last), height: 160, fit: BoxFit.cover),
+                child: Image.memory(
+                  base64Decode(image.split(',').last),
+                  height: 160,
+                  fit: BoxFit.cover,
+                  cacheHeight: (160 * MediaQuery.devicePixelRatioOf(context)).round(),
+                ),
               ),
             ],
           ),
