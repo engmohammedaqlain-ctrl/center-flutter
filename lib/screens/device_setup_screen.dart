@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../data/download_notification.dart';
 import '../data/store.dart';
+import '../data/sync.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
@@ -30,6 +32,10 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
   String? passwordError;
   int pulledCount = 0;
 
+  /// نسبة حقيقية 0–100 من تقدّم السحب.
+  int progressPercent = 0;
+  String progressLabel = 'جاري الاتصال بالسحابة…';
+
   /// أُكملت التهيئة ببيانات محلية لأن السحابة تعذّرت.
   bool offline = false;
 
@@ -38,6 +44,8 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
 
   String? selectedUserId;
   final password = TextEditingController();
+  final _notifier = defaultDownloadNotifier();
+  static const _noticeTitle = 'تهيئة الجهاز';
 
   @override
   void initState() {
@@ -49,6 +57,25 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
   void dispose() {
     password.dispose();
     super.dispose();
+  }
+
+  void _onPullProgress(PullProgress p) {
+    if (mounted) {
+      setState(() {
+        progressPercent = p.percent;
+        pulledCount = p.recordsPulled;
+        progressLabel = switch (p.phase) {
+          PullProgressPhase.fetching => 'تنزيل ${p.tableLabel}…',
+          PullProgressPhase.applying => 'حفظ ${p.tableLabel}…',
+          PullProgressPhase.finishing => 'إنهاء الحسابات…',
+        };
+      });
+    }
+    unawaited(_notifier.show(
+      '${p.percent}% — ${p.tableLabel}',
+      percent: p.percent,
+      title: _noticeTitle,
+    ));
   }
 
   Future<void> _performInitialSync() async {
@@ -71,19 +98,31 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
     setState(() {
       loading = true;
       syncError = null;
+      progressPercent = 0;
+      progressLabel = 'جاري الاتصال بالسحابة…';
+      pulledCount = 0;
     });
+    unawaited(_notifier.show('بدء تنزيل بيانات المنشأة…', percent: 0, title: _noticeTitle));
 
     try {
-      final pulled = await store.initialPull();
+      final pulled = await store.initialPull(onProgress: _onPullProgress);
+      await _notifier.finish(
+        pulled > 0
+            ? 'اكتمل التنزيل — $pulled سجلاً. افتح التطبيق لاختيار الهوية.'
+            : 'اكتمل التنزيل. افتح التطبيق لاختيار الهوية.',
+        title: _noticeTitle,
+      );
       if (!mounted) return;
       final candidates = store.setupCandidates;
       setState(() {
         pulledCount = pulled;
+        progressPercent = 100;
         offline = false;
         selectedUserId = candidates.first.id;
         loading = false;
       });
     } catch (e) {
+      await _notifier.hide();
       if (!mounted) return;
       final message = e is StoreException ? e.message : 'تعذر الاتصال بالسحابة لجلب البيانات.';
       // جهاز يحمل بيانات محلية أصلاً يكمل بها: تعذّر السحب لا يمنع تحديد
@@ -108,9 +147,11 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
   /// تحديثٌ صامت لما تغيّر: فشله لا يمنع المستخدم من المتابعة ببياناته.
   Future<void> _refreshInBackground(AppStore store) async {
     try {
-      final pulled = await store.initialPull();
+      final pulled = await store.initialPull(onProgress: _onPullProgress);
       if (mounted && pulled > 0) setState(() => pulledCount = pulled);
+      await _notifier.hide();
     } catch (_) {
+      await _notifier.hide();
       // دون اتصال: البيانات المحفوظة تكفي لاختيار الهوية
     }
   }
@@ -173,28 +214,38 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
     );
   }
 
-  /// التنزيل الأول: حلقة تقدّم وعدّاد وخطوات — كلّها في محور واحد في وسط البطاقة.
+  /// التنزيل الأول: نسبة حقيقية وجدول جارٍ — ويمكن تصغير التطبيق والإشعار يتابع.
   Widget _loading() {
+    final pct = progressPercent.clamp(0, 100);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           SizedBox(
-            width: 64,
-            height: 64,
+            width: 72,
+            height: 72,
             child: Stack(
               alignment: Alignment.center,
               children: [
                 SizedBox.expand(
                   child: CircularProgressIndicator(
+                    value: pct <= 0 ? null : pct / 100,
                     strokeWidth: 3.5,
                     strokeCap: StrokeCap.round,
                     backgroundColor: AppColors.hover,
                     color: AppColors.amber,
                   ),
                 ),
-                Icon(Icons.cloud_download_outlined, size: 24, color: AppColors.amberDark),
+                Text(
+                  '$pct%',
+                  style: TextStyle(
+                    fontFamily: AppText.family,
+                    color: AppColors.heading,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ],
             ),
           ),
@@ -211,11 +262,29 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            pulledCount > 0 ? 'وصل $pulledCount سجلاً حتى الآن' : 'أول تشغيل يحتاج دقيقة — اتركه متصلاً',
+            progressLabel,
             textAlign: TextAlign.center,
             style: const TextStyle(color: AppColors.muted, fontSize: 12.5, height: 1.55),
           ),
-          const SizedBox(height: 20),
+          if (pulledCount > 0) ...[
+            const SizedBox(height: 4),
+            Text(
+              'وُحّد $pulledCount سجلاً حتى الآن',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.faint, fontSize: 11.5),
+            ),
+          ],
+          const SizedBox(height: 16),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: pct <= 0 ? null : pct / 100,
+              minHeight: 6,
+              backgroundColor: AppColors.hover,
+              color: AppColors.amber,
+            ),
+          ),
+          const SizedBox(height: 16),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
@@ -235,8 +304,8 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
                 const SizedBox(height: 10),
                 _step(
                   icon: Icons.downloading_rounded,
-                  label: 'تنزيل الطلاب والصفوف والمالية',
-                  state: _StepState.active,
+                  label: pct >= 100 ? 'اكتمل التنزيل' : 'تنزيل الطلاب والصفوف والمالية ($pct%)',
+                  state: pct >= 100 ? _StepState.done : _StepState.active,
                 ),
                 const SizedBox(height: 10),
                 _step(
@@ -246,6 +315,12 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
                 ),
               ],
             ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'يمكنك تصغير التطبيق — يظهر إشعار بالنسبة، ويُنبَّهك عند الانتهاء.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.muted, fontSize: 11.5, height: 1.45),
           ),
         ],
       ),
@@ -433,7 +508,10 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
   /// عنده يعود إلى بوابة الدخول بدل أن يُحبس هنا.
   Widget _backToLogin(AppStore store) {
     return PressableScale(
-      onTap: () => store.logout(),
+      onTap: () async {
+        await _notifier.hide();
+        await store.logout();
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         child: Row(

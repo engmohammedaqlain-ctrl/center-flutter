@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -179,19 +181,34 @@ class PdfKit {
     );
   }
 
-  /// اسم الملف الناتج بلا فراغات — هو ما يظهر للمستخدم عند الحفظ أو المشاركة.
+  /// اسم الملف الناتج بلا فراغات، وبلاحقة `.pdf` — بدونها أندرويد يرفض
+  /// مشاركة الملف أو يحفظه بلا نوع فيبدو الزر «لا يعمل».
   /// مطابق لما تكتبه النسخة المكتبية في `document.title` قبل الطباعة، فيخرج
-  /// «كشف_طلاب_شعبة_(1)» بدل اسم عام لا يدلّ على شيء.
-  static String fileName(String raw) => raw.trim().replaceAll(RegExp(r'\s+'), '_');
+  /// «كشف_طلاب_شعبة_(1).pdf» بدل اسم عام لا يدلّ على شيء.
+  static String fileName(String raw) {
+    final base = raw.trim().replaceAll(RegExp(r'\s+'), '_');
+    if (base.toLowerCase().endsWith('.pdf')) return base;
+    return '$base.pdf';
+  }
 
-  /// فتح معاينة الطباعة / المشاركة على الجهاز.
-  static Future<void> preview(Uint8List bytes, String name) {
-    return Printing.layoutPdf(onLayout: (_) async => bytes, name: name);
+  /// تنزيل الكشف/السند: على الجوال حوار طباعة النظام غالباً فارغ بلا طابعة،
+  /// فيبدو الزر معطلاً — المشاركة تفتح الحفظ أو واتساب أو الملفات.
+  static Future<void> preview(Uint8List bytes, String name) async {
+    final file = fileName(name);
+    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+      try {
+        await Printing.sharePdf(bytes: bytes, filename: file);
+        return;
+      } catch (_) {
+        // احتياط إن تعذّرت المشاركة لسبب الجهاز
+      }
+    }
+    await Printing.layoutPdf(onLayout: (_) async => bytes, name: file);
   }
 
   /// حفظ أو مشاركة الملف مباشرةً.
-  static Future<void> share(Uint8List bytes, String fileName) {
-    return Printing.sharePdf(bytes: bytes, filename: fileName);
+  static Future<void> share(Uint8List bytes, String name) {
+    return Printing.sharePdf(bytes: bytes, filename: fileName(name));
   }
 
   /// تُستخدم عند الحاجة لتحميل صورة من الأصول.

@@ -701,8 +701,34 @@ const tableConflictTarget = <String, String>{
 
 const maxSyncRetries = 5;
 const pushChunk = 50;
-const pullPageSize = 10;
+/// حجم صفحة السحب من السحابة. تصغيره إلى 10 مع عشرات الآلاف من السجلات
+/// كان يضاعف الرحلات مئات المرات فيبدو التنزيل الأول نصف ساعة.
+const pullPageSize = 500;
 const stampToleranceMs = 1000;
+
+/// تقدّم سحب حقيقي — نسبة من جداول اكتملت، لا مؤشرٌ عامّ بلا قيمة.
+class PullProgress {
+  const PullProgress({
+    required this.percent,
+    required this.tableLabel,
+    required this.tablesDone,
+    required this.tablesTotal,
+    this.recordsPulled = 0,
+    this.phase = PullProgressPhase.fetching,
+  });
+
+  /// 0–100
+  final int percent;
+  final String tableLabel;
+  final int tablesDone;
+  final int tablesTotal;
+  final int recordsPulled;
+  final PullProgressPhase phase;
+}
+
+enum PullProgressPhase { fetching, applying, finishing }
+
+typedef PullProgressCallback = void Function(PullProgress progress);
 
 String get supabaseUrl => SupabaseConfig.url;
 String get supabaseKey => SupabaseConfig.key;
@@ -1755,7 +1781,10 @@ class SyncService {
   /// رُفع متأخراً كان يحمل وقتاً أقدم من آخر سحب لجهاز آخر فلا يصله أبداً.
   ///
   /// ولا يُكتب فوق سجل له تعديل معلّق محلياً، ولا فوق نسخة معلّقة أحدث.
-  Future<PullOutcome> pullFromCloud(String tenantId) async {
+  Future<PullOutcome> pullFromCloud(
+    String tenantId, {
+    PullProgressCallback? onProgress,
+  }) async {
     var totalPulled = 0;
     var totalRemoved = 0;
     final failedTables = <String, String>{};
@@ -1769,20 +1798,74 @@ class SyncService {
     final tables = syncedTables
         .where((t) => t != 'student_attachments' && t != 'finance_attachments')
         .toList();
+
+    void report({
+      required int percent,
+      required String table,
+      required int done,
+      required PullProgressPhase phase,
+      int records = 0,
+    }) {
+      onProgress?.call(
+        PullProgress(
+          percent: percent.clamp(0, 100),
+          tableLabel: tableLabelsAr[table] ?? table,
+          tablesDone: done,
+          tablesTotal: tables.length,
+          recordsPulled: records,
+          phase: phase,
+        ),
+      );
+    }
+
+    report(percent: 1, table: tables.first, done: 0, phase: PullProgressPhase.fetching);
+
+    var fetchedCount = 0;
     final fetched = await mapPooled(
       tables,
       pullConcurrency,
-      (cloud) => _fetchTableChanges(cloud, tenantId),
+      (cloud) async {
+        final result = await _fetchTableChanges(cloud, tenantId);
+        fetchedCount++;
+        // الجلب حتى 80٪ — التطبيق المحلي يأخذ الباقي
+        final pct = ((fetchedCount / tables.length) * 80).floor();
+        report(
+          percent: pct.clamp(1, 80),
+          table: cloud,
+          done: fetchedCount,
+          phase: PullProgressPhase.fetching,
+          records: totalPulled,
+        );
+        return result;
+      },
     );
 
+    var applied = 0;
     for (final f in fetched) {
       final cloud = f.cloud;
+      applied++;
       if (f.error != null) {
         failedTables[cloud] = f.error!;
+        report(
+          percent: 80 + ((applied / tables.length) * 15).floor(),
+          table: cloud,
+          done: applied,
+          phase: PullProgressPhase.applying,
+          records: totalPulled,
+        );
         continue;
       }
       final rows = f.rows;
-      if (rows == null) continue;
+      if (rows == null) {
+        report(
+          percent: 80 + ((applied / tables.length) * 15).floor(),
+          table: cloud,
+          done: applied,
+          phase: PullProgressPhase.applying,
+          records: totalPulled,
+        );
+        continue;
+      }
 
       try {
         final pendingIds = local.pendingSyncs
@@ -1845,8 +1928,23 @@ class SyncService {
       } catch (err) {
         failedTables[cloud] = describeSupabaseError(err, cloud);
       }
+
+      report(
+        percent: 80 + ((applied / tables.length) * 15).floor(),
+        table: cloud,
+        done: applied,
+        phase: PullProgressPhase.applying,
+        records: totalPulled,
+      );
     }
 
+    report(
+      percent: 96,
+      table: 'students',
+      done: tables.length,
+      phase: PullProgressPhase.finishing,
+      records: totalPulled,
+    );
     totalRemoved += await _applyRemoteDeletes(tenantId);
 
     // أرصدة الطلاب تُعاد من السجلات بعد كل سحب: أجهزة مختلفة قد تكون كتبت
@@ -1858,6 +1956,13 @@ class SyncService {
     if (failedTables.isEmpty) {
       await _setLastPullAt(tenantId, DateTime.now().toUtc().toIso8601String());
     }
+    report(
+      percent: 100,
+      table: 'students',
+      done: tables.length,
+      phase: PullProgressPhase.finishing,
+      records: totalPulled,
+    );
     return PullOutcome(
       pulled: totalPulled,
       removed: totalRemoved,

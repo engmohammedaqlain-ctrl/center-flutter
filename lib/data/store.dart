@@ -6334,13 +6334,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// هي هي، ويكفي تحديثُ ما تغيّر في الخلفية.
   bool get hasLocalTenantData => dbTenantId == tenantId && (students.isNotEmpty || users.isNotEmpty);
 
-  Future<int> initialPull() async {
+  Future<int> initialPull({PullProgressCallback? onProgress}) async {
     final tid = tenantId;
     if (tid == null) throw StoreException('لا توجد منشأة نشطة على هذا الجهاز.');
     if (!networkEnabled) {
       throw StoreException('لا يمكن تهيئة الجهاز دون اتصال بالإنترنت.');
     }
-    final res = await sync.pullFromCloud(tid);
+    final res = await sync.pullFromCloud(tid, onProgress: onProgress);
     cleanLocalDemoUsers();
     await hydrateInstitution();
     await settleAcademicYears();

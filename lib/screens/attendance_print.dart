@@ -6,6 +6,7 @@ import '../data/phone.dart';
 import '../data/printing.dart';
 import '../data/store.dart';
 import '../models/models.dart';
+import '../widgets/widgets.dart';
 
 /// طباعة كشف الحضور الأسبوعي — المقابل لزر الطباعة في `pages/Attendance.tsx`.
 Future<void> printWeeklyAttendance(
@@ -96,7 +97,11 @@ Future<void> printWeeklyAttendance(
   );
 
   if (!context.mounted) return;
-  await PdfKit.preview(bytes, PdfKit.fileName('كشف تفقد وحضور الطلاب $title'));
+  try {
+    await PdfKit.preview(bytes, PdfKit.fileName('كشف تفقد وحضور الطلاب $title'));
+  } catch (_) {
+    if (context.mounted) showAppSnack(context, 'تعذّر تنزيل كشف الحضور', error: true);
+  }
 }
 
 /// طباعة كشف طلاب الصف — المقابل لـ `ClassPrintRoster.tsx`.
@@ -165,7 +170,11 @@ Future<void> printClassRoster(
   );
 
   if (!context.mounted) return;
-  await PdfKit.preview(bytes, PdfKit.fileName('كشف طلاب ${room.name}'));
+  try {
+    await PdfKit.preview(bytes, PdfKit.fileName('كشف طلاب ${room.name}'));
+  } catch (_) {
+    if (context.mounted) showAppSnack(context, 'تعذّر تنزيل كشف الصف', error: true);
+  }
 }
 
 /// أعمدة مطابقة لـ ClassPrintRoster: م، اسم كامل، الجنس، هاتف، ولي الأمر (هاتف)، ملاحظات/حضور.

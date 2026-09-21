@@ -33,7 +33,8 @@ class DownloadService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val text = intent?.getStringExtra(EXTRA_TEXT) ?: DEFAULT_TEXT
         val percent = intent?.getIntExtra(EXTRA_PERCENT, -1) ?: -1
-        val notification = build(this, text, percent, ongoing = true)
+        val title = intent?.getStringExtra(EXTRA_TITLE) ?: "تحديث التطبيق"
+        val notification = build(this, title, text, percent, ongoing = true)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         } else {
@@ -59,20 +60,22 @@ class DownloadService : Service() {
         private const val DONE_ID = 4712
         private const val EXTRA_TEXT = "text"
         private const val EXTRA_PERCENT = "percent"
+        private const val EXTRA_TITLE = "title"
         private const val DEFAULT_TEXT = "جارِ تنزيل التحديث"
 
         private var running = false
 
         /** أول نداء يشغّل الخدمة، وما بعده يحدّث الإشعار وحده: إعادة تشغيلها لكل
          *  واحدٍ بالمئة عملٌ بلا فائدة. */
-        fun show(context: Context, text: String, percent: Int) {
+        fun show(context: Context, text: String, percent: Int, title: String = "تحديث التطبيق") {
             if (running) {
-                manager(context).notify(ID, build(context, text, percent, ongoing = true))
+                manager(context).notify(ID, build(context, title, text, percent, ongoing = true))
                 return
             }
             val intent = Intent(context, DownloadService::class.java)
                 .putExtra(EXTRA_TEXT, text)
                 .putExtra(EXTRA_PERCENT, percent)
+                .putExtra(EXTRA_TITLE, title)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
@@ -81,9 +84,9 @@ class DownloadService : Service() {
         }
 
         /** انتهى العمل: تتوقف الخدمة ويبقى إشعارٌ يُلمس فيُفتح التطبيق. */
-        fun finish(context: Context, text: String) {
+        fun finish(context: Context, text: String, title: String = "تحديث التطبيق") {
             hide(context)
-            manager(context).notify(DONE_ID, build(context, text, -1, ongoing = false))
+            manager(context).notify(DONE_ID, build(context, title, text, -1, ongoing = false))
         }
 
         fun hide(context: Context) {
@@ -95,7 +98,13 @@ class DownloadService : Service() {
         private fun manager(context: Context) =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        private fun build(context: Context, text: String, percent: Int, ongoing: Boolean): Notification {
+        private fun build(
+            context: Context,
+            title: String,
+            text: String,
+            percent: Int,
+            ongoing: Boolean,
+        ): Notification {
             val open = Intent(context, MainActivity::class.java)
                 .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             val pending = PendingIntent.getActivity(
@@ -111,7 +120,7 @@ class DownloadService : Service() {
                 Notification.Builder(context)
             }
             builder
-                .setContentTitle("تحديث التطبيق")
+                .setContentTitle(title)
                 .setContentText(text)
                 .setSmallIcon(android.R.drawable.stat_sys_download)
                 .setOngoing(ongoing)

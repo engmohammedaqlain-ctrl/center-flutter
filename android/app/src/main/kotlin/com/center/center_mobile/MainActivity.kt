@@ -20,11 +20,16 @@ class MainActivity : FlutterActivity() {
                             this,
                             call.argument<String>("text") ?: "",
                             call.argument<Int>("percent") ?: -1,
+                            call.argument<String>("title") ?: "تحديث التطبيق",
                         )
                         result.success(null)
                     }
                     "finish" -> {
-                        DownloadService.finish(this, call.argument<String>("text") ?: "")
+                        DownloadService.finish(
+                            this,
+                            call.argument<String>("text") ?: "",
+                            call.argument<String>("title") ?: "تحديث التطبيق",
+                        )
                         result.success(null)
                     }
                     "hide" -> {

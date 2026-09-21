@@ -4,6 +4,7 @@ import 'package:pdf/widgets.dart' as pw;
 import '../data/printing.dart';
 import '../data/store.dart';
 import '../models/models.dart';
+import '../widgets/widgets.dart';
 
 /// طباعة كشف الدرجات — المقابل لزر «طباعة الكشف» في `pages/Evaluations.tsx`.
 ///
@@ -64,5 +65,9 @@ Future<void> printEvaluations(
 
   if (!context.mounted) return;
   final suffix = groupName.trim().isEmpty ? '' : ' ${groupName.trim()}';
-  await PdfKit.preview(bytes, PdfKit.fileName('كشف العلامات$suffix'));
+  try {
+    await PdfKit.preview(bytes, PdfKit.fileName('كشف العلامات$suffix'));
+  } catch (_) {
+    if (context.mounted) showAppSnack(context, 'تعذّر تنزيل كشف العلامات', error: true);
+  }
 }

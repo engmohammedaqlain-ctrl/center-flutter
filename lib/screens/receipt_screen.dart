@@ -486,7 +486,11 @@ class _ReceiptSheet extends StatelessWidget {
     );
 
     if (!context.mounted) return;
-    await PdfKit.preview(bytes, PdfKit.fileName('سند قبض ${payment.receiptNumber}'));
+    try {
+      await PdfKit.preview(bytes, PdfKit.fileName('سند قبض ${payment.receiptNumber}'));
+    } catch (_) {
+      if (context.mounted) showAppSnack(context, 'تعذّر تنزيل السند', error: true);
+    }
   }
 
   /// إرسال الإيصال بالواتساب لولي الأمر — مطابق لـ `handleSendWhatsAppReceipt`.

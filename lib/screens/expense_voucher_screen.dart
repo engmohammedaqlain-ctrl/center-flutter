@@ -399,7 +399,11 @@ class _VoucherSheet extends StatelessWidget {
         ),
       ],
     );
-    await PdfKit.share(bytes, 'voucher_$voucherNo.pdf');
+    try {
+      await PdfKit.share(bytes, 'voucher_$voucherNo.pdf');
+    } catch (_) {
+      if (context.mounted) showAppSnack(context, 'تعذّر تنزيل السند', error: true);
+    }
   }
 }
 
