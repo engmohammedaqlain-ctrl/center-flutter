@@ -10,6 +10,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/auth_frame.dart';
+import '../widgets/widgets.dart';
 
 /// تهيئة الجهاز الجديد — المقابل لـ `NewDeviceSetupModal` في النسخة المكتبية.
 ///
@@ -549,6 +550,7 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
   Widget _backToLogin(AppStore store) {
     return PressableScale(
       onTap: () async {
+        if (!await confirmLogout(context)) return;
         await _notifier.hide();
         await store.logout();
       },

@@ -543,7 +543,10 @@ class AppUpdater extends ChangeNotifier {
   static final instance = AppUpdater(supported: !kIsWeb && Platform.isAndroid);
 
   /// لا يُعاد فحص الاستضافة تلقائياً قبل مرور هذه المدة.
-  static const checkEvery = Duration(hours: 6);
+  /// بين الفحوصات التلقائية في الجلسة (بعد إقلاعٍ نجح فيه الفحص).
+  ///
+  /// الإقلاع نفسه يفرض فحصاً دائماً؛ هذه المدة للعَودة من الخلفية فقط.
+  static const checkEvery = Duration(hours: 1);
 
   /// التحديث الصامت أخفّ: يُفحص عند العودة إلى التطبيق بعد هذه المدة.
   static const patchCheckEvery = Duration(minutes: 30);
@@ -654,12 +657,14 @@ class AppUpdater extends ChangeNotifier {
     return Duration(seconds: ((total - received) / speed).ceil());
   }
 
-  /// يُستدعى مرة عند الإقلاع: يقرأ المحفوظ ثم يفحص بصمت في الخلفية.
+  /// يُستدعى مرة عند الإقلاع: يقرأ المحفوظ ثم يفحص الاستضافة فوراً.
+  ///
+  /// الفحص بالإقلاع دائماً `force`: ثغرة الست ساعات كانت تُخفي إصداراً نُشر
+  /// للتو إن فُتح التطبيق قبل ساعات، فيبقى الجهاز على نسخة قديمة بلا تنبيه.
   Future<void> start() => _starting ??= () async {
         if (!supported) return;
         await _load();
-        // فحص واحد صامت — بلا Shorebird تلقائي (كان ينزّل ويعلّق الفتح)
-        await check(silent: true);
+        await check(force: true, silent: true);
       }();
 
   /// قراءة الحالة المحفوظة — مرة واحدة، ينتظرها الإقلاع والفحص كلاهما.
@@ -730,17 +735,15 @@ class AppUpdater extends ChangeNotifier {
     }
 
     final fetched = await fetchLatestRelease(manifestUrl, client: _client());
-    // حتى عند الفشل يُثبَّت الوقت كي لا يُعاد الفحص في كل فتح ويعلّق التطبيق
-    lastChecked = _clock();
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_kCheckedAt, lastChecked!.toIso8601String());
-      if (fetched != null) {
-        await prefs.setString(_kRelease, jsonEncode(fetched.toJson()));
-      }
-    } catch (_) {}
-
+    // الفشل لا يُثبِّت الوقت: وإلا صار انقطاعٌ لحظة الإقلاع يحجب التحديث ست ساعات
     if (fetched != null) {
+      lastChecked = _clock();
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_kCheckedAt, lastChecked!.toIso8601String());
+        await prefs.setString(_kRelease, jsonEncode(fetched.toJson()));
+      } catch (_) {}
+
       // إصدار أحدث نُشر بعد تنزيلٍ سابق: الحزمة الجاهزة أو الناقصة لم تعد المطلوبة
       final replaced = release != null && release!.versionCode != fetched.versionCode;
       if (replaced && !busy) {

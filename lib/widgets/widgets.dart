@@ -995,6 +995,14 @@ Future<bool> confirmSheet(
   return result == true;
 }
 
+/// تأكيد قبل إنهاء الجلسة — إدارة وبوابة ومطوّر.
+Future<bool> confirmLogout(BuildContext context) => confirmSheet(
+      context,
+      title: 'تسجيل الخروج',
+      message: 'هل أنت متأكد من رغبتك في تسجيل الخروج؟',
+      confirmLabel: 'خروج',
+    );
+
 Future<void> launchTel(String phone) async {
   final uri = Uri(scheme: 'tel', path: phone);
   if (await canLaunchUrl(uri)) {

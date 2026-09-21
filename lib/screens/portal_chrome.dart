@@ -107,7 +107,9 @@ class PortalChromeHeader extends StatelessWidget {
                     ?action,
                     IconButton(
                       tooltip: 'خروج',
-                      onPressed: onExit,
+                      onPressed: () async {
+                        if (await confirmLogout(context)) onExit();
+                      },
                       visualDensity: VisualDensity.compact,
                       icon: Icon(Icons.logout_rounded, size: 19, color: Colors.white.withValues(alpha: 0.85)),
                     ),

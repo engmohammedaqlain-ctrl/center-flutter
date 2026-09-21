@@ -551,7 +551,7 @@ void main() {
       expect(updater.action, UpdateAction.none);
     });
 
-    test('لا يُعاد الفحص قبل ست ساعات إلا يدوياً', () async {
+    test('لا يُعاد الفحص قبل ساعة إلا يدوياً أو عند الإقلاع', () async {
       final dir = await _tempDir();
       var requests = 0;
       var now = DateTime(2026, 9, 14, 8);
@@ -564,16 +564,59 @@ void main() {
       await updater.start();
       expect(requests, 1);
 
-      now = now.add(const Duration(hours: 2));
+      now = now.add(const Duration(minutes: 20));
       await updater.check();
       expect(requests, 1, reason: 'العودة إلى التطبيق كل دقيقة لا تطرق الخادم كل مرة');
 
       await updater.check(force: true);
       expect(requests, 2, reason: 'من ضغط «فحص التحديثات» يريد جواباً الآن');
 
-      now = now.add(const Duration(hours: 7));
+      now = now.add(const Duration(hours: 2));
       await updater.check();
       expect(requests, 3);
+    });
+
+    test('الإقلاع يفحص ولو كان آخر فحص قبل دقائق', () async {
+      final dir = await _tempDir();
+      var requests = 0;
+      var now = DateTime(2026, 9, 14, 8);
+      final first = _updater(
+        dir: dir,
+        clock: () => now,
+        client: _manifestServer(_manifest(versionCode: 5), onRequest: () => requests++),
+      );
+      await first.start();
+      expect(requests, 1);
+
+      now = now.add(const Duration(minutes: 10));
+      requests = 0;
+      final again = _updater(
+        dir: dir,
+        clock: () => now,
+        client: _manifestServer(_manifest(versionCode: 6), onRequest: () => requests++),
+      );
+      await again.start();
+      expect(requests, 1, reason: 'إصدار نُشر بعد فتحٍ سابق يظهر فوراً');
+      expect(again.action, UpdateAction.optional);
+      expect(again.release?.versionCode, 6);
+    });
+
+    test('فشل الفحص لا يمنع إعادة المحاولة عند الإقلاع', () async {
+      final dir = await _tempDir();
+      var now = DateTime(2026, 9, 14, 8);
+      final fail = _updater(dir: dir, clock: () => now, client: _offline());
+      await fail.start();
+      expect(fail.lastChecked, isNull, reason: 'الفشل لا يُثبِّت وقت الفحص');
+
+      var requests = 0;
+      final ok = _updater(
+        dir: dir,
+        clock: () => now,
+        client: _manifestServer(_manifest(versionCode: 5), onRequest: () => requests++),
+      );
+      await ok.start();
+      expect(requests, 1);
+      expect(ok.release?.versionCode, 5);
     });
 
     test('الفحص اليدوي يقول إن الاتصال تعذّر', () async {

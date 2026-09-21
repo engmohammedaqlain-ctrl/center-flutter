@@ -201,8 +201,10 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     updater.inForeground = state == AppLifecycleState.resumed;
     if (state != AppLifecycleState.resumed) return;
-    // بلا فحص تحديثات عند كل عودة — كان يعلّق الفتح ويبحث بلا طائل.
-    // الفحص التلقائي مرة كل 6 ساعات عبر quietCheckAfterLaunch / القائمة اليدوية.
+    // فحص تحديث صامت عند العودة — يحترم الفاصل، ويكشف إصداراً نُشر أثناء الغياب
+    unawaited(updater.check(silent: true).then((_) {
+      if (mounted) _maybePrompt();
+    }));
     final store = AppStore.instance;
     if (!store.loggedIn || store.isMasterAdmin || !store.networkEnabled) return;
     if (store.autoSync) {

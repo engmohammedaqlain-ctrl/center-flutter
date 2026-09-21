@@ -194,13 +194,7 @@ Future<void> showActionSheet(BuildContext context, AppStore store) {
                 danger: true,
                 onTap: () async {
                   Navigator.pop(ctx);
-                  final ok = await confirmSheet(
-                    context,
-                    title: 'تسجيل الخروج',
-                    message: 'هل أنت متأكد من رغبتك في تسجيل الخروج من النظام؟',
-                    confirmLabel: 'خروج',
-                  );
-                  if (ok) await store.logout();
+                  if (await confirmLogout(context)) await store.logout();
                 },
               ),
             ],

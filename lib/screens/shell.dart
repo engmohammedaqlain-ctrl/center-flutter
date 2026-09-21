@@ -158,9 +158,10 @@ class _AppShellState extends State<AppShell> {
               Navigator.of(context).pop();
               _openPage(const DeveloperSettingsScreen());
             },
-            onLogout: () {
+            onLogout: () async {
               Navigator.of(context).pop();
-              store.logout();
+              if (!context.mounted) return;
+              if (await confirmLogout(context)) await store.logout();
             },
           ),
           body: Column(
@@ -168,7 +169,11 @@ class _AppShellState extends State<AppShell> {
               _Header(
                 title: sections[index].title,
                 onOpenMenu: hasMenu ? () => _scaffoldKey.currentState?.openDrawer() : null,
-                onLogout: hasMenu ? null : store.logout,
+                onLogout: hasMenu
+                    ? null
+                    : () async {
+                        if (await confirmLogout(context)) await store.logout();
+                      },
               ),
               Expanded(
                 child: IndexedStack(
