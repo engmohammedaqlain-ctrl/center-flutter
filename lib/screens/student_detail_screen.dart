@@ -69,7 +69,7 @@ class StudentDetailScreen extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('لم يتم العثور على ملف الطالب', style: TextStyle(fontWeight: FontWeight.w800)),
+                  const Text('لم يتم العثور على ملف الطالب', style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 10),
                   GhostButton(label: 'العودة لقائمة الطلاب', onPressed: () => Navigator.pop(context)),
                 ],
@@ -405,7 +405,7 @@ class StudentDetailScreen extends StatelessWidget {
                     '$rate%',
                     style: TextStyle(
                       fontFamily: AppText.family,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                       fontSize: 13,
                       color: AppColors.heading,
                     ),
@@ -538,40 +538,43 @@ class _ThumbBar extends StatelessWidget {
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-          child: Row(
-            children: [
-              if (showPay)
-                Expanded(
-                  flex: 3,
-                  child: PrimaryButton(
-                    label: 'تسديد دفعة',
-                    icon: Icons.credit_card,
-                    onPressed: onPay,
-                  ),
-                ),
-              if (showPay && (showRefund || showEdit)) const SizedBox(width: 8),
-              if (showRefund)
-                Expanded(
-                  flex: 2,
-                  child: SizedBox(
-                    height: 44,
-                    child: GhostButton(label: 'رد مبلغ', onPressed: onRefund),
-                  ),
-                ),
-              if (showRefund && showEdit) const SizedBox(width: 8),
-              if (showEdit)
-                Expanded(
-                  flex: 2,
-                  child: SizedBox(
-                    height: 44,
-                    child: GhostButton(
-                      label: 'تعديل',
-                      icon: Icons.edit_outlined,
-                      onPressed: onEdit,
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Row(
+              children: [
+                if (showPay)
+                  Expanded(
+                    flex: 3,
+                    child: PrimaryButton(
+                      label: 'تسديد دفعة',
+                      icon: Icons.credit_card,
+                      onPressed: onPay,
                     ),
                   ),
-                ),
-            ],
+                if (showPay && (showRefund || showEdit)) const SizedBox(width: 8),
+                if (showRefund)
+                  Expanded(
+                    flex: 2,
+                    child: SizedBox(
+                      height: 40,
+                      child: GhostButton(label: 'رد مبلغ', onPressed: onRefund),
+                    ),
+                  ),
+                if (showRefund && showEdit) const SizedBox(width: 8),
+                if (showEdit)
+                  Expanded(
+                    flex: 2,
+                    child: SizedBox(
+                      height: 40,
+                      child: GhostButton(
+                        label: 'تعديل',
+                        icon: Icons.edit_outlined,
+                        onPressed: onEdit,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -708,7 +711,7 @@ class _Tally extends StatelessWidget {
             fontFamily: AppText.family,
             color: color,
             fontSize: 16,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w700,
             height: 1.2,
           ),
         ),
@@ -851,7 +854,7 @@ class _FinanceStrip extends StatelessWidget {
                       text: 'ملاحظة: ',
                       style: TextStyle(
                         fontFamily: AppText.family,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w600,
                         fontSize: 12,
                         color: AppColors.amberDark,
                       ),
@@ -913,7 +916,7 @@ class _FinanceCell extends StatelessWidget {
               style: TextStyle(
                 fontFamily: AppText.family,
                 fontSize: 15,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
                 color: color,
                 height: 1.15,
               ),
@@ -1004,7 +1007,7 @@ class _AttendanceChip extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: color),
+        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: color),
       ),
     );
   }
@@ -1296,7 +1299,7 @@ Future<void> _showFeesActionSheet(BuildContext context, AppStore store, Student 
         mainAxisSize: MainAxisSize.min,
         children: [
           const ListTile(
-            title: Text('إجراءات الرسوم', style: TextStyle(fontWeight: FontWeight.w800)),
+            title: Text('إجراءات الرسوم', style: TextStyle(fontWeight: FontWeight.w600)),
             subtitle: Text('خصم وخطة ورسوم إضافية'),
           ),
           const Divider(height: 1),
@@ -1401,7 +1404,7 @@ Future<void> _showStudentDiscountSheet(BuildContext context, AppStore store, Stu
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('خصم الطالب على أقساط خطته', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+              const Text('خصم الطالب على أقساط خطته', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
               const SizedBox(height: 10),
               SegmentedButton<bool>(
                 segments: const [
@@ -1506,7 +1509,7 @@ Future<void> _showExtraChargeSheet(BuildContext context, AppStore store, Student
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('رسم خاص بالطالب', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+              const Text('رسم خاص بالطالب', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
               const SizedBox(height: 10),
               TextField(
                 controller: title,
@@ -1605,7 +1608,7 @@ Future<void> _showCustomPlanSheet(BuildContext context, AppStore store, Student 
             children: [
               Text(
                 student.usesCustomPlan ? 'تعديل الخطة المخصصة' : 'خطة مخصصة للطالب',
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
               ),
               const SizedBox(height: 6),
               const Text(
@@ -1625,19 +1628,14 @@ Future<void> _showCustomPlanSheet(BuildContext context, AppStore store, Student 
                 decoration: const InputDecoration(hintText: 'خطة مخصصة'),
               ),
               const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: PrimaryButton(
-                      label: 'اعتماد الخطة المخصصة',
-                      onPressed: () => Navigator.pop(ctx, true),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx, false)),
-                  ),
-                ],
+              ActionButtons(
+                primaryFlex: 1,
+                gap: 8,
+                primary: PrimaryButton(
+                  label: 'اعتماد الخطة المخصصة',
+                  onPressed: () => Navigator.pop(ctx, true),
+                ),
+                secondary: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx, false)),
               ),
             ],
           ),
@@ -1742,7 +1740,7 @@ Future<void> _openInstallment(
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
-            title: Text(installment.title, style: const TextStyle(fontWeight: FontWeight.w800)),
+            title: Text(installment.title, style: const TextStyle(fontWeight: FontWeight.w600)),
             subtitle: Text('قيمة القسط: ${money(installment.amount + installment.discountAmount)}'),
           ),
           const Divider(height: 1),
@@ -1869,12 +1867,12 @@ Future<void> _showInstallmentAdjustmentForm(BuildContext context, AppStore store
                     : exempt
                     ? 'إعفاء كامل على «${installment.title}»'
                     : 'خصم على «${installment.title}»',
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
               ),
               if (!removing) ...[
                 const SizedBox(height: 6),
                 Text('قيمة القسط: ${money(original)}', style: const TextStyle(color: AppColors.muted, fontSize: 12)),
-                Text('يصير المطلوب: ${money(after)}', style: TextStyle(color: AppColors.heading, fontWeight: FontWeight.w800, fontSize: 12)),
+                Text('يصير المطلوب: ${money(after)}', style: TextStyle(color: AppColors.heading, fontWeight: FontWeight.w600, fontSize: 12)),
               ],
               if (!exempt && !removing) ...[
                 const SizedBox(height: 10),
@@ -2000,7 +1998,7 @@ List<Widget> _groupedInstallmentTiles({
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: Text(
             '$label$suffix · ${groups[key]!.length} قسط',
-            style: AppText.label.copyWith(color: AppColors.heading, fontWeight: FontWeight.w800),
+            style: AppText.label.copyWith(color: AppColors.heading, fontWeight: FontWeight.w600),
           ),
         ),
       );
@@ -2139,7 +2137,7 @@ class _InstallmentTile extends StatelessWidget {
                         style: TextStyle(
                           fontFamily: AppText.family,
                           color: future ? AppColors.muted : AppColors.danger,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w600,
                           fontSize: 13.5,
                         ),
                       )
@@ -2221,7 +2219,7 @@ class _PaymentTile extends StatelessWidget {
                 money(p.amount),
                 style: TextStyle(
                   fontFamily: AppText.family,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w600,
                   fontSize: 14,
                   color: p.cancelled
                       ? AppColors.faint
@@ -2338,7 +2336,7 @@ class _EvaluationsCard extends StatelessWidget {
                 fontFamily: AppText.family,
                 color: _tone(overall),
                 fontSize: 14,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w600,
               ),
             ),
       children: [
@@ -2375,7 +2373,7 @@ class _EvaluationsCard extends StatelessWidget {
                               fontFamily: AppText.family,
                               color: AppColors.heading,
                               fontSize: 13,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
@@ -2386,7 +2384,7 @@ class _EvaluationsCard extends StatelessWidget {
                               fontFamily: AppText.family,
                               color: tone,
                               fontSize: 13,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                       ],
@@ -2519,7 +2517,7 @@ class _Thumb extends StatelessWidget {
                 padding: const EdgeInsets.all(10),
                 child: Text(
                   label,
-                  style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading),
+                  style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.heading),
                 ),
               ),
               Flexible(child: InteractiveViewer(maxScale: 5, child: Image.memory(bytes))),

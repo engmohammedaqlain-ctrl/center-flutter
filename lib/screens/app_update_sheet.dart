@@ -126,7 +126,7 @@ class UpdatePanel extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(title, style: TextStyle(color: AppColors.heading, fontSize: 14, fontWeight: FontWeight.w800)),
+                      Text(title, style: TextStyle(color: AppColors.heading, fontSize: 14, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 2),
                       Text(
                         _versionLine(u, available),
@@ -171,20 +171,14 @@ class UpdatePanel extends StatelessWidget {
             AuthErrorBox(message: u.phase == UpdatePhase.paused ? null : u.error),
             const SizedBox(height: 16),
 
-            Row(
-              children: [
-                Expanded(flex: 2, child: available ? _actionButton(u, release) : _checkButton(u, checking)),
-                if (onLater != null) ...[
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: GhostButton(
-                      // التنزيل يستمر بعد الإغلاق، والشريط أعلى التطبيق يتابعه
+            ActionButtons(
+              primary: available ? _actionButton(u, release) : _checkButton(u, checking),
+              secondary: onLater == null
+                  ? null
+                  : GhostButton(
                       label: !available ? 'إغلاق' : (u.busy ? 'إخفاء' : 'لاحقاً'),
                       onPressed: onLater,
                     ),
-                  ),
-                ],
-              ],
             ),
           ],
         );
@@ -316,13 +310,13 @@ class DownloadProgressCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   label,
-                  style: TextStyle(color: AppColors.heading, fontSize: 12, fontWeight: FontWeight.w800),
+                  style: TextStyle(color: AppColors.heading, fontSize: 12, fontWeight: FontWeight.w600),
                 ),
               ),
               if (percent != null)
                 Text(
                   '$percent%',
-                  style: TextStyle(color: tone, fontSize: 18, fontWeight: FontWeight.w900),
+                  style: TextStyle(color: tone, fontSize: 18, fontWeight: FontWeight.w700),
                 ),
             ],
           ),
@@ -454,7 +448,7 @@ class UpdateStatusStrip extends StatelessWidget {
                                   content.text,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(color: content.tone, fontSize: 11.5, fontWeight: FontWeight.w800),
+                                  style: TextStyle(color: content.tone, fontSize: 11.5, fontWeight: FontWeight.w600),
                                 ),
                               ),
                               if (content.opensSheet)

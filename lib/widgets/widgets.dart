@@ -266,7 +266,7 @@ class FilterButton extends StatelessWidget {
                     e.value,
                     style: TextStyle(
                       fontSize: 12.5,
-                      fontWeight: e.key == value ? FontWeight.w800 : FontWeight.w500,
+                      fontWeight: e.key == value ? FontWeight.w600 : FontWeight.w500,
                     ),
                   ),
                 ),
@@ -314,7 +314,7 @@ class PrimaryButton extends StatelessWidget {
     this.expand = false,
     this.color,
     this.busy = false,
-    this.height = 44,
+    this.height = 40,
   });
 
   final String label;
@@ -340,24 +340,21 @@ class PrimaryButton extends StatelessWidget {
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           shape: RoundedRectangleBorder(borderRadius: _r),
-          textStyle: const TextStyle(fontFamily: AppText.family, fontWeight: FontWeight.w700, fontSize: 13.5),
+          textStyle: const TextStyle(fontFamily: AppText.family, fontWeight: FontWeight.w600, fontSize: 12.5),
         ),
         child: busy
             ? const SizedBox(
-                width: 18,
-                height: 18,
-                // طبقة مستقلة: إعادة بناء الأب لا تعيد تشغيل الأنيميشن من الصفر
+                width: 16,
+                height: 16,
                 child: RepaintBoundary(
                   child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white),
                 ),
               )
-            // النص لا يطفح حين يضيق الزر: يُقصَّ بنقاط في الزر الممتد، ويصغر قليلاً
-            // في الزر الحر — الذي قد لا يعرف عرضاً أقصى داخل صفّ فلا يصلح له القصّ
             : expand
                 ? Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      if (icon != null) ...[Icon(icon, size: 15), const SizedBox(width: 5)],
+                      if (icon != null) ...[Icon(icon, size: 14), const SizedBox(width: 5)],
                       Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis)),
                     ],
                   )
@@ -366,7 +363,7 @@ class PrimaryButton extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (icon != null) ...[Icon(icon, size: 15), const SizedBox(width: 5)],
+                        if (icon != null) ...[Icon(icon, size: 14), const SizedBox(width: 5)],
                         Text(label),
                       ],
                     ),
@@ -377,17 +374,50 @@ class PrimaryButton extends StatelessWidget {
   }
 }
 
+/// صف إجراء موحّد: الزر الملون دائماً يميناً، والثانوي يساراً — حتى لو كان اتجاه الصفحة مختلفاً.
+class ActionButtons extends StatelessWidget {
+  const ActionButtons({
+    super.key,
+    required this.primary,
+    this.secondary,
+    this.primaryFlex = 2,
+    this.gap = 10,
+  });
+
+  final Widget primary;
+  final Widget? secondary;
+  final int primaryFlex;
+  final double gap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Row(
+        children: [
+          Expanded(flex: primaryFlex, child: primary),
+          if (secondary != null) ...[
+            SizedBox(width: gap),
+            Expanded(child: secondary!),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class GhostButton extends StatelessWidget {
-  const GhostButton({super.key, required this.label, required this.onPressed, this.icon});
+  const GhostButton({super.key, required this.label, required this.onPressed, this.icon, this.height = 40});
 
   final String label;
   final VoidCallback? onPressed;
   final IconData? icon;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 36,
+      height: height,
       child: OutlinedButton(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
@@ -395,9 +425,8 @@ class GhostButton extends StatelessWidget {
           side: const BorderSide(color: AppColors.lineStrong),
           padding: const EdgeInsets.symmetric(horizontal: 10),
           shape: RoundedRectangleBorder(borderRadius: _r),
-          textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5),
+          textStyle: const TextStyle(fontFamily: AppText.family, fontWeight: FontWeight.w600, fontSize: 12),
         ),
-        // يصغر النص قليلاً حين يضيق الزر بدل أن يطفح خارجه
         child: FittedBox(
           fit: BoxFit.scaleDown,
           child: Row(
@@ -523,14 +552,14 @@ class NoAccess extends StatelessWidget {
             Text(
               '«$label» غير متاح لحسابك',
               textAlign: TextAlign.center,
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.heading),
             ),
             const SizedBox(height: 8),
             Text.rich(
               TextSpan(
                 text: 'دورك: ',
                 children: [
-                  TextSpan(text: roleName, style: const TextStyle(fontWeight: FontWeight.w800)),
+                  TextSpan(text: roleName, style: const TextStyle(fontWeight: FontWeight.w600)),
                   const TextSpan(text: '. اطلب إتاحته من المدير.'),
                 ],
               ),
@@ -578,9 +607,9 @@ class FieldLabel extends StatelessWidget {
       child: Text.rich(
         TextSpan(
           text: text,
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.heading),
+          style: TextStyle(fontFamily: AppText.family, fontSize: 11.5, fontWeight: FontWeight.w600, color: AppColors.heading),
           children: [
-            if (requiredField) const TextSpan(text: ' *', style: TextStyle(color: AppColors.danger, fontWeight: FontWeight.w900)),
+            if (requiredField) const TextSpan(text: ' *', style: TextStyle(color: AppColors.danger, fontWeight: FontWeight.w700)),
           ],
         ),
       ),
@@ -683,7 +712,7 @@ class StudentStatusChip extends StatelessWidget {
       ),
       child: Text(
         studentStatusLabel(normalized),
-        style: TextStyle(fontSize: compact ? 9.5 : 10.5, fontWeight: FontWeight.w800, color: color),
+        style: TextStyle(fontSize: compact ? 9.5 : 10.5, fontWeight: FontWeight.w600, color: color),
       ),
     );
   }
@@ -710,7 +739,7 @@ class SectionTitle extends StatelessWidget {
             text,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5, color: AppColors.heading),
           ),
         ),
       ],
@@ -792,7 +821,7 @@ Future<T> runBusyOp<T>(
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontFamily: AppText.family,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                     fontSize: 13,
                     color: AppColors.heading,
                   ),
@@ -946,23 +975,17 @@ Future<bool> confirmSheet(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
+            Text(title, style: AppText.title),
             const SizedBox(height: 8),
-            Text(message, style: const TextStyle(color: AppColors.muted, fontSize: 12.5, height: 1.5)),
+            Text(message, style: AppText.muted.copyWith(height: 1.5)),
             const SizedBox(height: 14),
-            Row(
-              children: [
-                // RTL: الأول يمين — التأكيد يميناً والإلغاء يساراً
-                Expanded(
-                  child: PrimaryButton(
-                    label: confirmLabel,
-                    color: confirmColor,
-                    onPressed: () => Navigator.pop(ctx, true),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx, false))),
-              ],
+            ActionButtons(
+              primary: PrimaryButton(
+                label: confirmLabel,
+                color: confirmColor,
+                onPressed: () => Navigator.pop(ctx, true),
+              ),
+              secondary: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx, false)),
             ),
           ],
         ),
@@ -1107,13 +1130,13 @@ class NoticeBox extends StatelessWidget {
         Expanded(
           child: Text(
             'الإشعار مرفق',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.heading),
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.heading),
           ),
         ),
         TextButton(
           onPressed: onPick,
           style: TextButton.styleFrom(foregroundColor: AppColors.amber),
-          child: const Text('تغيير', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+          child: const Text('تغيير', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
         ),
         IconButton(
           onPressed: onClear,

@@ -93,7 +93,7 @@ Future<void> showActionSheet(BuildContext context, AppStore store) {
                           store.institutionName.isEmpty ? appName : store.institutionName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: AppColors.heading, fontWeight: FontWeight.w800, fontSize: 12.5),
+                          style: TextStyle(color: AppColors.heading, fontWeight: FontWeight.w600, fontSize: 12.5),
                         ),
                         const SizedBox(height: 5),
                         _identityChip(isAdmin: isAdmin, name: name),
@@ -227,7 +227,7 @@ Widget _identityChip({required bool isAdmin, required String name}) {
       children: [
         Icon(isAdmin ? Icons.verified_user : Icons.check_circle, size: 11, color: fg),
         const SizedBox(width: 4),
-        Text(name, style: TextStyle(color: fg, fontSize: 10, fontWeight: FontWeight.w800)),
+        Text(name, style: TextStyle(color: fg, fontSize: 10, fontWeight: FontWeight.w600)),
       ],
     ),
   );
@@ -253,7 +253,7 @@ Widget _syncPanel(BuildContext ctx, AppStore store) {
               style: TextStyle(
                 color: AppColors.heading,
                 fontSize: 12,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w600,
               ),
             ),
             const Spacer(),
@@ -334,7 +334,7 @@ Widget _syncButton(
             style: TextStyle(
               color: on ? Colors.white : idle,
               fontSize: 12,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(width: 4),
@@ -343,7 +343,7 @@ Widget _syncButton(
             style: TextStyle(
               color: on ? Colors.white : idle,
               fontSize: 12,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -392,7 +392,7 @@ Widget _menuTile({
               style: TextStyle(
                 color: danger ? AppColors.danger : AppColors.heading,
                 fontSize: 12,
-                fontWeight: danger ? FontWeight.w800 : FontWeight.w600,
+                fontWeight: danger ? FontWeight.w600 : FontWeight.w600,
               ),
             ),
           ),
@@ -402,7 +402,7 @@ Widget _menuTile({
               style: TextStyle(
                 color: trailingColor ?? AppColors.faint,
                 fontSize: 11,
-                fontWeight: trailingColor == null ? FontWeight.normal : FontWeight.w800,
+                fontWeight: trailingColor == null ? FontWeight.normal : FontWeight.w600,
               ),
             ),
         ],
@@ -674,7 +674,7 @@ class _SyncConfirmState extends State<_SyncConfirm> {
             children: [
               Text(
                 '${_push ? 'سيُرفع' : 'سيُسحب'}: $total عملية',
-                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: AppColors.heading),
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppColors.heading),
               ),
               const SizedBox(height: 8),
               for (final row in rows)
@@ -693,7 +693,7 @@ class _SyncConfirmState extends State<_SyncConfirm> {
                       ),
                       Text(
                         '${row.count}',
-                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: _accent),
+                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: _accent),
                       ),
                     ],
                   ),
@@ -724,7 +724,7 @@ class _SyncConfirmState extends State<_SyncConfirm> {
                           text: items[i].action.isEmpty
                               ? 'تحديث'
                               : actionLabelsAr[items[i].action] ?? items[i].action,
-                          style: TextStyle(fontWeight: FontWeight.w800, color: _accent),
+                          style: TextStyle(fontWeight: FontWeight.w600, color: _accent),
                         ),
                         TextSpan(
                           text: ' · ${tableLabelsAr[items[i].table] ?? items[i].table} · ',
@@ -808,7 +808,7 @@ class _SyncConfirmState extends State<_SyncConfirm> {
                           : done
                               ? 'اكتملت'
                               : '${_push ? 'تأكيد رفع' : 'تأكيد سحب'} $total',
-                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800),
+                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),

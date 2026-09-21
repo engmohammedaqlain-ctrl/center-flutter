@@ -84,7 +84,7 @@ class _SectionStudentsSheetState extends State<_SectionStudentsSheet> {
                           'إضافة طلاب إلى ${widget.room.name}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
+                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.heading),
                         ),
                         Text(
                           widget.room.gradeLevel.trim().isEmpty ? 'كل المراحل' : widget.room.gradeLevel,
@@ -103,7 +103,7 @@ class _SectionStudentsSheetState extends State<_SectionStudentsSheet> {
                 onChanged: (_) => setState(() => visibleCount = kListPageSize),
                 trailing: Text(
                   '${candidates.length}',
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.muted),
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.muted),
                 ),
               ),
               const SizedBox(height: 10),
@@ -164,7 +164,7 @@ class _SectionStudentsSheetState extends State<_SectionStudentsSheet> {
                                         s.fullName,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+                                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
                                       ),
                                       Text(
                                         // من في شعبة أخرى يُنقل منها، ومن بلا شعبة يُسند لأول مرة
@@ -189,23 +189,20 @@ class _SectionStudentsSheetState extends State<_SectionStudentsSheet> {
                 ),
 
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: PrimaryButton(
-                      label: saving
-                          ? 'جارِ الإضافة...'
-                          : selected.isEmpty
-                              ? 'اختر طلاباً'
-                              : 'إضافة ${selected.length}',
-                      color: AppColors.navy,
-                      busy: saving,
-                      onPressed: selected.isEmpty || saving ? null : () => _save(store),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(context, 0))),
-                ],
+              ActionButtons(
+                primaryFlex: 1,
+                gap: 8,
+                primary: PrimaryButton(
+                  label: saving
+                      ? 'جارِ الإضافة...'
+                      : selected.isEmpty
+                          ? 'اختر طلاباً'
+                          : 'إضافة ${selected.length}',
+                  color: AppColors.navy,
+                  busy: saving,
+                  onPressed: selected.isEmpty || saving ? null : () => _save(store),
+                ),
+                secondary: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(context, 0)),
               ),
             ],
           ),

@@ -152,7 +152,7 @@ class _VoucherSheet extends StatelessWidget {
                           children: [
                             Text(
                               store.institutionName.isEmpty ? appName : store.institutionName,
-                              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading),
+                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.heading),
                             ),
                             Text(voucher.title, style: const TextStyle(color: AppColors.muted, fontSize: 11)),
                           ],
@@ -163,7 +163,7 @@ class _VoucherSheet extends StatelessWidget {
                         children: [
                           Text(
                             expenseVoucherNumber(voucher),
-                            style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.amber, fontSize: 12.5),
+                            style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.amber, fontSize: 12.5),
                           ),
                           Text(
                             day == null ? voucher.date : formatDate(day),

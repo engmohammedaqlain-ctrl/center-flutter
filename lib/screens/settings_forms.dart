@@ -17,7 +17,7 @@ const _gap = SizedBox(height: 12);
 
 AppBar _formBar(String title) => AppBar(
       title: Text(title),
-      titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+      titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
     );
 
 Widget _denied(AppStore store, String title) => Scaffold(
@@ -48,7 +48,7 @@ class _DeleteButton extends StatelessWidget {
             shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(Corner.field))),
           ),
           icon: const Icon(Icons.delete_outline, size: 18),
-          label: Text(label, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+          label: Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
           onPressed: onPressed,
         ),
       ),
@@ -895,7 +895,7 @@ class _UserAccessScreenState extends State<UserAccessScreen> {
               'تبويبات ${u.name}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14.5),
             ),
             const SizedBox(height: 2),
             Text(

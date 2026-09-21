@@ -108,22 +108,22 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text('الاشتراكات والمنشآت',
-                                          style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.heading)),
+                                          style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.heading)),
                                       Text('المعروض: ${list.length} من ${store.tenants.length}',
                                           style: const TextStyle(color: AppColors.muted, fontSize: 11)),
                                     ],
                                   ),
                                 ),
-                                GhostButton(
-                                  label: 'تحديث',
-                                  icon: Icons.refresh,
-                                  onPressed: loading ? null : _refresh,
-                                ),
-                                const SizedBox(width: 6),
                                 PrimaryButton(
                                   label: 'منشأة',
                                   icon: Icons.add,
                                   onPressed: () => _edit(context, null),
+                                ),
+                                const SizedBox(width: 6),
+                                GhostButton(
+                                  label: 'تحديث',
+                                  icon: Icons.refresh,
+                                  onPressed: loading ? null : _refresh,
                                 ),
                               ],
                             ),
@@ -190,7 +190,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('بوابة المطور والاشتراكات',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12.5)),
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12.5)),
                 Text('لوحة التحكم المركزية', style: TextStyle(color: AppColors.amber, fontSize: 10)),
               ],
             ),
@@ -217,7 +217,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                 children: [
                   Icon(Icons.logout, size: 14, color: Color(0xFFFB7185)),
                   SizedBox(width: 4),
-                  Text('خروج', style: TextStyle(color: Color(0xFFFECDD3), fontSize: 10, fontWeight: FontWeight.w800)),
+                  Text('خروج', style: TextStyle(color: Color(0xFFFECDD3), fontSize: 10, fontWeight: FontWeight.w600)),
                 ],
               ),
             ),
@@ -290,7 +290,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text('تمديد اشتراك «${t.name}»',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.heading)),
                 const SizedBox(height: 4),
                 Text('الانتهاء الحالي: ${formatDate(t.expiresAt)}',
                     style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
@@ -317,45 +317,42 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                     n <= 0 ? 'أدخل عدد أشهر صحيحاً' : 'تاريخ الانتهاء الجديد: ${formatDate(preview)}',
                     style: TextStyle(
                       fontSize: 12,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                       color: n <= 0 ? AppColors.danger : AppColors.success,
                     ),
                   ),
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: PrimaryButton(
-                        label: 'تمديد',
-                        onPressed: n <= 0
-                            ? null
-                            : () async {
-                                Navigator.pop(ctx);
-                                if (!context.mounted) return;
-                                // التمديد يعيد تفعيل الاشتراك، كما في `handleConfirmExtend`
-                                await _update(
-                                  context,
-                                  store,
-                                  t,
-                                  {
-                                    'expires_at': preview.toUtc().toIso8601String(),
-                                    'plan_type': 'rental',
-                                    'status': 'active',
-                                  },
-                                  'تم تمديد الاشتراك حتى ${formatDate(preview)}',
-                                  () {
-                                    t.expiresAt = preview;
-                                    t.planType = 'rental';
-                                    t.active = true;
-                                  },
-                                );
+                ActionButtons(
+                  primaryFlex: 1,
+                  gap: 8,
+                  primary: PrimaryButton(
+                    label: 'تمديد',
+                    onPressed: n <= 0
+                        ? null
+                        : () async {
+                            Navigator.pop(ctx);
+                            if (!context.mounted) return;
+                            // التمديد يعيد تفعيل الاشتراك، كما في `handleConfirmExtend`
+                            await _update(
+                              context,
+                              store,
+                              t,
+                              {
+                                'expires_at': preview.toUtc().toIso8601String(),
+                                'plan_type': 'rental',
+                                'status': 'active',
                               },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx))),
-                  ],
+                              'تم تمديد الاشتراك حتى ${formatDate(preview)}',
+                              () {
+                                t.expiresAt = preview;
+                                t.planType = 'rental';
+                                t.active = true;
+                              },
+                            );
+                          },
+                  ),
+                  secondary: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx)),
                 ),
               ],
             ),
@@ -383,7 +380,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text('حذف منشأة نهائياً',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.danger)),
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.danger)),
               const SizedBox(height: 6),
               // التأكيد بالمعرّف أو بكلمة «حذف» — كما في DeveloperDashboardPage
               Text(
@@ -397,18 +394,15 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                 decoration: InputDecoration(hintText: t.code),
               ),
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: PrimaryButton(
-                      label: 'حذف نهائياً',
-                      color: AppColors.danger,
-                      onPressed: tenantDeleteConfirmed(typed.text, t) ? () => Navigator.pop(ctx, true) : null,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx, false))),
-                ],
+              ActionButtons(
+                primaryFlex: 1,
+                gap: 8,
+                primary: PrimaryButton(
+                  label: 'حذف نهائياً',
+                  color: AppColors.danger,
+                  onPressed: tenantDeleteConfirmed(typed.text, t) ? () => Navigator.pop(ctx, true) : null,
+                ),
+                secondary: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx, false)),
               ),
             ],
           ),
@@ -485,7 +479,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(existing == null ? 'إضافة منشأة جديدة' : 'تعديل: ${existing.name}',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading)),
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.heading)),
                 const SizedBox(height: 10),
                 FieldLabel('اسم المنشأة', key: errors.key('name'), requiredField: true),
                 TextField(
@@ -636,10 +630,10 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                   ),
                 ],
                 const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: PrimaryButton(
+                ActionButtons(
+                  primaryFlex: 1,
+                  gap: 8,
+                  primary: PrimaryButton(
                         label: saving ? 'جارِ الحفظ...' : (existing == null ? 'إضافة' : 'حفظ'),
                         busy: saving,
                         onPressed: saving
@@ -742,10 +736,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                                 unawaited(store.refreshTenantsFromCloud());
                               },
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx))),
-                  ],
+                  secondary: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx)),
                 ),
               ],
             ),
@@ -791,7 +782,7 @@ class _TenantCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(tenant.name,
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading)),
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.heading)),
               ),
               if (!tenant.active)
                 StatusChip.danger('موقوف')

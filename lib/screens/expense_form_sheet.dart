@@ -202,7 +202,7 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
                 Expanded(
                   child: Text(
                     isPayout ? 'تسجيل صرف أجر معلم' : 'تسجيل سند صرف جديد',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.heading),
                   ),
                 ),
                 SquareIconButton(
@@ -352,23 +352,18 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
               ),
 
             const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: PrimaryButton(
-                    label: submitting
-                        ? 'جاري الحفظ...'
-                        : isPayout
-                            ? 'تسجيل صرف الأجر'
-                            : 'حفظ سند الصرف',
-                    color: AppColors.navy,
-                    busy: submitting,
-                    onPressed: submitting ? null : _save,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(context, false))),
-              ],
+            ActionButtons(
+              primary: PrimaryButton(
+                label: submitting
+                    ? 'جاري الحفظ...'
+                    : isPayout
+                        ? 'تسجيل صرف الأجر'
+                        : 'حفظ سند الصرف',
+                color: AppColors.navy,
+                busy: submitting,
+                onPressed: submitting ? null : _save,
+              ),
+              secondary: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(context, false)),
             ),
           ],
         ),

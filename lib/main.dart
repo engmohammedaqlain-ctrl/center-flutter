@@ -282,7 +282,7 @@ class SplashScreen extends StatelessWidget {
               child: const Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(appName, style: TextStyle(color: AppColors.text, fontSize: 16, fontWeight: FontWeight.w800)),
+                  Text(appName, style: TextStyle(color: AppColors.text, fontSize: 16, fontWeight: FontWeight.w600)),
                   SizedBox(height: 16),
                   SizedBox(
                     width: 20,
@@ -593,7 +593,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       fontFamily: AppText.family,
                       color: selected ? Colors.white : AppColors.muted,
                       fontSize: 12.5,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -755,7 +755,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               account.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: AppColors.heading, fontSize: 12.5, fontWeight: FontWeight.w800),
+                              style: TextStyle(color: AppColors.heading, fontSize: 12.5, fontWeight: FontWeight.w600),
                             ),
                             Text(
                               [

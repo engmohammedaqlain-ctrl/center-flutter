@@ -105,7 +105,7 @@ class CustomPlanRowsEditor extends StatelessWidget {
                     const SizedBox(width: 4),
                     Text(
                       'قسط',
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: AppColors.amber),
+                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppColors.amber),
                     ),
                   ],
                 ),
@@ -120,7 +120,7 @@ class CustomPlanRowsEditor extends StatelessWidget {
               money(_total),
               style: TextStyle(
                 fontSize: 11.5,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
                 fontFamily: 'monospace',
                 color: AppColors.heading,
               ),

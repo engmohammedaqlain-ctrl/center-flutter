@@ -105,7 +105,7 @@ class _PromotionSheetState extends State<_PromotionSheet> {
                 Expanded(
                   child: Text(
                     'ترقية طلاب العام المعروض',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.heading),
                   ),
                 ),
                 SquareIconButton(icon: Icons.close, onTap: () => Navigator.pop(context)),
@@ -119,7 +119,7 @@ class _PromotionSheetState extends State<_PromotionSheet> {
                 child: Text(
                   result!,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.success),
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.success),
                 ),
               )
             else if (list.isEmpty)
@@ -151,7 +151,7 @@ class _PromotionSheetState extends State<_PromotionSheet> {
                                       g.gradeName,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5),
+                                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
                                     ),
                                     Text(
                                       '${counts[_key(g.gradeName)]} طالب',
@@ -196,27 +196,26 @@ class _PromotionSheetState extends State<_PromotionSheet> {
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
                     'طلاب بصف غير معرّف لن يُرقَّوا: $unknownGradeCount',
-                    style: const TextStyle(fontSize: 10.5, color: AppColors.danger, fontWeight: FontWeight.w800),
+                    style: const TextStyle(fontSize: 10.5, color: AppColors.danger, fontWeight: FontWeight.w600),
                   ),
                 ),
             ],
 
             const SizedBox(height: 14),
-            Row(
-              children: [
-                if (result == null && list.isNotEmpty) ...[
-                  Expanded(
-                    child: PrimaryButton(
+            ActionButtons(
+              primaryFlex: 1,
+              gap: 8,
+              primary: result == null && list.isNotEmpty
+                  ? PrimaryButton(
                       label: running ? 'جارِ التنفيذ...' : 'تنفيذ الترقية',
                       color: AppColors.navy,
                       busy: running,
                       onPressed: running ? null : _run,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                Expanded(child: GhostButton(label: 'إغلاق', onPressed: () => Navigator.pop(context))),
-              ],
+                    )
+                  : GhostButton(label: 'إغلاق', onPressed: () => Navigator.pop(context)),
+              secondary: result == null && list.isNotEmpty
+                  ? GhostButton(label: 'إغلاق', onPressed: () => Navigator.pop(context))
+                  : null,
             ),
           ],
         ),

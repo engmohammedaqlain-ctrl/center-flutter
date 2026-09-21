@@ -178,7 +178,7 @@ class _MoodleAdminScreenState extends State<MoodleAdminScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+            titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
             leading: selected == null
                 ? null
                 : IconButton(
@@ -408,7 +408,7 @@ class _GroupList extends StatelessWidget {
                       children: [
                         Text(
                           cleanGroupName(g.name, g.gradeLevel),
-                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading),
+                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.heading),
                         ),
                         const SizedBox(height: 4),
                         Text(
@@ -557,7 +557,7 @@ class _TermSwitch extends StatelessWidget {
                                   fontFamily: AppText.family,
                                   color: value == term ? AppColors.heading : AppColors.muted,
                                   fontSize: 12.5,
-                                  fontWeight: value == term ? FontWeight.w800 : FontWeight.w600,
+                                  fontWeight: value == term ? FontWeight.w600 : FontWeight.w600,
                                 ),
                                 child: Text(label, maxLines: 1),
                               ),
@@ -630,7 +630,7 @@ class _SectionCardState extends State<_SectionCard> {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontFamily: AppText.family,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w600,
                             fontSize: 13.5,
                             color: AppColors.heading,
                           ),
@@ -832,7 +832,7 @@ class _FilterButton extends StatelessWidget {
                   ),
                   child: Text(
                     '$count',
-                    style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800, height: 1),
+                    style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w600, height: 1),
                   ),
                 ),
               ),

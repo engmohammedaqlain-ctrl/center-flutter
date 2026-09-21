@@ -316,7 +316,7 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
         titleSpacing: 0,
         title: const Text(
           'رصد درجات',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14.5),
         ),
       ),
       body: ListView(

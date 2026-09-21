@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import 'widgets.dart';
 
 // تخطيط النماذج الموحّد — نموذج الطالب ونموذج الدفعة: الحقول على الصفحة مباشرة لا
@@ -24,12 +25,12 @@ class FormSection extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, size: 18, color: AppColors.amber),
+              Icon(icon, size: 16, color: AppColors.amber),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(title, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: AppColors.heading)),
+                child: Text(title, style: AppText.cardTitle),
               ),
-              if (note != null) Text(note!, style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
+              if (note != null) Text(note!, style: AppText.muted.copyWith(fontSize: 10)),
             ],
           ),
           const SizedBox(height: 8),
@@ -129,16 +130,9 @@ class FormActionBar extends StatelessWidget {
           color: Colors.white,
           border: Border(top: BorderSide(color: AppColors.line)),
         ),
-        child: Row(
-          children: [
-            // في العربية (RTL) الابن الأول يمين: الأساسي يميناً والإلغاء يساراً
-            Expanded(
-              flex: 2,
-              child: PrimaryButton(label: label, icon: icon, height: 44, busy: busy, onPressed: onSave),
-            ),
-            const SizedBox(width: 10),
-            Expanded(child: GhostButton(label: 'إلغاء', onPressed: onCancel ?? () => Navigator.pop(context))),
-          ],
+        child: ActionButtons(
+          primary: PrimaryButton(label: label, icon: icon, height: 40, busy: busy, onPressed: onSave),
+          secondary: GhostButton(label: 'إلغاء', height: 40, onPressed: onCancel ?? () => Navigator.pop(context)),
         ),
       ),
     );

@@ -107,7 +107,7 @@ Future<Payment?> showStudentCreditSheet(
                     'رد مبلغ لولي الأمر',
                     style: TextStyle(
                       color: AppColors.heading,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                       fontSize: 15,
                     ),
                   ),
@@ -321,7 +321,7 @@ class _AmountBox extends StatelessWidget {
           money(value),
           style: TextStyle(
             color: color ?? AppColors.heading,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ],
@@ -358,7 +358,7 @@ class _ModeButton extends StatelessWidget {
     ),
     child: Text(
       label,
-      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
+      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
     ),
   );
 }

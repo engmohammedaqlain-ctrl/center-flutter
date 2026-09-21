@@ -220,20 +220,13 @@ class _GradingSchemeTabState extends State<GradingSchemeTab> {
                   borderRadius: BorderRadius.circular(Corner.card),
                   border: Border.all(color: AppColors.line),
                 ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: GhostButton(
-                        label: 'تراجع',
-                        onPressed: () => setState(() => draft = null),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 2,
-                      child: PrimaryButton(label: 'حفظ', icon: Icons.check, expand: true, onPressed: _save),
-                    ),
-                  ],
+                child: ActionButtons(
+                  gap: 8,
+                  primary: PrimaryButton(label: 'حفظ', icon: Icons.check, expand: true, onPressed: _save),
+                  secondary: GhostButton(
+                    label: 'تراجع',
+                    onPressed: () => setState(() => draft = null),
+                  ),
                 ),
               ),
             ),
@@ -315,7 +308,7 @@ class _SectionState extends State<_Section> {
                             fontFamily: AppText.family,
                             color: AppColors.heading,
                             fontSize: 13.5,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -396,7 +389,7 @@ class _Segmented extends StatelessWidget {
                           fontFamily: AppText.family,
                           color: e.key == value ? AppColors.heading : AppColors.muted,
                           fontSize: 12.5,
-                          fontWeight: e.key == value ? FontWeight.w800 : FontWeight.w600,
+                          fontWeight: e.key == value ? FontWeight.w600 : FontWeight.w600,
                         ),
                       ),
                     ),
@@ -453,7 +446,7 @@ class _NumberFieldState extends State<_NumberField> {
       style: const TextStyle(
         fontFamily: AppText.family,
         fontSize: 13,
-        fontWeight: FontWeight.w800,
+        fontWeight: FontWeight.w600,
         color: AppColors.text,
       ),
       decoration: InputDecoration(
@@ -601,7 +594,7 @@ class _TermEditor extends StatelessWidget {
                     title,
                     style: TextStyle(
                       fontFamily: AppText.family,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                       fontSize: 12.5,
                       color: AppColors.heading,
                     ),
@@ -611,7 +604,7 @@ class _TermEditor extends StatelessWidget {
                   '${trimNum(totalMark)} / ${trimNum(fullMark)}',
                   style: TextStyle(
                     fontFamily: AppText.family,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                     fontSize: 12.5,
                     color: tone,
                   ),
@@ -681,7 +674,7 @@ class _TermEditor extends StatelessWidget {
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.amberDark,
                       visualDensity: VisualDensity.compact,
-                      textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5),
+                      textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
                     ),
                   ),
                 ),
@@ -1012,7 +1005,7 @@ class _MonthlyRulesEditor extends StatelessWidget {
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.amberDark,
                 visualDensity: VisualDensity.compact,
-                textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5),
+                textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
               ),
             ),
           ),

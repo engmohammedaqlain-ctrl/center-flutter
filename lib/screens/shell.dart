@@ -585,7 +585,7 @@ Future<void> _showYearPicker(BuildContext context, AppStore store) {
             Text(
               'عرض عام دراسي',
               style: TextStyle(
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w600,
                 fontSize: 14,
                 color: AppColors.heading,
               ),
@@ -720,7 +720,7 @@ class _SyncActionBadge extends StatelessWidget {
                   fontFamily: AppText.family,
                   color: Colors.white,
                   fontSize: 12,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],

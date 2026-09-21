@@ -97,7 +97,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text('تخصيص المنشأة وأدوات المطور'),
-        titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+        titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
       ),
       bottomNavigationBar: unlocked
           ? FormActionBar(
@@ -140,7 +140,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
               Text(
                 'هذا القسم خاص بالمطور',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: AppColors.heading),
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: AppColors.heading),
               ),
               const SizedBox(height: 4),
               const Text(
@@ -534,7 +534,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading)),
+                Text(title, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5, color: AppColors.heading)),
                 const SizedBox(height: 3),
                 Text(hint, style: const TextStyle(color: AppColors.muted, fontSize: 11, height: 1.5)),
               ],
@@ -621,7 +621,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
                   Text(
                     title,
                     style: TextStyle(
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                       fontSize: 12.5,
                       color: danger ? AppColors.danger : AppColors.heading,
                     ),
@@ -671,7 +671,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.end,
-                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading),
+                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: AppColors.heading),
                       ),
                     ),
                   ],
@@ -708,15 +708,17 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(Corner.dialog))),
-        title: const Text('لون مخصص', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+        title: const Text('لون مخصص', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
         content: TextField(
           controller: ctrl,
           textDirection: TextDirection.ltr,
           decoration: const InputDecoration(hintText: '#0B2545'),
         ),
         actions: [
-          PrimaryButton(label: 'تطبيق', onPressed: () => Navigator.pop(ctx, ctrl.text.trim())),
-          GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx)),
+          ActionButtons(
+            primary: PrimaryButton(label: 'تطبيق', onPressed: () => Navigator.pop(ctx, ctrl.text.trim())),
+            secondary: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx)),
+          ),
         ],
       ),
     );
@@ -825,7 +827,7 @@ Widget _demoAccount(String title, DemoAccount account) {
           account.name,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: AppColors.heading, fontSize: 12.5, fontWeight: FontWeight.w800),
+          style: TextStyle(color: AppColors.heading, fontSize: 12.5, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 6),
         Row(
@@ -838,7 +840,7 @@ Widget _demoAccount(String title, DemoAccount account) {
                 color: AppColors.heading,
                 fontSize: 12,
                 fontFamily: 'monospace',
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(width: 12),
@@ -850,7 +852,7 @@ Widget _demoAccount(String title, DemoAccount account) {
                 color: AppColors.heading,
                 fontSize: 12,
                 fontFamily: 'monospace',
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w600,
                 letterSpacing: 1.2,
               ),
             ),

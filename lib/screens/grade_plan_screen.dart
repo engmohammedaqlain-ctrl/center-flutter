@@ -198,7 +198,7 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(title),
-        titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+        titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
       ),
       bottomNavigationBar: FormActionBar(
         label: 'حفظ الخطة',
@@ -282,7 +282,7 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
 
             if (message.isNotEmpty) ...[
               const SizedBox(height: 12),
-              Text(message, style: const TextStyle(color: AppColors.success, fontWeight: FontWeight.w800, fontSize: 12)),
+              Text(message, style: const TextStyle(color: AppColors.success, fontWeight: FontWeight.w600, fontSize: 12)),
             ],
           ],
         ),
@@ -377,7 +377,7 @@ class _GradePlanSyncSheetState extends State<GradePlanSyncSheet> {
               Expanded(
                 child: Text(
                   'تطبيق خطة ${widget.gradeName} على الطلاب',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.navy),
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.navy),
                 ),
               ),
               IconButton(
@@ -396,7 +396,7 @@ class _GradePlanSyncSheetState extends State<GradePlanSyncSheet> {
               child: Center(child: Text('جارِ حساب الأثر...', style: TextStyle(color: AppColors.muted, fontSize: 12))),
             ),
           if (done != null) ...[
-            const Text('تم التطبيق', style: TextStyle(color: AppColors.success, fontWeight: FontWeight.w800)),
+            const Text('تم التطبيق', style: TextStyle(color: AppColors.success, fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             ..._doneLines(done!),
             const SizedBox(height: 12),
@@ -416,7 +416,7 @@ class _GradePlanSyncSheetState extends State<GradePlanSyncSheet> {
                 child: Text(
                   'كل الطلاب مطابقون للخطة — لا شيء للتطبيق',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.success, fontWeight: FontWeight.w800, fontSize: 13),
+                  style: TextStyle(color: AppColors.success, fontWeight: FontWeight.w600, fontSize: 13),
                 ),
               )
             else
@@ -623,7 +623,7 @@ class _PlanItemRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text('$index', style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.muted)),
+              Text('$index', style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.muted)),
               const SizedBox(width: 8),
               Expanded(
                 child: TextField(

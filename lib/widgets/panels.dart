@@ -62,7 +62,7 @@ class StatCard extends StatelessWidget {
               style: TextStyle(
                 fontFamily: AppText.family,
                 color: color,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
                 fontSize: compact ? 16 : 18,
                 height: 1.15,
               ),
@@ -136,7 +136,7 @@ class TallyText extends StatelessWidget {
     return Text.rich(
       TextSpan(
         text: '$label: ',
-        children: [TextSpan(text: '$value', style: const TextStyle(fontWeight: FontWeight.w900))],
+        children: [TextSpan(text: '$value', style: const TextStyle(fontWeight: FontWeight.w700))],
       ),
       style: TextStyle(color: color, fontSize: 12.5, fontWeight: FontWeight.w700),
     );
@@ -176,7 +176,7 @@ class TileButton extends StatelessWidget {
           children: [
             IconTheme(data: IconThemeData(color: color), child: icon),
             const SizedBox(width: 4),
-            Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w800)),
+            Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
           ],
         ),
       ),
@@ -229,7 +229,7 @@ class GroupedFilterButton extends StatelessWidget {
             height: 28,
             child: Text(
               groups[g].title,
-              style: const TextStyle(color: AppColors.muted, fontSize: 11, fontWeight: FontWeight.w800),
+              style: const TextStyle(color: AppColors.muted, fontSize: 11, fontWeight: FontWeight.w600),
             ),
           ),
           for (final e in groups[g].options.entries)
@@ -247,7 +247,7 @@ class GroupedFilterButton extends StatelessWidget {
                       e.value,
                       style: TextStyle(
                         fontSize: 12.5,
-                        fontWeight: e.key == groups[g].value ? FontWeight.w800 : FontWeight.w500,
+                        fontWeight: e.key == groups[g].value ? FontWeight.w600 : FontWeight.w500,
                       ),
                     ),
                   ),

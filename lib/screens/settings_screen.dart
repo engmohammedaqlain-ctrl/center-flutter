@@ -429,7 +429,7 @@ class _AcademicYearsTabState extends State<_AcademicYearsTab> {
 // ═══ عناصر مشتركة ═══════════════════════════════════════════════════════════
 
 TextStyle get _titleStyle => TextStyle(
-  fontWeight: FontWeight.w800,
+  fontWeight: FontWeight.w600,
   fontSize: 13,
   color: AppColors.heading,
 );
@@ -555,7 +555,7 @@ class _FeesTab extends StatelessWidget {
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.amberDark,
                 visualDensity: VisualDensity.compact,
-                textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
               ),
             ),
           ],
@@ -688,7 +688,7 @@ class _FeeSectionState extends State<_FeeSection> {
                             fontFamily: AppText.family,
                             color: AppColors.heading,
                             fontSize: 13,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -877,7 +877,7 @@ class _FeeItemsCardState extends State<_FeeItemsCard> {
                 child: Text(
                   'رسوم إضافية',
                   style: TextStyle(
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                     fontSize: 12.5,
                     color: AppColors.heading,
                   ),
@@ -888,7 +888,7 @@ class _FeeItemsCardState extends State<_FeeItemsCard> {
                 style: TextButton.styleFrom(
                   foregroundColor: AppColors.amber,
                   textStyle: const TextStyle(
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                     fontSize: 12,
                   ),
                 ),
@@ -994,7 +994,7 @@ class _FeeItemsCardState extends State<_FeeItemsCard> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w600,
                             fontSize: 12,
                             color: AppColors.text,
                           ),
@@ -1017,7 +1017,7 @@ class _FeeItemsCardState extends State<_FeeItemsCard> {
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.amber,
                       textStyle: const TextStyle(
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w600,
                         fontSize: 11.5,
                       ),
                     ),
@@ -1094,7 +1094,7 @@ Future<List<String>?> showFeeStudentsSheet(
                 Text(
                   'طلاب الرسم',
                   style: TextStyle(
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                     fontSize: 13,
                     color: AppColors.heading,
                   ),
@@ -1166,24 +1166,17 @@ Future<List<String>?> showFeeStudentsSheet(
                         ),
                 ),
                 const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: PrimaryButton(
-                        label: 'حفظ',
-                        color: AppColors.navy,
-                        onPressed: () => Navigator.pop(ctx, chosen.toList()),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: GhostButton(
-                        label: 'إلغاء',
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ),
-                  ],
+                ActionButtons(
+                  gap: 8,
+                  primary: PrimaryButton(
+                    label: 'حفظ',
+                    color: AppColors.navy,
+                    onPressed: () => Navigator.pop(ctx, chosen.toList()),
+                  ),
+                  secondary: GhostButton(
+                    label: 'إلغاء',
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
                 ),
               ],
             ),
@@ -1274,7 +1267,7 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
                 child: Text(
                   'رسم حجز المقعد',
                   style: TextStyle(
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                     fontSize: 12.5,
                     color: AppColors.heading,
                   ),
@@ -1287,7 +1280,7 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
                     'حُفظ',
                     style: TextStyle(
                       fontSize: 11,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                       color: AppColors.success,
                     ),
                   ),
@@ -1477,7 +1470,7 @@ class _ExcellenceDiscountCardState extends State<_ExcellenceDiscountCard> {
                 child: Text(
                   'خصم المتفوقين',
                   style: TextStyle(
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                     fontSize: 12.5,
                     color: AppColors.heading,
                   ),
@@ -1490,7 +1483,7 @@ class _ExcellenceDiscountCardState extends State<_ExcellenceDiscountCard> {
                     'حُفظ',
                     style: TextStyle(
                       fontSize: 11,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                       color: AppColors.success,
                     ),
                   ),
@@ -1671,7 +1664,7 @@ class _GradeFeeCard extends StatelessWidget {
                       money(f.monthlyFee),
                       style: TextStyle(
                         fontFamily: AppText.family,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w600,
                         fontSize: 14.5,
                         color: AppColors.heading,
                       ),
@@ -1860,7 +1853,7 @@ Future<void> _addSection(BuildContext context, GradeFee f) async {
               Text(
                 'إضافة شعبة لمرحلة: ${f.gradeName}',
                 style: TextStyle(
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w600,
                   fontSize: 14,
                   color: AppColors.heading,
                 ),
@@ -1883,55 +1876,47 @@ Future<void> _addSection(BuildContext context, GradeFee f) async {
                 ),
               ),
               const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: PrimaryButton(
-                      label: 'حفظ الشعبة',
-                      icon: Icons.check,
-                      height: 44,
-                      onPressed: () {
-                        setSt(() {
-                          errors
-                            ..reset()
-                            ..check(
-                              'name',
-                              ctl.text.trim().isEmpty,
-                              'يرجى إدخال اسم الشعبة',
-                            );
-                        });
-                        if (errors.report(ctx)) return;
-                        try {
-                          store.upsertRoom(
-                            Classroom(
-                              id: store.newId(),
-                              name: ctl.text.trim(),
-                              gradeLevel: f.gradeName,
-                              teacherId: '',
-                              capacity: 25,
-                              tier: f.tier,
-                            ),
-                          );
-                          Navigator.pop(ctx);
-                          showAppSnack(
-                            context,
-                            'تمت إضافة الشعبة «${ctl.text.trim()}» إلى ${f.gradeName}',
-                          );
-                        } on StoreException catch (e) {
-                          showAppSnack(ctx, e.message, error: true);
-                        }
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: GhostButton(
-                      label: 'إلغاء',
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ),
-                ],
+              ActionButtons(
+                primary: PrimaryButton(
+                  label: 'حفظ الشعبة',
+                  icon: Icons.check,
+                  height: 40,
+                  onPressed: () {
+                    setSt(() {
+                      errors
+                        ..reset()
+                        ..check(
+                          'name',
+                          ctl.text.trim().isEmpty,
+                          'يرجى إدخال اسم الشعبة',
+                        );
+                    });
+                    if (errors.report(ctx)) return;
+                    try {
+                      store.upsertRoom(
+                        Classroom(
+                          id: store.newId(),
+                          name: ctl.text.trim(),
+                          gradeLevel: f.gradeName,
+                          teacherId: '',
+                          capacity: 25,
+                          tier: f.tier,
+                        ),
+                      );
+                      Navigator.pop(ctx);
+                      showAppSnack(
+                        context,
+                        'تمت إضافة الشعبة «${ctl.text.trim()}» إلى ${f.gradeName}',
+                      );
+                    } on StoreException catch (e) {
+                      showAppSnack(ctx, e.message, error: true);
+                    }
+                  },
+                ),
+                secondary: GhostButton(
+                  label: 'إلغاء',
+                  onPressed: () => Navigator.pop(ctx),
+                ),
               ),
             ],
           ),
@@ -2418,7 +2403,7 @@ Future<void> _pinUser(BuildContext context, AppUser u) async {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w600,
                           fontSize: 14,
                           color: AppColors.heading,
                         ),
@@ -2456,25 +2441,17 @@ Future<void> _pinUser(BuildContext context, AppUser u) async {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: PrimaryButton(
-                        label: 'تثبيت على الجهاز',
-                        icon: Icons.check,
-                        height: 44,
-                        onPressed: submit,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: GhostButton(
-                        label: 'إلغاء',
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ),
-                  ],
+                ActionButtons(
+                  primary: PrimaryButton(
+                    label: 'تثبيت على الجهاز',
+                    icon: Icons.check,
+                    height: 40,
+                    onPressed: submit,
+                  ),
+                  secondary: GhostButton(
+                    label: 'إلغاء',
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
                 ),
               ],
             ),
@@ -2625,7 +2602,7 @@ Widget _infoRow(String label, String value) {
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.end,
             style: TextStyle(
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w600,
               fontSize: 12,
               color: AppColors.heading,
             ),
@@ -2685,7 +2662,7 @@ class _CountGrid extends StatelessWidget {
             child: Text(
               '${c.$2}',
               style: TextStyle(
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
                 fontSize: 15,
                 color: AppColors.heading,
               ),
@@ -2775,7 +2752,7 @@ class _FailedActions extends StatelessWidget {
             'تعذّر رفع ${failed.length} عملية بعد $maxSyncRetries محاولات',
             style: const TextStyle(
               color: AppColors.danger,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w600,
               fontSize: 12.5,
             ),
           ),
@@ -2791,52 +2768,47 @@ class _FailedActions extends StatelessWidget {
               ),
             ),
           const _Rule(),
-          Row(
-            children: [
-              Expanded(
-                child: PrimaryButton(
-                  label: 'إعادة المحاولة',
-                  icon: Icons.refresh,
-                  onPressed: () async {
-                    final count = store.sync.retryFailedActions();
-                    final result = await store.sync.push();
-                    if (!context.mounted) return;
-                    showAppSnack(
-                      context,
-                      count == 0 ? 'لا توجد عمليات متعثرة' : result.message,
-                      error: !result.success,
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: GhostButton(
-                  label: 'تجاهل المتعثرة',
-                  icon: Icons.delete_outline,
-                  onPressed: () async {
-                    final ok = await confirmSheet(
-                      context,
-                      title: 'تجاهل العمليات المتعثرة',
-                      message:
-                          'سيتم إسقاط ${failed.length} عملية من طابور الرفع نهائياً. '
-                          'التعديلات تبقى على هذا الجهاز لكنها لن تصل السحابة.',
-                      confirmLabel: 'تجاهل',
-                    );
-                    if (!ok) return;
-                    for (final a in failed) {
-                      store.sync.discardAction(a);
-                    }
-                    store.markAllDirty();
-                    if (!context.mounted) return;
-                    showAppSnack(
-                      context,
-                      'تم إسقاط ${failed.length} عملية متعثرة',
-                    );
-                  },
-                ),
-              ),
-            ],
+          ActionButtons(
+            primaryFlex: 1,
+            gap: 8,
+            primary: PrimaryButton(
+              label: 'إعادة المحاولة',
+              icon: Icons.refresh,
+              onPressed: () async {
+                final count = store.sync.retryFailedActions();
+                final result = await store.sync.push();
+                if (!context.mounted) return;
+                showAppSnack(
+                  context,
+                  count == 0 ? 'لا توجد عمليات متعثرة' : result.message,
+                  error: !result.success,
+                );
+              },
+            ),
+            secondary: GhostButton(
+              label: 'تجاهل المتعثرة',
+              icon: Icons.delete_outline,
+              onPressed: () async {
+                final ok = await confirmSheet(
+                  context,
+                  title: 'تجاهل العمليات المتعثرة',
+                  message:
+                      'سيتم إسقاط ${failed.length} عملية من طابور الرفع نهائياً. '
+                      'التعديلات تبقى على هذا الجهاز لكنها لن تصل السحابة.',
+                  confirmLabel: 'تجاهل',
+                );
+                if (!ok) return;
+                for (final a in failed) {
+                  store.sync.discardAction(a);
+                }
+                store.markAllDirty();
+                if (!context.mounted) return;
+                showAppSnack(
+                  context,
+                  'تم إسقاط ${failed.length} عملية متعثرة',
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -2933,7 +2905,7 @@ class _CollapsibleState extends State<_Collapsible> {
                   child: Text(
                     widget.title,
                     style: TextStyle(
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                       fontSize: 12.5,
                       color: AppColors.heading,
                     ),

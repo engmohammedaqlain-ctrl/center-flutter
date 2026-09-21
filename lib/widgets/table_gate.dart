@@ -139,7 +139,7 @@ class _TableGateState extends State<TableGate> {
                 fontFamily: AppText.family,
                 color: AppColors.muted,
                 fontSize: 13,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],

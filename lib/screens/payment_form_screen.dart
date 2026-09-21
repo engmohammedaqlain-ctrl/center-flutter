@@ -369,7 +369,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
             label,
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w600,
               fontSize: 12,
               color: on ? AppColors.amber : AppColors.muted,
             ),
@@ -436,7 +436,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
             ),
             titleTextStyle: const TextStyle(
               color: Colors.white,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w600,
               fontSize: 14,
             ),
           ),
@@ -479,7 +479,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                         decimal: true,
                       ),
                       style: TextStyle(
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w600,
                         fontSize: 16,
                         color: AppColors.amber,
                       ),
@@ -638,7 +638,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                           'الخصم: -${money(_discountOf(typed))}',
                           style: const TextStyle(
                             color: AppColors.danger,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w600,
                             fontSize: 11.5,
                           ),
                         ),
@@ -834,7 +834,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                     fontSize: 14,
                     color: AppColors.heading,
                   ),
@@ -848,7 +848,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                       TextSpan(
                         text: 'المستحق: ${money(due)}',
                         style: TextStyle(
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w600,
                           color: due > 0 ? AppColors.danger : AppColors.success,
                         ),
                       ),
@@ -856,7 +856,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                         TextSpan(
                           text: '  ·  له ${money(s.balance)}',
                           style: TextStyle(
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w600,
                             color: AppColors.amber,
                           ),
                         ),
@@ -878,7 +878,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.amber,
                 textStyle: const TextStyle(
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w600,
                   fontSize: 12,
                 ),
               ),
@@ -982,7 +982,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
               money(s.balance),
               style: TextStyle(
                 color: balColor,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w600,
                 fontSize: 12.5,
               ),
             ),

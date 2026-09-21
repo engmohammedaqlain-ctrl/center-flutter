@@ -114,7 +114,7 @@ class _ReceiptSheet extends StatelessWidget {
                           children: [
                             Text(
                               store.institutionName.isEmpty ? appName : store.institutionName,
-                              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading),
+                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.heading),
                             ),
                             Text(sheetTitle, style: const TextStyle(color: AppColors.muted, fontSize: 11)),
                           ],
@@ -124,7 +124,7 @@ class _ReceiptSheet extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(payment.receiptNumber,
-                              style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.amber, fontSize: 12.5)),
+                              style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.amber, fontSize: 12.5)),
                           Text(formatDate(payment.date), style: const TextStyle(color: AppColors.muted, fontSize: 11)),
                         ],
                       ),
@@ -259,7 +259,7 @@ class _ReceiptSheet extends StatelessWidget {
                 Text(label, style: const TextStyle(fontSize: 9.5, color: AppColors.muted)),
                 const SizedBox(height: 2),
                 Text(value,
-                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: color ?? AppColors.heading)),
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: color ?? AppColors.heading)),
               ],
             ),
           ),
@@ -291,7 +291,7 @@ class _ReceiptSheet extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(width: 100, child: Text(k, style: const TextStyle(color: AppColors.muted, fontSize: 11.5))),
-          Expanded(child: Text(v, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading))),
+          Expanded(child: Text(v, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5, color: AppColors.heading))),
         ],
       ),
     );

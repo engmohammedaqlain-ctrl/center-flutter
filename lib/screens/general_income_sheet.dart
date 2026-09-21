@@ -125,7 +125,7 @@ Future<bool> showGeneralIncomeSheet(
                     income == null ? 'قبض من غير طالب' : 'تعديل الإيراد',
                     style: TextStyle(
                       color: AppColors.navy,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                       fontSize: 14,
                     ),
                   ),
@@ -262,71 +262,64 @@ Future<bool> showGeneralIncomeSheet(
                     style: TextStyle(color: AppColors.muted, fontSize: 10.5),
                   ),
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: PrimaryButton(
-                          label: 'حفظ وإصدار الوصل',
-                          color: AppColors.navy,
-                          onPressed: () {
-                            try {
-                              final value =
-                                  double.tryParse(amount.text.trim()) ?? 0;
-                              final transfer = needsTransfer(method);
-                              final ch = transfer
-                                  ? (channelCtl.text.trim().isEmpty
-                                      ? (methodOf(method)?.type == 'other'
-                                          ? ''
-                                          : store.paymentMethodLabel(method))
-                                      : channelCtl.text.trim())
-                                  : '';
-                              if (income == null) {
-                                final created = store.addGeneralIncome(
-                                  title: title.text,
-                                  category: category,
-                                  amount: value,
-                                  date: date,
-                                  note: note.text,
-                                  method: method,
-                                  reference: transfer ? reference.text : '',
-                                  senderName: transfer ? sender.text : '',
-                                  channel: ch,
-                                );
-                                if (notice.isNotEmpty) {
-                                  unawaited(
-                                    store.saveFinanceAttachment(
-                                      created.id,
-                                      'payment',
-                                      notice,
-                                    ),
-                                  );
-                                }
-                              } else {
-                                income
-                                  ..title = title.text
-                                  ..category = category
-                                  ..amount = value
-                                  ..date = date
-                                  ..note = note.text
-                                  ..method = method;
-                                store.updateGeneralIncome(income);
-                              }
-                              Navigator.pop(ctx, true);
-                            } on StoreException catch (e) {
-                              showAppSnack(ctx, e.message, error: true);
+                  ActionButtons(
+                    gap: 8,
+                    primary: PrimaryButton(
+                      label: 'حفظ وإصدار الوصل',
+                      color: AppColors.navy,
+                      onPressed: () {
+                        try {
+                          final value =
+                              double.tryParse(amount.text.trim()) ?? 0;
+                          final transfer = needsTransfer(method);
+                          final ch = transfer
+                              ? (channelCtl.text.trim().isEmpty
+                                  ? (methodOf(method)?.type == 'other'
+                                      ? ''
+                                      : store.paymentMethodLabel(method))
+                                  : channelCtl.text.trim())
+                              : '';
+                          if (income == null) {
+                            final created = store.addGeneralIncome(
+                              title: title.text,
+                              category: category,
+                              amount: value,
+                              date: date,
+                              note: note.text,
+                              method: method,
+                              reference: transfer ? reference.text : '',
+                              senderName: transfer ? sender.text : '',
+                              channel: ch,
+                            );
+                            if (notice.isNotEmpty) {
+                              unawaited(
+                                store.saveFinanceAttachment(
+                                  created.id,
+                                  'payment',
+                                  notice,
+                                ),
+                              );
                             }
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: GhostButton(
-                          label: 'إلغاء',
-                          onPressed: () => Navigator.pop(ctx, false),
-                        ),
-                      ),
-                    ],
+                          } else {
+                            income
+                              ..title = title.text
+                              ..category = category
+                              ..amount = value
+                              ..date = date
+                              ..note = note.text
+                              ..method = method;
+                            store.updateGeneralIncome(income);
+                          }
+                          Navigator.pop(ctx, true);
+                        } on StoreException catch (e) {
+                          showAppSnack(ctx, e.message, error: true);
+                        }
+                      },
+                    ),
+                    secondary: GhostButton(
+                      label: 'إلغاء',
+                      onPressed: () => Navigator.pop(ctx, false),
+                    ),
                   ),
                 ],
               ),

@@ -934,7 +934,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
               sameDay ? 'إلغاء السند' : 'عكس السند',
               style: TextStyle(
                 color: AppColors.navy,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w600,
                 fontSize: 14,
               ),
             ),
@@ -1034,7 +1034,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
           children: [
             const Text(
               'رفض الطلب',
-              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
             ),
             const SizedBox(height: 10),
             TextField(
@@ -1106,7 +1106,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                   if (request.studentName.isNotEmpty) request.studentName,
                 ].join(' — '),
                 style: const TextStyle(
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w600,
                   fontSize: 12.5,
                   color: AppColors.text,
                 ),
@@ -1151,37 +1151,32 @@ class _FinanceScreenState extends State<FinanceScreen> {
                         ? AppColors.success
                         : AppColors.danger,
                     fontSize: 10.5,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
               if (pendingRow) ...[
                 const SizedBox(height: 9),
                 if (store.isFinanceAdmin)
-                  Row(
-                    children: [
-                      Expanded(
-                        child: PrimaryButton(
-                          label: 'موافقة وتنفيذ',
-                          color: AppColors.success,
-                          onPressed: () {
-                            try {
-                              store.approveFinanceRequest(request.id);
-                            } on StoreException catch (e) {
-                              showAppSnack(context, e.message, error: true);
-                            }
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: GhostButton(
-                          label: 'رفض',
-                          onPressed: () =>
-                              _rejectFinanceRequest(context, store, request),
-                        ),
-                      ),
-                    ],
+                  ActionButtons(
+                    primaryFlex: 1,
+                    gap: 8,
+                    primary: PrimaryButton(
+                      label: 'موافقة وتنفيذ',
+                      color: AppColors.success,
+                      onPressed: () {
+                        try {
+                          store.approveFinanceRequest(request.id);
+                        } on StoreException catch (e) {
+                          showAppSnack(context, e.message, error: true);
+                        }
+                      },
+                    ),
+                    secondary: GhostButton(
+                      label: 'رفض',
+                      onPressed: () =>
+                          _rejectFinanceRequest(context, store, request),
+                    ),
                   )
                 else
                   Text(
@@ -1190,7 +1185,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                     style: TextStyle(
                       color: AppColors.amberDark,
                       fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
               ],
@@ -1205,7 +1200,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
           'طلبات بانتظار الموافقة (${pending.length})',
           style: TextStyle(
             color: AppColors.heading,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w700,
             fontSize: 13,
           ),
         ),
@@ -1231,7 +1226,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
               padding: const EdgeInsets.symmetric(vertical: 4),
               alignment: AlignmentDirectional.centerStart,
               textStyle: const TextStyle(
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w600,
                 fontSize: 11.5,
               ),
             ),
@@ -1250,7 +1245,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
             'سجل الحركات الحساسة',
             style: TextStyle(
               color: AppColors.heading,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
               fontSize: 13,
             ),
           ),
@@ -1317,7 +1312,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                             child: Text(
                               financeAuditActionLabel(a.action),
                               style: TextStyle(
-                                fontWeight: FontWeight.w800,
+                                fontWeight: FontWeight.w600,
                                 fontSize: 12,
                                 color: AppColors.heading,
                               ),
@@ -1327,7 +1322,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                             Text(
                               money(a.amount!),
                               style: const TextStyle(
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w700,
                                 fontSize: 12,
                                 fontFamily: 'monospace',
                               ),
@@ -1456,7 +1451,7 @@ class _Segmented extends StatelessWidget {
                                     style: TextStyle(
                                       fontFamily: AppText.family,
                                       fontSize: 12.5,
-                                      fontWeight: value == selected ? FontWeight.w800 : FontWeight.w600,
+                                      fontWeight: value == selected ? FontWeight.w600 : FontWeight.w600,
                                       color: value == selected ? AppColors.heading : AppColors.muted,
                                     ),
                                     child: Text(label, maxLines: 1),
@@ -1477,7 +1472,7 @@ class _Segmented extends StatelessWidget {
                                         style: const TextStyle(
                                           color: Colors.white,
                                           fontSize: 9.5,
-                                          fontWeight: FontWeight.w800,
+                                          fontWeight: FontWeight.w600,
                                           height: 1,
                                         ),
                                       ),
@@ -1653,7 +1648,7 @@ class _Hero extends StatelessWidget {
                       fontFamily: AppText.family,
                       color: Colors.white,
                       fontSize: 30,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                       height: 1.15,
                     ),
                   ),
@@ -1762,7 +1757,7 @@ class _FiltersButton extends StatelessWidget {
                   ),
                   child: Text(
                     '$count',
-                    style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800, height: 1),
+                    style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w600, height: 1),
                   ),
                 ),
               ),
@@ -1793,7 +1788,7 @@ class _ListHeader extends StatelessWidget {
                     text: parts[i].$1,
                     style: TextStyle(
                       color: parts[i].$2,
-                      fontWeight: i == 0 ? FontWeight.w600 : FontWeight.w800,
+                      fontWeight: i == 0 ? FontWeight.w600 : FontWeight.w600,
                     ),
                   ),
                 ],
@@ -1935,7 +1930,7 @@ class _GroupHeader extends StatelessWidget {
                 fontFamily: AppText.family,
                 color: AppColors.heading,
                 fontSize: 13,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -1996,7 +1991,7 @@ class _FilterSegment extends StatelessWidget {
                           fontFamily: AppText.family,
                           color: e.key == value ? AppColors.heading : AppColors.muted,
                           fontSize: 12.5,
-                          fontWeight: e.key == value ? FontWeight.w800 : FontWeight.w600,
+                          fontWeight: e.key == value ? FontWeight.w600 : FontWeight.w600,
                         ),
                       ),
                     ),
@@ -2060,7 +2055,7 @@ class _AmountColumn extends StatelessWidget {
           amount,
           style: TextStyle(
             fontFamily: AppText.family,
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w600,
             fontSize: 14.5,
             color: color ?? AppColors.heading,
             decoration: struck ? TextDecoration.lineThrough : null,
@@ -2373,7 +2368,7 @@ Future<int> showPayrollSheet(
                 Text(
                   '$title ${monthLabel(payrollMonth)}',
                   style: TextStyle(
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                     fontSize: 13,
                     color: AppColors.heading,
                   ),
@@ -2419,7 +2414,7 @@ Future<int> showPayrollSheet(
                             Text(
                               monthLabel(payrollMonth),
                               style: TextStyle(
-                                fontWeight: FontWeight.w800,
+                                fontWeight: FontWeight.w600,
                                 fontSize: 12,
                                 color: AppColors.heading,
                               ),
@@ -2488,7 +2483,7 @@ Future<int> showPayrollSheet(
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       textStyle: const TextStyle(
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w600,
                         fontSize: 11.5,
                       ),
                     ),
@@ -2582,49 +2577,41 @@ Future<int> showPayrollSheet(
                 Text(
                   '${selected.length} معلماً  ·  ${money(total)}',
                   style: TextStyle(
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                     fontSize: 12,
                     color: AppColors.heading,
                   ),
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: PrimaryButton(
-                        label: 'صرف',
-                        color: AppColors.navy,
-                        onPressed: selected.isEmpty
-                            ? null
-                            : () {
-                                try {
-                                  for (final id in selected) {
-                                    store.addTeacherPayout(
-                                      teacherId: id,
-                                      amount: amountOf(id),
-                                      paymentDate: isoDate(date),
-                                      payoutType: payoutType,
-                                      periodStart: '$payrollMonth-01',
-                                      periodEnd: monthEnd(payrollMonth),
-                                      method: method,
-                                    );
-                                  }
-                                  Navigator.pop(ctx, selected.length);
-                                } on StoreException catch (e) {
-                                  showAppSnack(ctx, e.message, error: true);
-                                }
-                              },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: GhostButton(
-                        label: 'إلغاء',
-                        onPressed: () => Navigator.pop(ctx, 0),
-                      ),
-                    ),
-                  ],
+                ActionButtons(
+                  primary: PrimaryButton(
+                    label: 'صرف',
+                    color: AppColors.navy,
+                    onPressed: selected.isEmpty
+                        ? null
+                        : () {
+                            try {
+                              for (final id in selected) {
+                                store.addTeacherPayout(
+                                  teacherId: id,
+                                  amount: amountOf(id),
+                                  paymentDate: isoDate(date),
+                                  payoutType: payoutType,
+                                  periodStart: '$payrollMonth-01',
+                                  periodEnd: monthEnd(payrollMonth),
+                                  method: method,
+                                );
+                              }
+                              Navigator.pop(ctx, selected.length);
+                            } on StoreException catch (e) {
+                              showAppSnack(ctx, e.message, error: true);
+                            }
+                          },
+                  ),
+                  secondary: GhostButton(
+                    label: 'إلغاء',
+                    onPressed: () => Navigator.pop(ctx, 0),
+                  ),
                 ),
               ],
             ),

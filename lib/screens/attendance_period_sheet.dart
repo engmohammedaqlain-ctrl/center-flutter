@@ -204,7 +204,7 @@ class _PeriodSheetState extends State<_PeriodSheet> {
                     children: [
                       Text(
                         'الحضور في فترة',
-                        style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: AppColors.heading),
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.heading),
                       ),
                       if (widget.ownerName.trim().isNotEmpty)
                         Text(
@@ -323,7 +323,7 @@ class _DateField extends StatelessWidget {
                   Text(
                     formatDate(date),
                     maxLines: 1,
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.heading),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.heading),
                   ),
                 ],
               ),
@@ -367,7 +367,7 @@ class _TallyRow extends StatelessWidget {
                     tally.student.fullName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.heading),
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5, color: AppColors.heading),
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -383,7 +383,7 @@ class _TallyRow extends StatelessWidget {
             const SizedBox(width: 8),
             Text(
               tally.marked == 0 ? '—' : '${tally.rate}٪',
-              style: TextStyle(color: rateColor, fontSize: 13, fontWeight: FontWeight.w900),
+              style: TextStyle(color: rateColor, fontSize: 13, fontWeight: FontWeight.w700),
             ),
           ],
         ),

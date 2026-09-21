@@ -43,7 +43,7 @@ class LoadMoreButton extends StatelessWidget {
             fontFamily: AppText.family,
             color: AppColors.amber,
             fontSize: 12.5,
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),

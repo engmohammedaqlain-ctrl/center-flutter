@@ -253,7 +253,7 @@ class _ReturnToGradePlanSheetState extends State<_ReturnToGradePlanSheet> {
                         ? 'خطة المرحلة الجديدة (${widget.studentIds.length})'
                         : 'إرجاع لخطة المرحلة (${widget.studentIds.length})',
                     style: TextStyle(
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                       fontSize: 14,
                       color: AppColors.heading,
                     ),
@@ -380,7 +380,7 @@ class _ReturnToGradePlanSheetState extends State<_ReturnToGradePlanSheet> {
                             height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                           )
-                        : const Text('معاينة وتطبيق', style: TextStyle(fontWeight: FontWeight.w800)),
+                        : const Text('معاينة وتطبيق', style: TextStyle(fontWeight: FontWeight.w600)),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -438,7 +438,7 @@ class _ScopeOption extends StatelessWidget {
               Text(
                 title,
                 style: TextStyle(
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w600,
                   fontSize: 12.5,
                   color: active ? Colors.white : AppColors.muted,
                 ),

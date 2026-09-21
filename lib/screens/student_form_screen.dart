@@ -695,7 +695,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(editing ? 'تعديل بيانات الطالب' : 'تسجيل طالب جديد'),
-        titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+        titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
       ),
       bottomNavigationBar: _actionBar(editing: editing, canSave: true),
       body: GestureDetector(
@@ -919,7 +919,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                         children: [
                           Text(
                             'أقساط الطالب المخصصة',
-                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: AppColors.navy),
+                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppColors.navy),
                           ),
                           const Spacer(),
                           const Text(
@@ -1168,19 +1168,19 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                     planSource == 'custom'
                         ? (hasDiscount ? 'بعد الخصم (${preview.length})' : 'أقساط مخصصة (${preview.length})')
                         : 'أقساط المرحلة (${preview.length})',
-                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: AppColors.heading),
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppColors.heading),
                   ),
                 ),
                 if (discountSum > 0.004) ...[
                   Text(
                     'خصم ${money(discountSum)}',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, fontFamily: 'monospace', color: AppColors.amber),
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, fontFamily: 'monospace', color: AppColors.amber),
                   ),
                   const SizedBox(width: 8),
                 ],
                 Text(
                   'المطلوب ${money(total)}',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, fontFamily: 'monospace', color: AppColors.heading),
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace', color: AppColors.heading),
                 ),
               ],
             ),
@@ -1222,7 +1222,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                       ],
                       Text(
                         money(row.amount),
-                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, fontFamily: 'monospace'),
+                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
                       ),
                       const SizedBox(width: 8),
                       SizedBox(
@@ -1554,7 +1554,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('التقييم المبدئي', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.heading)),
+                Text('التقييم المبدئي', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: AppColors.heading)),
                 const Text('مستوى الطالب في مقابلة التسجيل', style: TextStyle(color: AppColors.muted, fontSize: 10.5)),
               ],
             ),
@@ -1654,12 +1654,12 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('بيانات إضافية', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: AppColors.heading)),
+                        Text('بيانات إضافية', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5, color: AppColors.heading)),
                         const Text('كلمات المرور وولي الأمر والسكن والمرفقات', style: TextStyle(color: AppColors.faint, fontSize: 10.5)),
                       ],
                     ),
                   ),
-                  Text(extra ? 'إخفاء' : 'عرض', style: TextStyle(color: AppColors.amber, fontWeight: FontWeight.w800, fontSize: 12)),
+                  Text(extra ? 'إخفاء' : 'عرض', style: TextStyle(color: AppColors.amber, fontWeight: FontWeight.w600, fontSize: 12)),
                   Icon(extra ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: AppColors.amber, size: 20),
                 ],
               ),
@@ -1727,7 +1727,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
             label,
             textAlign: TextAlign.center,
             maxLines: 1,
-            style: TextStyle(color: on ? Colors.white : AppColors.muted, fontWeight: FontWeight.w800, fontSize: 11.5),
+            style: TextStyle(color: on ? Colors.white : AppColors.muted, fontWeight: FontWeight.w600, fontSize: 11.5),
           ),
         ),
       ),
@@ -1881,7 +1881,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('الحي الأساسي', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+                    const Text('الحي الأساسي', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
                     const SizedBox(height: 8),
                     TextField(controller: search, onChanged: (_) => setSt(() {}), decoration: const InputDecoration(hintText: 'اكتب للبحث السريع في الأحياء...')),
                     const SizedBox(height: 8),
@@ -1895,7 +1895,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                                 final on = neighborhood == n;
                                 return ListTile(
                                   dense: true,
-                                  title: Text(n, style: TextStyle(fontWeight: on ? FontWeight.w800 : FontWeight.w500, fontSize: 13)),
+                                  title: Text(n, style: TextStyle(fontWeight: on ? FontWeight.w600 : FontWeight.w500, fontSize: 13)),
                                   trailing: on ? Icon(Icons.check, color: AppColors.amber, size: 16) : null,
                                   tileColor: on ? AppColors.amberSoft : null,
                                   onTap: () {

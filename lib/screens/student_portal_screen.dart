@@ -226,7 +226,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                       padding: EdgeInsets.all(40),
                       child: Text(
                         'جارِ تحميل البيانات...',
-                        style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w800),
+                        style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600),
                       ),
                     ),
                   )
@@ -315,7 +315,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
               const SizedBox(height: 8),
               const Text(
                 'جارٍ تحميل المحتوى الدراسي...',
-                style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w800),
+                style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600),
               ),
             ],
           ),
@@ -361,7 +361,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                                 fontFamily: AppText.family,
                                 color: AppColors.heading,
                                 fontSize: 13.5,
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                             const SizedBox(height: 4),
@@ -394,7 +394,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     return [
       Text(
         'المواد والمعلمون (${subjects.length}):',
-        style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w800),
+        style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600),
       ),
       const SizedBox(height: Gap.md),
       if (subjects.isEmpty)
@@ -412,7 +412,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                       children: [
                         Text(
                           s.subjectName,
-                          style: TextStyle(color: AppColors.heading, fontSize: 12.5, fontWeight: FontWeight.w900),
+                          style: TextStyle(color: AppColors.heading, fontSize: 12.5, fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 4),
                         Row(
@@ -426,7 +426,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                                   children: [
                                     TextSpan(
                                       text: s.teacherName,
-                                      style: TextStyle(color: AppColors.text, fontWeight: FontWeight.w800),
+                                      style: TextStyle(color: AppColors.text, fontWeight: FontWeight.w600),
                                     ),
                                   ],
                                 ),
@@ -524,7 +524,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                 fontFamily: AppText.family,
                 color: AppColors.heading,
                 fontSize: 12.5,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -640,7 +640,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
               fontFamily: AppText.family,
               color: AppColors.heading,
               fontSize: 12.5,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),
@@ -669,7 +669,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                           fontFamily: AppText.family,
                           color: AppColors.heading,
                           fontSize: 13,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(height: 3),
@@ -685,7 +685,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       const SizedBox(height: Gap.sm),
       Text(
         'سجل الدفعات وسندات القبض (${f.payments.length}):',
-        style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w800),
+        style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600),
       ),
       const SizedBox(height: Gap.sm),
       if (f.payments.isEmpty)
@@ -721,7 +721,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                                   style: TextStyle(
                                     color: AppColors.heading,
                                     fontSize: 12,
-                                    fontWeight: FontWeight.w900,
+                                    fontWeight: FontWeight.w700,
                                     fontFamily: 'monospace',
                                   ),
                                 ),
@@ -752,7 +752,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                             style: TextStyle(
                               color: AppColors.accent,
                               fontSize: 10.5,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w600,
                               decoration: TextDecoration.underline,
                             ),
                           ),
@@ -799,7 +799,7 @@ class _ErrorBody extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w800),
+              style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 12),
             TextButton.icon(
@@ -904,7 +904,7 @@ class _TermSwitch extends StatelessWidget {
                               fontFamily: AppText.family,
                               color: id == value ? AppColors.heading : AppColors.muted,
                               fontSize: 12.5,
-                              fontWeight: id == value ? FontWeight.w800 : FontWeight.w600,
+                              fontWeight: id == value ? FontWeight.w600 : FontWeight.w600,
                             ),
                             child: Text(label),
                           ),
@@ -990,7 +990,7 @@ class _SubjectGradesCard extends StatelessWidget {
                           fontFamily: AppText.family,
                           color: AppColors.heading,
                           fontSize: 13.5,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
@@ -1001,7 +1001,7 @@ class _SubjectGradesCard extends StatelessWidget {
                           fontFamily: AppText.family,
                           color: tone,
                           fontSize: 14,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                   ],
@@ -1054,7 +1054,7 @@ class _SubjectGradesCard extends StatelessWidget {
                         fontFamily: AppText.family,
                         color: rows[i].passed ? AppColors.text : const Color(0xFFA5484A),
                         fontSize: 12.5,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
@@ -1082,7 +1082,7 @@ class _StudentSectionPage extends StatelessWidget {
           section.title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
+          style: const TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14.5),
         ),
       ),
       body: ListView(
@@ -1161,7 +1161,7 @@ class _ContentTile extends StatelessWidget {
                             fontFamily: AppText.family,
                             color: AppColors.heading,
                             fontSize: 13.5,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                         StatusChip.muted(item.typeLabel),
@@ -1267,7 +1267,7 @@ class _PortalSummary extends StatelessWidget {
                       fontFamily: AppText.family,
                       color: accent,
                       fontSize: 34,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                       height: 1.05,
                     ),
                   ),
@@ -1317,7 +1317,7 @@ class _PortalSummary extends StatelessWidget {
                                   fontFamily: AppText.family,
                                   color: parts[i].color,
                                   fontSize: 15,
-                                  fontWeight: FontWeight.w900,
+                                  fontWeight: FontWeight.w700,
                                   height: 1.1,
                                 ),
                               ),
@@ -1473,7 +1473,7 @@ class _ChildrenBar extends StatelessWidget {
                       fontFamily: AppText.family,
                       color: current ? Colors.white : AppColors.muted,
                       fontSize: 11.5,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),

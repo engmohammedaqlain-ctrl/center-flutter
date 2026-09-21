@@ -110,7 +110,7 @@ class _RoomFormScreenState extends State<RoomFormScreen> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(title),
-        titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+        titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
       ),
       bottomNavigationBar: FormActionBar(label: editing ? 'حفظ التعديلات' : 'إضافة الصف', onSave: _save),
       body: GestureDetector(

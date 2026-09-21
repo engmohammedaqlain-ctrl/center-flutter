@@ -40,7 +40,7 @@ Future<void> openClassAttendance(BuildContext context, {required Classroom room}
             children: [
               const Text(
                 'رصد الحضور',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14.5),
               ),
               const SizedBox(height: 2),
               Text(
@@ -622,7 +622,7 @@ class _ClassButton extends StatelessWidget {
                   fontFamily: AppText.family,
                   color: AppColors.heading,
                   fontSize: 13.5,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),

@@ -107,7 +107,7 @@ class AuthFrame extends StatelessWidget {
                               fontFamily: AppText.family,
                               color: AppColors.heading,
                               fontSize: keyboard ? 17 : 20,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w600,
                               letterSpacing: 0.2,
                             ),
                           ),
@@ -298,7 +298,7 @@ class AuthSubmitButton extends StatelessWidget {
     return PressableScale(
       onTap: onTap,
       child: Container(
-        height: 46,
+        height: 42,
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
@@ -307,7 +307,7 @@ class AuthSubmitButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(Corner.field),
           boxShadow: onTap == null && !busy
               ? null
-              : [BoxShadow(color: AppColors.amber.withValues(alpha: 0.28), blurRadius: 12, offset: const Offset(0, 4))],
+              : [BoxShadow(color: AppColors.amber.withValues(alpha: 0.2), blurRadius: 8, offset: const Offset(0, 2))],
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -326,7 +326,7 @@ class AuthSubmitButton extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800),
+                style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w600),
               ),
             ),
           ],

@@ -168,7 +168,7 @@ class _ClassesScreenState extends State<ClassesScreen> {
                   style: TextStyle(
                     fontFamily: AppText.family,
                     color: on ? AppColors.amberDark : AppColors.muted,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                     fontSize: 11.5,
                   ),
                 ),
@@ -213,7 +213,7 @@ Future<void> _assignTeacher(BuildContext context, Classroom room) async {
                       'مربي الصف: ${room.name}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.heading),
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.heading),
                     ),
                   ),
                 ],
@@ -230,39 +230,33 @@ Future<void> _assignTeacher(BuildContext context, Classroom room) async {
                 onChanged: (v) => setSheet(() => teacherId = v ?? ''),
               ),
               const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: PrimaryButton(
-                      label: 'حفظ',
-                      icon: Icons.check,
-                      height: 44,
-                      onPressed: () {
-                        try {
-                          store.upsertRoom(
-                            Classroom(
-                              id: room.id,
-                              name: room.name,
-                              gradeLevel: room.gradeLevel,
-                              teacherId: teacherId,
-                              capacity: room.capacity,
-                              notes: room.notes,
-                              tier: room.tier,
-                              academicYearId: room.academicYearId,
-                            ),
-                          );
-                          Navigator.pop(ctx);
-                          if (context.mounted) showAppSnack(context, 'تم تعيين المربي للصف');
-                        } on StoreException catch (e) {
-                          showAppSnack(ctx, e.message, error: true);
-                        }
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx))),
-                ],
+              ActionButtons(
+                primary: PrimaryButton(
+                  label: 'حفظ',
+                  icon: Icons.check,
+                  height: 44,
+                  onPressed: () {
+                    try {
+                      store.upsertRoom(
+                        Classroom(
+                          id: room.id,
+                          name: room.name,
+                          gradeLevel: room.gradeLevel,
+                          teacherId: teacherId,
+                          capacity: room.capacity,
+                          notes: room.notes,
+                          tier: room.tier,
+                          academicYearId: room.academicYearId,
+                        ),
+                      );
+                      Navigator.pop(ctx);
+                      if (context.mounted) showAppSnack(context, 'تم تعيين المربي للصف');
+                    } on StoreException catch (e) {
+                      showAppSnack(ctx, e.message, error: true);
+                    }
+                  },
+                ),
+                secondary: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx)),
               ),
             ],
           ),
@@ -438,7 +432,7 @@ class _SubjectTeachersSheetState extends State<_SubjectTeachersSheet> {
                           ),
                           child: Text(
                             'إدراج مواد المرحلة (${missingGrade.length})',
-                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5),
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5),
                           ),
                         ),
                       ),
@@ -468,7 +462,7 @@ class _SubjectTeachersSheetState extends State<_SubjectTeachersSheet> {
                                         store.subjectName(entry.key),
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
                                       ),
                                       if (offGrade)
                                         Container(
@@ -591,20 +585,14 @@ class _SubjectTeachersSheetState extends State<_SubjectTeachersSheet> {
                     style: TextStyle(color: AppColors.muted, fontSize: 10.5),
                   ),
                   const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: PrimaryButton(
-                          label: 'حفظ التوزيع',
-                          icon: Icons.check,
-                          height: 44,
-                          onPressed: subjects.isEmpty ? null : _save,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(child: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(context))),
-                    ],
+                  ActionButtons(
+                    primary: PrimaryButton(
+                      label: 'حفظ التوزيع',
+                      icon: Icons.check,
+                      height: 40,
+                      onPressed: subjects.isEmpty ? null : _save,
+                    ),
+                    secondary: GhostButton(label: 'إلغاء', height: 40, onPressed: () => Navigator.pop(context)),
                   ),
                 ],
               ),
@@ -690,7 +678,7 @@ class _GradeSectionHeader extends StatelessWidget {
           title,
           style: TextStyle(
             fontFamily: AppText.family,
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w600,
             fontSize: 13,
             color: AppColors.heading,
             letterSpacing: 0.2,
@@ -746,7 +734,7 @@ Future<void> _showRoomActionsSheet(
               ].join('  ·  '),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
             ),
           ),
           const Divider(height: 1),
@@ -1001,7 +989,7 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('لم يتم العثور على الصف', style: TextStyle(fontWeight: FontWeight.w800)),
+                  const Text('لم يتم العثور على الصف', style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 10),
                   GhostButton(label: 'العودة للصفوف', onPressed: () => Navigator.pop(context)),
                 ],
@@ -1038,7 +1026,7 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
                   room.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14.5),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -1322,7 +1310,7 @@ class _SubjectTeachersCardState extends State<_SubjectTeachersCard> {
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     fontFamily: AppText.family,
-                                    fontWeight: FontWeight.w800,
+                                    fontWeight: FontWeight.w600,
                                     fontSize: 13.5,
                                     color: AppColors.heading,
                                   ),
@@ -1342,7 +1330,7 @@ class _SubjectTeachersCardState extends State<_SubjectTeachersCard> {
                                       fontFamily: AppText.family,
                                       color: AppColors.muted,
                                       fontSize: 11,
-                                      fontWeight: FontWeight.w800,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
                                 ),
@@ -1497,7 +1485,7 @@ class _SubjectTile extends StatelessWidget {
               fontFamily: AppText.family,
               color: AppColors.text,
               fontSize: 12.5,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 7),
@@ -1581,7 +1569,7 @@ class _RosterRow extends StatelessWidget {
               decoration: tileDecoration(),
               child: Text(
                 seat.toString().padLeft(2, '0'),
-                style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w800, fontSize: 11.5, color: AppColors.muted),
+                style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600, fontSize: 11.5, color: AppColors.muted),
               ),
             ),
             const SizedBox(width: 10),
@@ -1594,7 +1582,7 @@ class _RosterRow extends StatelessWidget {
                     student.fullName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.heading),
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.heading),
                   ),
                   if (phone.isNotEmpty)
                     Text(phone, maxLines: 1, textDirection: TextDirection.ltr, style: _metaStyle),
@@ -1620,7 +1608,7 @@ class _RosterRow extends StatelessWidget {
                 style: TextStyle(
                   color: due > cent ? AppColors.danger : AppColors.success,
                   fontSize: 11.5,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             if (canOpen) ...[
@@ -1702,7 +1690,7 @@ Future<void> showClassPortalCodes(
                   label,
                   style: TextStyle(
                     color: on ? Colors.white : AppColors.muted,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                     fontSize: 11,
                   ),
                 ),
@@ -1872,7 +1860,7 @@ Widget _codeLine(String owner, String code) {
           code,
           style: TextStyle(
             fontFamily: 'monospace',
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w700,
             fontSize: 12.5,
             letterSpacing: 1.2,
             color: AppColors.heading,
