@@ -27,8 +27,24 @@ final _spaces = RegExp(r'\s+');
 /// يوحّد صور الألف والياء والهاء والأرقام العربية والمسافات، فـ«الثانى عشر  علمى»
 /// و«الثاني عشر علمي» نص واحد. لا يحذف كلمة ولا يختزل الاسم، حتى لا تتطابق
 /// مرحلتان مختلفتان بعد التطبيع.
+/// نتائج التطبيع محفوظة: القيم المميزة قليلة — أسماء مراحل وشعب لا تتجاوز
+/// العشرات — بينما النداء يتكرر عشرات الآلاف من المرات في الإطار الواحد.
+///
+/// شاشة الصفوف تطابق كل طالب بكل شعبة، وكل مطابقة كانت تُجري ثماني عمليات
+/// استبدال على النصّ نفسه من جديد.
+final _normCache = <String, String>{};
+
 String normalizeAcademicText(String? value) {
   if (value == null || value.isEmpty) return '';
+  final cached = _normCache[value];
+  if (cached != null) return cached;
+  final result = _normalize(value);
+  // حدٌّ أعلى يمنع نموّ الذاكرة إن وصلت قيم كثيرة غير متوقعة
+  if (_normCache.length < 4096) _normCache[value] = result;
+  return result;
+}
+
+String _normalize(String value) {
   return value
       .replaceAll(_diacriticsAndTatweel, '')
       .replaceAll(_alef, 'ا')

@@ -29,11 +29,17 @@ DateTime startOfToday() {
   return DateTime(now.year, now.month, now.day);
 }
 
+/// اليوم كعدد `yyyymmdd` — للمقارنة بلا بناء تواريخ ولا تنسيق نصوص.
+///
+/// المقارنة كانت تُنسَّق نصاً (`isoDate`) أو تبني `DateTime` جديداً في كل نداء.
+/// ترتيب عشرة آلاف قسط يُجري مئات آلاف المقارنات، فصار التنسيق وحده يستغرق
+/// جزءاً من الثانية في كل إعادة بناء لشاشة المالية.
+int dayKey(DateTime d) => d.year * 10000 + d.month * 100 + d.day;
+
 /// القسط مستحق إذا حلّ موعده اليوم أو قبله؛ ما بعده «مجدول» وليس ديناً حالياً.
 bool isInstallmentDue(Installment installment, [DateTime? today]) {
   final day = today ?? startOfToday();
-  final due = DateTime(installment.dueDate.year, installment.dueDate.month, installment.dueDate.day);
-  return !due.isAfter(day);
+  return dayKey(installment.dueDate) <= dayKey(day);
 }
 
 double unpaidOf(Installment i) => math.max(0.0, chargeableAmount(i) - i.paidAmount);
@@ -105,7 +111,7 @@ const seatTitle = 'رسم حجز مقعد';
 int compareInstallments(Installment a, Installment b) {
   final seatFirst = (b.title == seatTitle ? 1 : 0) - (a.title == seatTitle ? 1 : 0);
   if (seatFirst != 0) return seatFirst;
-  final byDate = isoDate(a.dueDate).compareTo(isoDate(b.dueDate));
+  final byDate = dayKey(a.dueDate).compareTo(dayKey(b.dueDate));
   return byDate != 0 ? byDate : a.id.compareTo(b.id);
 }
 

@@ -136,39 +136,60 @@ class SqflitePersistence implements Persistence {
     return Isolate.run(() => _decodeRecordRows(encoded));
   }
 
+  /// الصفوف الصالحة للكتابة مرمَّزةً نصاً — الترميز خارج خيط الواجهة.
+  ///
+  /// كان `jsonEncode` يجري على خيط الرسم في حلقة واحدة: حفظ جدول حضور بعد
+  /// المزامنة يرمّز عشرات آلاف الصفوف دفعةً فتتجمّد الشاشة. القراءة كانت تُفكّ
+  /// في خيط منفصل أصلاً؛ الكتابة الآن مثلها.
+  static Future<({List<String> ids, List<String> data})> _encode(List<Map<String, dynamic>> rows) async {
+    final kept = [for (final r in rows) if (r['id'] != null) r];
+    final ids = [for (final r in kept) '${r['id']}'];
+    // القليل يُرمَّز هنا: كلفة إنشاء خيط تفوق ترميز صفوفٍ معدودة
+    if (kept.length < 200) return (ids: ids, data: [for (final r in kept) jsonEncode(r)]);
+    final data = await Isolate.run(() => [for (final r in kept) jsonEncode(r)]);
+    return (ids: ids, data: data);
+  }
+
+  /// حجم الدفعة الواحدة إلى قاعدة البيانات، وبين كل دفعتين فرصة لرسم إطار.
+  static const _chunk = 1000;
+
+  static void _insertChunk(Batch batch, String table, List<String> ids, List<String> data, int from, int to) {
+    for (var i = from; i < to; i++) {
+      batch.insert(
+        'records',
+        {'table_name': table, 'id': ids[i], 'data': data[i]},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+  }
+
   @override
   Future<void> saveTable(String table, List<Map<String, dynamic>> rows) async {
+    final encoded = await _encode(rows);
     final db = _require;
     await db.transaction((txn) async {
       await txn.delete('records', where: 'table_name = ?', whereArgs: [table]);
-      final batch = txn.batch();
-      for (final row in rows) {
-        final id = row['id'];
-        if (id == null) continue;
-        batch.insert('records', {
-          'table_name': table,
-          'id': '$id',
-          'data': jsonEncode(row),
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      for (var i = 0; i < encoded.ids.length; i += _chunk) {
+        final end = i + _chunk > encoded.ids.length ? encoded.ids.length : i + _chunk;
+        final batch = txn.batch();
+        _insertChunk(batch, table, encoded.ids, encoded.data, i, end);
+        await batch.commit(noResult: true);
+        await Future<void>.delayed(Duration.zero);
       }
-      await batch.commit(noResult: true);
     });
   }
 
   @override
   Future<void> saveRecords(String table, List<Map<String, dynamic>> rows) async {
     if (rows.isEmpty) return;
-    final batch = _require.batch();
-    for (final row in rows) {
-      final id = row['id'];
-      if (id == null) continue;
-      batch.insert(
-        'records',
-        {'table_name': table, 'id': '$id', 'data': jsonEncode(row)},
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+    final encoded = await _encode(rows);
+    for (var i = 0; i < encoded.ids.length; i += _chunk) {
+      final end = i + _chunk > encoded.ids.length ? encoded.ids.length : i + _chunk;
+      final batch = _require.batch();
+      _insertChunk(batch, table, encoded.ids, encoded.data, i, end);
+      await batch.commit(noResult: true);
+      await Future<void>.delayed(Duration.zero);
     }
-    await batch.commit(noResult: true);
   }
 
   @override

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -729,6 +730,33 @@ class PullProgress {
 
 enum PullProgressPhase { fetching, applying, finishing }
 
+// ── JSON خارج خيط الواجهة ──────────────────────────────────────────────────
+//
+// صفحة سحب من ألف صف نصٌّ بمئات الكيلوبايتات، وفكّه على خيط الرسم يوقف الإطار
+// أثناء المزامنة ولو كان المستخدم يمرّر شاشته. النص يُنسخ إلى الخيط المنفصل
+// نسخاً سريعاً، والنتيجة تعود بلا نسخ.
+
+/// ما دون هذا الحجم يُفكّ هنا: إنشاء خيطٍ أغلى من فكّ ردٍّ صغير.
+const _offThreadBytes = 16 * 1024;
+
+List<Map<String, dynamic>> _decodeRows(String body) {
+  final data = jsonDecode(body);
+  if (data is! List) return const [];
+  return [for (final e in data) if (e is Map) Map<String, dynamic>.from(e)];
+}
+
+/// صفوف ردٍّ من السحابة، مفكوكةً خارج خيط الواجهة إن كان الردّ كبيراً.
+Future<List<Map<String, dynamic>>> decodeRowsOffThread(String body) {
+  if (body.length < _offThreadBytes) return Future.value(_decodeRows(body));
+  return Isolate.run(() => _decodeRows(body));
+}
+
+/// ترميز جسم الرفع خارج خيط الواجهة إن كان كبيراً.
+Future<String> encodeRowsOffThread(List<Map<String, dynamic>> rows) {
+  if (rows.length < 100) return Future.value(jsonEncode(rows));
+  return Isolate.run(() => jsonEncode(rows));
+}
+
 typedef PullProgressCallback = void Function(PullProgress progress);
 
 String get supabaseUrl => SupabaseConfig.url;
@@ -1109,6 +1137,10 @@ abstract class SyncLocalStore {
   void removeIds(String table, List<String> ids);
   void markSynced(String table, String id);
   void notifySync();
+
+  /// تهيئة تطبيق جدولٍ قبل دفعاته: بناء ما يلزم على شرائح تُفسح للإطار.
+  /// بلا ذلك تتحمّل أول دفعة كلفة البناء كلها في إطار واحد.
+  Future<void> prepareApply(String table) async {}
 
   /// ما يجري بعد اكتمال سحب: قراءة الإعدادات التي وصلت مع الصفوف.
   Future<void> onPulled();
@@ -1921,9 +1953,11 @@ class SyncService {
           toWrite.add(rest);
         }
 
-        // دفعات مع إفساح للإطار: جدول الطلاب الكبير لا يحبس الواجهة دفعة واحدة
-        const chunkSize = 1500;
+        // دفعات مع إفساح للإطار: جدول الطلاب الكبير لا يحبس الواجهة دفعة واحدة.
+        // 1500 صفٍّ كانت تستغرق أكثر من إطارين؛ 300 تبقى داخل إطار واحد تقريباً
+        const chunkSize = 300;
         final baseRows = rowsApplied;
+        if (toWrite.isNotEmpty) await local.prepareApply(cloud);
         if (toWrite.isEmpty) {
           rowsApplied = baseRows + tableRows;
           report(
@@ -2292,12 +2326,7 @@ class SyncService {
           missingTables.add(table);
         return null;
       }
-      final data = jsonDecode(res.body);
-      if (data is! List) return [];
-      return data
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      return await decodeRowsOffThread(res.body);
     } catch (_) {
       return null;
     }
@@ -2320,12 +2349,7 @@ class SyncService {
     try {
       final res = await http.get(uri, headers: _headers);
       if (res.statusCode >= 400) return [];
-      final data = jsonDecode(res.body);
-      if (data is! List) return [];
-      return data
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      return await decodeRowsOffThread(res.body);
     } catch (_) {
       return [];
     }
@@ -2344,6 +2368,7 @@ class SyncService {
         'select': 'id,server_updated_at',
       },
     );
+    final body = await encodeRowsOffThread(rows);
     final res = await SupabaseAuth.withRetryOnExpiry(
       () => http.post(
         uri,
@@ -2351,25 +2376,23 @@ class SyncService {
           ..._headers,
           'Prefer': 'resolution=merge-duplicates,return=representation',
         },
-        body: jsonEncode(rows),
+        body: body,
       ),
       expired: (r) => SupabaseAuth.isExpiredResponse(r.statusCode, r.body),
     );
     if (res.statusCode >= 400) {
       throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
     }
-    _rememberStampsFrom(table, res.body);
+    await _rememberStampsFrom(table, res.body);
   }
 
   /// أختام السيرفر من ردّ الرفع — تُتجاهَل بصمت إن لم يعدها الردّ.
-  void _rememberStampsFrom(String table, String body) {
+  Future<void> _rememberStampsFrom(String table, String body) async {
     if (body.isEmpty) return;
     try {
-      final data = jsonDecode(body);
-      if (data is! List) return;
+      final data = await decodeRowsOffThread(body);
       final stamps = <String, String>{};
       for (final row in data) {
-        if (row is! Map) continue;
         final id = '${row['id'] ?? ''}';
         final stamp = '${row['server_updated_at'] ?? ''}';
         if (id.isNotEmpty && stamp.isNotEmpty) stamps[id] = stamp;

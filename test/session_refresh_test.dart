@@ -2,6 +2,8 @@ import 'package:center_mobile/data/demo_data.dart';
 import 'package:center_mobile/data/store.dart';
 import 'package:center_mobile/data/supabase.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 import 'persistence_test.dart' show FakeDisk;
 
@@ -72,10 +74,15 @@ void main() {
     test('انقطاع الشبكة ليس انتهاءً للجلسة', () async {
       var invalidated = false;
       SupabaseAuth.onSessionInvalid = () async => invalidated = true;
-      // مضيف غير موجود: يرمي استثناء شبكة لا رفضاً من السحابة
       SupabaseAuth.restore(access: 'a', refresh: 'r', expiry: DateTime.now());
 
-      expect(await SupabaseAuth.refreshSession(), isFalse);
+      // انقطاع محاكى: كان الاختبار يتصل بمضيف غير موجود وينتظر فشل DNS، فيتجاوز
+      // مهلته أحياناً على جهاز بطيء الحلّ ويفشل بلا علاقة بما يختبره
+      final refreshed = await http.runWithClient(
+        SupabaseAuth.refreshSession,
+        () => MockClient((_) async => throw http.ClientException('offline')),
+      );
+      expect(refreshed, isFalse);
       expect(invalidated, isFalse, reason: 'الجلسة تبقى حتى يعود الاتصال');
       expect(SupabaseAuth.refreshToken, 'r');
     });

@@ -156,6 +156,37 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   void _touch() => _rev++;
 
+  /// ختم لكل جدول على حدة.
+  ///
+  /// كان ختمٌ واحد يخدم كل الذاكرات المحفوظة، فوصولُ دفعة حضور من المزامنة
+  /// يُبطل حساب المستحقات ولا علاقة له به. أثناء المزامنة تصل عشرات الدفعات،
+  /// فتُعاد كل حسبة في كل إطار وتتجمّد الشاشة تحت الإصبع.
+  final _tableRev = <String, int>{};
+
+  int tableRev(String table) => _tableRev[table] ?? 0;
+
+  /// ختم ذاكرة محفوظة لجدول: عدّاد تعديلاته، وهوية القائمة وطولها.
+  ///
+  /// العدّاد وحده لا يكفي: التحميل من القرص يستبدل القائمة كلها، ومساراتٌ
+  /// تضيف صفاً مباشرةً بلا `markDirty`. الهوية والطول يلتقطان الحالتين.
+  int _listStamp(String table, List<Object?> list) =>
+      Object.hash(tableRev(table), identityHashCode(list), list.length);
+
+  /// ختم فهارس الحضور: جدولا الحضور والجلسات وحدهما.
+  ///
+  /// كان الختم العام يُسقطها مع أي تعديل — تعديل اسم وليّ أمر، أو دفعة — فيُعاد
+  /// بناء فهرس خمسين ألف رصد في الإطار التالي لعملية لا علاقة لها بالحضور.
+  int get _studentsStamp =>
+      Object.hash(_listStamp('students', students), _listStamp('student_years', studentYears));
+
+  int get _markStamp =>
+      Object.hash(_listStamp('attendance', attendance), _listStamp('sessions', sessions));
+
+  void _touchTable(String table) {
+    _rev++;
+    _tableRev[table] = (_tableRev[table] ?? 0) + 1;
+  }
+
   /// أي إخطار للشاشات يعني أن شيئاً تغيّر، فتسقط الفهارس والنتائج المحفوظة.
   /// ربطها بالإخطار وحده يمنع نسيان إبطالها في أي مسار تعديل جديد.
   @override
@@ -173,9 +204,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// «عرض المزيد» لا تغيّر بيانات، ومع ذلك كانت تُعيد المرور على آلاف السجلات
   /// وتبني خريطتين من جديد، فتتجمّد الشاشة تحت الإصبع.
   ({Map<String, double> due, Map<String, double> scheduled}) get installmentBuckets {
-    if (_bucketsCache == null || _bucketsRev != _rev) {
+    // الأقساط وحدها تُبطلها: دفعة حضور من المزامنة لا شأن لها بها
+    final stamp = _listStamp('installments', installments);
+    if (_bucketsCache == null || _bucketsRev != stamp) {
       _bucketsCache = installmentBucketsByStudent(installments);
-      _bucketsRev = _rev;
+      _bucketsRev = stamp;
     }
     return _bucketsCache!;
   }
@@ -190,7 +223,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   void _keepIndexes(bool wasValid, void Function() patch) {
     if (!wasValid) return; // لم تكن مبنية أصلاً: تُبنى عند أول قراءة
     patch();
-    _indexRev = _rev;
+    _indexRev = _markStamp;
   }
 
   /// إدخال رصدٍ في فهارسه بمفاتيحه الثلاثة.
@@ -231,13 +264,25 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _sessionOwners[sess.id] = owners;
   }
 
-  void _rebuildIndexes() {
-    if (_indexRev == _rev) return;
-    _indexRev = _rev;
+  int _studentIndexRev = -1;
 
+  /// فهرس الطلاب وحده — يتبع جدول الطلاب لا كل تغيّر في المخزن.
+  ///
+  /// كان بناؤه ملتصقاً ببناء فهارس الحضور، فوصولُ دفعة طلاب من المزامنة يُعيد
+  /// المرور على خمسين ألف رصدٍ لا علاقة لها بها.
+  void _rebuildStudentIndex() {
+    final stamp = _listStamp('students', students);
+    if (_studentIndexRev == stamp) return;
+    _studentIndexRev = stamp;
     _studentIndex
       ..clear()
       ..addEntries(students.map((s) => MapEntry(s.id, s)));
+  }
+
+  void _rebuildIndexes() {
+    _rebuildStudentIndex();
+    if (_indexRev == _markStamp) return;
+    _indexRev = _markStamp;
 
     // الجلسات أولاً: منها يُعرف مالك كل رصد
     _sessionIndex.clear();
@@ -272,7 +317,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   void markDirty(String table) {
-    _touch();
+    _touchTable(table);
     if (_loading) return;
     _dirty.add(table);
     _scheduleFlush();
@@ -284,7 +329,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   /// تعليم سجل واحد للكتابة بدل الجدول كله.
   void markRecord(String table, String id, {bool deleted = false}) {
-    _touch();
+    _touchTable(table);
     if (_loading) return;
     if (_dirty.contains(table)) return; // الجدول كله سيُكتب على أي حال
     if (deleted) {
@@ -348,14 +393,45 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   ///
   /// بها نعرف أن تعديلاً عاد إلى ما في السحابة، فنُسقط عمليته من الطابور بدل
   /// أن يظل العدّاد يقول «تعديل بانتظار الرفع» ولا شيء في الحقيقة تغيّر.
-  final _syncedPrint = <String, String>{};
+  ///
+  /// البصمة عددٌ لا نصّ: كانت `jsonEncode` للصف كله مع ترتيب مفاتيحه، تُحسب لكل
+  /// صفّ يصل من السحابة — عشرات آلاف الترميزات على خيط الواجهة في السحب الأول،
+  /// وعشرات الميغابايتات من النصوص محفوظةً في الذاكرة.
+  final _syncedPrint = <String, int>{};
 
   /// الحقول المتغيّرة دائماً لا تدخل البصمة، وإلا لاختلفت من غير سبب.
   static const _volatile = {'updated_at', 'created_at', 'sync_status', 'synced_at', 'tenant_id'};
 
-  String _fingerprint(Map<String, dynamic> row) {
+  /// بصمة FNV-1a بطول 64 بتّاً على المفاتيح مرتبةً وقيمها، بلا بناء نصّ JSON.
+  ///
+  /// تُقارَن بصمتا السجل نفسه قبل التعديل وبعده، فاحتمال التصادم ≈ 2⁻⁶⁴ لكل
+  /// مقارنة. كل قيمة تُسبق بوسم نوعها: النص «null» غير القيمة الفارغة، و0 غير 0.0
+  /// كما كان الترميز يفرّق بينهما.
+  int _fingerprint(Map<String, dynamic> row) {
     final keys = row.keys.where((k) => !_volatile.contains(k)).toList()..sort();
-    return jsonEncode({for (final k in keys) k: row[k]});
+    var h = 0xcbf29ce484222325;
+    void mix(String text) {
+      for (var i = 0; i < text.length; i++) {
+        h ^= text.codeUnitAt(i);
+        h *= 0x100000001b3;
+      }
+      h ^= 0x1f; // فاصل بين الأجزاء
+      h *= 0x100000001b3;
+    }
+
+    for (final k in keys) {
+      final v = row[k];
+      mix(k);
+      mix(switch (v) {
+        null => 'n',
+        String() => 's$v',
+        int() => 'i$v',
+        double() => 'd$v',
+        bool() => 'b$v',
+        _ => 'o${jsonEncode(v)}',
+      });
+    }
+    return h;
   }
 
   void _rememberSynced(String table, String id, Map<String, dynamic>? row) {
@@ -786,7 +862,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   List<Student> get studentsInViewedYear {
     final yearId = viewedAcademicYearId;
     if (_studentsYearCache != null &&
-        _studentsYearRev == _rev &&
+        _studentsYearRev == _studentsStamp &&
         _studentsYearCacheId == yearId) {
       return _studentsYearCache!;
     }
@@ -809,14 +885,56 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       }));
     }
     _studentsYearCache = result;
-    _studentsYearRev = _rev;
+    _studentsYearRev = _studentsStamp;
     _studentsYearCacheId = yearId;
     return result;
   }
 
-  List<Installment> get installmentsInViewedYear => filterByYear(installments);
+  List<Installment>? _instYearCache;
+  int _instYearRev = -1;
+  String _instYearCacheId = '';
+
+  /// أقساط العام المعروض — محفوظة حتى يتغيّر جدول الأقساط أو العام.
+  ///
+  /// `filterByYear` يقرأ الحقل بـ`as dynamic`، وهو نداء بطيء في دارت. شاشة
+  /// المالية كانت تستدعيه مرتين في كل إعادة حساب، فيمرّ على عشرة آلاف قسط
+  /// مرتين — ومع كل دفعة مزامنة يتكرر ذلك في كل إطار.
+  List<Installment> get installmentsInViewedYear {
+    final stamp = _listStamp('installments', installments);
+    final yearId = viewedAcademicYearId;
+    if (_instYearCache != null && _instYearRev == stamp && _instYearCacheId == yearId) {
+      return _instYearCache!;
+    }
+    final result = <Installment>[];
+    for (final i in installments) {
+      if (i.academicYearId.isEmpty || i.academicYearId == yearId) result.add(i);
+    }
+    _instYearCache = result;
+    _instYearRev = stamp;
+    _instYearCacheId = yearId;
+    return result;
+  }
   List<Payment> get paymentsInViewedYear => filterByYear(payments);
-  List<Classroom> get roomsInViewedYear => filterByYear(rooms);
+  List<Classroom>? _roomsYearCache;
+  int _roomsYearRev = -1;
+  String _roomsYearCacheId = '';
+
+  /// شعب العام المعروض — محفوظة حتى يتغيّر جدول الشعب أو العام.
+  List<Classroom> get roomsInViewedYear {
+    final stamp = _listStamp('rooms', rooms);
+    final yearId = viewedAcademicYearId;
+    if (_roomsYearCache != null && _roomsYearRev == stamp && _roomsYearCacheId == yearId) {
+      return _roomsYearCache!;
+    }
+    final result = <Classroom>[];
+    for (final r in rooms) {
+      if (r.academicYearId.isEmpty || r.academicYearId == yearId) result.add(r);
+    }
+    _roomsYearCache = result;
+    _roomsYearRev = stamp;
+    _roomsYearCacheId = yearId;
+    return result;
+  }
   List<Teacher> get teachersInViewedYear => filterByYear(teachers);
   List<SubjectItem> get subjectsInViewedYear => filterByYear(subjects);
   List<GradeFee> get gradeFeesInViewedYear => filterByYear(gradeFees);
@@ -3058,7 +3176,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   Student? studentById(String id) {
-    _rebuildIndexes();
+    // فهرس الطلاب وحده: لا شأن للبحث عن طالب بخمسين ألف رصد حضور
+    _rebuildStudentIndex();
     return _studentIndex[id];
   }
 
@@ -3330,13 +3449,42 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// باحتواء النص، فتعرض الشاشة طلاب «علمي 1» ضمن «علمي 10» ولا يسجّلهم الحفظ.
   /// الطالب بلا شعبة يُحسب على الشعبة فقط إن كانت الوحيدة لمرحلته، والمؤرشف
   /// خريجٌ لم يعد من طلاب أي شعبة.
+  int _rosterStamp = -1;
+  final _rosterCache = <String, List<Student>>{};
+
   List<Student> studentsOf(Classroom room) {
+    // كشف كل شعبة محفوظ حتى يتغيّر الطلاب أو الشعب أو العام: شاشة الصفوف ترسم
+    // كل الشعب في كل إطار، وتعديل دفعةٍ أو رصدٍ لا يغيّر من في أي شعبة.
+    final stamp = Object.hash(_studentsStamp, _listStamp('rooms', rooms), viewedAcademicYearId);
+    if (_rosterStamp != stamp) {
+      _rosterStamp = stamp;
+      _rosterCache.clear();
+    }
+    final key = '${room.id}|${room.name}|${room.gradeLevel}';
+    final cached = _rosterCache[key];
+    // نسخة: المستدعي قد يرتّب القائمة أو يحذف منها
+    if (cached != null) return List.of(cached);
+    final result = _computeStudentsOf(room);
+    _rosterCache[key] = result;
+    return List.of(result);
+  }
+
+  List<Student> _computeStudentsOf(Classroom room) {
+    // قائمة الشعب تُقرأ مرة لا مرةً لكل طالب: كانت داخل الشرط، وشاشة الصفوف
+    // تستدعي هذه الدالة لكل صف — فصار العدّ صفوفاً × طلاباً × صفوفاً.
+    final yearRooms = roomsInViewedYear;
+    final roomGrade = room.gradeLevel.trim();
     return studentsInViewedYear.where((s) {
       if (s.status == 'archived') return false;
       if (s.section.trim().isNotEmpty) return studentBelongsToRoom(s, room);
-      if (room.gradeLevel.trim().isEmpty || s.gradeLevel.trim().isEmpty) return false;
-      final ofGrade = roomsInViewedYear.where((r) => isSameGrade(r.gradeLevel, s.gradeLevel)).toList();
-      return ofGrade.length == 1 && ofGrade.first.id == room.id;
+      if (roomGrade.isEmpty || s.gradeLevel.trim().isEmpty) return false;
+      Classroom? only;
+      for (final r in yearRooms) {
+        if (!isSameGrade(r.gradeLevel, s.gradeLevel)) continue;
+        if (only != null) return false; // أكثر من شعبة للمرحلة: لا نسبة تلقائية
+        only = r;
+      }
+      return only != null && only.id == room.id;
     }).toList();
   }
 
@@ -3445,7 +3593,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     requireSection('attendance');
 
     // ما تغيّر في هذه اللمسة، ليُرقَّع في الفهارس بدل إعادة بنائها كاملةً
-    final wasValid = _indexRev == _rev;
+    final wasValid = _indexRev == _markStamp;
     AttendanceMark? removed;
     AttendanceMark? touched;
     ClassSession? createdSession;
@@ -3534,7 +3682,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
     // الفهارس صالحة الآن؟ إذاً تُرقَّع مع كل رصد وتبقى صالحة. كانت تسقط مع كل
     // طالب فتُعاد على عشرات الآلاف — مرة لكل طالب في الكشف.
-    var keepIndex = _indexRev == _rev;
+    var keepIndex = _indexRev == _markStamp;
 
     var sessionId = '';
     if (ownerId != null && ownerId.isNotEmpty) {
@@ -3543,9 +3691,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       sessionId = sess.id;
       if (sessions.length != before && keepIndex) {
         _indexSession(sess);
-        _indexRev = _rev;
+        _indexRev = _markStamp;
       }
-      keepIndex = keepIndex && _indexRev == _rev;
+      keepIndex = keepIndex && _indexRev == _markStamp;
     }
 
     final now = _nowIso();
@@ -3566,7 +3714,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         markRecord('attendance', existing.id);
         if (keepIndex) {
           _indexMark(existing);
-          _indexRev = _rev;
+          _indexRev = _markStamp;
         }
         changed++;
         continue;
@@ -3588,7 +3736,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       markRecord('attendance', mark.id);
       if (keepIndex) {
         _indexMark(mark);
-        _indexRev = _rev;
+        _indexRev = _markStamp;
       }
       changed++;
     }
@@ -3598,7 +3746,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       markDirty(_pendingTable);
       notifyListeners();
       // الإخطار يُبطل الفهارس، وقد رُقّعت سجلاً سجلاً أثناء الحلقة
-      if (keepIndex) _indexRev = _rev;
+      if (keepIndex) _indexRev = _markStamp;
     }
     return changed;
   }
@@ -3665,12 +3813,42 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     ];
   }
 
+  // ── فهارس فحص التكرار ────────────────────────────────────────────────────
+  //
+  // كل حفظ طالب يتحقق من تكرار الهوية والجوال، وكان يمسح الطلاب كلهم ويطبّع
+  // رقم كل واحد منهم من جديد. الفهرسان يُبنيان مرة لكل تغيّر في الجدول.
+
+  int _dupIndexStamp = -1;
+  final _byNationalId = <String, List<Student>>{};
+
+  /// الطلاب بآخر سبعة أرقام من جوالهم، مع الرقم المطبَّع — كل تطابقٍ صالح
+  /// يشترك فيها، فتُطبَّق القاعدة الكاملة على هذه القلّة وحدها.
+  final _byPhoneTail = <String, List<({Student student, String digits})>>{};
+
+  void _rebuildDupIndexes() {
+    final stamp = _listStamp('students', students);
+    if (_dupIndexStamp == stamp) return;
+    _dupIndexStamp = stamp;
+    _byNationalId.clear();
+    _byPhoneTail.clear();
+    for (final s in students) {
+      final nid = s.nationalId.trim();
+      if (nid.isNotEmpty) _byNationalId.putIfAbsent(nid, () => []).add(s);
+      final digits = digitsOnly(combinePhoneAndPrefix(s.phone, s.phonePrefix));
+      if (digits.length < 7) continue; // لا يطابق رقماً من سبعة فأكثر أبداً
+      _byPhoneTail
+          .putIfAbsent(digits.substring(digits.length - 7), () => [])
+          .add((student: s, digits: digits));
+    }
+  }
+
   Student? findByNationalId(String id, {String? exclude}) {
     final clean = id.trim();
     if (clean.isEmpty) return null;
-    for (final s in students) {
+    _rebuildDupIndexes();
+    for (final s in _byNationalId[clean] ?? const <Student>[]) {
       if (exclude != null && s.id == exclude) continue;
-      if (s.nationalId.trim() == clean) return s;
+      return s;
     }
     return null;
   }
@@ -3678,16 +3856,14 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   Student? findByPhone(String phone, {String? exclude}) {
     final digits = digitsOnly(combinePhoneAndPrefix(phone));
     if (digits.length < 7) return null;
-    for (final s in students) {
-      if (exclude != null && s.id == exclude) continue;
-      final other = digitsOnly(combinePhoneAndPrefix(s.phone, s.phonePrefix));
-      if (other.isEmpty) continue;
+    _rebuildDupIndexes();
+    // المرشحون بترتيب القائمة نفسه، فيُعاد أولُ مطابقٍ كما كان المسح الكامل يعيده
+    for (final c in _byPhoneTail[digits.substring(digits.length - 7)] ?? const []) {
+      if (exclude != null && c.student.id == exclude) continue;
+      final other = c.digits;
       // مطابق لـ checkPhoneExists: تطابق كامل أو آخر 7+ أرقام (مقدمات مختلفة)
-      if (other == digits ||
-          (other.length >= 7 &&
-              digits.length >= 7 &&
-              (other.endsWith(digits) || digits.endsWith(other)))) {
-        return s;
+      if (other == digits || other.endsWith(digits) || digits.endsWith(other)) {
+        return c.student;
       }
     }
     return null;
@@ -5384,9 +5560,15 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   List<DueItem> dueItems() {
     // تُستدعى من شريط التنقّل في كل إعادة رسم، وحسابها يمرّ على كل الأقساط
-    // والطلاب. النتيجة تُحفظ حتى التعديل التالي.
-    if (_dueRev == _rev) return _dueCache;
-    _dueRev = _rev;
+    // والطلاب. تتبع جداولها الثلاثة وحدها، لا كل تغيّر في المخزن.
+    final stamp = Object.hash(
+      _listStamp('installments', installments),
+      _listStamp('students', students),
+      tableRev('academic_years'),
+      viewedAcademicYearId,
+    );
+    if (_dueRev == stamp) return _dueCache;
+    _dueRev = stamp;
     _dueCache = _computeDueItems();
     return _dueCache;
   }
@@ -5394,18 +5576,28 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   List<DueItem> _computeDueItems() {
     final today = dateOnly(DateTime.now());
     final list = <DueItem>[];
+
+    // نداء واحد لأقساط العام: قراءته تمرّ على الجدول كله
+    final yearInstallments = installmentsInViewedYear;
+
     // صاحب الخطة يظهر ولو أقساطه كلها مسددة أو مجدولة — لا يُضاف له سطر «رسوم مستحقة»
     final studentsWithPlan = {
-      for (final i in installmentsInViewedYear) i.studentId,
+      for (final i in yearInstallments) i.studentId,
     };
 
-    for (final inst in installmentsInViewedYear) {
-      if (!isInstallmentDue(inst)) continue;
+    // فهرس الطلاب يُبنى مرة قبل الحلقة، لا يُسأل عنه مع كل قسط
+    _rebuildStudentIndex();
+    final todayKey = dayKey(today);
+
+    for (final inst in yearInstallments) {
+      // `today` محسوب فوق: بلا تمريره تُنادى `DateTime.now()` لكل قسط، أي
+      // عشرة آلاف نداء في كل إعادة حساب — وهي تتكرر مع كل تعديل في المخزن
+      final dueKey = dayKey(inst.dueDate);
+      if (dueKey > todayKey) continue;
       final unpaid = math.max(0.0, chargeableAmount(inst) - inst.paidAmount);
       if (unpaid <= cent) continue;
-      final student = studentById(inst.studentId);
+      final student = _studentIndex[inst.studentId];
       if (student == null) continue;
-      final due = dateOnly(inst.dueDate);
       list.add(
         DueItem(
           id: inst.id,
@@ -5413,7 +5605,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
           title: inst.title,
           amount: unpaid,
           dueDate: inst.dueDate,
-          late: due.isBefore(today),
+          late: dueKey < todayKey,
           scheduled: false,
           installmentId: inst.id,
         ),
@@ -6710,6 +6902,27 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     for (final e in items) _row(cloud(e), status(e)),
   ];
 
+  // ── بحث بالمعرّف لسجلات الحفظ ─────────────────────────────────────────────
+  //
+  // حفظ سجلٍّ واحد على القرص كان يبحث عنه بمسح الجدول كله: رصدُ حضورٍ يمسح
+  // خمسين ألفاً، و«الكل حاضر» لشعبة يمسحها مرة لكل طالب. الفهرس هنا يُتحقّق منه
+  // عند كل استعمال — السجل في موضعه يحمل المعرّف نفسه — فإن تغيّر الجدول من
+  // مسارٍ آخر أُعيد بناؤه، ولا تُعاد نتيجة قديمة أبداً.
+  final _idIndexes = <String, ({Object list, Map<String, int> map})>{};
+
+  T? _byId<T>(String table, List<T> list, String id, String Function(T) idOf) {
+    final cached = _idIndexes[table];
+    if (cached != null && identical(cached.list, list)) {
+      final i = cached.map[id];
+      if (i != null && i < list.length && idOf(list[i]) == id) return list[i];
+    }
+    // الفهرس قديم أو غائب أو السجل ليس فيه: بناءٌ واحد ثم حكمٌ نهائي
+    final map = <String, int>{for (var i = 0; i < list.length; i++) idOf(list[i]): i};
+    _idIndexes[table] = (list: list, map: map);
+    final i = map[id];
+    return i == null ? null : list[i];
+  }
+
   @override
   Map<String, dynamic>? recordOf(String table, String id) {
     switch (table) {
@@ -6723,48 +6936,48 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         final e = teacherById(id);
         return e == null ? null : _row(e.toCloud(), e.syncStatus);
       case 'subjects':
-        final e = subjects.where((e) => e.id == id).firstOrNull;
+        final e = _byId('subjects', subjects, id, (e) => e.id);
         return e == null ? null : _row(e.toCloud(), e.syncStatus);
       case 'rooms':
-        final e = rooms.where((e) => e.id == id).firstOrNull;
+        final e = _byId('rooms', rooms, id, (e) => e.id);
         return e == null ? null : _row(e.toCloud(), e.syncStatus);
       case 'grade_fees':
-        final e = gradeFees.where((e) => e.id == id).firstOrNull;
+        final e = _byId('grade_fees', gradeFees, id, (e) => e.id);
         return e == null ? null : _row(e.toCloud(), e.syncStatus);
       case 'users':
-        final e = users.where((e) => e.id == id).firstOrNull;
+        final e = _byId('users', users, id, (e) => e.id);
         return e == null ? null : _row(e.toCloud(), e.syncStatus);
       case 'payments':
-        final e = payments.where((e) => e.id == id).firstOrNull;
+        final e = _byId('payments', payments, id, (e) => e.id);
         return e == null ? null : _row(e.toCloud(), e.syncStatus);
       case 'installments':
-        final e = installments.where((e) => e.id == id).firstOrNull;
+        final e = _byId('installments', installments, id, (e) => e.id);
         return e == null ? null : _row(e.toCloud(), e.syncStatus);
       case 'attendance':
-        final e = attendance.where((e) => e.id == id).firstOrNull;
+        final e = _byId('attendance', attendance, id, (e) => e.id);
         return e == null ? null : _row(e.toCloud(), e.syncStatus);
       case 'tenants':
         return tenants.where((e) => e.id == id).firstOrNull?.toCloud();
       case 'groups':
-        final e = groups.where((e) => e.id == id).firstOrNull;
+        final e = _byId('groups', groups, id, (e) => e.id);
         return e == null ? null : _row(e.toCloud(), e.syncStatus);
       case 'enrollments':
-        final e = enrollments.where((e) => e.id == id).firstOrNull;
+        final e = _byId('enrollments', enrollments, id, (e) => e.id);
         return e == null ? null : _row(e.toCloud(), e.syncStatus);
       case 'sessions':
-        final e = sessions.where((e) => e.id == id).firstOrNull;
+        final e = _byId('sessions', sessions, id, (e) => e.id);
         return e == null ? null : _row(e.toCloud(), e.syncStatus);
       case 'academic_years':
-        final e = academicYears.where((e) => e.id == id).firstOrNull;
+        final e = _byId('academic_years', academicYears, id, (e) => e.id);
         return e == null ? null : _row(e.toCloud(), e.syncStatus);
       case 'student_years':
-        final e = studentYears.where((e) => e.id == id).firstOrNull;
+        final e = _byId('student_years', studentYears, id, (e) => e.id);
         return e == null ? null : _row(e.toCloud(), e.syncStatus);
       case 'finance_requests':
-        final e = financeRequests.where((e) => e.id == id).firstOrNull;
+        final e = _byId('finance_requests', financeRequests, id, (e) => e.id);
         return e == null ? null : _row(e.toCloud(), e.syncStatus);
       case 'audit_log':
-        final e = financeAudit.where((e) => e.id == id).firstOrNull;
+        final e = _byId('audit_log', financeAudit, id, (e) => e.id);
         return e == null ? null : _row(e.toCloud(), e.syncStatus);
       default:
         return extraCloud[table]?.where((e) => '${e['id']}' == id).firstOrNull;
@@ -6813,8 +7026,84 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
   }
 
+  /// خرائط المعرّفات لكل جدول بين دفعات السحب، مع ختم الجدول بعد آخر دفعة.
+  ///
+  /// كانت الخريطة تُبنى للجدول كله مع كل دفعة: السحب الأول لخمسين ألف رصدٍ على
+  /// دفعات من 1500 يبني ملايين المداخل على خيط الواجهة. تُعاد الآن ما دام لم
+  /// يمسّ الجدولَ مسارٌ آخر بين دفعتين — كل تعديل آخر يمرّ على ختمه فيُسقطها.
+  final _putIndex = <String, ({Object list, Map<String, int> map, int rev})>{};
+
+  /// قائمة الجدول ومستخرج معرّفه — لبناء خريطة المعرّفات خارج `putRows`.
+  (List<Object?>, String Function(Object?))? _listFor(String table) {
+    String idOfModel(Object? e) => (e as dynamic).id as String;
+    return switch (table) {
+      'students' => (students, idOfModel),
+      'teachers' => (teachers, idOfModel),
+      'subjects' => (subjects, idOfModel),
+      'rooms' => (rooms, idOfModel),
+      'grade_fees' => (gradeFees, idOfModel),
+      'users' => (users, idOfModel),
+      'payments' => (payments, idOfModel),
+      'installments' => (installments, idOfModel),
+      'attendance' => (attendance, (e) => (e as AttendanceMark).id),
+      'groups' => (groups, idOfModel),
+      'enrollments' => (enrollments, idOfModel),
+      'sessions' => (sessions, idOfModel),
+      'academic_years' => (academicYears, idOfModel),
+      'student_years' => (studentYears, idOfModel),
+      'finance_requests' => (financeRequests, idOfModel),
+      'audit_log' => (financeAudit, idOfModel),
+      _ => null,
+    };
+  }
+
+  /// خريطة المعرّفات تُبنى قبل أول دفعة، على شرائح بينها فرصٌ للرسم.
+  ///
+  /// كانت تُبنى داخل أول `putRows` دفعةً واحدة: جدول حضورٍ بخمسين ألف سجل
+  /// يوقف الإطار عشرات الميلي ثانية في أول كل مزامنة. إن تغيّر الجدول أثناء
+  /// البناء أُعيد من أوله، فلا تُحفظ خريطةٌ لا تطابق ما في الذاكرة.
+  @override
+  Future<void> prepareApply(String table) async {
+    final entry = _listFor(table);
+    if (entry == null) return;
+    final (list, idOf) = entry;
+    final cached = _putIndex[table];
+    if (cached != null &&
+        identical(cached.list, list) &&
+        cached.rev == tableRev(table) &&
+        cached.map.length == list.length) {
+      return; // صالحة من المزامنة السابقة
+    }
+
+    const slice = 4000;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      final rev = tableRev(table);
+      final map = <String, int>{};
+      var aborted = false;
+      for (var i = 0; i < list.length; i++) {
+        map[idOf(list[i])] = i;
+        if ((i + 1) % slice == 0) {
+          await Future<void>.delayed(Duration.zero);
+          if (tableRev(table) != rev || !identical(list, _listFor(table)?.$1)) {
+            aborted = true; // عُدّل الجدول أثناء البناء: من جديد
+            break;
+          }
+        }
+      }
+      if (aborted) continue;
+      if (tableRev(table) != rev) continue;
+      _putIndex[table] = (list: list, map: map, rev: rev);
+      return;
+    }
+    // جدولٌ لا يهدأ: تبنيها أول دفعة كما كانت
+  }
+
   @override
   void putRows(String table, List<Map<String, dynamic>> rows) {
+    final revBefore = tableRev(table);
+    // فهارس الحضور صالحة الآن؟ إذاً تُرقَّع بالصفوف الواصلة بدل بنائها من جديد
+    // الجلسات تُعاد فهرستها كاملةً: تغيّر تاريخ جلسة أو شعبتها يترك مفاتيح قديمة
+    final marksValid = table == 'attendance' && _indexRev == _markStamp;
     markDirty(table);
     // الصف الذي حالته `synced` يمثّل ما في السحابة، سواء وصل منها أو من القرص
     for (final r in rows) {
@@ -6826,7 +7115,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     // جدول الحضور السحابي لا يحمل عمود تاريخ؛ اليوم المرصود في الجلسة المرتبطة
     if (table == 'attendance') rows = _withSessionDates(rows);
 
-    // خريطة id→فهرس مرة واحدة: كان indexWhere لكل صف يصير O(n²) عند سحب آلاف الطلاب
+    // ما استُبدل وما أُضيف من أرصدة — لترقيع فهارسها
+    final replacedMarks = <AttendanceMark>[];
+    final touchedMarks = <AttendanceMark>[];
+
+    // خريطة id→فهرس: كان indexWhere لكل صف يصير O(n²) عند سحب آلاف الطلاب
     void upsertList<T>(
       List<T> list,
       T Function(Map<String, dynamic>) parse,
@@ -6834,20 +7127,29 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       void Function(int, T) setAt,
       void Function(T) add,
     ) {
-      final indexById = <String, int>{
-        for (var i = 0; i < list.length; i++) idOf(list[i]): i,
-      };
+      final cached = _putIndex[table];
+      final trusted = cached != null &&
+          identical(cached.list, list) &&
+          cached.rev == revBefore &&
+          cached.map.length == list.length;
+      final indexById = trusted
+          ? cached.map
+          : <String, int>{for (var i = 0; i < list.length; i++) idOf(list[i]): i};
       for (final r in rows) {
         final item = parse(r);
         final id = idOf(item);
         final i = indexById[id];
         if (i != null) {
+          final old = list[i];
+          if (old is AttendanceMark) replacedMarks.add(old);
           setAt(i, item);
         } else {
           indexById[id] = list.length;
           add(item);
         }
+        if (item is AttendanceMark) touchedMarks.add(item);
       }
+      _putIndex[table] = (list: list, map: indexById, rev: tableRev(table));
     }
 
     switch (table) {
@@ -6904,6 +7206,15 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
           }
         }
     }
+
+    _keepIndexes(marksValid, () {
+      for (final old in replacedMarks) {
+        _unindexMark(old);
+      }
+      for (final m in touchedMarks) {
+        _indexMark(m);
+      }
+    });
   }
 
   /// إلحاق تاريخ الجلسة بكل سجل حضور قادم من السحابة.
