@@ -46,6 +46,42 @@ const _portalStudentCols = 'id,first_name,last_name,full_name,section,grade_leve
 String _inList(Iterable<String> values) => 'in.(${values.map((v) => '"$v"').join(',')})';
 
 /// حساب في البوابة: طالب أو معلم.
+/// ابن في جلسة وليّ الأمر: يُفتح ملفه بالدخول برقم هويته وكلمة وليّ الأمر نفسها.
+class PortalChild {
+  const PortalChild({
+    required this.id,
+    required this.name,
+    this.nationalId = '',
+    this.gradeLevel = '',
+    this.section = '',
+  });
+
+  final String id;
+  final String name;
+  final String nationalId;
+  final String gradeLevel;
+  final String section;
+
+  /// الاسم الأول وحده — شريط الأبناء ضيّق، والاسم الكامل يملؤه بابن واحد.
+  String get shortName => name.trim().split(RegExp(r'\s+')).first;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'national_id': nationalId,
+        'grade_level': gradeLevel,
+        'section': section,
+      };
+
+  factory PortalChild.fromJson(Map<String, dynamic> m) => PortalChild(
+        id: '${m['id'] ?? ''}',
+        name: '${m['name'] ?? ''}',
+        nationalId: '${m['national_id'] ?? ''}',
+        gradeLevel: '${m['grade_level'] ?? ''}',
+        section: '${m['section'] ?? ''}',
+      );
+}
+
 class PortalUser {
   const PortalUser({
     required this.id,
@@ -61,6 +97,8 @@ class PortalUser {
     this.subjectIds = const [],
     this.tenantName = '',
     this.studentName = '',
+    this.parentNationalId = '',
+    this.children = const [],
   });
 
   final String id;
@@ -80,6 +118,12 @@ class PortalUser {
 
   /// لولي الأمر: اسم ابنه الذي يتابعه. `id` هنا معرّف الطالب نفسه.
   final String studentName;
+
+  /// رقم هوية وليّ الأمر: به يدخل، وبه يبدّل بين أبنائه.
+  final String parentNationalId;
+
+  /// أبناء وليّ الأمر في هذه المنشأة — جلسة وليّ الأمر وحدها.
+  final List<PortalChild> children;
 
   bool get isTeacher => role == 'teacher';
 
@@ -105,6 +149,8 @@ class PortalUser {
         'subject_ids': subjectIds,
         'tenant_name': tenantName,
         'student_name': studentName,
+        'parent_national_id': parentNationalId,
+        'children': [for (final c in children) c.toJson()],
       };
 
   factory PortalUser.fromJson(Map<String, dynamic> m) => PortalUser(
@@ -121,6 +167,11 @@ class PortalUser {
         subjectIds: [for (final e in (m['subject_ids'] as List? ?? const [])) '$e'],
         tenantName: '${m['tenant_name'] ?? ''}',
         studentName: '${m['student_name'] ?? ''}',
+        parentNationalId: '${m['parent_national_id'] ?? ''}',
+        children: [
+          for (final c in (m['children'] as List? ?? const []))
+            if (c is Map) PortalChild.fromJson(Map<String, dynamic>.from(c)),
+        ],
       );
 }
 
@@ -802,7 +853,16 @@ class PortalService {
       for (final c in (data['choices'] as List? ?? const []))
         if (c is Map) userFromChoice(Map<String, dynamic>.from(c)),
     ];
-    if (choices.length > 1) return PortalLoginResult(users: choices);
+    if (choices.length > 1) {
+      // وليّ أمر له أكثر من ابن في المدرسة نفسها: هذه ليست مدارس ليختار بينها،
+      // بل أبناؤه. يُفتح أولهم، ويبدّل بينهم من شريط الأبناء داخل البوابة.
+      final first = choices.first;
+      final sameFamily = choice == null &&
+          first.isParent &&
+          choices.every((u) => u.isParent && u.tenantId == first.tenantId);
+      if (sameFamily) return login(nationalId, portalCode, choice: first);
+      return PortalLoginResult(users: choices);
+    }
 
     final tokenHash = '${data['token_hash'] ?? ''}';
     final matched = data['choice'];
@@ -813,6 +873,33 @@ class PortalService {
       return const PortalLoginResult(error: 'تعذّر فتح جلسة البوابة، حاول مجدداً');
     }
     return PortalLoginResult(users: [userFromChoice(Map<String, dynamic>.from(matched))]);
+  }
+
+  /// فتح ملف ابن آخر لوليّ الأمر.
+  ///
+  /// الجلسة مبنية على طالب واحد — معرّفه في التوكن وعليه تقوم سياسات القراءة —
+  /// فالتبديل دخولٌ جديد برقم هوية وليّ الأمر وكلمته نفسها، والاختيار يقع على
+  /// حساب الابن المطلوب. لا تتغيّر صلاحية واحدة في النظام.
+  Future<PortalLoginResult> switchToChild(PortalUser session, String childId) async {
+    final parentId = session.parentNationalId.trim().isNotEmpty
+        ? session.parentNationalId.trim()
+        : session.nationalId.trim();
+    if (parentId.isEmpty || session.portalCode.isEmpty || childId.isEmpty) {
+      return const PortalLoginResult(error: 'بيانات الدخول غير مكتملة');
+    }
+    return login(
+      parentId,
+      session.portalCode,
+      choice: PortalUser(
+        id: childId,
+        name: session.name,
+        nationalId: parentId,
+        portalCode: session.portalCode,
+        role: 'parent',
+        tenantId: session.tenantId,
+        tenantName: session.tenantName,
+      ),
+    );
   }
 
   /// خيار دخول كما تعيده الدالة: `{tenant_id, tenant_name, role, user: {...}}`.
@@ -832,6 +919,11 @@ class PortalService {
       subjectIds: [for (final e in (user['subject_ids'] as List? ?? const [])) '$e'],
       tenantName: '${c['tenant_name'] ?? user['tenant_name'] ?? 'منشأة غير محددة'}',
       studentName: '${user['student_name'] ?? ''}',
+      parentNationalId: '${user['parent_national_id'] ?? ''}',
+      children: [
+        for (final ch in (user['children'] as List? ?? const []))
+          if (ch is Map) PortalChild.fromJson(Map<String, dynamic>.from(ch)),
+      ],
     );
   }
 

@@ -156,6 +156,7 @@ const tableAllowedColumns = <String, List<String>>{
     'plan_discount_from',
     'portal_code',
     'parent_portal_code',
+    'parent_national_id',
     'notes',
     'academic_year_id',
     'tenant_id',

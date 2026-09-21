@@ -32,6 +32,15 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   );
 
   /// كلمة ولي الأمر: تُولَّد للطالب الجديد مختلفةً عن كلمته، كما في StudentForm.tsx.
+  /// رقم هوية وليّ الأمر — مفتاح ربط الإخوة.
+  late final parentNationalId = TextEditingController(text: widget.student?.parentNationalId ?? '');
+
+  /// أخٌ وُجد بالرقم نفسه: اسمه وكلمة وليّ أمره.
+  ({String name, String code})? sibling;
+
+  /// كلمة كتبها الموظف بيده لا تُدهس بكلمة الأخ.
+  bool _parentCodeTouched = false;
+
   late final parentPortalCode = TextEditingController(
     text: widget.student?.parentPortalCode ?? AppStore.instance.newDistinctPortalCode(portalCode.text),
   );
@@ -206,12 +215,33 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     });
   }
 
+  /// أخٌ مسجَّل بالرقم نفسه: كلمة وليّ أمره تُنسخ للطالب الجديد، فيدخل الأب
+  /// مرة واحدة ويرى ابنيه. بلا ذلك تُولَّد لكل ابن كلمة، فلا يصل إلا لأحدهما.
+  void _findSibling() {
+    final clean = parentNationalId.text.trim();
+    if (clean.isEmpty) {
+      if (sibling != null) setState(() => sibling = null);
+      return;
+    }
+    final found = AppStore.instance.siblingByParentNationalId(clean, exclude: widget.student?.id);
+    if (found == null) {
+      if (sibling != null) setState(() => sibling = null);
+      return;
+    }
+    setState(() {
+      sibling = (name: found.fullName, code: found.parentPortalCode);
+      if (!_parentCodeTouched) parentPortalCode.text = found.parentPortalCode;
+      if (parentName.text.trim().isEmpty) parentName.text = found.parentName;
+    });
+  }
+
   @override
   void dispose() {
     name.dispose();
     nationalId.dispose();
     portalCode.dispose();
     parentPortalCode.dispose();
+    parentNationalId.dispose();
     parentName.dispose();
     notes.dispose();
     detailedAddress.dispose();
@@ -532,6 +562,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
         nationalId: cleanNatId,
         portalCode: portalCode.text.trim(),
         parentPortalCode: parentPortalCode.text.trim(),
+        parentNationalId: parentNationalId.text.trim(),
         neighborhood: selectedNeighborhood,
         relation: relation,
         gender: gender,
@@ -1247,6 +1278,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
             maxLength: 10,
             style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
             onChanged: (_) {
+              _parentCodeTouched = true;
               setState(() {
                 errors.clear('parentCode');
                 final parent = parentPortalCode.text.trim();
@@ -1295,6 +1327,41 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           ),
         ],
       ),
+      _gap,
+      // رقم هوية وليّ الأمر: يدخل به البوابة فيرى أبناءه كلهم. كلمة المرور
+      // تُولَّد لكل طالب على حدة، فبدون هذا الرقم لا يصل الأب إلا لأحدهم.
+      const FieldLabel('رقم هوية ولي الأمر'),
+      TextField(
+        controller: parentNationalId,
+        keyboardType: TextInputType.number,
+        style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+        decoration: const InputDecoration(hintText: 'يربط إخوة الطالب في بوابة واحدة'),
+        onChanged: (_) => _findSibling(),
+      ),
+      if (sibling != null) ...[
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: AppColors.successSoft,
+            borderRadius: BorderRadius.circular(Corner.box),
+            border: Border.all(color: AppColors.successBorder),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.family_restroom, size: 15, color: AppColors.success),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  'أخوه ${sibling!.name} — وحّدنا كلمة ولي الأمر',
+                  maxLines: 2,
+                  style: const TextStyle(color: AppColors.success, fontSize: 11.5, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
       _gap,
       FieldLabel('جوال ولي الأمر', key: errors.key('parentPhone')),
       _phoneRow(

@@ -78,10 +78,10 @@ class _FakeNotifier implements DownloadNotifier {
   int finished = 0;
 
   @override
-  Future<void> show(String text, {int percent = -1}) async => shown.add(text);
+  Future<void> show(String text, {int percent = -1, String title = ''}) async => shown.add(text);
 
   @override
-  Future<void> finish(String text) async => finished++;
+  Future<void> finish(String text, {String title = ''}) async => finished++;
 
   @override
   Future<void> hide() async => hidden++;

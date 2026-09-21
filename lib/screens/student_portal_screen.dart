@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../data/grading.dart';
+import '../data/institution.dart';
 import '../data/portal.dart';
+import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
@@ -32,8 +36,15 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
   String? error;
   bool loading = true;
 
+  /// الحساب المفتوح الآن. وليّ أمر بعدة أبناء يبدّل بينهم، فيتغيّر داخل الشاشة
+  /// بلا إعادة دخول — لذلك هو حالة لا خاصية ثابتة على الودجة.
+  late PortalUser user = widget.user;
+
   /// ولي الأمر يتابع ملف ابنه بلا المودل.
-  bool get isParent => widget.user.isParent;
+  bool get isParent => user.isParent;
+
+  /// الابن الذي يُفتح ملفه الآن، أثناء انتظار تبديله.
+  String? switchingChildId;
 
   late String tab = isParent ? 'attendance' : 'moodle';
 
@@ -45,6 +56,37 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
   int _moodleToken = 0;
 
   PortalService get _service => widget.service;
+
+  /// فتح ملف ابن آخر: دخولٌ جديد بهويته، ثم إعادة تحميل الشاشة على ملفه.
+  Future<void> _switchChild(PortalChild child) async {
+    if (child.id == user.id || switchingChildId != null) return;
+    setState(() => switchingChildId = child.id);
+
+    final result = await _service.switchToChild(user, child.id);
+    if (!mounted) return;
+
+    if (!result.ok) {
+      setState(() => switchingChildId = null);
+      showAppSnack(context, result.error ?? 'تعذّر فتح ملف الابن', error: true);
+      return;
+    }
+
+    final next = result.users.first;
+    // الجلسة المحفوظة تتبع الابن المفتوح: إغلاق التطبيق وفتحه يعيده على ملفه
+    unawaited(AppStore.instance.savePortalSession(
+      nationalId: next.nationalId.isEmpty ? user.nationalId : next.nationalId,
+      code: next.portalCode.isEmpty ? user.portalCode : next.portalCode,
+      userId: next.id,
+      user: next,
+    ));
+    setState(() {
+      user = next;
+      switchingChildId = null;
+      loading = true;
+      sections = const [];
+    });
+    await _load();
+  }
 
   List<PortalNavItem> get _navItems => [
         if (!isParent)
@@ -92,7 +134,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       error = null;
     });
     try {
-      final result = await _service.studentData(widget.user);
+      final result = await _service.studentData(user);
       if (!mounted) return;
       if (result != null) {
         AppColors.apply(result.branding.colors);
@@ -123,7 +165,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     setState(() => loadingMoodle = true);
     try {
       final list = await _service.groupSections(
-        tenantId: widget.user.tenantId,
+        tenantId: user.tenantId,
         groupId: gid,
         term: term,
         includeHidden: false,
@@ -149,9 +191,9 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     final branding = data?.branding ?? const PortalBranding();
     final student = data?.student;
     final displayName = isParent
-        ? (widget.user.studentName.isNotEmpty ? widget.user.studentName : (student?.fullName ?? widget.user.name))
-        : widget.user.name;
-    final roleLabel = isParent ? 'ولي الأمر: ${widget.user.name}' : '';
+        ? (user.studentName.isNotEmpty ? user.studentName : (student?.fullName ?? user.name))
+        : user.name;
+    final roleLabel = isParent ? 'ولي الأمر: ${user.name}' : '';
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -161,10 +203,20 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
             branding: branding,
             roleLabel: roleLabel,
             displayName: displayName,
-            gradeLine: portalGradeLine(user: widget.user, student: student),
-            nationalId: widget.user.nationalId.trim(),
+            gradeLine: portalGradeLine(user: user, student: student),
+            nationalId: user.nationalId.trim(),
             onExit: widget.onExit,
           ),
+          // أبناء وليّ الأمر: لمس اسم يفتح ملفه — دخولٌ بهويته وكلمة وليّ
+          // الأمر نفسها، فلا تتغيّر صلاحية ولا يُطلب منه رمز من جديد
+          if (isParent && user.children.length > 1)
+            _ChildrenBar(
+              children: user.children,
+              currentId: user.id,
+              busyId: switchingChildId,
+              color: parseHexColor(branding.colors.activeItem) ?? AppColors.amber,
+              onPick: _switchChild,
+            ),
           Expanded(
             child: loading
                 ? const Center(
@@ -1326,6 +1378,67 @@ class _PortalBadge extends StatelessWidget {
           fontSize: 11,
           fontWeight: FontWeight.w700,
         ),
+      ),
+    );
+  }
+}
+
+/// شريط أبناء وليّ الأمر — لمس اسم يفتح ملفه.
+class _ChildrenBar extends StatelessWidget {
+  const _ChildrenBar({
+    required this.children,
+    required this.currentId,
+    required this.busyId,
+    required this.color,
+    required this.onPick,
+  });
+
+  final List<PortalChild> children;
+  final String currentId;
+  final String? busyId;
+  final Color color;
+  final ValueChanged<PortalChild> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 46,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: AppColors.line)),
+      ),
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        itemCount: children.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 6),
+        itemBuilder: (context, i) {
+          final child = children[i];
+          final current = child.id == currentId;
+          final busy = busyId == child.id;
+          return Material(
+            color: current ? color : AppColors.sunken,
+            borderRadius: BorderRadius.circular(Corner.field),
+            child: InkWell(
+              onTap: current || busyId != null ? null : () => onPick(child),
+              borderRadius: BorderRadius.circular(Corner.field),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Center(
+                  child: Text(
+                    busy ? 'جارٍ الفتح...' : child.shortName,
+                    style: TextStyle(
+                      fontFamily: AppText.family,
+                      color: current ? Colors.white : AppColors.muted,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

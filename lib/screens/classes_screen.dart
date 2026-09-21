@@ -1010,7 +1010,10 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
         final q = search.text.trim();
         final list = q.isEmpty ? roster : roster.where((s) => s.fullName.contains(q) || s.phone.contains(q)).toList();
         final visible = listPage(list, visibleCount);
-        final buckets = installmentBucketsByStudent(store.installments);
+        // رقم المقعد يُحسب مرة واحدة: كان `roster.indexOf` يمسح الكشف كاملاً
+        // لكل صفّ يُبنى، فصار المسح يتكرر بعدد الصفوف مع كل تمريرة
+        final seatOf = {for (var i = 0; i < roster.length; i++) roster[i].id: i + 1};
+        final buckets = store.installmentBuckets;
         final meta = [
           if (room.gradeLevel.trim().isNotEmpty) room.gradeLevel.trim(),
           teacher == null ? 'بدون مربي' : 'المربي: ${teacher.name}',
@@ -1134,7 +1137,7 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
                           sliver: SliverList.builder(
                             itemCount: visible.length,
                             itemBuilder: (context, i) => _RosterRow(
-                              seat: roster.indexOf(visible[i]) + 1,
+                              seat: seatOf[visible[i].id] ?? i + 1,
                               student: visible[i],
                               due: buckets.due[visible[i].id] ?? 0,
                               scheduled: buckets.scheduled[visible[i].id] ?? 0,

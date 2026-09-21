@@ -116,7 +116,15 @@ class _CenterAppState extends State<CenterApp> {
         GlobalCupertinoLocalizations.delegate,
       ],
       builder: (context, child) {
-        return Directionality(textDirection: TextDirection.rtl, child: child ?? const SizedBox.shrink());
+        // خط ثمانية عريض الرسم، فيبدو أكبر من قياسه عند حجمه الاسمي. ومقياس
+        // النظام يُقصّ عند 1: هاتف ضُبط على «خط كبير» كان يفرده على كل شاشة
+        // حتى تتزاحم البطاقات ويُقصّ ما فيها.
+        final mq = MediaQuery.of(context);
+        final device = mq.textScaler.scale(1).clamp(0.85, 1.0);
+        return MediaQuery(
+          data: mq.copyWith(textScaler: TextScaler.linear(device * 0.93)),
+          child: Directionality(textDirection: TextDirection.rtl, child: child ?? const SizedBox.shrink()),
+        );
       },
       home: const _Root(),
     );

@@ -158,7 +158,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
         }
         final q = search.text.trim().toLowerCase();
         final yearStudents = store.studentsInViewedYear;
-        final buckets = installmentBucketsByStudent(store.installments);
+        final buckets = store.installmentBuckets;
         final pendingCount = yearStudents.where((s) => s.status == 'pending').length;
         final pendingMode = statusFilter == 'pending';
 

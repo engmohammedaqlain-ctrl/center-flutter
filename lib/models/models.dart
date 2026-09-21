@@ -499,6 +499,7 @@ class Student {
     this.usesCustomPlan = false,
     this.portalCode = '',
     this.parentPortalCode = '',
+    this.parentNationalId = '',
     this.academicYearId = '',
     this.syncStatus = 'synced',
     this.createdAt,
@@ -567,6 +568,10 @@ class Student {
   /// كلمة مرور ولي الأمر لبوابة المتابعة — يدخل بها برقم هوية ابنه.
   /// لا تساوي كلمة الطالب، وإلا أنتج الإدخال الواحد حسابين مختلفين.
   String parentPortalCode;
+
+  /// رقم هوية وليّ الأمر: مفتاح الأسرة. به يدخل وليّ الأمر بوابته فيرى أبناءه
+  /// كلهم، لأن كلمة المرور تُولَّد لكل طالب على حدة.
+  String parentNationalId;
   String academicYearId;
   String syncStatus;
   String? createdAt;
@@ -647,6 +652,7 @@ class Student {
       'uses_custom_plan': usesCustomPlan,
       'portal_code': portalCode.isEmpty ? null : portalCode,
       'parent_portal_code': parentPortalCode.isEmpty ? null : parentPortalCode,
+      'parent_national_id': parentNationalId.isEmpty ? null : parentNationalId,
       'academic_year_id': academicYearId.isEmpty ? null : academicYearId,
       'notes': notes,
       'created_at': createdAt,
@@ -727,6 +733,7 @@ class Student {
       usesCustomPlan: m['uses_custom_plan'] == true,
       portalCode: '${m['portal_code'] ?? ''}',
       parentPortalCode: '${m['parent_portal_code'] ?? ''}',
+      parentNationalId: '${m['parent_national_id'] ?? ''}',
       academicYearId: '${m['academic_year_id'] ?? ''}',
       syncStatus: '${m['sync_status'] ?? 'synced'}',
       createdAt: m['created_at']?.toString(),

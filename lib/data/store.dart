@@ -164,6 +164,22 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     super.notifyListeners();
   }
 
+  ({Map<String, double> due, Map<String, double> scheduled})? _bucketsCache;
+  int _bucketsRev = -1;
+
+  /// أقساط كل طالب مفصولةً: ما حلّ وما بقي مجدولاً — محسوبة مرة لكل تغيّر.
+  ///
+  /// كانت تُحسب داخل `build` فتمرّ على كل أقساط المدرسة مع كل إعادة بناء. ضغطة
+  /// «عرض المزيد» لا تغيّر بيانات، ومع ذلك كانت تُعيد المرور على آلاف السجلات
+  /// وتبني خريطتين من جديد، فتتجمّد الشاشة تحت الإصبع.
+  ({Map<String, double> due, Map<String, double> scheduled}) get installmentBuckets {
+    if (_bucketsCache == null || _bucketsRev != _rev) {
+      _bucketsCache = installmentBucketsByStudent(installments);
+      _bucketsRev = _rev;
+    }
+    return _bucketsCache!;
+  }
+
   void _rebuildIndexes() {
     if (_indexRev == _rev) return;
     _indexRev = _rev;
@@ -6378,10 +6394,29 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   /// المستخدمون النشطون المتاحون لاختيار هوية الجهاز.
+  /// أخٌ مسجَّل لوليّ الأمر نفسه، بحثاً برقم هويته — مقابل `findSibling` في الويب.
+  ///
+  /// كلمة بوابة وليّ الأمر تُولَّد لكل طالب على حدة، فما لم يأخذ الأخ الثاني
+  /// كلمة أخيه لم يدخل الأب إلا على أحدهما.
+  Student? siblingByParentNationalId(String parentNationalId, {String? exclude}) {
+    final clean = parentNationalId.trim();
+    if (clean.isEmpty) return null;
+    for (final s in students) {
+      if (s.id == exclude) continue;
+      if (s.parentPortalCode.trim().isEmpty) continue;
+      if (s.parentNationalId.trim() != clean) continue;
+      if (s.status != 'active' && s.status != 'pending') continue;
+      return s;
+    }
+    return null;
+  }
+
   List<AppUser> get setupCandidates {
     final active = users.where((u) => u.isActive).toList();
-    if (active.isEmpty) return [ensureOwnerAdmin()];
-    return active;
+    // مدير المنشأة أولاً ودائماً، كقائمة الويب. كان يظهر فقط حين لا مستخدم
+    // غيره، فجهازٌ سحب مستخدمي المدرسة لا يجد صاحبها نفسه ليُهيّئ به الجهاز.
+    final owner = ensureOwnerAdmin();
+    return [owner, ...active.where((u) => u.id != owner.id)];
   }
 
   /// كلمات المرور المقبولة لتثبيت صلاحية مدير على هذا الجهاز: كلمة المنشأة

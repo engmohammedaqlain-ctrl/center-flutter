@@ -531,4 +531,48 @@ void main() {
       expect(find.text('نسبة الحضور'), findsOneWidget);
     });
   }
+
+  testWidgets('ولي أمر بابنين: شريط تبديل، ولمس اسم يفتح ملفه', (tester) async {
+    const children = [
+      PortalChild(id: 's1', name: 'علي أبو حسنين', nationalId: '401334845'),
+      PortalChild(id: 's9', name: 'ريم أبو حسنين', nationalId: '401334999'),
+    ];
+    const parent = PortalUser(
+      id: 's1',
+      name: 'أبو علي',
+      nationalId: '401334845',
+      portalCode: '246810',
+      role: 'parent',
+      tenantId: 'tenant',
+      studentName: 'علي أبو حسنين',
+      parentNationalId: '400000000',
+      children: children,
+    );
+
+    final fake = _FakePortal(student: _studentData());
+    await _pump(tester, StudentPortalScreen(user: parent, onExit: () {}, service: fake));
+
+    // الاسم الأول وحده في الشريط — الاسم الكامل يملؤه بابن واحد
+    expect(find.text('علي'), findsOneWidget);
+    expect(find.text('ريم'), findsOneWidget);
+  });
+
+  testWidgets('ابن واحد: لا شريط تبديل', (tester) async {
+    const parent = PortalUser(
+      id: 's1',
+      name: 'أبو علي',
+      nationalId: '401334845',
+      portalCode: '246810',
+      role: 'parent',
+      tenantId: 'tenant',
+      studentName: 'علي أبو حسنين',
+      children: [PortalChild(id: 's1', name: 'علي أبو حسنين')],
+    );
+
+    final fake = _FakePortal(student: _studentData());
+    await _pump(tester, StudentPortalScreen(user: parent, onExit: () {}, service: fake));
+
+    expect(find.text('علي'), findsNothing, reason: 'شريط لابن واحد لا معنى له');
+  });
+
 }
