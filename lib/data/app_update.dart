@@ -539,12 +539,18 @@ class AppUpdater extends ChangeNotifier {
         _notifier = notifier ?? defaultDownloadNotifier(),
         _wait = wait ?? Future<void>.delayed;
 
+  /// على أندرويد وحده: غيره لا يثبّت حزم APK.
+  static final instance = AppUpdater(supported: !kIsWeb && Platform.isAndroid);
+
   /// يُستدعى قبل فتح مثبِّت الـ APK: يرفع المعلّق ثم يسمح بالتثبيت.
   /// يعيد رسالة خطأ أو `null` عند النجاح.
   Future<String?> Function()? beforeInstall;
 
   /// رفع بيانات جارٍ قبل فتح المثبِّت — يمنع التثبيت حتى يكتمل أو يفشل.
   bool preparingInstall = false;
+
+  /// فشل الرفع: يُعرض زر «تخطّي والتثبيت» إن رغب المستخدم بالمتابعة رغم ذلك.
+  bool allowSkipSync = false;
 
   /// لا يُعاد فحص الاستضافة تلقائياً قبل مرور هذه المدة.
   /// بين الفحوصات التلقائية في الجلسة (بعد إقلاعٍ نجح فيه الفحص).
@@ -785,15 +791,20 @@ class AppUpdater extends ChangeNotifier {
   }
 
   /// تنزيل الحزمة (أو استكمالها) إن لم تكن جاهزة، ثم فتح مثبِّت النظام.
-  Future<void> install() => _installing ??= _install().whenComplete(() => _installing = null);
+  ///
+  /// [skipSync] يتجاوز رفع المعلّق بعد فشل المحاولة — المستخدم يتحمّل ضياع
+  /// ما لم يُرفع لأن البناء الجديد يمسح المحلي.
+  Future<void> install({bool skipSync = false}) =>
+      _installing ??= _install(skipSync: skipSync).whenComplete(() => _installing = null);
 
   /// «المحاولة الآن» أثناء العدّ التنازلي بعد انقطاع.
   void retryNow() => _retryNow = true;
 
-  Future<void> _install() async {
+  Future<void> _install({bool skipSync = false}) async {
     final target = release;
     if (target == null || action == UpdateAction.none) return;
     error = null;
+    if (skipSync) allowSkipSync = false;
 
     var path = _readyPath;
     if (path == null || !await File(path).exists()) {
@@ -812,10 +823,11 @@ class AppUpdater extends ChangeNotifier {
       return;
     }
 
-    // قبل المسح في البناء الجديد: ارفع كل معلّق أو أوقف التثبيت
+    // قبل المسح في البناء الجديد: ارفع كل معلّق — أو تخطَّ إن طلب المستخدم
     final guard = beforeInstall;
-    if (guard != null) {
+    if (guard != null && !skipSync) {
       preparingInstall = true;
+      allowSkipSync = false;
       error = null;
       notifyListeners();
       await _notifier.show('جارِ رفع البيانات قبل التحديث');
@@ -824,12 +836,14 @@ class AppUpdater extends ChangeNotifier {
       await _notifier.hide();
       if (blocked != null) {
         error = blocked;
+        allowSkipSync = true;
         notifyListeners();
         return;
       }
       notifyListeners();
     }
 
+    allowSkipSync = false;
     await _notifier.hide();
     final failure = await _openInstaller(path);
     if (failure != null) {

@@ -169,16 +169,28 @@ class UpdatePanel extends StatelessWidget {
 
             // التوقف يشرح نفسه في بطاقة التنزيل؛ الخطأ هنا لما لا يُستكمل
             AuthErrorBox(message: u.phase == UpdatePhase.paused ? null : u.error),
+            if (u.allowSkipSync) ...[
+              const SizedBox(height: 8),
+              Text(
+                'يمكنك التخطّي والتثبيت، لكن التعديلات التي لم تُرفع قد تُفقد.',
+                style: TextStyle(color: AppColors.muted, fontSize: 11, fontWeight: FontWeight.w600, height: 1.45),
+              ),
+            ],
             const SizedBox(height: 16),
 
             ActionButtons(
               primary: available ? _actionButton(u, release) : _checkButton(u, checking),
-              secondary: onLater == null
-                  ? null
-                  : GhostButton(
-                      label: !available ? 'إغلاق' : (u.busy ? 'إخفاء' : 'لاحقاً'),
-                      onPressed: onLater,
-                    ),
+              secondary: u.allowSkipSync
+                  ? GhostButton(
+                      label: 'تخطّي والتثبيت',
+                      onPressed: u.preparingInstall ? null : () => unawaited(u.install(skipSync: true)),
+                    )
+                  : onLater == null
+                      ? null
+                      : GhostButton(
+                          label: !available ? 'إغلاق' : (u.busy ? 'إخفاء' : 'لاحقاً'),
+                          onPressed: onLater,
+                        ),
             ),
           ],
         );
