@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../data/permissions.dart';
 import '../data/phone.dart';
+import '../data/user_message.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
@@ -761,6 +762,7 @@ class SectionTitle extends StatelessWidget {
 /// كان شريطاً سفلياً من `ScaffoldMessenger` يُرسم خلف الورقة السفلية المفتوحة:
 /// أخطاء النماذج داخل الأوراق لا تظهر أبداً، فيبدو زر الحفظ كأنه لا يعمل.
 void showAppSnack(BuildContext context, String msg, {bool error = false}) {
+  final text = error ? userMessage(msg, 'تعذّر إتمام العملية') : msg;
   final overlay = Overlay.maybeOf(context, rootOverlay: true);
   if (overlay == null) return;
   final previous = _toast;
@@ -769,7 +771,7 @@ void showAppSnack(BuildContext context, String msg, {bool error = false}) {
   late final OverlayEntry entry;
   entry = OverlayEntry(
     builder: (_) => _Toast(
-      message: msg,
+      message: text,
       error: error,
       onDone: () {
         if (entry.mounted) entry.remove();

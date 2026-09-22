@@ -3,7 +3,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'store.dart';
 
@@ -88,22 +90,33 @@ class BackupService {
     final json = encode(store);
     final name = fileNameFor(store);
     final bytes = Uint8List.fromList(utf8.encode(json));
+    const mime = 'application/json';
+    const type = XTypeGroup(label: 'نسخة احتياطية', extensions: ['json']);
 
-    // على أندرويد/آي أو إس حوار الحفظ غالباً يفشل أو يُلغى — نكتب للمستندات دائماً كأساس
-    try {
-      final location = await getSaveLocation(suggestedName: name);
-      if (location != null) {
-        final file = XFile.fromData(bytes, mimeType: 'application/json', name: name);
-        await file.saveTo(location.path);
-        return location.path;
+    final mobile = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+    if (!mobile) {
+      final location = await getSaveLocation(
+        suggestedName: name,
+        acceptedTypeGroups: const [type],
+      );
+      if (location == null) {
+        throw const FormatException('أُلغي الحفظ');
       }
-    } catch (_) {
-      // نكمل بالمسار البديل
+      await XFile.fromData(bytes, mimeType: mime, name: name).saveTo(location.path);
+      return location.path;
     }
 
-    final dir = await getApplicationDocumentsDirectory();
+    // الجوال: ورقة مشاركة النظام لاختيار الملفات / Drive / البريد…
+    final dir = await getTemporaryDirectory();
     final path = '${dir.path}${Platform.pathSeparator}$name';
-    await File(path).writeAsBytes(bytes);
+    await File(path).writeAsBytes(bytes, flush: true);
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(path, mimeType: mime, name: name)],
+        subject: 'نسخة احتياطية',
+        text: 'نسخة احتياطية من النظام المدرسي',
+      ),
+    );
     return path;
   }
 
@@ -128,10 +141,8 @@ class BackupService {
     final code = '${backup['tenant_code'] ?? ''}';
     final local = store.currentTenant?.code ?? '';
     if (code.isNotEmpty && local.isNotEmpty && code != local) {
-      final name = '${backup['tenant_name'] ?? code}';
       throw FormatException(
-        'هذه النسخة تخص منشأة أخرى ($name). '
-        'المنشأة الحالية هي "${store.currentTenant?.name ?? local}". الاسترجاع ملغى لحماية البيانات.',
+        'هذه النسخة لمنشأة أخرى، لا يمكن استرجاعها هنا',
       );
     }
   }

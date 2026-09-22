@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
 import 'supabase.dart';
+import 'user_message.dart';
 
 /// مطابق لـ TABLE_ALLOWED_COLUMNS في sync.ts
 const tableAllowedColumns = <String, List<String>>{
@@ -984,72 +985,8 @@ bool isDuplicateReceiptError(Object error) {
 }
 
 String describeSupabaseError(Object error, String tableName) {
-  final raw = error.toString();
   final table = tableLabelsAr[tableName] ?? tableName;
-
-  if (RegExp(
-    r'invalid input syntax for type (date|timestamp)',
-    caseSensitive: false,
-  ).hasMatch(raw)) {
-    return '$table: قيمة تاريخ غير صالحة في أحد الحقول.';
-  }
-  if (RegExp(
-    r'invalid input syntax for type (numeric|integer|bigint)',
-    caseSensitive: false,
-  ).hasMatch(raw)) {
-    return '$table: قيمة رقمية غير صالحة في أحد الحقول.';
-  }
-  if (RegExp(
-    r'invalid input syntax for type uuid',
-    caseSensitive: false,
-  ).hasMatch(raw)) {
-    return '$table: معرّف غير صالح.';
-  }
-  if (RegExp(
-    r'duplicate key value|already exists',
-    caseSensitive: false,
-  ).hasMatch(raw)) {
-    return '$table: هذا السجل مسجَّل مسبقاً برقم أو معرّف مكرّر.';
-  }
-  if (RegExp(
-    r'violates not-null constraint',
-    caseSensitive: false,
-  ).hasMatch(raw)) {
-    final col = RegExp(r'column "([^"]+)"').firstMatch(raw)?.group(1);
-    return '$table: حقل إلزامي فارغ${col != null ? ' ($col)' : ''}.';
-  }
-  if (RegExp(
-    r'violates foreign key constraint',
-    caseSensitive: false,
-  ).hasMatch(raw)) {
-    return '$table: السجل مرتبط بسجل آخر غير موجود في السحابة. ارفع السجل الأصل أولاً.';
-  }
-  if (RegExp(
-    r'PGRST303|jwt expired|invalid claim',
-    caseSensitive: false,
-  ).hasMatch(raw)) {
-    return '$table: انتهت جلسة الدخول. سجّل الخروج ثم الدخول من جديد ليُعاد الرفع.';
-  }
-  if (RegExp(
-    r'PGRST204|could not find|schema cache',
-    caseSensitive: false,
-  ).hasMatch(raw)) {
-    final col = RegExp(r"'([^']+)' column").firstMatch(raw)?.group(1);
-    return '$table: العمود ${col ?? 'المطلوب'} غير موجود في قاعدة البيانات. نفّذ ملف الهجرة على Supabase.';
-  }
-  if (RegExp(
-    r'Failed to fetch|NetworkError|fetch failed|SocketException|ClientException',
-    caseSensitive: false,
-  ).hasMatch(raw)) {
-    return 'تعذّر الوصول إلى السحابة. تحقق من الاتصال بالإنترنت.';
-  }
-  if (RegExp(
-    r'row-level security|permission denied|42501',
-    caseSensitive: false,
-  ).hasMatch(raw)) {
-    return '$table: لا تملك صلاحية الرفع. سجّل الخروج ثم الدخول بحساب المنشأة (لا بوابة معلم/طالب).';
-  }
-  return '$table: $raw';
+  return syncTableMessage(table, error);
 }
 
 /// تراجعٌ عن المؤشر قبل الجلب: ساعة السيرفر قد تسبق كتابة صفٍّ بلحظة، فسجل

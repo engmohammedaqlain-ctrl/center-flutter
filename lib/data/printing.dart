@@ -1,12 +1,15 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io' show File, Platform;
 import 'dart:typed_data';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
 
@@ -181,34 +184,67 @@ class PdfKit {
     );
   }
 
-  /// اسم الملف الناتج بلا فراغات، وبلاحقة `.pdf` — بدونها أندرويد يرفض
-  /// مشاركة الملف أو يحفظه بلا نوع فيبدو الزر «لا يعمل».
-  /// مطابق لما تكتبه النسخة المكتبية في `document.title` قبل الطباعة، فيخرج
-  /// «كشف_طلاب_شعبة_(1).pdf» بدل اسم عام لا يدلّ على شيء.
+  /// اسم الملف الناتج بلا فراغات، وبلاحقة `.pdf`.
   static String fileName(String raw) {
     final base = raw.trim().replaceAll(RegExp(r'\s+'), '_');
     if (base.toLowerCase().endsWith('.pdf')) return base;
     return '$base.pdf';
   }
 
-  /// تنزيل الكشف/السند: على الجوال حوار طباعة النظام غالباً فارغ بلا طابعة،
-  /// فيبدو الزر معطلاً — المشاركة تفتح الحفظ أو واتساب أو الملفات.
-  static Future<void> preview(Uint8List bytes, String name) async {
-    final file = fileName(name);
-    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-      try {
-        await Printing.sharePdf(bytes: bytes, filename: file);
-        return;
-      } catch (_) {
-        // احتياط إن تعذّرت المشاركة لسبب الجهاز
-      }
-    }
-    await Printing.layoutPdf(onLayout: (_) async => bytes, name: file);
-  }
+  /// حفظ الكشف/السند: حوار اختيار مكان إن أمكن، وإلا ورقة مشاركة النظام.
+  static Future<void> preview(Uint8List bytes, String name) => saveOrShare(bytes, name);
 
   /// حفظ أو مشاركة الملف مباشرةً.
-  static Future<void> share(Uint8List bytes, String name) {
-    return Printing.sharePdf(bytes: bytes, filename: fileName(name));
+  static Future<void> share(Uint8List bytes, String name) => saveOrShare(bytes, name);
+
+  /// يختار المستخدم مكان الحفظ (سطح المكتب / SAF)، أو يشارك عبر النظام على الجوال.
+  static Future<void> saveOrShare(
+    Uint8List bytes,
+    String name, {
+    String mimeType = 'application/pdf',
+  }) async {
+    final file = fileName(name);
+
+    // سطح المكتب وويب سطح المكتب: حوار «حفظ باسم»
+    final mobile = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+    if (!mobile) {
+      try {
+        final location = await getSaveLocation(
+          suggestedName: file,
+          acceptedTypeGroups: [
+            XTypeGroup(
+              label: mimeType.contains('pdf') ? 'PDF' : 'ملف',
+              extensions: [file.contains('.') ? file.split('.').last : 'pdf'],
+            ),
+          ],
+        );
+        if (location != null) {
+          await XFile.fromData(bytes, mimeType: mimeType, name: file).saveTo(location.path);
+          return;
+        }
+      } catch (_) {
+        // نكمل بالمشاركة / الطباعة
+      }
+      await Printing.layoutPdf(onLayout: (_) async => bytes, name: file);
+      return;
+    }
+
+    // الجوال: ورقة مشاركة النظام = اختيار الملفات / Drive / واتساب…
+    try {
+      final dir = await getTemporaryDirectory();
+      final path = '${dir.path}${Platform.pathSeparator}$file';
+      await File(path).writeAsBytes(bytes, flush: true);
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(path, mimeType: mimeType, name: file)],
+          subject: file,
+        ),
+      );
+      return;
+    } catch (_) {
+      // احتياط: واجهة printing القديمة
+      await Printing.sharePdf(bytes: bytes, filename: file);
+    }
   }
 
   /// تُستخدم عند الحاجة لتحميل صورة من الأصول.

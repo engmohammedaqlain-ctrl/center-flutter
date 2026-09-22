@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'user_message.dart';
+
 /// إعدادات الاتصال بـ Supabase — المقابل لـ `lib/supabase.ts`.
 ///
 /// النسخة المكتبية تقرأ العنوان والمفتاح من `.env` مع إمكانية تجاوزهما من
@@ -306,8 +308,8 @@ Future<Map<String, dynamic>> supabaseInvoke(
       data['error'] = 'تعذّر تنفيذ الطلب (${res.statusCode})${detail == '' ? '' : ': $detail'}';
     }
     return data;
-  } on http.ClientException catch (e) {
-    return {'error': '$_offlineMessage (${e.message})', kOfflineFlag: true};
+  } on http.ClientException {
+    return {'error': _offlineMessage, kOfflineFlag: true};
   } catch (e) {
     // السبب يُعرض كما هو بدل نسبته إلى الإنترنت، لكنه يبقى «بلا ردّ من السيرفر»:
     // لم يرفض أحدٌ بيانات الدخول، فلا تُتلف جلسة محفوظة لأجله
@@ -385,26 +387,13 @@ Future<String?> supabaseRpcError(String function, Map<String, dynamic> args) asy
     );
     if (res.statusCode < 400) return null;
     return describeCloudError(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
-  } on http.ClientException catch (e) {
-    return '$_offlineMessage (${e.message})';
+  } on http.ClientException catch (_) {
+    return userMessage(_offlineMessage);
   }
 }
 
 /// سبب رفض السحابة بكلام يُقرأ، من جسم رد PostgREST أو من استثناء يحمله.
-///
-/// كان يُعرض JSON خاماً: `{"code":"42501","details":null,...}`.
-String describeCloudError(Object error) {
-  var text = '$error'.trim();
-  if (text.startsWith('Exception: ')) text = text.substring('Exception: '.length);
-  final decoded = _tryJson(text);
-  if (decoded is Map) {
-    // 42501: سياسات RLS منعت العملية لهذا الحساب
-    if ('${decoded['code']}' == '42501') return 'السحابة رفضت العملية: لا صلاحية لهذا الحساب عليها';
-    final message = decoded['error'] ?? decoded['message'] ?? decoded['msg'];
-    if (message != null) return 'تعذّر الحفظ في السحابة: $message';
-  }
-  return text.isEmpty ? 'تعذّر الحفظ في السحابة' : text;
-}
+String describeCloudError(Object error) => userMessage(error, 'تعذّر الحفظ في السحابة');
 
 /// استعلام `select` عام على أي جدول.
 Future<List<Map<String, dynamic>>?> supabaseSelect(

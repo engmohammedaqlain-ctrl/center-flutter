@@ -196,7 +196,15 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
     if (tables.any((t) => t == 'payments' || t == 'installments') &&
         tablesReady(const ['payments', 'installments'])) {
-      await recalculateAllBalancesYielding();
+      // لا ننتظر إعادة الحساب هنا: مع آلاف الطلاب كانت شاشة المالية تبقى على
+      // «جارٍ تحميل…» دقائق. نفتح الشاشة فوراً ونحدّث الأرصدة في الخلفية.
+      unawaited(() async {
+        try {
+          await recalculateAllBalancesYielding();
+        } catch (e, st) {
+          debugPrint('recalculateAllBalancesYielding: $e\n$st');
+        }
+      }());
     }
     notifyListeners();
   }
@@ -3112,6 +3120,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   Future<void> afterEnter() async {
     if (!loggedIn || isMasterAdmin) return;
     cleanupBogusDemoUserSyncs(pendingSyncs);
+    dedupeOwnerAdmins();
     await migrateReceiptNumbers();
     await migrateAttendanceIds();
     await migratePaymentSnapshots();
@@ -7303,20 +7312,70 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   ///
   /// المعرّف حتمي (`owner_<tenantId>`) فلا ينتج عن تهيئة جهازين حسابان
   /// متكرران — يتفقان على نفس السجل ويدمجه upsert.
+  /// إن وُجد أي مدير فعّال مسبقاً لا نُنشئ `owner_` مكرراً بنفس الاسم.
   AppUser ensureOwnerAdmin() {
     final tid = tenantId;
     final id = 'owner_${tid ?? 'local'}';
     final existing = users.where((u) => u.id == id).firstOrNull;
     if (existing != null) return existing;
 
-    final name = (currentTenant?.ownerName.trim().isNotEmpty ?? false) ? currentTenant!.ownerName.trim() : (currentTenant?.name.trim() ?? '');
-    final owner = AppUser(id: id, name: name.isEmpty ? 'مدير المنشأة' : name, role: 'admin', capabilities: [...allSections])
+    final existingAdmin =
+        users.where((u) => normalizeRole(u.role) == 'admin' && u.isActive).firstOrNull;
+    if (existingAdmin != null) return existingAdmin;
+
+    final name = (currentTenant?.ownerName.trim().isNotEmpty ?? false)
+        ? currentTenant!.ownerName.trim()
+        : (currentTenant?.name.trim() ?? '');
+    final owner = AppUser(
+      id: id,
+      name: name.isEmpty ? 'مدير المنشأة' : name,
+      role: 'admin',
+      capabilities: [...allSections],
+    )
       ..createdAt = _nowIso()
       ..updatedAt = _nowIso()
       ..syncStatus = 'pending';
     users.add(owner);
     _queue('users', id, 'INSERT', owner.toCloud());
     return owner;
+  }
+
+  /// إزالة `owner_<tenant>` إن وُجد مدير آخر فعّال — إصلاح تكرار التهيئة القديمة.
+  ///
+  /// كانت `setupCandidates` تستدعي [ensureOwnerAdmin] دائماً فتنشئ مديراً ثانياً
+  /// بنفس الاسم وترفعه للسحابة حتى يظهر على الويب والجوال.
+  int dedupeOwnerAdmins() {
+    final tid = tenantId;
+    if (tid == null) return 0;
+    final ownerId = 'owner_$tid';
+    final owner = users.where((u) => u.id == ownerId).firstOrNull;
+    if (owner == null) return 0;
+    final others = users
+        .where((u) => u.id != ownerId && normalizeRole(u.role) == 'admin' && u.isActive)
+        .toList();
+    if (others.isEmpty) return 0;
+
+    if (deviceUserId == ownerId) {
+      deviceUserId = others.first.id;
+      unawaited(db.setSetting(_kDeviceUser, others.first.id));
+    }
+
+    // INSERT معلّق لنفس السجل: أسقِطه بدل رفع مدير مكرر ثم حذفه
+    final hadPendingInsert = pendingSyncs.any(
+      (a) => a.tableName == 'users' && a.recordId == ownerId && a.action == 'INSERT',
+    );
+    pendingSyncs.removeWhere(
+      (a) => a.tableName == 'users' && a.recordId == ownerId,
+    );
+    users.removeWhere((u) => u.id == ownerId);
+    // رُفع سابقاً للسحابة: احذفه هناك أيضاً
+    if (!hadPendingInsert) {
+      _queue('users', ownerId, 'DELETE', {'name': owner.name});
+    }
+    markDirty('users');
+    markDirty(_pendingTable);
+    notifyListeners();
+    return 1;
   }
 
   /// إزالة حسابات العرض التجريبية المتسربة محلياً بلا رفع حذف للسحابة.
@@ -7399,11 +7458,19 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   List<AppUser> get setupCandidates {
+    dedupeOwnerAdmins();
     final active = users.where((u) => u.isActive).toList();
-    // مدير المنشأة أولاً ودائماً، كقائمة الويب. كان يظهر فقط حين لا مستخدم
-    // غيره، فجهازٌ سحب مستخدمي المدرسة لا يجد صاحبها نفسه ليُهيّئ به الجهاز.
-    final owner = ensureOwnerAdmin();
-    return [owner, ...active.where((u) => u.id != owner.id)];
+    // كـ الويب: لا يُنشأ مدير تلقائي إن وُجد مدير مسبقاً من السحابة
+    if (!active.any((u) => normalizeRole(u.role) == 'admin')) {
+      final owner = ensureOwnerAdmin();
+      return [owner, ...active.where((u) => u.id != owner.id)];
+    }
+    active.sort((a, b) {
+      final aAdmin = normalizeRole(a.role) == 'admin' ? 0 : 1;
+      final bAdmin = normalizeRole(b.role) == 'admin' ? 0 : 1;
+      return aAdmin.compareTo(bAdmin);
+    });
+    return active;
   }
 
   /// كلمات المرور المقبولة لتثبيت صلاحية مدير على هذا الجهاز: كلمة المنشأة

@@ -9,6 +9,7 @@ import '../data/phone.dart';
 import '../data/payment_methods.dart';
 import '../data/store.dart';
 import '../data/sync.dart';
+import '../data/user_message.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
@@ -2541,7 +2542,7 @@ class _DataTab extends StatelessWidget {
         _NavTile(
           icon: Icons.download_outlined,
           title: 'تصدير نسخة احتياطية',
-          subtitle: 'حفظ بيانات هذا الجهاز كاملة في ملف',
+          subtitle: 'اختر أين تحفظ الملف على جهازك',
           onTap: () => _export(context, store),
         ),
         const SizedBox(height: 8),
@@ -2820,10 +2821,17 @@ Future<void> _export(BuildContext context, AppStore store) async {
   try {
     final path = await const BackupService().export(store);
     if (!context.mounted) return;
-    showAppSnack(context, 'تم حفظ النسخة الاحتياطية في: $path');
+    final mobile = Theme.of(context).platform == TargetPlatform.android ||
+        Theme.of(context).platform == TargetPlatform.iOS;
+    showAppSnack(
+      context,
+      mobile ? 'افتح ورقة المشاركة واختر مكان الحفظ' : 'تم حفظ النسخة: $path',
+    );
   } catch (e) {
     if (!context.mounted) return;
-    showAppSnack(context, 'تعذّر تصدير النسخة: $e', error: true);
+    final msg = userMessage(e, 'تعذّر تصدير النسخة');
+    if (msg.contains('أُلغي')) return;
+    showAppSnack(context, msg, error: true);
   }
 }
 
@@ -2834,7 +2842,7 @@ Future<void> _restore(BuildContext context, AppStore store) async {
     json = await service.pickFile();
   } catch (e) {
     if (!context.mounted) return;
-    showAppSnack(context, 'تعذّر فتح الملف: $e', error: true);
+    showAppSnack(context, userMessage(e, 'تعذّر فتح الملف'), error: true);
     return;
   }
   if (json == null || !context.mounted) return;
@@ -2847,7 +2855,7 @@ Future<void> _restore(BuildContext context, AppStore store) async {
     summary = service.summarize(json);
   } catch (e) {
     if (!context.mounted) return;
-    showAppSnack(context, '$e'.replaceFirst('FormatException: ', ''), error: true);
+    showAppSnack(context, userMessage(e, 'ملف النسخة غير صالح'), error: true);
     return;
   }
 
@@ -2872,7 +2880,7 @@ Future<void> _restore(BuildContext context, AppStore store) async {
     showAppSnack(context, 'تم استرجاع ${result.restored} سجلاً$skipped');
   } catch (e) {
     if (!context.mounted) return;
-    showAppSnack(context, 'فشل الاسترجاع: $e', error: true);
+    showAppSnack(context, userMessage(e, 'فشل الاسترجاع'), error: true);
   }
 }
 
