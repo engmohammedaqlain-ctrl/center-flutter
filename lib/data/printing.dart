@@ -20,14 +20,19 @@ import '../models/models.dart';
 class PdfKit {
   static pw.Font? _regular;
   static pw.Font? _bold;
+  static pw.Font? _latin;
+  static pw.Font? _latinBold;
+  static pw.Font? _symbols;
 
-  /// خطوط المستندات: نسخة TrueType من خط الواجهة.
+  /// خطوط المستندات: Noto Naskh Arabic (تقارير واضحة) + لاتيني للترقيم.
   ///
-  /// خط الواجهة ملفه OpenType/CFF رغم امتداده `.ttf`، ومكتبة المستندات لا تقرأ
-  /// إلا مجسّمات TrueType، فكانت تعدّه خطاً غير يونيكود وتحاول ترميز العربية
-  /// بـLatin-1 فترمي استثناءً — أي تقرير في التطبيق كان يفشل قبل أن يُبنى.
-  static const _pdfRegular = 'assets/fonts/pdf/ThmanyahSans-Regular.ttf';
-  static const _pdfBold = 'assets/fonts/pdf/ThmanyahSans-Bold.ttf';
+  /// خط الواجهة (Thmanyah) وNoto Sans Arabic يظهران مقطّعين في بعض العارضات؛
+  /// Naskh أوضح للتقارير المطبوعة.
+  static const _pdfRegular = 'assets/fonts/pdf/NotoNaskhArabic-Regular.ttf';
+  static const _pdfBold = 'assets/fonts/pdf/NotoNaskhArabic-Bold.ttf';
+  static const _pdfLatin = 'assets/fonts/pdf/NotoSans-Regular.ttf';
+  static const _pdfLatinBold = 'assets/fonts/pdf/NotoSans-Bold.ttf';
+  static const _pdfSymbols = 'assets/fonts/pdf/NotoSansSymbols2-Regular.ttf';
 
   static Future<void> _ensureFonts() async {
     if (_regular != null && _bold != null) return;
@@ -36,6 +41,15 @@ class PdfKit {
       final boldData = await rootBundle.load(_pdfBold);
       _regular = pw.Font.ttf(regularData);
       _bold = pw.Font.ttf(boldData);
+      try {
+        _latin = pw.Font.ttf(await rootBundle.load(_pdfLatin));
+        _latinBold = pw.Font.ttf(await rootBundle.load(_pdfLatinBold));
+        _symbols = pw.Font.ttf(await rootBundle.load(_pdfSymbols));
+      } catch (_) {
+        _latin = null;
+        _latinBold = null;
+        _symbols = null;
+      }
     } catch (_) {
       // بلا أصول: خط النظام أفضل من الفشل — لكنه لا يطبع العربية
       _regular = pw.Font.helvetica();
@@ -45,35 +59,16 @@ class PdfKit {
 
   static Future<pw.ThemeData> theme() async {
     await _ensureFonts();
-    return pw.ThemeData.withFont(base: _regular!, bold: _bold!);
-  }
-
-  /// كـ[build] لكنها تُرجع `null` بدل أن ترمي.
-  ///
-  /// بناء المستند كان خارج حماية المستدعين: خطأٌ فيه يمرّ صامتاً فلا يظهر
-  /// التقرير ولا سببُ غيابه، فيبدو الزر كأنه لا يعمل.
-  static Future<Uint8List?> buildSafe({
-    required String title,
-    required String institutionName,
-    String? logoBase64,
-    String? subtitle,
-    required List<pw.Widget> Function(pw.Context) body,
-    PdfPageFormat format = PdfPageFormat.a4,
-    bool landscape = false,
-  }) async {
-    try {
-      return await build(
-        title: title,
-        institutionName: institutionName,
-        logoBase64: logoBase64,
-        subtitle: subtitle,
-        body: body,
-        format: format,
-        landscape: landscape,
-      );
-    } catch (_) {
-      return null;
-    }
+    final fallback = <pw.Font>[
+      if (_latin != null) _latin!,
+      if (_latinBold != null) _latinBold!,
+      if (_symbols != null) _symbols!,
+    ];
+    return pw.ThemeData.withFont(
+      base: _regular!,
+      bold: _bold!,
+      fontFallback: fallback.isEmpty ? null : fallback,
+    );
   }
 
   /// مستند عربي جاهز بترويسة المنشأة.
@@ -85,8 +80,10 @@ class PdfKit {
     required List<pw.Widget> Function(pw.Context) body,
     PdfPageFormat format = PdfPageFormat.a4,
     bool landscape = false,
+    pw.Widget Function(pw.Context)? header,
+    List<pw.Widget>? endMatter,
+    pw.EdgeInsets margin = const pw.EdgeInsets.fromLTRB(16, 12, 16, 10),
   }) async {
-    // إفساح قبل بناء الصفحات الثقيلة حتى يبقى مؤشر التحميل يدور
     await Future<void>.delayed(Duration.zero);
     await Future<void>.delayed(Duration.zero);
     final doc = pw.Document(theme: await theme());
@@ -95,22 +92,47 @@ class PdfKit {
     doc.addPage(
       pw.MultiPage(
         pageFormat: landscape ? format.landscape : format,
-        margin: const pw.EdgeInsets.all(28),
+        margin: margin,
         textDirection: pw.TextDirection.rtl,
-        header: (ctx) => _header(title, institutionName, subtitle, logo),
-        footer: (ctx) => pw.Container(
-          alignment: pw.Alignment.centerLeft,
-          margin: const pw.EdgeInsets.only(top: 8),
-          child: pw.Text(
-            'صفحة ${ctx.pageNumber} من ${ctx.pagesCount}',
-            style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
-          ),
-        ),
-        build: body,
+        header: header ?? (ctx) => _header(title, institutionName, subtitle, logo),
+        build: (ctx) => [
+          ...body(ctx),
+          if (endMatter != null) ...endMatter,
+        ],
       ),
     );
     await Future<void>.delayed(Duration.zero);
     return doc.save();
+  }
+
+  static Future<Uint8List?> buildSafe({
+    required String title,
+    required String institutionName,
+    String? logoBase64,
+    String? subtitle,
+    required List<pw.Widget> Function(pw.Context) body,
+    PdfPageFormat format = PdfPageFormat.a4,
+    bool landscape = false,
+    pw.Widget Function(pw.Context)? header,
+    List<pw.Widget>? endMatter,
+    pw.EdgeInsets margin = const pw.EdgeInsets.fromLTRB(16, 12, 16, 10),
+  }) async {
+    try {
+      return await build(
+        title: title,
+        institutionName: institutionName,
+        logoBase64: logoBase64,
+        subtitle: subtitle,
+        body: body,
+        format: format,
+        landscape: landscape,
+        header: header,
+        endMatter: endMatter,
+        margin: margin,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   /// صورة من `data:` للطباعة — الشعار والختم كلاهما يمرّ بها.
@@ -171,55 +193,178 @@ class PdfKit {
     return '${n.day}/${n.month}/${n.year}';
   }
 
-  /// جدول بسيط بحدود — الشكل المستعمل في كل الكشوف المطبوعة.
+  /// جدول بحدود ورأس يتكرر — أعمدة يمين→يسار كالتقارير المعتمدة.
   ///
-  /// [ltrColumns]: فهارس أعمدة تُعرض LTR (هواتف، هوية، أرقام).
+  /// [headers]: `String` أو `pw.Widget`.
+  /// [ltrColumns]: فهارس أعمدة بيانات رقمية فقط (لا تُطبَّق على رؤوس عربية).
+  /// [accentColumns]: أعمدة بيانات بلون برتقالي (كلمات مرور).
   static pw.Widget table({
-    required List<String> headers,
+    required List<dynamic> headers,
     required List<List<String>> rows,
     List<int>? flex,
     Set<int>? ltrColumns,
+    Set<int>? accentColumns,
+    PdfColor headerBg = const PdfColor.fromInt(0xFFE8EEF2),
+    PdfColor accent = const PdfColor.fromInt(0xFFD97706),
   }) {
-    pw.Widget cell(String text, {bool head = false, PdfColor? bg, bool forceLtr = false}) {
-      final style = pw.TextStyle(fontSize: head ? 9 : 8.5, fontWeight: head ? pw.FontWeight.bold : null);
-      final child = forceLtr ? ltr(text, style: style) : pw.Text(text, style: style);
-      return pw.Container(
-        padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 5),
-        decoration: pw.BoxDecoration(
-          color: bg ?? (head ? PdfColors.grey200 : null),
-          border: const pw.Border(
-            bottom: pw.BorderSide(color: PdfColors.grey400, width: 0.5),
-            left: pw.BorderSide(color: PdfColors.grey400, width: 0.5),
-          ),
-        ),
+    final n = headers.length;
+    final visualHeaders = headers.reversed.toList();
+    final visualRows = [for (final r in rows) r.reversed.toList()];
+    final visualFlex = flex?.reversed.toList();
+    int rtlIx(int i) => n - 1 - i;
+    final visualLtr = {for (final i in (ltrColumns ?? const <int>{})) rtlIx(i)};
+    final visualAccent = {for (final i in (accentColumns ?? const <int>{})) rtlIx(i)};
+
+    final widths = <int, pw.TableColumnWidth>{};
+    if (visualFlex != null) {
+      for (var i = 0; i < visualFlex.length; i++) {
+        widths[i] = pw.FlexColumnWidth(visualFlex[i].toDouble());
+      }
+    }
+
+    pw.Widget cell(dynamic content, {required int col, bool head = false}) {
+      final forceLtr = !head && visualLtr.contains(col);
+      final isAccent = !head && visualAccent.contains(col);
+      final style = pw.TextStyle(
+        fontSize: head ? 8.5 : 9,
+        fontWeight: head || isAccent ? pw.FontWeight.bold : pw.FontWeight.normal,
+        color: isAccent ? accent : PdfColors.black,
+      );
+      final pw.Widget child;
+      if (content is pw.Widget) {
+        child = content;
+      } else {
+        final text = '${content ?? ' '}';
+        child = pw.Directionality(
+          textDirection: forceLtr ? pw.TextDirection.ltr : pw.TextDirection.rtl,
+          child: pw.Text(text.isEmpty ? ' ' : text, style: style, textAlign: pw.TextAlign.center),
+        );
+      }
+      return pw.Padding(
+        padding: pw.EdgeInsets.symmetric(horizontal: 3, vertical: head ? 4 : 3.5),
         child: child,
       );
     }
 
-    final widths = <int, pw.TableColumnWidth>{};
-    if (flex != null) {
-      for (var i = 0; i < flex.length; i++) {
-        widths[i] = pw.FlexColumnWidth(flex[i].toDouble());
-      }
-    }
-
     return pw.Table(
-      border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+      tableWidth: pw.TableWidth.max,
+      defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
+      border: pw.TableBorder.all(color: PdfColors.grey700, width: 0.45),
       columnWidths: widths.isEmpty ? null : widths,
       children: [
         pw.TableRow(
+          repeat: true,
+          decoration: pw.BoxDecoration(color: headerBg),
           children: [
-            for (var i = 0; i < headers.length; i++)
-              cell(headers[i], head: true, forceLtr: ltrColumns?.contains(i) ?? false),
+            for (var c = 0; c < visualHeaders.length; c++)
+              cell(visualHeaders[c], col: c, head: true),
           ],
         ),
-        for (final r in rows)
+        for (final r in visualRows)
           pw.TableRow(
             children: [
-              for (var i = 0; i < r.length; i++)
-                cell(r[i], forceLtr: ltrColumns?.contains(i) ?? false),
+              for (var c = 0; c < r.length; c++) cell(r[c], col: c),
             ],
           ),
+      ],
+    );
+  }
+
+  /// ترويسة وثيقة: يمين منشأة · وسط عنوان · يسار تاريخ.
+  static pw.Widget docHeader({
+    required String institution,
+    required String title,
+    required String academicYearLabel,
+    required String dateLabel,
+    pw.MemoryImage? logo,
+  }) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.only(bottom: 6),
+      decoration: const pw.BoxDecoration(
+        border: pw.Border(bottom: pw.BorderSide(width: 1.6, color: PdfColors.black)),
+      ),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Expanded(
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                if (logo != null) ...[
+                  pw.SizedBox(width: 36, height: 36, child: pw.Image(logo)),
+                  pw.SizedBox(height: 4),
+                ],
+                pw.Text(institution, style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+                pw.SizedBox(height: 2),
+                pw.Text('العام الدراسي: $academicYearLabel', style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.grey700)),
+              ],
+            ),
+          ),
+          pw.Expanded(
+            child: pw.Text(title, style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center),
+          ),
+          pw.Expanded(
+            child: pw.Text(dateLabel, style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.grey700), textAlign: pw.TextAlign.end),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget metaRow(List<String> parts) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(top: 4, bottom: 6),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          for (final p in parts)
+            pw.Text(p, style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey800)),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget signatureRow(List<String> labels) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(top: 14),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          for (final label in labels)
+            pw.Expanded(
+              child: pw.Column(
+                children: [
+                  pw.Text(label, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center),
+                  pw.SizedBox(height: 16),
+                  pw.Container(
+                    width: 140,
+                    decoration: const pw.BoxDecoration(
+                      border: pw.Border(top: pw.BorderSide(color: PdfColors.black, style: pw.BorderStyle.dotted)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// رأس عمود تقييم: اسم + الدرجة القصوى.
+  static pw.Widget gradeEvalHeader({required String title, required String outOf}) {
+    return pw.Column(
+      mainAxisAlignment: pw.MainAxisAlignment.center,
+      children: [
+        pw.Text(title, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center, maxLines: 2),
+        pw.SizedBox(height: 2),
+        pw.Container(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+          decoration: pw.BoxDecoration(
+            color: const PdfColor.fromInt(0xFFE2E8F0),
+            borderRadius: pw.BorderRadius.circular(2),
+          ),
+          child: pw.Text(outOf, style: pw.TextStyle(fontSize: 6.5, fontWeight: pw.FontWeight.bold, color: PdfColors.grey800), textAlign: pw.TextAlign.center),
+        ),
       ],
     );
   }

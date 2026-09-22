@@ -785,16 +785,17 @@ void showAppSnack(BuildContext context, String msg, {bool error = false}) {
 
 OverlayEntry? _toast;
 
-/// مؤشر تحميل عصري موحّد — حلقتان نابضتان بدل دائرة النظام الجامدة.
+/// مؤشر تحميل بسيط — ثلاث نقاط بلون الثيم فقط، بلا رمادي ولا طبقات.
 class AppLoader extends StatefulWidget {
   const AppLoader({
     super.key,
     this.message,
-    this.size = 42,
+    this.size = 10,
     this.compact = false,
   });
 
   final String? message;
+  /// قطر النقطة الواحدة.
   final double size;
   final bool compact;
 
@@ -803,82 +804,54 @@ class AppLoader extends StatefulWidget {
 }
 
 class _AppLoaderState extends State<AppLoader> with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse;
+  late final AnimationController _tick;
 
   @override
   void initState() {
     super.initState();
-    _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))
-      ..repeat(reverse: true);
+    _tick = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
+      ..repeat();
   }
 
   @override
   void dispose() {
-    _pulse.dispose();
+    _tick.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final size = widget.size;
+    final color = AppColors.amber;
+    final dot = widget.size;
     final column = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
-          width: size,
-          height: size,
+          height: dot * 2.2,
           child: AnimatedBuilder(
-            animation: _pulse,
+            animation: _tick,
             builder: (context, _) {
-              final t = Curves.easeInOut.transform(_pulse.value);
-              return Stack(
-                alignment: Alignment.center,
+              return Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  // هالة خارجية خفيفة
-                  Transform.scale(
-                    scale: 0.92 + t * 0.14,
-                    child: Container(
-                      width: size,
-                      height: size,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.amber.withValues(alpha: 0.10 + t * 0.06),
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: size * 0.78,
-                    height: size * 0.78,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.6,
-                      color: AppColors.amber,
-                      backgroundColor: AppColors.line.withValues(alpha: 0.55),
-                      strokeCap: StrokeCap.round,
-                      value: const bool.fromEnvironment('FLUTTER_TEST') ? 0.65 : null,
-                    ),
-                  ),
-                  Container(
-                    width: size * 0.22,
-                    height: size * 0.22,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.amber.withValues(alpha: 0.85 + t * 0.15),
-                    ),
-                  ),
+                  for (var i = 0; i < 3; i++) ...[
+                    if (i > 0) SizedBox(width: dot * 0.7),
+                    _ThemeDot(progress: _tick.value, index: i, size: dot, color: color),
+                  ],
                 ],
               );
             },
           ),
         ),
         if (widget.message != null && widget.message!.isNotEmpty) ...[
-          SizedBox(height: widget.compact ? 10 : 14),
+          SizedBox(height: widget.compact ? 12 : 16),
           Text(
             widget.message!,
             textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: AppText.family,
-              color: AppColors.muted,
-              fontSize: widget.compact ? 12 : 13,
+              color: color.withValues(alpha: 0.9),
+              fontSize: widget.compact ? 12.5 : 13,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -887,6 +860,45 @@ class _AppLoaderState extends State<AppLoader> with SingleTickerProviderStateMix
     );
     if (widget.compact) return column;
     return Center(child: column);
+  }
+}
+
+class _ThemeDot extends StatelessWidget {
+  const _ThemeDot({
+    required this.progress,
+    required this.index,
+    required this.size,
+    required this.color,
+  });
+
+  final double progress;
+  final int index;
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final phase = (progress + index * 0.22) % 1.0;
+    final wave = (1 - (phase - 0.5).abs() * 2).clamp(0.0, 1.0);
+    final t = Curves.easeInOut.transform(wave);
+    if (const bool.fromEnvironment('FLUTTER_TEST')) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.55), shape: BoxShape.circle),
+      );
+    }
+    return Opacity(
+      opacity: 0.35 + t * 0.65,
+      child: Transform.translate(
+        offset: Offset(0, -size * 0.35 * t),
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+      ),
+    );
   }
 }
 

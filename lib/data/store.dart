@@ -906,6 +906,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         loadedTables.add('institution_settings');
       }
       _restoreSession();
+      // شعار المدرسة واسمها من صف الهوية على القرص — بلا هذا تبقى الواجهة
+      // على شعار التطبيق حتى تنتهي شبكة afterEnter
+      await hydrateInstitution();
       // كل تجديد للتوكن يُحفظ فوراً: السحابة تُدوّر توكن التجديد، والقديم يُرفض
       SupabaseAuth.onSessionChanged = _saveSession;
       SupabaseAuth.onSessionInvalid = _onSessionExpired;
@@ -1612,11 +1615,52 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return names;
   }
 
-  String get institutionLogo => db.settings[institutionLogoKey] ?? '';
+  String get institutionLogo {
+    final local = db.settings[institutionLogoKey] ?? '';
+    if (local.isNotEmpty) return local;
+    // صف الهوية على القرص قبل أن يُنسخ للإعدادات — بدونها السايد بار والسندات
+    // تعرض شعار التطبيق بدل شعار المدرسة
+    return _logoFromInstitutionRow();
+  }
 
   /// الختم الرسمي: يُحفظ في سجل الهوية المتزامن فيصل كل أجهزة المدرسة، لا على
   /// جهاز من رفعه وحده.
-  String get institutionStamp => db.settings[institutionStampKey] ?? '';
+  String get institutionStamp {
+    final local = db.settings[institutionStampKey] ?? '';
+    if (local.isNotEmpty) return local;
+    return _stampFromInstitutionRow();
+  }
+
+  Map<String, dynamic>? _institutionSettingsRow() {
+    final tid = tenantId;
+    final bucket = extraCloud['institution_settings'];
+    if (bucket == null || bucket.isEmpty) return null;
+    if (tid != null) {
+      final byId = bucket.where((e) => '${e['id']}' == tid).firstOrNull;
+      if (byId != null) return byId;
+      final byTenant = bucket.where((e) => '${e['tenant_id']}' == tid).firstOrNull;
+      if (byTenant != null) return byTenant;
+    }
+    return bucket.firstOrNull;
+  }
+
+  static String _usableImageData(Object? raw) {
+    if (raw is! String) return '';
+    final s = raw.trim();
+    // مسار ويب افتراضي أو فارغ — ليس صورة قابلة للعرض في الجوال/PDF
+    if (s.isEmpty || s == 'null' || s.startsWith('/') || s.startsWith('http://localhost')) {
+      return '';
+    }
+    return s;
+  }
+
+  String _logoFromInstitutionRow() => _usableImageData(_institutionSettingsRow()?['logo']);
+
+  String _stampFromInstitutionRow() {
+    final colors = _institutionSettingsRow()?['colors'];
+    if (colors is! Map) return '';
+    return _usableImageData(colors['__official_stamp']);
+  }
 
   Future<void> saveInstitutionStamp(String stamp) async {
     requireSection('settings');
@@ -2828,18 +2872,16 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   /// قراءة هوية المنشأة القادمة من السحابة إلى الإعدادات المحلية.
   Future<void> hydrateInstitution() async {
-    final tid = tenantId;
-    if (tid == null) return;
-    final row = extraCloud['institution_settings']?.where((e) => '${e['id']}' == tid).firstOrNull;
+    final row = _institutionSettingsRow();
     if (row == null) return;
     final name = '${row['institution_name'] ?? ''}'.trim();
-    final logo = row['logo'];
+    final logo = _usableImageData(row['logo']);
     final colors = row['colors'];
     if (name.isNotEmpty) {
       institutionName = name;
       await db.setSetting(institutionNameKey, name);
     }
-    if (logo is String && logo.isNotEmpty) await db.setSetting(institutionLogoKey, logo);
+    if (logo.isNotEmpty) await db.setSetting(institutionLogoKey, logo);
 
     // إعدادات المدرسة من عمودها. سجلٌّ لم يكتبه العمود بعد يُترك للمفاتيح
     // القديمة داخل `colors` أدناه، فلا يُصفَّر رسمٌ مضبوط بإعدادات فارغة
@@ -2865,8 +2907,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       if (fees is List) await db.setSetting(feeItemsKey, jsonEncode(fees));
 
       if (synced.containsKey('__official_stamp')) {
-        final stamp = synced['__official_stamp'];
-        await db.setSetting(institutionStampKey, stamp is String && stamp.isNotEmpty ? stamp : null);
+        final stamp = _usableImageData(synced['__official_stamp']);
+        await db.setSetting(institutionStampKey, stamp.isEmpty ? null : stamp);
       }
 
       final seatFee = synced[seatFeeColorKey];

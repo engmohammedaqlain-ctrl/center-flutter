@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../data/academic_matching.dart';
 import '../data/balance.dart';
@@ -16,6 +15,7 @@ import '../widgets/table_gate.dart';
 import '../widgets/widgets.dart';
 import 'attendance_print.dart';
 import 'attendance_screen.dart';
+import 'passwords_print.dart';
 import 'room_form_screen.dart';
 import 'student_detail_screen.dart';
 import 'section_students_sheet.dart';
@@ -1640,9 +1640,7 @@ class _RosterRow extends StatelessWidget {
 
 /// رموز دخول طلاب الصف إلى البوابة — المقابل لـ `ClassPortalCodesModal`.
 ///
-/// يُظهر رمز كل طالب ويولّد الناقص دفعةً واحدة، فتوزيع الرموز على الصف
-/// لا يحتاج فتح ملف كل طالب على حدة.
-/// أنماط العرض: طلاب / أولياء / الاثنان — والنسخ TSV للصق في Excel.
+/// يُظهر رمز كل طالب ويولّد الناقص دفعةً واحدة، وتنزيل PDF حسب النمط المختار.
 Future<void> showClassPortalCodes(
   BuildContext context, {
   required Classroom room,
@@ -1668,27 +1666,6 @@ Future<void> showClassPortalCodes(
               : missing == 0
                   ? 'الطلاب: ${students.length}  ·  جميعهم لديهم رموز'
                   : 'الطلاب: ${students.length}  ·  بلا رمز: $missing';
-
-          String tsv() {
-            final buf = StringBuffer();
-            if (mode == 'students') {
-              buf.writeln('الاسم\tرمز الطالب');
-              for (final s in students) {
-                buf.writeln('${s.fullName}\t${s.portalCode}');
-              }
-            } else if (mode == 'parents') {
-              buf.writeln('الاسم\tرمز ولي الأمر');
-              for (final s in students) {
-                buf.writeln('${s.fullName}\t${s.parentPortalCode}');
-              }
-            } else {
-              buf.writeln('الاسم\tرمز الطالب\tرمز ولي الأمر');
-              for (final s in students) {
-                buf.writeln('${s.fullName}\t${s.portalCode}\t${s.parentPortalCode}');
-              }
-            }
-            return buf.toString();
-          }
 
           Widget modeChip(String id, String label) {
             final on = mode == id;
@@ -1837,12 +1814,18 @@ Future<void> showClassPortalCodes(
                       children: [
                         if (students.isNotEmpty)
                           Expanded(
-                            child: GhostButton(
-                              label: 'نسخ Excel',
-                              icon: Icons.copy_all_outlined,
-                              onPressed: () async {
-                                await Clipboard.setData(ClipboardData(text: tsv()));
-                                if (ctx.mounted) showAppSnack(ctx, 'تم نسخ الكشف (TSV)');
+                            child: PrimaryButton(
+                              label: 'تنزيل PDF',
+                              icon: Icons.picture_as_pdf_outlined,
+                              onPressed: () {
+                                Navigator.pop(ctx);
+                                printPortalPasswords(
+                                  context,
+                                  store: store,
+                                  room: room,
+                                  students: students,
+                                  mode: mode,
+                                );
                               },
                             ),
                           ),
