@@ -16,7 +16,8 @@ Future<void> printWeeklyAttendance(
   required List<SchoolDay> week,
   required List<Student> students,
   required String ownerId,
-}) async {
+}) {
+  return runBusyOp(context, () async {
   final room = store.roomById(ownerId);
   final period = week.length >= 2
       ? 'الفترة: من ${week.first.dayName} ${week.first.shortDate} إلى ${week.last.dayName} ${week.last.shortDate}'
@@ -57,7 +58,7 @@ Future<void> printWeeklyAttendance(
 
   final dayFlex = List<int>.filled(week.length, 2);
   final parentCol = 2 + week.length + 1; // #, اسم, أيام..., غياب, ولي الأمر
-  final bytes = await PdfKit.build(
+  final bytes = await PdfKit.buildSafe(
     title: 'سجل التفقد والدوام الأسبوعي الرسمي',
     institutionName: store.institutionName,
     logoBase64: store.institutionLogo,
@@ -97,11 +98,16 @@ Future<void> printWeeklyAttendance(
   );
 
   if (!context.mounted) return;
+  if (bytes == null) {
+    showAppSnack(context, 'تعذّر تجهيز كشف الحضور', error: true);
+    return;
+  }
   try {
     await PdfKit.preview(bytes, PdfKit.fileName('كشف تفقد وحضور الطلاب $title'));
   } catch (_) {
     if (context.mounted) showAppSnack(context, 'تعذّر تنزيل كشف الحضور', error: true);
   }
+  }, message: 'جارٍ تجهيز كشف الحضور...');
 }
 
 /// طباعة كشف طلاب الصف — المقابل لـ `ClassPrintRoster.tsx`.
@@ -110,10 +116,11 @@ Future<void> printClassRoster(
   required AppStore store,
   required Classroom room,
   required List<Student> students,
-}) async {
+}) {
+  return runBusyOp(context, () async {
   final teacher = store.teacherById(room.teacherId);
 
-  final bytes = await PdfKit.build(
+  final bytes = await PdfKit.buildSafe(
     title: 'كشف بيانات وحضور طلاب الصف',
     institutionName: store.institutionName,
     logoBase64: store.institutionLogo,
@@ -170,11 +177,16 @@ Future<void> printClassRoster(
   );
 
   if (!context.mounted) return;
+  if (bytes == null) {
+    showAppSnack(context, 'تعذّر تجهيز كشف الصف', error: true);
+    return;
+  }
   try {
     await PdfKit.preview(bytes, PdfKit.fileName('كشف طلاب ${room.name}'));
   } catch (_) {
     if (context.mounted) showAppSnack(context, 'تعذّر تنزيل كشف الصف', error: true);
   }
+  }, message: 'جارٍ تجهيز كشف الصف...');
 }
 
 /// أعمدة مطابقة لـ ClassPrintRoster: م، اسم كامل، الجنس، هاتف، ولي الأمر (هاتف)، ملاحظات/حضور.

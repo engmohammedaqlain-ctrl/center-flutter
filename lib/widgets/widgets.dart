@@ -785,6 +785,111 @@ void showAppSnack(BuildContext context, String msg, {bool error = false}) {
 
 OverlayEntry? _toast;
 
+/// مؤشر تحميل عصري موحّد — حلقتان نابضتان بدل دائرة النظام الجامدة.
+class AppLoader extends StatefulWidget {
+  const AppLoader({
+    super.key,
+    this.message,
+    this.size = 42,
+    this.compact = false,
+  });
+
+  final String? message;
+  final double size;
+  final bool compact;
+
+  @override
+  State<AppLoader> createState() => _AppLoaderState();
+}
+
+class _AppLoaderState extends State<AppLoader> with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))
+      ..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = widget.size;
+    final column = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: size,
+          height: size,
+          child: AnimatedBuilder(
+            animation: _pulse,
+            builder: (context, _) {
+              final t = Curves.easeInOut.transform(_pulse.value);
+              return Stack(
+                alignment: Alignment.center,
+                children: [
+                  // هالة خارجية خفيفة
+                  Transform.scale(
+                    scale: 0.92 + t * 0.14,
+                    child: Container(
+                      width: size,
+                      height: size,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.amber.withValues(alpha: 0.10 + t * 0.06),
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: size * 0.78,
+                    height: size * 0.78,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.6,
+                      color: AppColors.amber,
+                      backgroundColor: AppColors.line.withValues(alpha: 0.55),
+                      strokeCap: StrokeCap.round,
+                      value: const bool.fromEnvironment('FLUTTER_TEST') ? 0.65 : null,
+                    ),
+                  ),
+                  Container(
+                    width: size * 0.22,
+                    height: size * 0.22,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.amber.withValues(alpha: 0.85 + t * 0.15),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+        if (widget.message != null && widget.message!.isNotEmpty) ...[
+          SizedBox(height: widget.compact ? 10 : 14),
+          Text(
+            widget.message!,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: AppText.family,
+              color: AppColors.muted,
+              fontSize: widget.compact ? 12 : 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ],
+    );
+    if (widget.compact) return column;
+    return Center(child: column);
+  }
+}
+
 /// طبقة تحميل شفافة فوق الشاشة أثناء عملية — بدل تجميد بلا مؤشر.
 Future<T> runBusyOp<T>(
   BuildContext context,
@@ -796,7 +901,7 @@ Future<T> runBusyOp<T>(
   if (overlay != null) {
     entry = OverlayEntry(
       builder: (_) => Material(
-        color: Colors.black.withValues(alpha: 0.35),
+        color: Colors.black.withValues(alpha: 0.38),
         child: Center(
           child: Container(
             margin: const EdgeInsets.symmetric(horizontal: 40),
@@ -806,30 +911,7 @@ Future<T> runBusyOp<T>(
               borderRadius: BorderRadius.circular(Corner.card),
               boxShadow: cardShadow,
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 36,
-                  height: 36,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 3,
-                    color: AppColors.amber,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontFamily: AppText.family,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: AppColors.heading,
-                  ),
-                ),
-              ],
-            ),
+            child: AppLoader(message: message, compact: true),
           ),
         ),
       ),
@@ -837,9 +919,8 @@ Future<T> runBusyOp<T>(
     overlay.insert(entry);
   }
   try {
-    // إطاران لرسم اللودنغ وبدء دورانه قبل أي عمل ثقيل على نفس العزل
-    await Future<void>.delayed(Duration.zero);
-    await Future<void>.delayed(Duration.zero);
+    // ثلاثة إطارات: رسم الطبقة + بدء النبض قبل العمل الثقيل على نفس العزل
+    await yieldUi(3);
     return await op();
   } finally {
     entry?.remove();

@@ -255,7 +255,8 @@ class _VoucherSheet extends StatelessWidget {
         ),
       );
 
-  Future<void> _print(BuildContext context, AppStore store) async {
+  Future<void> _print(BuildContext context, AppStore store) {
+    return runBusyOp(context, () async {
     final stamp = PdfKit.decodeImage(store.institutionStamp);
     final day = parseIsoDate(voucher.date.length >= 10 ? voucher.date.substring(0, 10) : voucher.date);
     final dateLabel = day == null ? voucher.date : formatDate(day);
@@ -281,7 +282,7 @@ class _VoucherSheet extends StatelessWidget {
           ),
         );
 
-    final bytes = await PdfKit.build(
+    final bytes = await PdfKit.buildSafe(
       title: voucher.title,
       institutionName: store.institutionName.isEmpty ? appName : store.institutionName,
       logoBase64: store.institutionLogo,
@@ -400,11 +401,16 @@ class _VoucherSheet extends StatelessWidget {
         ),
       ],
     );
+    if (bytes == null) {
+      if (context.mounted) showAppSnack(context, 'تعذّر تجهيز السند', error: true);
+      return;
+    }
     try {
       await PdfKit.share(bytes, 'voucher_$voucherNo.pdf');
     } catch (_) {
       if (context.mounted) showAppSnack(context, 'تعذّر تنزيل السند', error: true);
     }
+    }, message: 'جارٍ تجهيز السند...');
   }
 }
 

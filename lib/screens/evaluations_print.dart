@@ -16,7 +16,8 @@ Future<void> printEvaluations(
 
   /// الشعبة المصفّى عليها — تدخل اسم الملف كما في `groupSuffix` بالنسخة المكتبية.
   String groupName = '',
-}) async {
+}) {
+  return runBusyOp(context, () async {
   final year = store.viewedAcademicYear?.label ?? '';
   final extracted = isoDate(DateTime.now());
   final rows = [
@@ -36,7 +37,7 @@ Future<void> printEvaluations(
       ],
   ];
 
-  final bytes = await PdfKit.build(
+  final bytes = await PdfKit.buildSafe(
     title: 'كشف العلامات',
     institutionName: store.institutionName,
     logoBase64: store.institutionLogo,
@@ -64,10 +65,15 @@ Future<void> printEvaluations(
   );
 
   if (!context.mounted) return;
+  if (bytes == null) {
+    showAppSnack(context, 'تعذّر تجهيز كشف العلامات', error: true);
+    return;
+  }
   final suffix = groupName.trim().isEmpty ? '' : ' ${groupName.trim()}';
   try {
     await PdfKit.preview(bytes, PdfKit.fileName('كشف العلامات$suffix'));
   } catch (_) {
     if (context.mounted) showAppSnack(context, 'تعذّر تنزيل كشف العلامات', error: true);
   }
+  }, message: 'جارٍ تجهيز كشف العلامات...');
 }

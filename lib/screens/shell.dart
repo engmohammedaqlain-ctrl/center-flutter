@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../data/app_update.dart';
 import '../data/store.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
@@ -124,12 +127,12 @@ class _AppShellState extends State<AppShell> {
             showAppSnack(context, offline ? 'لا يوجد اتصال بالإنترنت' : 'عاد الاتصال', error: offline);
           });
         }
-        // قائمة بلا بنود لا تُفتح: من لا يملك إعدادات ولا درجات ولا مودل ليس
-        // له فيها إلا الخروج، فيُنقل إلى الترويسة ويُخفى زر القائمة
+        // قائمة بلا بنود لا تُفتح — التحديث يخص الجهاز فيبقى ظاهراً لكل الأدوار
         final hasMenu = store.canOpenSection('settings') ||
             (store.isFeatureOn('evaluations') && store.can('evaluations')) ||
             (store.isFeatureOn('moodle') && store.can('moodle')) ||
-            store.isMasterAdmin;
+            store.isMasterAdmin ||
+            AppUpdater.instance.supported;
         final sections = _sections(store);
         var index = sections.indexWhere((s) => s.id == current);
         if (index < 0) index = 0;
@@ -253,6 +256,7 @@ class _SideMenu extends StatelessWidget {
       required String label,
       required VoidCallback onTap,
       Color? color,
+      String? badge,
     }) {
       return ListTile(
         dense: true,
@@ -276,8 +280,24 @@ class _SideMenu extends StatelessWidget {
             color: AppColors.text,
           ),
         ),
-        // سهم «التالي» ينعكس مع العربية (matchTextDirection)
-        trailing: const AppChevron(size: 22),
+        trailing: badge == null
+            ? const AppChevron(size: 22)
+            : Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.amber.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(Corner.box),
+                ),
+                child: Text(
+                  badge,
+                  style: TextStyle(
+                    fontFamily: AppText.family,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.amber,
+                  ),
+                ),
+              ),
         onTap: onTap,
       );
     }
@@ -417,6 +437,28 @@ class _SideMenu extends StatelessWidget {
                     label: 'إعدادات المطور',
                     color: AppColors.amber,
                     onTap: onOpenDeveloper,
+                  ),
+                ],
+                if (AppUpdater.instance.supported) ...[
+                  sectionLabel('التطبيق'),
+                  ListenableBuilder(
+                    listenable: AppUpdater.instance,
+                    builder: (context, _) {
+                      final u = AppUpdater.instance;
+                      final ready = u.action != UpdateAction.none && u.release != null;
+                      return item(
+                        icon: Icons.system_update_outlined,
+                        label: 'تحديثات التطبيق',
+                        color: ready ? AppColors.amber : AppColors.heading,
+                        badge: ready
+                            ? (u.release!.versionName.isEmpty ? 'متاح' : u.release!.versionName)
+                            : null,
+                        onTap: () {
+                          onClose();
+                          unawaited(showUpdateSheet(context));
+                        },
+                      );
+                    },
                   ),
                 ],
               ],

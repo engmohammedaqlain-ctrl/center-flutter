@@ -8,6 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 Future<AppStore> _store() async {
   final s = AppStore.forTesting();
   injectDemoData(s);
+    // البيانات في الذاكرة: بوابة التحميل الكسول ليس لها ما تنتظره
+    s.loadedTables.addAll(AppStore.deferredTables);
   return s;
 }
 

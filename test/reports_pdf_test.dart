@@ -1,0 +1,69 @@
+import 'package:center_mobile/data/printing.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+/// التقارير تُبنى بالعربية.
+///
+/// خط الواجهة ملفه OpenType/CFF رغم امتداد `.ttf`، ومكتبة المستندات تقرأ
+/// مجسّمات TrueType وحدها — فكانت تعدّه خطاً لاتينياً وترمي عند أول حرف عربي.
+/// كل تقارير التطبيق كانت تفشل قبل أن تُبنى، بلا رسالة.
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('خط المستندات TrueType ويحمل أشكال العربية', () async {
+    final data = await rootBundle.load('assets/fonts/pdf/ThmanyahSans-Regular.ttf');
+    final bytes = data.buffer.asUint8List();
+    // توقيع TrueType: 0x00010000 — لا 'OTTO'
+    expect(bytes.sublist(0, 4), [0, 1, 0, 0], reason: 'OTTO لا تقرأه مكتبة المستندات');
+
+    final bold = await rootBundle.load('assets/fonts/pdf/ThmanyahSans-Bold.ttf');
+    expect(bold.buffer.asUint8List().sublist(0, 4), [0, 1, 0, 0]);
+  });
+
+  test('مستند بعناوين وجدول عربيين يُبنى صالحاً', () async {
+    final bytes = await PdfKit.build(
+      title: 'كشف تفقد وحضور الطلاب',
+      institutionName: 'مدرسة أبو عقلين الخاصة',
+      subtitle: 'المرحلة: ثاني عشر أدبي   ·   الشعبة: شعبة (1)',
+      body: (_) => [
+        PdfKit.table(
+          headers: const ['#', 'اسم الطالب', 'الأحد', 'الاثنين', 'الغياب'],
+          rows: const [
+            ['1', 'علي أبو حسنين', 'حاضر', 'غائب', '1'],
+            ['2', 'سارة محمود', 'حاضر', 'مأذون', '0'],
+          ],
+        ),
+      ],
+    );
+
+    expect(String.fromCharCodes(bytes.take(5)), '%PDF-');
+    expect(bytes.length, greaterThan(2000));
+  });
+
+  test('مستند أفقي بعملة وأرقام — كشف مالي', () async {
+    final bytes = await PdfKit.build(
+      title: 'كشف الدفعات',
+      institutionName: 'مدرسة أبو عقلين الخاصة',
+      landscape: true,
+      body: (_) => [
+        PdfKit.table(
+          headers: const ['رقم السند', 'الطالب', 'المبلغ', 'الطريقة'],
+          rows: const [
+            ['١٢٣', 'ريم قاسم', '250.00', 'نقداً'],
+            ['124', 'علي محمد', '1,300.50', 'تحويل بنكي'],
+          ],
+        ),
+      ],
+    );
+    expect(String.fromCharCodes(bytes.take(5)), '%PDF-');
+  });
+
+  test('buildSafe تُرجع null ولا ترمي عند فشل البناء', () async {
+    final bytes = await PdfKit.buildSafe(
+      title: 'كشف',
+      institutionName: 'مدرسة',
+      body: (_) => throw StateError('محتوى تالف'),
+    );
+    expect(bytes, isNull, reason: 'المستدعي يعرض رسالة بدل أن يمرّ الفشل صامتاً');
+  });
+}

@@ -198,6 +198,8 @@ void main() {
 
     final second = AppStore.forTesting();
     await second.bootstrap(disk);
+    // الحضور والجلسات تُحمَّل عند فتح شاشتها لا عند الإقلاع
+    await second.ensureTables(const ['attendance', 'sessions']);
     expect(
       second.attendanceRecord(student.id, day)?.status,
       'absent',

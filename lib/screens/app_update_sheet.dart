@@ -26,6 +26,7 @@ Future<void> showUpdateSheet(BuildContext context, {bool checkNow = true, AppUpd
   }
   await showModalBottomSheet<void>(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     backgroundColor: Colors.white,
     shape: const RoundedRectangleBorder(
@@ -532,8 +533,21 @@ class UpdateStatusStrip extends StatelessWidget {
             tone: AppColors.success,
             icon: Icons.install_mobile,
           );
-        default:
-          break;
+        case UpdatePhase.failed:
+          return const _StripContent(
+            text: 'فشل التنزيل — اضغط للمحاولة',
+            tone: AppColors.danger,
+            icon: Icons.error_outline,
+          );
+        case UpdatePhase.checking:
+        case UpdatePhase.idle:
+          // بعد إغلاق الورقة الاختيارية يبقى التحديث ظاهراً داخل التطبيق
+          final ver = u.release!.versionName;
+          return _StripContent(
+            text: ver.isEmpty ? 'تحديث جديد متاح — اضغط للتفاصيل' : 'تحديث $ver متاح — اضغط للتفاصيل',
+            tone: AppColors.amber,
+            icon: Icons.system_update_outlined,
+          );
       }
     }
     return switch (u.patchPhase) {

@@ -618,12 +618,14 @@ class AppUpdater extends ChangeNotifier {
   bool checkedWithNoUpdate = false;
 
   bool _loaded = false;
+  bool _bootCheckDone = false;
 
-  /// انتهت قراءة الحالة المحفوظة، فقرار التحديث معروف.
+  /// انتهت قراءة الحالة المحفوظة **وفحص الاستضافة الأول**.
   ///
-  /// الإقلاع ينتظرها قبل أن يختار شاشة: بدونها تُعرض شاشة الدخول ثم تُقلب بعد
-  /// جزءٍ من الثانية إلى شاشة التحديث الإلزامي، فيرى المستخدم واجهتين لا واحدة.
-  bool get loaded => !supported || _loaded;
+  /// الإقلاع ينتظرها قبل أي شاشة عمل: بدون انتظار الفحص كانت الجلسة المحفوظة
+  /// (إدارة أو بوابة) تُفتح فوق التطبيق، ثم يصل قرار «إلزامي» متأخراً فيبقى
+  /// مخفياً خلف الشاشة المفتوحة حتى يسجّل المستخدم خروجاً.
+  bool get loaded => !supported || (_loaded && _bootCheckDone);
 
   Future<void>? _starting;
   Future<void>? _loading;
@@ -667,14 +669,33 @@ class AppUpdater extends ChangeNotifier {
     return Duration(seconds: ((total - received) / speed).ceil());
   }
 
+  /// مهلة فحص الإقلاع: بلا نت لا نعلّق البوابة/الجلسة على انتظار الاستضافة.
+  static const bootCheckTimeout = Duration(seconds: 2);
+
   /// يُستدعى مرة عند الإقلاع: يقرأ المحفوظ ثم يفحص الاستضافة فوراً.
   ///
   /// الفحص بالإقلاع دائماً `force`: ثغرة الست ساعات كانت تُخفي إصداراً نُشر
   /// للتو إن فُتح التطبيق قبل ساعات، فيبقى الجهاز على نسخة قديمة بلا تنبيه.
+  /// لا يُرفع [loaded] إلا بعد الفحص (أو مهلة قصيرة) حتى لا تُفتح جلسة محفوظة
+  /// فوق تحديث إلزامي — وبلا نت تُفتح البوابة من المحفوظ دون انتظار.
   Future<void> start() => _starting ??= () async {
         if (!supported) return;
-        await _load();
-        await check(force: true, silent: true);
+        try {
+          await _load();
+          // محفوظ إلزامي معروف مسبقاً: لا ننتظر الشبكة
+          if (action == UpdateAction.mandatory) return;
+          try {
+            await check(force: true, silent: true).timeout(
+              bootCheckTimeout,
+              onTimeout: () => action,
+            );
+          } catch (_) {
+            // بلا نت أو فشل: نفتح بما في المحفوظ؛ الفحص يُعاد عند العودة للواجهة
+          }
+        } finally {
+          _bootCheckDone = true;
+          notifyListeners();
+        }
       }();
 
   /// قراءة الحالة المحفوظة — مرة واحدة، ينتظرها الإقلاع والفحص كلاهما.

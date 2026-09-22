@@ -8,6 +8,8 @@ void main() {
   test('مأذون تُرصد وتُلغى كبقية الحالات', () {
     final s = AppStore.forTesting();
     injectDemoData(s);
+    // البيانات في الذاكرة: بوابة التحميل الكسول ليس لها ما تنتظره
+    s.loadedTables.addAll(AppStore.deferredTables);
     final student = s.students.first;
     const date = '2026-09-10';
 
@@ -26,6 +28,8 @@ void main() {
 
     final s = AppStore.forTesting();
     injectDemoData(s);
+    // البيانات في الذاكرة: بوابة التحميل الكسول ليس لها ما تنتظره
+    s.loadedTables.addAll(AppStore.deferredTables);
 
     await tester.pumpWidget(StoreScope(
       store: s,
@@ -54,6 +58,8 @@ void main() {
 
     final s = AppStore.forTesting();
     injectDemoData(s);
+    // البيانات في الذاكرة: بوابة التحميل الكسول ليس لها ما تنتظره
+    s.loadedTables.addAll(AppStore.deferredTables);
     s.attendance.clear();
 
     await tester.pumpWidget(StoreScope(
@@ -82,6 +88,8 @@ void main() {
 
     final s = AppStore.forTesting();
     injectDemoData(s);
+    // البيانات في الذاكرة: بوابة التحميل الكسول ليس لها ما تنتظره
+    s.loadedTables.addAll(AppStore.deferredTables);
     final grade = s.roomsInViewedYear.first.gradeLevel;
     final rooms = s.roomsInViewedYear.where((r) => r.gradeLevel == grade).toList();
 

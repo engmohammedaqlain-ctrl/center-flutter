@@ -8,6 +8,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/widgets.dart';
+import 'app_update_sheet.dart';
 
 /// ترويسة مضغوطة + شريط سفلي + وصل — هوية الجوال لبوابة الطالب/ولي الأمر.
 
@@ -193,30 +194,37 @@ class PortalBottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.paddingOf(context).bottom;
-    return Container(
-      padding: EdgeInsets.only(top: 4, bottom: bottom > 0 ? bottom : 4),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: AppColors.line)),
-        boxShadow: [
-          BoxShadow(color: Color(0x0A000000), blurRadius: 16, offset: Offset(0, -4)),
-        ],
-      ),
-      child: Row(
-        children: [
-          for (var i = 0; i < items.length; i++) ...[
-            // فاصل رفيع بين كل قسمين، كشريط الإدارة
-            if (i > 0) Container(width: 1, height: 28, color: AppColors.line),
-            Expanded(
-              child: _PortalNavTile(
-                item: items[i],
-                active: items[i].id == activeId,
-                onTap: () => onSelect(items[i].id),
-              ),
-            ),
-          ],
-        ],
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // يظهر وأنت داخل البوابة — بلا انتظار الخروج لشاشة الدخول
+        const UpdateStatusStrip(),
+        Container(
+          padding: EdgeInsets.only(top: 4, bottom: bottom > 0 ? bottom : 4),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(top: BorderSide(color: AppColors.line)),
+            boxShadow: [
+              BoxShadow(color: Color(0x0A000000), blurRadius: 16, offset: Offset(0, -4)),
+            ],
+          ),
+          child: Row(
+            children: [
+              for (var i = 0; i < items.length; i++) ...[
+                // فاصل رفيع بين كل قسمين، كشريط الإدارة
+                if (i > 0) Container(width: 1, height: 28, color: AppColors.line),
+                Expanded(
+                  child: _PortalNavTile(
+                    item: items[i],
+                    active: items[i].id == activeId,
+                    onTap: () => onSelect(items[i].id),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

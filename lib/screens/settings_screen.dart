@@ -2819,7 +2819,11 @@ class _FailedActions extends StatelessWidget {
 
 Future<void> _export(BuildContext context, AppStore store) async {
   try {
-    final path = await const BackupService().export(store);
+    final path = await runBusyOp(
+      context,
+      () => const BackupService().export(store),
+      message: 'جارٍ تجهيز النسخة الاحتياطية...',
+    );
     if (!context.mounted) return;
     final mobile = Theme.of(context).platform == TargetPlatform.android ||
         Theme.of(context).platform == TargetPlatform.iOS;
@@ -2873,8 +2877,13 @@ Future<void> _restore(BuildContext context, AppStore store) async {
   );
   if (!ok || !context.mounted) return;
 
+  final payload = json;
   try {
-    final result = await service.restore(store, json);
+    final result = await runBusyOp(
+      context,
+      () => service.restore(store, payload),
+      message: 'جارٍ استرجاع النسخة...',
+    );
     if (!context.mounted) return;
     final skipped = result.skipped > 0 ? '، وتُرك ${result.skipped} أحدث محلياً' : '';
     showAppSnack(context, 'تم استرجاع ${result.restored} سجلاً$skipped');

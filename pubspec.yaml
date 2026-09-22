@@ -76,6 +76,8 @@ flutter:
   # شعار النظام نفسه الذي يحمله تطبيق سطح المكتب
   assets:
     - assets/logo.png
+    # نسخة TrueType للمستندات — مكتبة PDF لا تقرأ OpenType/CFF
+    - assets/fonts/pdf/
     - shorebird.yaml
 
   fonts:

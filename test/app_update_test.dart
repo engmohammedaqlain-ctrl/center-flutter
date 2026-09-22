@@ -784,6 +784,28 @@ void main() {
       expect(updater.loaded, isTrue);
     });
 
+    test('بلا نت لا يعلّق الإقلاع: البوابة تُفتح من المحفوظ خلال المهلة', () async {
+      final dir = await _tempDir();
+      // طلب لا يكتمل يحاكي انقطاعاً بطيئاً — بلا مهلة كان الإقلاع ينتظر ثوانٍ طويلة
+      final pending = Completer<http.Response>();
+      final updater = _updater(
+        dir: dir,
+        client: () => MockClient((_) => pending.future),
+      );
+
+      final sw = Stopwatch()..start();
+      await updater.start();
+      sw.stop();
+
+      expect(updater.loaded, isTrue);
+      expect(sw.elapsed, lessThan(const Duration(seconds: 5)));
+      expect(updater.action, UpdateAction.none);
+
+      // إنهاء الطلب المعلّق حتى لا يبقى مؤقّت عالقاً بعد الاختبار
+      pending.completeError(http.ClientException('offline'));
+      await Future<void>.delayed(Duration.zero);
+    });
+
     test('حزم الإصدارات المثبَّتة تُحذف عند الإقلاع', () async {
       final dir = await _tempDir();
       for (final code in [3, 4, 5]) {

@@ -182,16 +182,32 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
         _action = updater.action;
       });
     }
-    _maybePrompt();
+    if (updater.action == UpdateAction.mandatory) {
+      _clearRoutesAboveHome();
+    } else {
+      _maybePrompt();
+    }
+  }
+
+  /// جلسة بوابة أو أي مسار دُفع فوق الشاشة الجذرية كان يغطي التحديث الإجباري.
+  void _clearRoutesAboveHome() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || updater.action != UpdateAction.mandatory) return;
+      final nav = Navigator.of(context, rootNavigator: true);
+      if (nav.canPop()) nav.popUntil((route) => route.isFirst);
+    });
   }
 
   /// إصدار اختياري جديد يُعرض وحده مرة واحدة عند الدخول، بعد استقرار الشاشة.
   void _maybePrompt() {
     if (_prompting || !mounted || !AppStore.instance.ready || !updater.shouldPrompt) return;
+    if (updater.action == UpdateAction.mandatory) return;
     _prompting = true;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await Future<void>.delayed(_settle);
-      if (mounted && updater.shouldPrompt) await showUpdateSheet(context, checkNow: false);
+      if (mounted && updater.shouldPrompt && updater.action != UpdateAction.mandatory) {
+        await showUpdateSheet(context, checkNow: false);
+      }
       _prompting = false;
     });
   }
@@ -220,7 +236,7 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     return ListenableBuilder(
-      listenable: store,
+      listenable: Listenable.merge([store, updater]),
       builder: (context, _) {
         final Widget screen;
         // قرار التحديث يُنتظر مع إقلاع المخزن: بدونه تُعرض شاشة الدخول ثم تُقلب
@@ -232,6 +248,7 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
               : const SplashScreen();
         } else if (updater.action == UpdateAction.mandatory) {
           _booted = true;
+          _clearRoutesAboveHome();
           // قبل الدخول وبعده: إصدارٌ لم يعد مقبولاً لا يرفع ولا يسحب
           screen = const MandatoryUpdateScreen();
         } else if (!store.loggedIn) {

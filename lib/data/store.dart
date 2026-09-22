@@ -174,9 +174,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
           } else if (rows.isEmpty) {
             // لا شيء
           } else {
-            // دفعات صغيرة + إفساح: جدول حضور كبير كان يوقف دوران أزرار التحميل ثوانٍ
+            // دفعات أصغر + إفساح أكثر: جداول المالية الكبيرة كانت توقف دوران المؤشر
             await prepareApply(table);
-            const chunk = 100;
+            final chunk = (table == 'payments' || table == 'installments') ? 40 : 100;
             for (var i = 0; i < rows.length; i += chunk) {
               final end = i + chunk > rows.length ? rows.length : i + chunk;
               putRows(table, rows.sublist(i, end));

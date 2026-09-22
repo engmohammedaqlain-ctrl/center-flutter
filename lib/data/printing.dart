@@ -21,15 +21,23 @@ class PdfKit {
   static pw.Font? _regular;
   static pw.Font? _bold;
 
+  /// خطوط المستندات: نسخة TrueType من خط الواجهة.
+  ///
+  /// خط الواجهة ملفه OpenType/CFF رغم امتداده `.ttf`، ومكتبة المستندات لا تقرأ
+  /// إلا مجسّمات TrueType، فكانت تعدّه خطاً غير يونيكود وتحاول ترميز العربية
+  /// بـLatin-1 فترمي استثناءً — أي تقرير في التطبيق كان يفشل قبل أن يُبنى.
+  static const _pdfRegular = 'assets/fonts/pdf/ThmanyahSans-Regular.ttf';
+  static const _pdfBold = 'assets/fonts/pdf/ThmanyahSans-Bold.ttf';
+
   static Future<void> _ensureFonts() async {
     if (_regular != null && _bold != null) return;
     try {
-      final regularData = await rootBundle.load('assets/fonts/ThmanyahSans-Regular.ttf');
-      final boldData = await rootBundle.load('assets/fonts/ThmanyahSans-Bold.ttf');
+      final regularData = await rootBundle.load(_pdfRegular);
+      final boldData = await rootBundle.load(_pdfBold);
       _regular = pw.Font.ttf(regularData);
       _bold = pw.Font.ttf(boldData);
     } catch (_) {
-      // بلا أصول: خط النظام أفضل من الفشل
+      // بلا أصول: خط النظام أفضل من الفشل — لكنه لا يطبع العربية
       _regular = pw.Font.helvetica();
       _bold = pw.Font.helveticaBold();
     }
@@ -38,6 +46,34 @@ class PdfKit {
   static Future<pw.ThemeData> theme() async {
     await _ensureFonts();
     return pw.ThemeData.withFont(base: _regular!, bold: _bold!);
+  }
+
+  /// كـ[build] لكنها تُرجع `null` بدل أن ترمي.
+  ///
+  /// بناء المستند كان خارج حماية المستدعين: خطأٌ فيه يمرّ صامتاً فلا يظهر
+  /// التقرير ولا سببُ غيابه، فيبدو الزر كأنه لا يعمل.
+  static Future<Uint8List?> buildSafe({
+    required String title,
+    required String institutionName,
+    String? logoBase64,
+    String? subtitle,
+    required List<pw.Widget> Function(pw.Context) body,
+    PdfPageFormat format = PdfPageFormat.a4,
+    bool landscape = false,
+  }) async {
+    try {
+      return await build(
+        title: title,
+        institutionName: institutionName,
+        logoBase64: logoBase64,
+        subtitle: subtitle,
+        body: body,
+        format: format,
+        landscape: landscape,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   /// مستند عربي جاهز بترويسة المنشأة.
@@ -50,6 +86,9 @@ class PdfKit {
     PdfPageFormat format = PdfPageFormat.a4,
     bool landscape = false,
   }) async {
+    // إفساح قبل بناء الصفحات الثقيلة حتى يبقى مؤشر التحميل يدور
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
     final doc = pw.Document(theme: await theme());
     final logo = _decodeLogo(logoBase64);
 
@@ -70,6 +109,7 @@ class PdfKit {
         build: body,
       ),
     );
+    await Future<void>.delayed(Duration.zero);
     return doc.save();
   }
 

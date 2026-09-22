@@ -297,7 +297,8 @@ class _ReceiptSheet extends StatelessWidget {
     );
   }
 
-  Future<void> _print(BuildContext context, AppStore store, Student? student) async {
+  Future<void> _print(BuildContext context, AppStore store, Student? student) {
+    return runBusyOp(context, () async {
     final outgoing = payment.amount < 0;
     final reversal = isReversalPurpose(payment.purpose);
     final generalIncome = payment.studentId.isEmpty || isGeneralIncomePurpose(payment.purpose);
@@ -329,7 +330,7 @@ class _ReceiptSheet extends StatelessWidget {
           ),
         );
 
-    final bytes = await PdfKit.build(
+    final bytes = await PdfKit.buildSafe(
       title: sheetTitle,
       institutionName: store.institutionName.isEmpty ? appName : store.institutionName,
       logoBase64: store.institutionLogo,
@@ -487,11 +488,16 @@ class _ReceiptSheet extends StatelessWidget {
     );
 
     if (!context.mounted) return;
+    if (bytes == null) {
+      showAppSnack(context, 'تعذّر تجهيز السند', error: true);
+      return;
+    }
     try {
       await PdfKit.preview(bytes, PdfKit.fileName('سند قبض ${payment.receiptNumber}'));
     } catch (_) {
       if (context.mounted) showAppSnack(context, 'تعذّر تنزيل السند', error: true);
     }
+    }, message: 'جارٍ تجهيز السند...');
   }
 
   /// إرسال الإيصال بالواتساب لولي الأمر — مطابق لـ `handleSendWhatsAppReceipt`.
