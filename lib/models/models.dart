@@ -907,7 +907,7 @@ class Classroom {
     required this.teacherId,
     this.capacity = 25,
     this.notes = '',
-    this.tier = 'secondary',
+    this.tier = '',
     this.academicYearId = '',
     this.syncStatus = 'synced',
     this.createdAt,
@@ -931,7 +931,7 @@ class Classroom {
     'name': name,
     'capacity': capacity,
     'grade_level': gradeLevel,
-    'stage_tier': tier,
+    'stage_tier': tier.isEmpty ? null : tier,
     'homeroom_teacher_id': teacherId.isEmpty ? null : teacherId,
     'notes': notes,
     'academic_year_id': academicYearId.isEmpty ? null : academicYearId,
@@ -946,7 +946,8 @@ class Classroom {
     teacherId: '${m['homeroom_teacher_id'] ?? ''}',
     capacity: (m['capacity'] as num?)?.toInt() ?? 25,
     notes: '${m['notes'] ?? ''}',
-    tier: '${m['stage_tier'] ?? 'secondary'}',
+    // بلا افتراض secondary: كان يجمع كل الصفوف تحت الثانوية
+    tier: '${m['stage_tier'] ?? ''}'.trim(),
     academicYearId: '${m['academic_year_id'] ?? ''}',
     syncStatus: '${m['sync_status'] ?? 'synced'}',
     createdAt: m['created_at']?.toString(),
@@ -2147,6 +2148,8 @@ class Tenant {
     this.active = true,
     this.createdAt,
     this.updatedAt,
+    this.features,
+    this.limits,
   });
 
   final String id;
@@ -2164,6 +2167,12 @@ class Tenant {
   bool active;
   String? createdAt;
   String? updatedAt;
+
+  /// ميزات المدرسة كما خزّنها المطور؛ تُقرأ عبر `lib/data/features.dart`.
+  Map<String, dynamic>? features;
+
+  /// حدود الاشتراك (`max_students` / `max_storage_mb`).
+  Map<String, dynamic>? limits;
 
   String get plan => planType;
   set plan(String v) => planType = v;
@@ -2190,6 +2199,8 @@ class Tenant {
     'notes': notes,
     'created_at': createdAt,
     'updated_at': updatedAt,
+    if (features != null) 'features': features,
+    if (limits != null) 'limits': limits,
   };
 
   factory Tenant.fromCloud(Map<String, dynamic> m) => Tenant(
@@ -2208,6 +2219,8 @@ class Tenant {
     active: '${m['status'] ?? 'active'}' != 'suspended',
     createdAt: m['created_at']?.toString(),
     updatedAt: m['updated_at']?.toString(),
+    features: m['features'] is Map ? Map<String, dynamic>.from(m['features'] as Map) : null,
+    limits: m['limits'] is Map ? Map<String, dynamic>.from(m['limits'] as Map) : null,
   );
 }
 

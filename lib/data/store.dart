@@ -11,6 +11,7 @@ import '../theme/app_colors.dart';
 import 'academic_matching.dart';
 import 'app_settings.dart';
 import 'balance.dart';
+import 'features.dart';
 import 'fee_plan.dart';
 import 'grade_plan_sync.dart';
 import 'grading.dart';
@@ -853,6 +854,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   Future<void> persistPullOnly(String table, List<Map<String, dynamic>> rows) async {
     if (rows.isEmpty) return;
     await db.saveRecords(table, rows);
+    // الجدول كان «محمّلاً» فارغاً قبل انتهاء السحب (بعد خروج/دخول):
+    // بلا هذه الخطوة تبقى الشاشة فارغة رغم وجود الصفوف على القرص.
+    if (!loadedTables.contains(table)) return;
+    putRows(table, rows);
+    notifyListeners();
   }
 
   /// تحميل كل ما على القرص إلى الذاكرة، ثم استعادة الجلسة.
@@ -1837,22 +1843,102 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     notifyListeners();
   }
 
-  // ── أعلام الميزات (المقابل لـ systemFeatures.ts) ──────────────────────────
+  // ── ميزات المنشأة (tenants.features) — المقابل لـ lib/features.ts ────────
 
-  SystemFeatures get features => SystemFeatures.decode(db.settings[systemFeaturesKey]);
+  /// الحالة الفعلية لميزات المنشأة الحالية.
+  FeatureState get featureState {
+    final raw = currentTenant?.features;
+    if (raw != null) return resolveFeatures(raw);
+    // جسر قراءة من الأعلام المحلية القديمة حتى تصل `tenants.features`
+    final local = SystemFeatures.decode(db.settings[systemFeaturesKey]);
+    return resolveFeatures({
+      'finance.expenses': local.enableExpenses,
+      'evaluations': local.enableEvaluations,
+      'students.attachments': local.enableStudentAttachments,
+      'portal.student': local.enableStudentPortal,
+      'portal.parent': local.enableStudentPortal,
+    });
+  }
 
-  /// تعديل علم واحد أو أكثر. ما لا يُمرَّر يبقى كما هو — مطابق لـ
-  /// `saveSystemFeatures(Partial<SystemFeaturesConfig>)`.
-  Future<void> saveFeatures({bool? enableExpenses, bool? enableEvaluations, bool? enableStudentPortal, bool? enableStudentAttachments}) async {
-    final next = features.copyWith(
-      enableExpenses: enableExpenses,
-      enableEvaluations: enableEvaluations,
-      enableStudentPortal: enableStudentPortal,
-      enableStudentAttachments: enableStudentAttachments,
+  bool isFeatureOn(String key) => featureState[key] ?? false;
+
+  TenantLimits get tenantLimits => normalizeLimits(currentTenant?.limits);
+
+  /// جسر قراءة للتوافق مع الشاشات القديمة التي تقرأ `SystemFeatures`.
+  SystemFeatures get features {
+    final f = featureState;
+    return SystemFeatures(
+      enableExpenses: f['finance.expenses'] ?? true,
+      enableEvaluations: f['evaluations'] ?? true,
+      enableStudentPortal: (f['portal.student'] ?? true) || (f['portal.parent'] ?? true),
+      enableStudentAttachments: f['students.attachments'] ?? false,
+    );
+  }
+
+  /// حفظ ميزات/حدود المنشأة في السحابة وتحديث النسخة المحلية — `saveTenantControls`.
+  Future<String?> saveTenantControls({FeatureMap? featuresPatch, TenantLimits? limits}) async {
+    final tenant = currentTenant;
+    if (tenant == null) return 'لا توجد منشأة نشطة';
+    final nextFeatures = featuresPatch == null
+        ? tenant.features
+        : {
+            ...normalizeFeatures(tenant.features),
+            ...featuresPatch,
+          };
+    final nextLimits = limits?.toMap() ?? tenant.limits;
+    final err = await tenantApi.update(tenant.id, {
+      if (featuresPatch != null) 'features': nextFeatures,
+      if (limits != null) 'limits': nextLimits,
+    });
+    if (err != null) return err;
+    tenant
+      ..features = nextFeatures == null ? null : Map<String, dynamic>.from(nextFeatures)
+      ..limits = nextLimits == null ? null : Map<String, dynamic>.from(nextLimits)
+      ..updatedAt = _nowIso();
+    final i = tenants.indexWhere((t) => t.id == tenant.id);
+    if (i >= 0) tenants[i] = tenant;
+    markDirty('tenants');
+    notifyListeners();
+    return null;
+  }
+
+  /// تبديل مفتاح واحد في اختيارات الميزات (قيمة مختارة، لا الحالة المحلولة).
+  Future<String?> toggleTenantFeature(String key, bool on) async {
+    if (!isFeatureKey(key)) return 'مفتاح غير معروف';
+    final selected = selectedFeatures(currentTenant?.features);
+    selected[key] = on;
+    return saveTenantControls(featuresPatch: selected);
+  }
+
+  /// جسر قديم للاختبارات والشاشات التي ما زالت تمرّر أعلام SystemFeatures.
+  Future<void> saveFeatures({
+    bool? enableExpenses,
+    bool? enableEvaluations,
+    bool? enableStudentPortal,
+    bool? enableStudentAttachments,
+  }) async {
+    final next = SystemFeatures(
+      enableExpenses: enableExpenses ?? features.enableExpenses,
+      enableEvaluations: enableEvaluations ?? features.enableEvaluations,
+      enableStudentPortal: enableStudentPortal ?? features.enableStudentPortal,
+      enableStudentAttachments: enableStudentAttachments ?? features.enableStudentAttachments,
     );
     await db.setSetting(systemFeaturesKey, next.encode());
-    // ومعها نسخة في كائن المنشأة كي تصل بقية الأجهزة، كما في `saveSystemFeatures`
     await _syncInstitutionSetting('__system_features', next.toMap());
+
+    final selected = selectedFeatures(currentTenant?.features);
+    selected['finance.expenses'] = next.enableExpenses;
+    selected['evaluations'] = next.enableEvaluations;
+    selected['students.attachments'] = next.enableStudentAttachments;
+    selected['portal.student'] = next.enableStudentPortal;
+    selected['portal.parent'] = next.enableStudentPortal;
+    final tenant = currentTenant;
+    if (tenant != null) {
+      tenant.features = Map<String, dynamic>.from(selected);
+      final i = tenants.indexWhere((t) => t.id == tenant.id);
+      if (i >= 0) tenants[i] = tenant;
+      markDirty('tenants');
+    }
     notifyListeners();
   }
 
@@ -2841,28 +2927,65 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return code;
   }
 
-  /// ضمان وجود كلمتَي الطالب وولي أمره لكل طالب في القائمة. يعيد عدد الطلاب
-  /// الذين وُلِّد لهم شيء.
+  /// ضمان وجود كلمتَي الطالب وولي أمره — `StudentsService.fillPortalCodes`.
+  ///
+  /// العائلة تُجمَع بـ `parent_national_id`: رمز ولي الأمر الناقص يُورَث من أخٍ
+  /// أو يُولَّد مرة واحدة لكل من ينقصه؛ رموز الطلاب تبقى متمايزة.
   int ensureStudentPortalCodes(List<Student> list) {
     requireSection('students');
-    var made = 0;
+    final families = <String, List<Student>>{};
+    for (final s in students) {
+      final pid = s.parentNationalId.trim();
+      if (pid.isEmpty) continue;
+      (families[pid] ??= []).add(s);
+    }
+
+    String randomAvoiding(Set<String> avoid) {
+      var code = newPortalCode();
+      while (avoid.contains(code)) {
+        code = newPortalCode();
+      }
+      return code;
+    }
+
+    final changed = <String, Student>{};
     for (final s in list) {
-      final needsStudent = s.portalCode.trim().isEmpty;
-      final needsParent = s.parentPortalCode.trim().isEmpty;
-      if (!needsStudent && !needsParent) continue;
-      if (needsStudent) s.portalCode = newDistinctPortalCode(s.parentPortalCode);
-      if (needsParent) s.parentPortalCode = newDistinctPortalCode(s.portalCode);
-      s.updatedAt = _nowIso();
+      final family = families[s.parentNationalId.trim()] ?? [s];
+
+      if (s.parentPortalCode.trim().isEmpty) {
+        final inherited = family
+            .map((m) => m.parentPortalCode.trim())
+            .where((c) => c.isNotEmpty)
+            .firstOrNull;
+        final avoid = {
+          for (final m in family)
+            if (m.portalCode.trim().isNotEmpty) m.portalCode.trim(),
+        };
+        final code = inherited ?? randomAvoiding(avoid);
+        for (final member in family) {
+          if (member.parentPortalCode.trim().isNotEmpty) continue;
+          member.parentPortalCode = code;
+          changed[member.id] = member;
+        }
+      }
+
+      if (s.portalCode.trim().isEmpty) {
+        s.portalCode = randomAvoiding({if (s.parentPortalCode.trim().isNotEmpty) s.parentPortalCode.trim()});
+        changed[s.id] = s;
+      }
+    }
+
+    if (changed.isEmpty) return 0;
+    final now = _nowIso();
+    for (final s in changed.values) {
+      s.updatedAt = now;
       s.syncStatus = 'pending';
       queuePendingSync(pendingSyncs, tableName: 'students', recordId: s.id, action: 'UPDATE', payload: s.toCloud());
       markRecord('students', s.id);
-      made++;
     }
-    if (made > 0) {
-      markDirty(_pendingTable);
-      notifyListeners();
-    }
-    return made;
+    markDirty(_pendingTable);
+    notifyListeners();
+    return changed.length;
   }
 
   /// توليد كلمة مرور بوابة واحدة فقط — طالب أو ولي أمر، دون المساس بالأخرى.
@@ -3240,7 +3363,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   /// جهاز آخر رفع تعديلاته — إشارة `changed` على قناة المنشأة.
-  void handlePeerChanged() => scheduleAutoPull();
+  void handlePeerChanged([List<String>? tables]) => scheduleAutoPull();
 
   @visibleForTesting
   bool get autoPullScheduled => _autoPullTimer?.isActive ?? false;
@@ -3252,9 +3375,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   @visibleForTesting
   int peerNotifications = 0;
 
-  void _notifyPeers() {
+  void _notifyPeers([List<String> tables = const []]) {
     peerNotifications++;
-    _realtime?.broadcastChanged();
+    _realtime?.broadcastChanged(tables);
   }
 
   /// إشارات متتالية من أجهزة أخرى تُجمع في سحبٍ واحد.
@@ -4257,6 +4380,17 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     List<PlanItem>? customPlanItems,
   }) {
     requireSection('students');
+    if (isNew) {
+      final max = tenantLimits.maxStudents;
+      if (max != null) {
+        final current = students.where((s) => s.status == 'active' || s.status == 'pending').length;
+        if (current >= max) {
+          throw StoreException(
+            'بلغت المدرسة حد اشتراكها ($max طالباً حالياً). لرفع الحد تواصل مع إدارة المنصة.',
+          );
+        }
+      }
+    }
     if (!isValidNationalId(incoming.nationalId)) {
       throw StoreException('رقم الهوية غير صالح! يجب أن يتكون من 9 أرقام.');
     }
@@ -7086,6 +7220,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     u.createdAt = before.createdAt;
     users[i] = u;
     _queue('users', u.id, 'UPDATE', u.toCloud());
+    notifyListeners();
   }
 
   void deleteUser(String id) {
@@ -7102,6 +7237,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (users.length <= 1) throw StoreException('لا يمكن حذف المستخدم الوحيد في النظام');
     users.removeWhere((u) => u.id == id);
     _queue('users', id, 'DELETE', null);
+    notifyListeners();
   }
 
   bool _userCanManageUsers(AppUser u) {
@@ -7393,7 +7529,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   /// هل يستطيع فتح هذا القسم؟ القسم غير المعروف لا يُحرس.
+  /// الميزة المعطّلة تحجب القسم حتى لمن يملك صلاحية عليه.
   bool canOpenSection(String section) {
+    final feature = sectionFeature[section];
+    if (feature != null && !isFeatureOn(feature)) return false;
     final needed = resolveSection(section);
     return needed == null || can(needed);
   }

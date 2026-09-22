@@ -1,8 +1,7 @@
 /// حضور الطالب يوماً بيوم — المقابل لـ `dailyAttendance` في الويب.
 ///
-/// للطالب رصدان: كشف الشعبة من الإدارة، ورصد كل مادة من معلمها. عدّ السجلات
-/// كما هي كان يجعل غياب يوم بست مواد ستة أيام غياب. كشف الشعبة مرجع اليوم إن
-/// وُجد، وإلا أقوى حالة من حصص المواد (غياب ثم عذر ثم حضور).
+/// آخر كتابة تفوز (`updated_at` ثم `created_at`). عند التعادل تُفضَّل جلسة
+/// الشعبة على المادة، ثم أعلى رتبة حالة (غياب > عذر > حضور).
 library;
 
 import '../models/models.dart';
@@ -15,7 +14,7 @@ List<({String date, String status})> dailyAttendance(
   Iterable<ClassSession> sessions,
 ) {
   final sessionById = {for (final s in sessions) s.id: s};
-  final byDay = <String, ({String? room, String? subject})>{};
+  final byDay = <String, ({String status, int at, bool room})>{};
 
   for (final r in records) {
     final session = sessionById[r.sessionId];
@@ -24,26 +23,25 @@ List<({String date, String status})> dailyAttendance(
         : (r.date.isNotEmpty ? r.date : (r.createdAt ?? '').split('T').first);
     if (date.isEmpty) continue;
 
-    final prev = byDay[date] ?? (room: null, subject: null);
-    final isRoom = session != null && session.groupId.isEmpty;
-    final current = isRoom ? prev.room : prev.subject;
-    final rank = _dayStatusRank[r.status] ?? 0;
-    final prevRank = current == null ? -1 : (_dayStatusRank[current] ?? 0);
-    if (current == null || rank > prevRank) {
-      byDay[date] = isRoom
-          ? (room: r.status, subject: prev.subject)
-          : (room: prev.room, subject: r.status);
-    } else {
-      byDay.putIfAbsent(date, () => prev);
-    }
+    final parsed = DateTime.tryParse(r.updatedAt ?? r.createdAt ?? '');
+    final candidate = (
+      status: r.status,
+      at: parsed?.millisecondsSinceEpoch ?? 0,
+      room: session != null && session.groupId.isEmpty,
+    );
+    final prev = byDay[date];
+    final wins = prev == null ||
+        candidate.at > prev.at ||
+        (candidate.at == prev.at &&
+            (candidate.room != prev.room
+                ? candidate.room
+                : (_dayStatusRank[candidate.status] ?? 0) > (_dayStatusRank[prev.status] ?? 0)));
+    if (wins) byDay[date] = candidate;
   }
 
-  final out = <({String date, String status})>[];
-  for (final e in byDay.entries) {
-    final status = e.value.room ?? e.value.subject;
-    if (status == null) continue;
-    out.add((date: e.key, status: status));
-  }
+  final out = [
+    for (final e in byDay.entries) (date: e.key, status: e.value.status),
+  ];
   out.sort((a, b) => b.date.compareTo(a.date));
   return out;
 }

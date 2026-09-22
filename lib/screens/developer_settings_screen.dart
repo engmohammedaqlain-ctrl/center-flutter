@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../data/demo_data.dart';
+import '../data/features.dart';
 import '../data/institution.dart';
 import '../data/store.dart';
 import '../data/supabase.dart';
@@ -43,6 +44,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
   late TextEditingController seatFee;
   late TextEditingController supabaseUrlCtrl;
   late TextEditingController supabaseKeyCtrl;
+  late TextEditingController maxStudentsCtrl;
   final errors = FieldErrors();
 
   bool busy = false;
@@ -75,6 +77,8 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
     seatFee = TextEditingController(text: trimNum(store.seatReservationFee));
     supabaseUrlCtrl = TextEditingController(text: store.db.settings[SupabaseConfig.urlSettingKey] ?? '');
     supabaseKeyCtrl = TextEditingController(text: store.db.settings[SupabaseConfig.keySettingKey] ?? '');
+    final max = store.tenantLimits.maxStudents;
+    maxStudentsCtrl = TextEditingController(text: max == null ? '' : '$max');
     // مطور دخل المنشأة من لوحته: لا يُعاد طلب كلمة المرور
     if (SupabaseAuth.isDeveloper) unlocked = true;
   }
@@ -87,6 +91,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
     seatFee.dispose();
     supabaseUrlCtrl.dispose();
     supabaseKeyCtrl.dispose();
+    maxStudentsCtrl.dispose();
     super.dispose();
   }
 
@@ -479,54 +484,89 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
         ),
       ];
 
-  /// خيارات التحكم بالميزات — المقابل لتبويب «features» في DeveloperSettings.tsx.
-  ///
-  /// الحفظ محلي لكل جهاز كما في سطح المكتب: `institution_settings` المشترك
-  /// لا يحمل عموداً لها، فإرسالها فيه كان يُسقطها صامتاً.
+  /// خيارات التحكم بالميزات — المقابل لـ FeatureControls في الويب.
+  /// تُحفظ في `tenants.features` فتصل كل الأجهزة والبوابات.
   List<Widget> _features(AppStore store) {
-    final f = store.features;
+    final raw = store.currentTenant?.features;
+    final selected = selectedFeatures(raw);
+    final resolved = resolveFeatures(raw);
+    final warnings = featureWarnings(raw);
+
     return [
-      const FormSection(icon: Icons.toggle_on_outlined, title: 'الميزات والموديولات', note: 'تُحفظ فور تبديلها'),
-      _featureRow(
-        title: 'إدارة المصروفات وأجور المعلمين',
-        hint: 'تبويب المصروفات وأجور المعلمين',
-        value: f.enableExpenses,
-        onChanged: (v) => store.saveFeatures(enableExpenses: v),
+      const FormSection(
+        icon: Icons.toggle_on_outlined,
+        title: 'ميزات المنشأة',
+        note: 'تُحفظ في السحابة وتصل كل الأجهزة فوراً',
       ),
-      _featureRow(
-        title: 'تقييمات ودرجات الطلاب',
-        hint: 'رصد الدرجات وعرضها في البوابة',
-        value: f.enableEvaluations,
-        onChanged: (v) => store.saveFeatures(enableEvaluations: v),
+      if (warnings.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Text(
+            warnings.join(' · '),
+            style: TextStyle(color: AppColors.amber, fontSize: 11.5, fontWeight: FontWeight.w600),
+          ),
+        ),
+      for (final group in featureGroups) ...[
+        Padding(
+          padding: const EdgeInsets.only(top: 6, bottom: 6),
+          child: Text(
+            group.label,
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: AppColors.heading),
+          ),
+        ),
+        for (final key in featureKeys)
+          if (features[key]!.group == group.key)
+            _featureToggleRow(
+              store: store,
+              keyName: key,
+              selected: selected[key] ?? false,
+              effective: resolved[key] ?? false,
+            ),
+      ],
+      const SizedBox(height: 12),
+      const FormSection(icon: Icons.speed_outlined, title: 'حدود الاشتراك', note: 'اتركه فارغاً بلا حد'),
+      const FieldLabel('أقصى عدد طلاب'),
+      TextField(
+        controller: maxStudentsCtrl,
+        keyboardType: TextInputType.number,
+        textDirection: TextDirection.ltr,
+        decoration: const InputDecoration(hintText: 'بلا حد'),
       ),
-      _featureRow(
-        title: 'مرفقات الطلاب (الصور والوثائق)',
-        hint: 'صورة الهوية وشهادة الميلاد',
-        value: f.enableStudentAttachments,
-        onChanged: (v) => store.saveFeatures(enableStudentAttachments: v),
-      ),
-      _featureRow(
-        title: 'بوابة الطالب الإلكترونية',
-        hint: 'دخول الطلاب وأولياء الأمور',
-        value: f.enableStudentPortal,
-        onChanged: (v) => store.saveFeatures(enableStudentPortal: v),
+      const SizedBox(height: 8),
+      PrimaryButton(
+        expand: true,
+        height: 40,
+        label: 'حفظ حد الطلاب',
+        onPressed: () async {
+          final err = await store.saveTenantControls(
+            limits: normalizeLimits({
+              'max_students': maxStudentsCtrl.text.trim(),
+              'max_storage_mb': store.tenantLimits.maxStorageMb,
+            }),
+          );
+          if (!mounted) return;
+          showAppSnack(context, err ?? 'تم حفظ الحد', error: err != null);
+        },
       ),
     ];
   }
 
-  Widget _featureRow({
-    required String title,
-    required String hint,
-    required bool value,
-    required ValueChanged<bool> onChanged,
+  Widget _featureToggleRow({
+    required AppStore store,
+    required String keyName,
+    required bool selected,
+    required bool effective,
   }) {
+    final def = features[keyName]!;
+    final blockers = featureBlockers(keyName, store.currentTenant?.features);
+    final blockedLabel = blockers.map((k) => features[k]?.label ?? k).join('، ');
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 6, 10),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(Corner.card),
         color: Colors.white,
-        border: Border.all(color: value ? AppColors.successBorder : AppColors.line),
+        border: Border.all(color: effective ? AppColors.successBorder : AppColors.line),
       ),
       child: Row(
         children: [
@@ -534,18 +574,30 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5, color: AppColors.heading)),
+                Text(def.label, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5, color: AppColors.heading)),
                 const SizedBox(height: 3),
-                Text(hint, style: const TextStyle(color: AppColors.muted, fontSize: 11, height: 1.5)),
+                Text(def.description, style: const TextStyle(color: AppColors.muted, fontSize: 11, height: 1.5)),
+                if (selected && !effective && blockedLabel.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    'غير فعّال: يتطلب $blockedLabel',
+                    style: TextStyle(color: AppColors.amber, fontSize: 10.5, fontWeight: FontWeight.w600),
+                  ),
+                ],
               ],
             ),
           ),
           const SizedBox(width: 6),
           Switch(
-            value: value,
+            value: selected,
             activeThumbColor: Colors.white,
-            activeTrackColor: AppColors.success,
-            onChanged: onChanged,
+            activeTrackColor: effective ? AppColors.success : AppColors.muted,
+            onChanged: (v) async {
+              final err = await store.toggleTenantFeature(keyName, v);
+              if (!mounted) return;
+              if (err != null) showAppSnack(context, err, error: true);
+              setState(() {});
+            },
           ),
         ],
       ),

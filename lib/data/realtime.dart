@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -33,7 +34,8 @@ class RealtimeListener {
   }) : _connector = connector ?? WebSocketChannel.connect;
 
   /// يُستدعى حين يُعلن جهازٌ آخر في المنشأة أن بياناتها تغيّرت.
-  final void Function()? onBroadcast;
+  /// [tables] أسماء الجداول المتأثرة إن وُجدت، وإلا `null` (تحديث عام).
+  final void Function(List<String>? tables)? onBroadcast;
 
   /// قناة المنشأة كما يفتحها sync.ts: `supabase.channel('tenant-<id>')`.
   static String broadcastTopic(String tenantId) => 'realtime:tenant-$tenantId';
@@ -155,7 +157,14 @@ class RealtimeListener {
 
       if (decoded['event'] == 'broadcast') {
         final payload = decoded['payload'];
-        if (payload is Map && payload['event'] == 'changed') onBroadcast?.call();
+        if (payload is Map && payload['event'] == 'changed') {
+          final inner = payload['payload'];
+          List<String>? tables;
+          if (inner is Map && inner['tables'] is List) {
+            tables = [for (final t in inner['tables'] as List) '$t'];
+          }
+          onBroadcast?.call(tables);
+        }
         return;
       }
 
@@ -208,13 +217,19 @@ class RealtimeListener {
   }
 
   /// إعلام أجهزة المنشأة بأن بياناتها تغيّرت — `notifyPeers` في sync.ts.
-  void broadcastChanged() {
+  void broadcastChanged([List<String> tables = const []]) {
     final tenantId = _tenantId;
     if (tenantId == null || _channel == null) return;
     _send({
       'topic': broadcastTopic(tenantId),
       'event': 'broadcast',
-      'payload': {'type': 'broadcast', 'event': 'changed', 'payload': <String, dynamic>{}},
+      'payload': {
+        'type': 'broadcast',
+        'event': 'changed',
+        'payload': <String, dynamic>{
+          if (tables.isNotEmpty) 'tables': tables,
+        },
+      },
       'ref': '${_ref++}',
     });
   }
@@ -232,6 +247,149 @@ class RealtimeListener {
     } catch (_) {
       // الاتصال مغلق أصلاً
     }
+    _channel = null;
+    _tenantId = null;
+  }
+}
+
+/// استماع البوابة لإشارة المنشأة فقط — `listenAsPortal` في sync.ts.
+///
+/// البوابات لا تسحب بيانات المنشأة، فتسمع «تغيّرت الجداول» وتعيد تحميل ما يخصها.
+class PortalRealtime {
+  PortalRealtime({
+    required this.onChanged,
+    @visibleForTesting WebSocketChannel Function(Uri uri)? connector,
+  }) : _connector = connector ?? WebSocketChannel.connect;
+
+  final void Function(List<String>? tables) onChanged;
+  final WebSocketChannel Function(Uri uri) _connector;
+
+  WebSocketChannel? _channel;
+  StreamSubscription<dynamic>? _sub;
+  Timer? _heartbeat;
+  Timer? _reconnect;
+  final _delayTimers = <Timer>{};
+  String? _tenantId;
+  int _ref = 0;
+  bool _stopped = false;
+  final _rand = math.Random();
+
+  Future<void> connect(String tenantId) async {
+    if (_tenantId == tenantId && _channel != null && !_stopped) return;
+    await disconnect();
+    _stopped = false;
+    _tenantId = tenantId;
+    _open();
+  }
+
+  void _open() {
+    final tenantId = _tenantId;
+    if (tenantId == null || _stopped) return;
+    final base = SupabaseConfig.url.replaceFirst(RegExp(r'^https?'), 'wss');
+    final uri = Uri.parse('$base/realtime/v1/websocket?apikey=${SupabaseConfig.key}&vsn=1.0.0');
+    try {
+      final channel = _connector(uri);
+      _channel = channel;
+      _sub = channel.stream.listen(
+        _onMessage,
+        onError: (_) => _scheduleReconnect(),
+        onDone: _scheduleReconnect,
+        cancelOnError: true,
+      );
+      _send({
+        'topic': RealtimeListener.broadcastTopic(tenantId),
+        'event': 'phx_join',
+        'payload': {
+          'config': {
+            'broadcast': {'ack': false, 'self': false},
+            'presence': {'key': ''},
+            'postgres_changes': <Object>[],
+          },
+          if (SupabaseAuth.accessToken != null) 'access_token': SupabaseAuth.accessToken,
+        },
+        'ref': '${_ref++}',
+      });
+      _heartbeat?.cancel();
+      _heartbeat = Timer.periodic(const Duration(seconds: 25), (_) {
+        _send({'topic': 'phoenix', 'event': 'heartbeat', 'payload': {}, 'ref': '${_ref++}'});
+      });
+    } catch (_) {
+      _scheduleReconnect();
+    }
+  }
+
+  void _send(Map<String, dynamic> message) {
+    try {
+      _channel?.sink.add(jsonEncode(message));
+    } catch (_) {
+      _scheduleReconnect();
+    }
+  }
+
+  void _onMessage(dynamic raw) {
+    try {
+      final decoded = jsonDecode('$raw');
+      if (decoded is! Map) return;
+      if (decoded['event'] != 'broadcast') return;
+      final payload = decoded['payload'];
+      if (payload is! Map || payload['event'] != 'changed') return;
+      final inner = payload['payload'];
+      List<String>? tables;
+      if (inner is Map && inner['tables'] is List) {
+        tables = [for (final t in inner['tables'] as List) '$t'];
+      }
+      // تأخير عشوائي يوزّع إعادة الجلب حتى لا تسأل كل البوابات المفتوحة معاً
+      late final Timer timer;
+      timer = Timer(Duration(milliseconds: _rand.nextInt(3000)), () {
+        _delayTimers.remove(timer);
+        if (!_stopped) onChanged(tables);
+      });
+      _delayTimers.add(timer);
+    } catch (_) {}
+  }
+
+  void _scheduleReconnect() {
+    if (_stopped) return;
+    _channel = null;
+    _heartbeat?.cancel();
+    _reconnect?.cancel();
+    _reconnect = Timer(const Duration(seconds: 8), () async {
+      await SupabaseAuth.ensureFresh();
+      _open();
+    });
+  }
+
+  /// إعلان من بوابة المعلم بعد كتابة ناجحة — يصل الإدارة والبوابات الأخرى.
+  void announce(List<String> tables) {
+    final tenantId = _tenantId;
+    if (tenantId == null || _channel == null) return;
+    _send({
+      'topic': RealtimeListener.broadcastTopic(tenantId),
+      'event': 'broadcast',
+      'payload': {
+        'type': 'broadcast',
+        'event': 'changed',
+        'payload': <String, dynamic>{'tables': tables},
+      },
+      'ref': '${_ref++}',
+    });
+  }
+
+  Future<void> disconnect() async {
+    _stopped = true;
+    for (final t in _delayTimers) {
+      t.cancel();
+    }
+    _delayTimers.clear();
+    _heartbeat?.cancel();
+    _reconnect?.cancel();
+    _heartbeat = null;
+    _reconnect = null;
+    await _sub?.cancel();
+    _sub = null;
+    try {
+      await _channel?.sink.close();
+    } catch (_) {}
     _channel = null;
     _tenantId = null;
   }

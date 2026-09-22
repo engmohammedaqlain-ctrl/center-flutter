@@ -1043,6 +1043,12 @@ String describeSupabaseError(Object error, String tableName) {
   ).hasMatch(raw)) {
     return 'تعذّر الوصول إلى السحابة. تحقق من الاتصال بالإنترنت.';
   }
+  if (RegExp(
+    r'row-level security|permission denied|42501',
+    caseSensitive: false,
+  ).hasMatch(raw)) {
+    return '$table: لا تملك صلاحية الرفع. سجّل الخروج ثم الدخول بحساب المنشأة (لا بوابة معلم/طالب).';
+  }
   return '$table: $raw';
 }
 

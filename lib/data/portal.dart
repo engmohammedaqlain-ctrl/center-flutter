@@ -520,6 +520,7 @@ class StudentPortalData {
     this.evaluations = const [],
     this.attendance = const PortalAttendance(),
     this.finance = const PortalFinance(),
+    this.features,
   });
 
   final Student student;
@@ -528,6 +529,9 @@ class StudentPortalData {
   final List<StudentEvaluation> evaluations;
   final PortalAttendance attendance;
   final PortalFinance finance;
+
+  /// ميزات المنشأة كما في `tenants.features` — لإخفاء تبويبات البوابة.
+  final Map<String, dynamic>? features;
 }
 
 /// صف يدرّسه المعلم مع طلابه.
@@ -574,11 +578,15 @@ class TeacherPortalData {
     this.branding = const PortalBranding(),
     this.classes = const [],
     this.subjects = const [],
+    this.features,
   });
 
   final PortalBranding branding;
   final List<TeacherClass> classes;
   final List<SubjectItem> subjects;
+
+  /// ميزات المنشأة كما في `tenants.features`.
+  final Map<String, dynamic>? features;
 }
 
 /// نتيجة محاولة دخول: إما حساب واحد، أو عدّة حسابات يختار منها المستخدم.
@@ -1026,6 +1034,18 @@ class PortalService {
     );
   }
 
+  /// ميزات المنشأة للبوابات — قراءة عمود `tenants.features` إن سمحت السياسات.
+  Future<Map<String, dynamic>?> tenantFeatures(String tenantId) async {
+    final rows = await supabaseSelect(
+      'tenants',
+      filters: {'id': 'eq.$tenantId'},
+      columns: 'features',
+      limit: 1,
+    );
+    final raw = rows?.firstOrNull?['features'];
+    return raw is Map ? Map<String, dynamic>.from(raw) : null;
+  }
+
   // ── بوابة الطالب ───────────────────────────────────────────────────────────
 
   Future<StudentPortalData?> studentData(PortalUser user) async {
@@ -1053,6 +1073,7 @@ class PortalService {
 
     final results = await Future.wait([
       branding(user.tenantId),
+      tenantFeatures(user.tenantId),
       supabaseSelect('enrollments', filters: byStudent),
       supabaseSelect('groups', filters: tenant),
       // أسماء المعلمين عبر portal_teachers (RLS للطالب) — جدول teachers محجوب عنه
@@ -1068,14 +1089,14 @@ class PortalService {
     List<Map<String, dynamic>> at(int i) =>
         (results[i] as List<Map<String, dynamic>>?) ?? const <Map<String, dynamic>>[];
 
-    final groupById = {for (final g in at(2)) '${g['id']}': g};
-    final teacherName = {for (final t in at(3)) '${t['id']}': '${t['name'] ?? ''}'};
-    final subjectName = {for (final s in at(4)) '${s['id']}': '${s['name'] ?? ''}'};
-    final roomName = {for (final r in at(5)) '${r['id']}': '${r['name'] ?? ''}'};
+    final groupById = {for (final g in at(3)) '${g['id']}': g};
+    final teacherName = {for (final t in at(4)) '${t['id']}': '${t['name'] ?? ''}'};
+    final subjectName = {for (final s in at(5)) '${s['id']}': '${s['name'] ?? ''}'};
+    final roomName = {for (final r in at(6)) '${r['id']}': '${r['name'] ?? ''}'};
 
     // مادة لكل تسجيل نشط، كما في `subjectsWithTeachers`
     final subjects = <PortalSubject>[];
-    for (final e in at(1)) {
+    for (final e in at(2)) {
       if ('${e['status'] ?? 'active'}' != 'active') continue;
       final gid = '${e['group_id']}';
       final g = groupById[gid];
@@ -1110,7 +1131,7 @@ class PortalService {
     }
 
     // الحضور: تاريخه في الحصة المرتبطة، فتُجلب حصصه وحدها
-    final sessionIds = at(8).map((r) => '${r['session_id'] ?? ''}').where((s) => s.isNotEmpty).toSet();
+    final sessionIds = at(9).map((r) => '${r['session_id'] ?? ''}').where((s) => s.isNotEmpty).toSet();
     final sessionRows = <Map<String, dynamic>>[];
     if (sessionIds.isNotEmpty) {
       final sessions = await supabaseSelect(
@@ -1130,7 +1151,7 @@ class PortalService {
         ),
     ];
     final rawMarks = <AttendanceMark>[];
-    for (final r in at(8)) {
+    for (final r in at(9)) {
       final raw = '${r['status'] ?? ''}';
       // «متأخر» أُلغيت من النظام: كل ما ليس حاضراً أو مأذوناً غياب
       final status = raw == 'present' ? 'present' : (raw == 'excused' ? 'excused' : 'absent');
@@ -1152,7 +1173,7 @@ class PortalService {
     ];
 
     final evaluations = [
-      for (final r in at(9))
+      for (final r in at(10))
         () {
           final e = StudentEvaluation.fromCloud(r);
           return e.withNames(
@@ -1165,6 +1186,7 @@ class PortalService {
     return StudentPortalData(
       student: student,
       branding: results[0] as PortalBranding,
+      features: results[1] as Map<String, dynamic>?,
       subjects: subjects,
       evaluations: evaluations,
       attendance: PortalAttendance(
@@ -1176,8 +1198,8 @@ class PortalService {
       ),
       finance: PortalFinance.compute(
         studentBalance: student.balance,
-        installments: at(6).map(Installment.fromCloud).toList(),
-        payments: at(7).map(Payment.fromCloud).toList(),
+        installments: at(7).map(Installment.fromCloud).toList(),
+        payments: at(8).map(Payment.fromCloud).toList(),
       ),
     );
   }
@@ -1251,6 +1273,7 @@ class PortalService {
 
     final results = await Future.wait([
       branding(user.tenantId),
+      tenantFeatures(user.tenantId),
       supabaseSelect('groups', filters: {...tenant, 'teacher_id': _inList(teacherIds)}),
       supabaseSelect('subjects', filters: tenant),
       supabaseSelect('rooms', filters: tenant),
@@ -1261,13 +1284,13 @@ class PortalService {
         (results[i] as List<Map<String, dynamic>>?) ?? const <Map<String, dynamic>>[];
 
     final teacherYearId = () {
-      final rows = at(4);
+      final rows = at(5);
       if (rows.isEmpty) return null;
       final id = '${rows.first['academic_year_id'] ?? ''}';
       return id.isEmpty ? null : id;
     }();
 
-    final groups = at(1)
+    final groups = at(2)
         .map(Group.fromCloud)
         .where((g) => g.isActive)
         .where((g) => g.isSchoolGroup) // المدرسة فقط — بلا مجموعات مركز مدفوعة/مجدولة
@@ -1277,9 +1300,9 @@ class PortalService {
           return g.academicYearId.isEmpty || g.academicYearId == teacherYearId;
         })
         .toList();
-    final subjects = at(2).map(SubjectItem.fromCloud).toList();
+    final subjects = at(3).map(SubjectItem.fromCloud).toList();
     final subjectName = {for (final s in subjects) s.id: s.name};
-    final rooms = {for (final r in at(3)) '${r['id']}': r};
+    final rooms = {for (final r in at(4)) '${r['id']}': r};
 
     // طلاب التسجيلات فقط — عبر portal_students إن وُجدت (بلا PII)، وإلا أعمدة محدودة
     final enrollments = groups.isEmpty
@@ -1353,6 +1376,7 @@ class PortalService {
 
     return TeacherPortalData(
       branding: results[0] as PortalBranding,
+      features: results[1] as Map<String, dynamic>?,
       classes: classes,
       subjects: subjects,
     );
@@ -1370,6 +1394,65 @@ class PortalService {
     );
     if (existing != null && existing.isNotEmpty) return '${existing.first['id']}';
     return roomSessionIdFor(roomId, date);
+  }
+
+  /// رصد يوم للمعلم: دمج كشف الشعبة + حصة المادة حسب أحدث `updated_at`
+  /// — المقابل لـ `PortalService.getTeacherDayAttendance`.
+  Future<Map<String, String>> getTeacherDayAttendance({
+    required String groupId,
+    required String date,
+    required Map<String, String> roomOf,
+  }) async {
+    if (groupId.isEmpty || date.isEmpty || roomOf.isEmpty) return {};
+
+    final subjectSessionId = sessionIdFor(groupId, date);
+    String? roomSessionOf(String studentId) {
+      final roomId = roomOf[studentId];
+      return roomId == null || roomId.isEmpty ? null : roomSessionIdFor(roomId, date);
+    }
+
+    final roomIds = roomOf.values.where((r) => r.isNotEmpty).toSet();
+    final sessionIds = {
+      subjectSessionId,
+      for (final r in roomIds) roomSessionIdFor(r, date),
+    };
+
+    final rows = await supabaseSelect(
+      'attendance',
+      filters: {'session_id': 'in.(${sessionIds.join(',')})'},
+      columns: 'session_id,student_id,status,updated_at,notes',
+    );
+
+    final chosen = <String, Map<String, dynamic>>{};
+    for (final rec in rows ?? const <Map<String, dynamic>>[]) {
+      final studentId = '${rec['student_id'] ?? ''}';
+      if (!roomOf.containsKey(studentId)) continue;
+      final sessionId = '${rec['session_id'] ?? ''}';
+      if (sessionId != subjectSessionId && sessionId != roomSessionOf(studentId)) continue;
+      final prev = chosen[studentId];
+      final at = '${rec['updated_at'] ?? ''}';
+      if (prev == null || at.compareTo('${prev['updated_at'] ?? ''}') > 0) {
+        chosen[studentId] = rec;
+      }
+    }
+
+    return {
+      for (final e in chosen.entries) e.key: '${e.value['status'] ?? 'present'}',
+    };
+  }
+
+  /// رصد أسبوع للمعلم بدمج الشعبة/المادة لكل يوم.
+  Future<Map<String, Map<String, String>>> weekTeacherAttendance({
+    required String groupId,
+    required List<String> dates,
+    required Map<String, String> roomOf,
+  }) async {
+    final out = <String, Map<String, String>>{};
+    for (final date in dates) {
+      final day = await getTeacherDayAttendance(groupId: groupId, date: date, roomOf: roomOf);
+      if (day.isNotEmpty) out[date] = day;
+    }
+    return out;
   }
 
   /// كشف حضور الشعبة ليومٍ: الطالب ← (حالته، معرّف سجله).

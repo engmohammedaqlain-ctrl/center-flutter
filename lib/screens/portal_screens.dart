@@ -4,10 +4,12 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
+import '../data/features.dart';
 import '../data/grading.dart';
 import '../data/institution.dart';
 import '../data/portal.dart';
 import '../data/portal_offline.dart';
+import '../data/realtime.dart';
 import '../data/store.dart';
 import '../data/academic_matching.dart';
 import '../theme/app_colors.dart';
@@ -905,6 +907,31 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   void initState() {
     super.initState();
     _load();
+    _startPortalRealtime();
+  }
+
+  PortalRealtime? _portalRt;
+
+  void _startPortalRealtime() {
+    final tid = widget.user.tenantId;
+    if (tid.isEmpty) return;
+    _portalRt = PortalRealtime(onChanged: (tables) {
+      if (!mounted) return;
+      // جداول تهمّ المعلم: حضور/درجات/مودل — وإلا إعادة تحميل عامة
+      const relevant = {
+        'attendance',
+        'sessions',
+        'student_evaluations',
+        'course_sections',
+        'course_items',
+        'enrollments',
+        'groups',
+        'students',
+      };
+      if (tables != null && tables.isNotEmpty && !tables.any(relevant.contains)) return;
+      unawaited(_load());
+    });
+    unawaited(_portalRt!.connect(tid));
   }
 
   @override
@@ -913,6 +940,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     final due = _duePush;
     _pushTimer?.cancel();
     if (due != null) unawaited(_pushOnLeave(due));
+    unawaited(_portalRt?.disconnect() ?? Future.value());
     super.dispose();
   }
 
@@ -1006,26 +1034,67 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
 
   /// عملية كتابة تعمل بلا شبكة: تُجرَّب على السحابة، وإن تعذّرت تُصفّ لتُرفع
   /// لاحقاً. في الحالتين يُطبَّق أثرها على الشاشة، فلا ينتظر المعلم شبكة.
-  Future<bool> _writeOrQueue(Future<void> Function() send, Map<String, dynamic> op) async {
+  /// عند انشغال السيرفر تُعاد المحاولة مرة قصيرة قبل التصفيف.
+  Future<bool> _writeOrQueue(
+    Future<void> Function() send,
+    Map<String, dynamic> op, {
+    List<String> announceTables = const [],
+  }) async {
     try {
-      await send();
+      await _sendWithBusyRetry(send);
+      if (announceTables.isNotEmpty) _portalRt?.announce(announceTables);
       if (mounted) setState(() => offline = false);
       return true;
-    } catch (_) {
+    } catch (e) {
       await _offline.queueOp(op, widget.user.id);
       if (mounted) {
         setState(() {
           offline = true;
           pendingOps = _offline.pendingCountOf(widget.user.id);
         });
+        if (_isServerBusy(e)) {
+          showAppSnack(context, 'الخادم مشغول، حُفظ الرصد محلياً ويُرفع تلقائياً', error: true);
+        }
       }
       return false;
     }
   }
 
+  Future<void> _sendWithBusyRetry(Future<void> Function() send) async {
+    try {
+      await send();
+    } catch (e) {
+      if (!_isServerBusy(e)) rethrow;
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      await send();
+    }
+  }
+
+  bool _isServerBusy(Object e) {
+    final t = '$e'.toLowerCase();
+    return t.contains('503') ||
+        t.contains('502') ||
+        t.contains('504') ||
+        t.contains('429') ||
+        t.contains('timeout') ||
+        t.contains('busy') ||
+        t.contains('مشغول') ||
+        t.contains('unavailable');
+  }
+
   /// ضغطة زر المزامنة: يرفع ما انتظر ثم يجلب من جديد.
   Future<void> _syncNow() async {
-    await _flushPending();
+    try {
+      await _flushPending();
+    } catch (e) {
+      if (!mounted) return;
+      showAppSnack(
+        context,
+        _isServerBusy(e) ? 'الخادم مشغول، أعد المحاولة بعد لحظات' : 'تعذّرت المزامنة',
+        error: true,
+      );
+      return;
+    }
     if (!mounted) return;
     await _load();
     if (!mounted) return;
@@ -1098,7 +1167,17 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     setState(() => weekMarks = cached);
 
     try {
-      final saved = await _service.weekAttendance(roomId, dates);
+      final students = _current?.students ?? const <Student>[];
+      final roomOf = {
+        for (final s in students)
+          s.id: () {
+            final matched = _current?.roomIdFor(s.section) ?? '';
+            return matched.isNotEmpty ? matched : roomId;
+          }(),
+      };
+      final saved = groupId.isNotEmpty
+          ? await _service.weekTeacherAttendance(groupId: groupId, dates: dates, roomOf: roomOf)
+          : await _service.weekAttendance(roomId, dates);
       if (!mounted || token != _marksToken) return;
       for (final e in saved.entries) {
         await _offline.saveMarks(roomId, e.key, e.value);
@@ -1180,20 +1259,23 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   }) async {
     if (mounted) setState(() => savingAttendance = true);
     try {
-      await _service.saveAttendance(
-        roomId: roomId,
-        date: date,
-        statuses: statuses,
-        teacher: widget.user,
-        changedStudentIds: changedStudentIds,
+      await _sendWithBusyRetry(
+        () => _service.saveAttendance(
+          roomId: roomId,
+          date: date,
+          statuses: statuses,
+          teacher: widget.user,
+          changedStudentIds: changedStudentIds,
+        ),
       );
+      _portalRt?.announce(const ['attendance', 'sessions']);
       if (!mounted) return;
       setState(() {
         savingAttendance = false;
         offline = false;
       });
       _flushPending();
-    } catch (_) {
+    } catch (e) {
       await _offline.queueAttendance(
         roomId: roomId,
         date: date,
@@ -1206,6 +1288,9 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         offline = true;
         pendingOps = _offline.pendingCountOf(widget.user.id);
       });
+      if (_isServerBusy(e)) {
+        showAppSnack(context, 'الخادم مشغول، حُفظ الرصد محلياً ويُرفع تلقائياً', error: true);
+      }
     }
   }
 
@@ -1276,6 +1361,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     await _writeOrQueue(
       () => _service.deleteEvaluation(e.id),
       {'kind': 'evaluation_delete', 'id': e.id},
+      announceTables: const ['student_evaluations'],
     );
   }
 
@@ -1289,6 +1375,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     await _writeOrQueue(
       () => _service.updateEvaluationScore(e.id, score),
       {'kind': 'evaluation_score', 'id': e.id, 'score': score},
+      announceTables: const ['student_evaluations'],
     );
   }
 
@@ -1368,6 +1455,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     final sent = await _writeOrQueue(
       () => _service.saveSection(created),
       {'kind': 'section_upsert', 'row': created.toCloud()},
+      announceTables: const ['course_sections'],
     );
     if (mounted) _flash(sent ? 'تم إنشاء القسم بنجاح' : 'حُفظ على الجهاز، سيُرفع عند عودة الاتصال');
   }
@@ -1595,10 +1683,14 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                       ),
           ),
           PortalBottomNav(
-            items: const [
-              PortalNavItem(id: 'attendance', label: 'الحضور', icon: Icons.how_to_reg_outlined),
-              PortalNavItem(id: 'evaluations', label: 'الدرجات', icon: Icons.workspace_premium_outlined),
-              PortalNavItem(id: 'moodle', label: 'المودل', icon: Icons.menu_book_outlined),
+            items: [
+              for (final id in teacherPortalTabs(resolveFeatures(data?.features)))
+                if (id == 'attendance')
+                  const PortalNavItem(id: 'attendance', label: 'الحضور', icon: Icons.how_to_reg_outlined)
+                else if (id == 'evaluations')
+                  const PortalNavItem(id: 'evaluations', label: 'الدرجات', icon: Icons.workspace_premium_outlined)
+                else if (id == 'moodle')
+                  const PortalNavItem(id: 'moodle', label: 'المودل', icon: Icons.menu_book_outlined),
             ],
             activeId: tab,
             onSelect: _selectTab,

@@ -127,8 +127,8 @@ class _AppShellState extends State<AppShell> {
         // قائمة بلا بنود لا تُفتح: من لا يملك إعدادات ولا درجات ولا مودل ليس
         // له فيها إلا الخروج، فيُنقل إلى الترويسة ويُخفى زر القائمة
         final hasMenu = store.canOpenSection('settings') ||
-            (store.features.enableEvaluations && store.can('evaluations')) ||
-            store.can('moodle') ||
+            (store.isFeatureOn('evaluations') && store.can('evaluations')) ||
+            (store.isFeatureOn('moodle') && store.can('moodle')) ||
             store.isMasterAdmin;
         final sections = _sections(store);
         var index = sections.indexWhere((s) => s.id == current);
@@ -283,7 +283,8 @@ class _SideMenu extends StatelessWidget {
     }
 
     final canSettings = store.canOpenSection('settings');
-    final showAcademic = (store.features.enableEvaluations && store.can('evaluations')) || store.can('moodle');
+    final showAcademic = (store.isFeatureOn('evaluations') && store.can('evaluations')) ||
+        (store.isFeatureOn('moodle') && store.can('moodle'));
 
     return Drawer(
       backgroundColor: Colors.white,
@@ -348,14 +349,14 @@ class _SideMenu extends StatelessWidget {
               children: [
                 if (showAcademic) ...[
                   sectionLabel('الأكاديمي'),
-                  if (store.features.enableEvaluations && store.can('evaluations'))
+                  if (store.isFeatureOn('evaluations') && store.can('evaluations'))
                     item(
                       icon: Icons.workspace_premium_rounded,
                       label: 'الدرجات والتقييمات',
                       color: AppColors.amber,
                       onTap: onOpenEvaluations,
                     ),
-                  if (store.can('moodle'))
+                  if (store.isFeatureOn('moodle') && store.can('moodle'))
                     item(
                       icon: Icons.auto_stories_rounded,
                       label: 'المودل',
@@ -375,7 +376,7 @@ class _SideMenu extends StatelessWidget {
                     label: 'المواد',
                     onTap: () => onOpenSettings('subjects'),
                   ),
-                  if (store.features.enableEvaluations)
+                  if (store.isFeatureOn('evaluations'))
                     item(
                       icon: Icons.grid_view_rounded,
                       label: 'نظام العلامات',

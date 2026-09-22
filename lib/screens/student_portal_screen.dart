@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../data/features.dart';
 import '../data/grading.dart';
 import '../data/institution.dart';
 import '../data/portal.dart';
+import '../data/realtime.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -91,44 +93,68 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     await _load();
   }
 
-  List<PortalNavItem> get _navItems => [
-        if (!isParent)
-          const PortalNavItem(
-            id: 'moodle',
-            label: 'مودل',
-            icon: Icons.menu_book_outlined,
-            activeIcon: Icons.menu_book,
-          ),
-        const PortalNavItem(
-          id: 'subjects',
-          label: 'مواد',
-          icon: Icons.school_outlined,
-          activeIcon: Icons.school,
-        ),
-        const PortalNavItem(
-          id: 'attendance',
-          label: 'حضور',
-          icon: Icons.event_available_outlined,
-          activeIcon: Icons.event_available,
-        ),
-        const PortalNavItem(
-          id: 'evaluations',
-          label: 'درجات',
-          icon: Icons.workspace_premium_outlined,
-          activeIcon: Icons.workspace_premium,
-        ),
-        const PortalNavItem(
-          id: 'financial',
-          label: 'رسوم',
-          icon: Icons.credit_card_outlined,
-          activeIcon: Icons.credit_card,
-        ),
-      ];
+  List<PortalNavItem> get _navItems {
+    final state = resolveFeatures(data?.features);
+    final ids = familyPortalTabs(state, isParent: isParent);
+    PortalNavItem? item(String id) => switch (id) {
+          'moodle' => const PortalNavItem(
+              id: 'moodle',
+              label: 'مودل',
+              icon: Icons.menu_book_outlined,
+              activeIcon: Icons.menu_book,
+            ),
+          'subjects' => const PortalNavItem(
+              id: 'subjects',
+              label: 'مواد',
+              icon: Icons.school_outlined,
+              activeIcon: Icons.school,
+            ),
+          'attendance' => const PortalNavItem(
+              id: 'attendance',
+              label: 'حضور',
+              icon: Icons.event_available_outlined,
+              activeIcon: Icons.event_available,
+            ),
+          'evaluations' => const PortalNavItem(
+              id: 'evaluations',
+              label: 'درجات',
+              icon: Icons.workspace_premium_outlined,
+              activeIcon: Icons.workspace_premium,
+            ),
+          'financial' => const PortalNavItem(
+              id: 'financial',
+              label: 'رسوم',
+              icon: Icons.credit_card_outlined,
+              activeIcon: Icons.credit_card,
+            ),
+          _ => null,
+        };
+    return [for (final id in ids) if (item(id) case final n?) n];
+  }
 
   @override
   void initState() {
     super.initState();
     _load();
+    _startPortalRealtime();
+  }
+
+  PortalRealtime? _portalRt;
+
+  void _startPortalRealtime() {
+    final tid = user.tenantId;
+    if (tid.isEmpty) return;
+    _portalRt = PortalRealtime(onChanged: (_) {
+      if (!mounted) return;
+      unawaited(_load());
+    });
+    unawaited(_portalRt!.connect(tid));
+  }
+
+  @override
+  void dispose() {
+    unawaited(_portalRt?.disconnect() ?? Future.value());
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -147,8 +173,12 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
         loading = false;
         if (result == null) {
           error = 'تعذّر جلب بيانات الطالب.';
-        } else if (moodleGroupId == null && result.subjects.isNotEmpty) {
-          moodleGroupId = result.subjects.first.groupId;
+        } else {
+          if (moodleGroupId == null && result.subjects.isNotEmpty) {
+            moodleGroupId = result.subjects.first.groupId;
+          }
+          final ids = _navItems.map((n) => n.id).toSet();
+          if (!ids.contains(tab) && ids.isNotEmpty) tab = ids.first;
         }
       });
       if (tab == 'moodle' && !isParent) _loadMoodle();

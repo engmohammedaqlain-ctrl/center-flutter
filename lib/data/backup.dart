@@ -87,13 +87,18 @@ class BackupService {
     await store.flush();
     final json = encode(store);
     final name = fileNameFor(store);
-    final location = await getSaveLocation(suggestedName: name);
     final bytes = Uint8List.fromList(utf8.encode(json));
 
-    if (location != null) {
-      final file = XFile.fromData(bytes, mimeType: 'application/json', name: name);
-      await file.saveTo(location.path);
-      return location.path;
+    // على أندرويد/آي أو إس حوار الحفظ غالباً يفشل أو يُلغى — نكتب للمستندات دائماً كأساس
+    try {
+      final location = await getSaveLocation(suggestedName: name);
+      if (location != null) {
+        final file = XFile.fromData(bytes, mimeType: 'application/json', name: name);
+        await file.saveTo(location.path);
+        return location.path;
+      }
+    } catch (_) {
+      // نكمل بالمسار البديل
     }
 
     final dir = await getApplicationDocumentsDirectory();
