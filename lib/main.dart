@@ -161,6 +161,8 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     updater.addListener(_onUpdater);
     AppStore.instance.addListener(_maybePrompt);
+    // قبل تثبيت بناء جديد: ارفع المعلّق حتى لا تضيع البيانات بعد المسح
+    updater.beforeInstall = AppStore.instance.prepareForBuildUpdate;
     unawaited(updater.start());
   }
 

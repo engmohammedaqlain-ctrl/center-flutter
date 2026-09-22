@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/models.dart';
@@ -19,6 +20,7 @@ import 'monthly_averages.dart';
 import 'payment_methods.dart';
 import 'permissions.dart';
 import 'portal.dart';
+import 'portal_offline.dart';
 import 'system_features.dart';
 import 'phone.dart';
 import 'realtime.dart';
@@ -34,11 +36,15 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   static final AppStore instance = AppStore._();
 
+  /// رقم بناء ثابت للاختبارات — يتجاوز قراءة الحزمة المثبَّتة.
+  int? _overrideBuildCode;
+
   /// مخزن مستقل للاختبارات — لا يشارك الحالة مع [instance] ولا يلمس الشبكة.
   @visibleForTesting
-  factory AppStore.forTesting() => AppStore._()
+  factory AppStore.forTesting({int? installedBuildCode}) => AppStore._()
     ..tenantApi = const OfflineTenantService()
-    ..networkEnabled = false;
+    ..networkEnabled = false
+    .._overrideBuildCode = installedBuildCode;
 
   /// يُوقف كل ما يحتاج شبكة أو إضافات النظام — للاختبارات.
   bool networkEnabled = true;
@@ -740,6 +746,56 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     notifyListeners();
   }
 
+  /// رقم بناء الحزمة المثبَّتة — `versionCode` في أندرويد.
+  static const _kLastBuildCode = 'last_installed_build_code';
+
+  Future<int> _installedBuildCode() async {
+    if (_overrideBuildCode != null) return _overrideBuildCode!;
+    try {
+      final info = await PackageInfo.fromPlatform();
+      return int.tryParse(info.buildNumber) ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// تحديث بناء (APK): امسح المحلي وافتح كجهاز جديد.
+  ///
+  /// ترقيع Shorebird لا يغيّر `versionCode` فلا يُمسّ. أول تثبيت يكتبه فقط.
+  Future<bool> applyBuildUpdateIfNeeded(int installedCode) async {
+    if (installedCode <= 0) return false;
+    final prev = int.tryParse(db.settings[_kLastBuildCode] ?? '') ?? 0;
+    await db.setSetting(_kLastBuildCode, '$installedCode');
+    if (prev <= 0 || installedCode <= prev) return false;
+
+    await wipeAllData();
+    tenants.clear();
+    loggedIn = false;
+    isMasterAdmin = false;
+    currentTenant = null;
+    _setupPending = false;
+    receiptReceiverLabel = '';
+    await _clearTenantScopedSettings();
+    await db.setSetting(_kLoggedIn, null);
+    await db.setSetting(_kMasterAdmin, null);
+    await db.setSetting(_kTenantId, null);
+    await db.setSetting(_kDbTenant, null);
+    await db.setSetting(_kSettingsTenant, null);
+    await db.setSetting(_kAuthAccess, null);
+    await db.setSetting(_kAuthRefresh, null);
+    await db.setSetting(_kAuthExpiry, null);
+    await db.setSetting(_kAuthClaims, null);
+    await db.setSetting(_kPortalSession, null);
+    await db.setSetting(_kViewedAcademicYear, null);
+    for (final key in db.settings.keys.where((k) => k.startsWith('initial_setup_done_')).toList()) {
+      await db.setSetting(key, null);
+    }
+    await PortalOffline(db).clearAll();
+    SupabaseAuth.clear();
+    applyBrandColors();
+    return true;
+  }
+
   /// إدراج صفوف قادمة من نسخة احتياطية (تشمل `tenants` التي لا يمرّرها [putRows]).
   void putRowsFromBackup(String table, List<Map<String, dynamic>> rows) {
     if (table == 'tenants') {
@@ -803,6 +859,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   Future<void> bootstrap(Persistence persistence) async {
     db = persistence;
     await db.open();
+    // قبل قراءة الجداول: تحديث بناء يصفّر المحلي كي لا تُحمَّل بيانات قديمة
+    await applyBuildUpdateIfNeeded(await _installedBuildCode());
     _loading = true;
     try {
       // النواة فقط — الحضور والمالية تُحمَّل عند فتح شاشاتها
@@ -3205,6 +3263,58 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     lastAutoPullDelay = delay;
     _autoPullTimer?.cancel();
     _autoPullTimer = Timer(delay, () => _runAuto(push: false));
+  }
+
+  /// رفع كل التعديلات المعلّقة وحفظ القرص قبل تثبيت تحديث بناء.
+  ///
+  /// النسخة الجديدة تمسح المحلي؛ بلا هذا تضيع الحضور والتعديلات التي لم تُرفع.
+  /// يعيد رسالة خطأ تُعرض للمستخدم، أو `null` إن صار آمناً فتح المثبِّت.
+  Future<String?> prepareForBuildUpdate() async {
+    await flush();
+
+    final hasAdminPending = pendingSyncs.any((a) => a.retryCount < maxSyncRetries);
+    final portal = PortalOffline(db);
+    final hasPortalPending = portal.pending.isNotEmpty;
+
+    if (!hasAdminPending && !hasPortalPending) return null;
+
+    if (!networkEnabled || !await checkOnline()) {
+      return 'يلزم اتصال بالإنترنت لرفع التعديلات المعلّقة قبل تثبيت التحديث';
+    }
+
+    if (hasAdminPending) {
+      if (!loggedIn || isMasterAdmin || tenantId == null) {
+        return 'سجّل الدخول للإدارة لرفع التعديلات المعلّقة قبل التحديث';
+      }
+      for (var attempt = 0; attempt < 25; attempt++) {
+        final left = pendingSyncs.where((a) => a.retryCount < maxSyncRetries).length;
+        if (left == 0) break;
+        final result = await sync.push(refreshRemote: false);
+        final still = pendingSyncs.where((a) => a.retryCount < maxSyncRetries).length;
+        if (still == 0) break;
+        if (result.pushed == 0) {
+          return 'تعذّر رفع بعض التعديلات. أصلح المزامنة ثم أعد التثبيت';
+        }
+      }
+      if (pendingSyncs.any((a) => a.retryCount < maxSyncRetries)) {
+        return 'ما زالت هناك تعديلات معلّقة. أعد المحاولة قبل التحديث';
+      }
+    }
+
+    if (portal.pending.isNotEmpty) {
+      final saved = portalSession;
+      final user = saved?.user;
+      if (user == null) {
+        return 'ادخل البوابة وارفع الرصد المعلّق، أو امسح طابور البوابة قبل التحديث';
+      }
+      await portal.flush(const PortalService(), user);
+      if (portal.pendingOf(user.id).isNotEmpty) {
+        return 'تعذّر رفع رصد البوابة. حاول مجدداً قبل التحديث';
+      }
+    }
+
+    await flush();
+    return null;
   }
 
   /// العودة إلى التطبيق ترفع وتسحب، لكن لا أكثر من مرة في الدقيقة.

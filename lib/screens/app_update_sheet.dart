@@ -210,28 +210,36 @@ class UpdatePanel extends StatelessWidget {
           onPressed: u.retryNow,
         ),
       UpdatePhase.paused => PrimaryButton(
-          label: 'استكمال التنزيل',
+          label: u.preparingInstall ? 'جارِ رفع البيانات…' : 'استكمال التنزيل',
           icon: Icons.play_arrow_rounded,
           color: AppColors.success,
-          onPressed: () => unawaited(u.install()),
+          busy: u.preparingInstall,
+          onPressed: u.preparingInstall ? null : () => unawaited(u.install()),
         ),
       UpdatePhase.failed => PrimaryButton(
-          label: 'إعادة المحاولة',
+          label: u.preparingInstall ? 'جارِ رفع البيانات…' : 'إعادة المحاولة',
           icon: Icons.refresh,
           color: AppColors.success,
-          onPressed: () => unawaited(u.install()),
+          busy: u.preparingInstall,
+          onPressed: u.preparingInstall ? null : () => unawaited(u.install()),
         ),
       UpdatePhase.ready => PrimaryButton(
-          label: 'تثبيت الآن',
+          label: u.preparingInstall ? 'جارِ رفع البيانات…' : 'تثبيت الآن',
           icon: Icons.install_mobile,
           color: AppColors.success,
-          onPressed: () => unawaited(u.install()),
+          busy: u.preparingInstall,
+          onPressed: u.preparingInstall ? null : () => unawaited(u.install()),
         ),
       _ => PrimaryButton(
-          label: release.sizeLabel.isEmpty ? 'تنزيل وتثبيت' : 'تنزيل وتثبيت (${release.sizeLabel})',
+          label: u.preparingInstall
+              ? 'جارِ رفع البيانات…'
+              : release.sizeLabel.isEmpty
+                  ? 'تنزيل وتثبيت'
+                  : 'تنزيل وتثبيت (${release.sizeLabel})',
           icon: Icons.download,
           color: AppColors.success,
-          onPressed: () => unawaited(u.install()),
+          busy: u.preparingInstall,
+          onPressed: u.preparingInstall ? null : () => unawaited(u.install()),
         ),
     };
   }

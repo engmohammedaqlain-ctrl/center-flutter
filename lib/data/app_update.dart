@@ -539,8 +539,12 @@ class AppUpdater extends ChangeNotifier {
         _notifier = notifier ?? defaultDownloadNotifier(),
         _wait = wait ?? Future<void>.delayed;
 
-  /// على أندرويد وحده: غيره لا يثبّت حزم APK.
-  static final instance = AppUpdater(supported: !kIsWeb && Platform.isAndroid);
+  /// يُستدعى قبل فتح مثبِّت الـ APK: يرفع المعلّق ثم يسمح بالتثبيت.
+  /// يعيد رسالة خطأ أو `null` عند النجاح.
+  Future<String?> Function()? beforeInstall;
+
+  /// رفع بيانات جارٍ قبل فتح المثبِّت — يمنع التثبيت حتى يكتمل أو يفشل.
+  bool preparingInstall = false;
 
   /// لا يُعاد فحص الاستضافة تلقائياً قبل مرور هذه المدة.
   /// بين الفحوصات التلقائية في الجلسة (بعد إقلاعٍ نجح فيه الفحص).
@@ -806,6 +810,24 @@ class AppUpdater extends ChangeNotifier {
     if (!inForeground) {
       await _notifier.finish('التحديث جاهز — المس للتثبيت');
       return;
+    }
+
+    // قبل المسح في البناء الجديد: ارفع كل معلّق أو أوقف التثبيت
+    final guard = beforeInstall;
+    if (guard != null) {
+      preparingInstall = true;
+      error = null;
+      notifyListeners();
+      await _notifier.show('جارِ رفع البيانات قبل التحديث');
+      final blocked = await guard();
+      preparingInstall = false;
+      await _notifier.hide();
+      if (blocked != null) {
+        error = blocked;
+        notifyListeners();
+        return;
+      }
+      notifyListeners();
     }
 
     await _notifier.hide();
