@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -49,6 +50,12 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   /// المقبوضات حسب سنة الدفع (متى قُبض) أو حسب سنة القسط (رسوم أي سنة سُدّدت).
   String paymentsBasis = 'payment';
+
+  /// مستحقات محسوبة خارج إطار البناء — حتى لا يتجمّد مؤشر التحميل.
+  List<DueItem> _duesSnapshot = const [];
+  var _duesBusy = false;
+  int _duesStamp = 0;
+  var _duesReady = false;
 
   int visibleCount = kListPageSize;
   int auditVisible = kListPageSize;
@@ -197,6 +204,42 @@ class _FinanceScreenState extends State<FinanceScreen> {
         _Tab.dues => _dues(context, store, allDues, q),
       };
 
+  /// يحسب المستحقات بعد إفساح الواجهة — لا داخل `build`.
+  void _scheduleDues(AppStore store) {
+    final stamp = Object.hash(
+      store.tableRev('installments'),
+      store.tableRev('students'),
+      store.tableRev('academic_years'),
+      store.viewedAcademicYearId,
+      financeYearFilter,
+      termFilter,
+    );
+    if (stamp == _duesStamp || _duesBusy) return;
+    _duesBusy = true;
+    unawaited(() async {
+      await yieldUi(2);
+      if (!mounted) return;
+      final byId = <String, Installment>{
+        for (final i in store.installments) i.id: i,
+      };
+      final list = store.dueItems().where((d) {
+        final inst = d.installmentId == null ? null : byId[d.installmentId!];
+        return _matchesFinancePeriod(
+          store,
+          yearId: inst?.academicYearId,
+          dueDate: isoDate(d.dueDate),
+        );
+      }).toList();
+      if (!mounted) return;
+      setState(() {
+        _duesSnapshot = list;
+        _duesStamp = stamp;
+        _duesBusy = false;
+        _duesReady = true;
+      });
+    }());
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
@@ -215,20 +258,13 @@ class _FinanceScreenState extends State<FinanceScreen> {
         if (tab == _Tab.expenses && !showExpenses) tab = _Tab.dues;
 
         final q = search.text.trim().toLowerCase();
-        // المستحقات تُحسب لتبويب المستحقات فقط — لا في كل تبديل
         final List<DueItem> allDues;
         if (tab == _Tab.dues) {
-          final byId = <String, Installment>{
-            for (final i in store.installments) i.id: i,
-          };
-          allDues = store.dueItems().where((d) {
-            final inst = d.installmentId == null ? null : byId[d.installmentId!];
-            return _matchesFinancePeriod(
-              store,
-              yearId: inst?.academicYearId,
-              dueDate: isoDate(d.dueDate),
-            );
-          }).toList();
+          _scheduleDues(store);
+          if (!_duesReady) {
+            return const AppLoader(message: 'جارٍ تجهيز المستحقات...');
+          }
+          allDues = _duesSnapshot;
         } else {
           allDues = const [];
         }

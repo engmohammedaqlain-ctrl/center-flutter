@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../data/portal.dart';
+import '../data/portal_offline.dart';
 import '../data/printing.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -14,6 +15,7 @@ List<Widget> teacherHomeroomTabChildren({
   required PortalBranding branding,
   required PortalService service,
   required Color accent,
+  PortalOffline? offline,
 }) {
   if (homerooms.isEmpty) {
     return [
@@ -44,6 +46,7 @@ List<Widget> teacherHomeroomTabChildren({
         branding: branding,
         service: service,
         accent: accent,
+        offline: offline,
       ),
       const SizedBox(height: 12),
     ],
@@ -56,12 +59,14 @@ class _HomeroomCard extends StatelessWidget {
     required this.branding,
     required this.service,
     required this.accent,
+    this.offline,
   });
 
   final HomeroomClass homeroom;
   final PortalBranding branding;
   final PortalService service;
   final Color accent;
+  final PortalOffline? offline;
 
   @override
   Widget build(BuildContext context) {
@@ -167,6 +172,7 @@ class _HomeroomCard extends StatelessWidget {
                   branding: branding,
                   service: service,
                   accent: accent,
+                  offline: offline,
                 ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
@@ -195,7 +201,7 @@ class _HomeroomCard extends StatelessWidget {
                           ],
                         ),
                       ),
-                      const Icon(Icons.chevron_left, size: 18, color: AppColors.faint),
+                      const AppChevron(size: 18),
                     ],
                   ),
                 ),
@@ -214,6 +220,7 @@ Future<void> showHomeroomStudentSheet(
   required PortalBranding branding,
   required PortalService service,
   required Color accent,
+  PortalOffline? offline,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -228,6 +235,7 @@ Future<void> showHomeroomStudentSheet(
       branding: branding,
       service: service,
       accent: accent,
+      offline: offline,
     ),
   );
 }
@@ -239,6 +247,7 @@ class _HomeroomStudentSheet extends StatefulWidget {
     required this.branding,
     required this.service,
     required this.accent,
+    this.offline,
   });
 
   final Student student;
@@ -246,6 +255,7 @@ class _HomeroomStudentSheet extends StatefulWidget {
   final PortalBranding branding;
   final PortalService service;
   final Color accent;
+  final PortalOffline? offline;
 
   @override
   State<_HomeroomStudentSheet> createState() => _HomeroomStudentSheetState();
@@ -256,6 +266,7 @@ class _HomeroomStudentSheetState extends State<_HomeroomStudentSheet> {
   Map<String, String>? attendance;
   String? loadError;
   bool loadingExtra = true;
+  bool fromCache = false;
 
   @override
   void initState() {
@@ -263,16 +274,56 @@ class _HomeroomStudentSheetState extends State<_HomeroomStudentSheet> {
     _loadExtra();
   }
 
+  /// درجات/حضور من كاش المعلم إن وُجد — تفاصيل الطالب بلا نت.
+  void _applyCache() {
+    final offline = widget.offline;
+    if (offline == null) return;
+    final sid = widget.student.id;
+    final cachedEvals = <StudentEvaluation>[];
+    // كل مواد المعلم المحفوظة: نجمع تقييمات هذا الطالب
+    final teacher = offline.loadTeacherData();
+    if (teacher != null) {
+      for (final c in teacher.classes) {
+        final rows = offline.loadEvaluations(c.group.id);
+        if (rows == null) continue;
+        for (final e in rows) {
+          if (e.studentId == sid) cachedEvals.add(e);
+        }
+      }
+    }
+    final now = DateTime.now();
+    final marks = <String, String>{};
+    for (var i = 0; i < 30; i++) {
+      final d = isoDate(now.subtract(Duration(days: i)));
+      final day = offline.loadMarks(widget.room.id, d);
+      final st = day?[sid];
+      if (st != null && st.isNotEmpty) marks[d] = st;
+    }
+    if (cachedEvals.isNotEmpty || marks.isNotEmpty) {
+      evals = cachedEvals;
+      attendance = marks;
+      fromCache = true;
+      loadingExtra = false;
+      loadError = null;
+    }
+  }
+
   Future<void> _loadExtra() async {
     setState(() {
       loadingExtra = true;
       loadError = null;
+      fromCache = false;
     });
+    // كاش أولاً حتى تظهر التفاصيل فوراً بلا نت
+    _applyCache();
+    if (evals != null || attendance != null) {
+      if (mounted) setState(() {});
+    }
+
     try {
       final now = DateTime.now();
       final dates = [
-        for (var i = 0; i < 30; i++)
-          isoDate(now.subtract(Duration(days: i))),
+        for (var i = 0; i < 30; i++) isoDate(now.subtract(Duration(days: i))),
       ];
       final results = await Future.wait([
         widget.service.studentEvaluations(widget.student.id),
@@ -281,18 +332,28 @@ class _HomeroomStudentSheetState extends State<_HomeroomStudentSheet> {
           roomId: widget.room.id,
           dates: dates,
         ),
-      ]);
+      ]).timeout(const Duration(seconds: 10));
       if (!mounted) return;
       setState(() {
         evals = results[0] as List<StudentEvaluation>;
         attendance = results[1] as Map<String, String>;
         loadingExtra = false;
+        fromCache = false;
+        loadError = null;
       });
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
+      if (evals == null && attendance == null) {
+        _applyCache();
+      }
       setState(() {
-        loadError = 'تعذّر جلب الدرجات أو الحضور';
         loadingExtra = false;
+        if (evals == null && attendance == null) {
+          loadError = 'تعذّر جلب الدرجات أو الحضور';
+        } else {
+          fromCache = true;
+          loadError = null;
+        }
       });
     }
   }
@@ -369,8 +430,8 @@ class _HomeroomStudentSheetState extends State<_HomeroomStudentSheet> {
                   onCopy: () => _copy('كلمة مرور ولي الأمر', s.parentPortalCode),
                 ),
                 const SizedBox(height: 14),
-                _sectionTitle('الحضور (آخر 30 يوماً)'),
-                if (loadingExtra)
+                _sectionTitle(fromCache ? 'الحضور (آخر 30 يوماً · من الجهاز)' : 'الحضور (آخر 30 يوماً)'),
+                if (loadingExtra && evals == null && attendance == null)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 12),
                     child: Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))),
@@ -383,7 +444,7 @@ class _HomeroomStudentSheetState extends State<_HomeroomStudentSheet> {
                     style: const TextStyle(fontSize: 13, color: AppColors.text),
                   ),
                 const SizedBox(height: 14),
-                _sectionTitle('الدرجات'),
+                _sectionTitle(fromCache ? 'الدرجات · من الجهاز' : 'الدرجات'),
                 if (loadingExtra)
                   const SizedBox.shrink()
                 else if (evals == null || evals!.isEmpty)

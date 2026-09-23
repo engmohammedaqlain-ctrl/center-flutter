@@ -48,6 +48,32 @@ class _AppShellState extends State<AppShell> {
   String current = 'students';
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _wasOffline = false;
+  var _financePrefetchStarted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // حمّل جداول المالية في الخلفية بعد استقرار الشاشة — حتى لا يبدأ التحميل
+    // الثقيل لحظة الضغط على التبويب ويُجمَّد مؤشر التحميل.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _prefetchFinance());
+  }
+
+  void _prefetchFinance() {
+    if (_financePrefetchStarted || !mounted) return;
+    _financePrefetchStarted = true;
+    unawaited(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      if (!mounted) return;
+      final store = StoreScope.of(context);
+      if (!store.canOpenSection('finance')) return;
+      await store.ensureTables(const [
+        'payments',
+        'installments',
+        'expenses',
+        'teacher_payouts',
+      ]);
+    }());
+  }
 
   /// الأقسام اليومية فقط — بقية الإدارة من القائمة الجانبية.
   /// الترتيب: طلاب → صفوف → حضور → مالية.
@@ -200,7 +226,7 @@ class _AppShellState extends State<AppShell> {
                 sections: sections,
                 index: index,
                 onSelect: (i) => setState(() => current = sections[i].id),
-                dueCount: store.can('finance') ? store.dueItems().length : 0,
+                dueCount: store.can('finance') ? store.dueItemsBadgeCount : 0,
               ),
             ],
           ),

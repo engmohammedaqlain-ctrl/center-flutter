@@ -176,7 +176,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
           } else {
             // دفعات أصغر + إفساح أكثر: جداول المالية الكبيرة كانت توقف دوران المؤشر
             await prepareApply(table);
-            final chunk = (table == 'payments' || table == 'installments') ? 40 : 100;
+            final chunk = (table == 'payments' || table == 'installments') ? 25 : 100;
             for (var i = 0; i < rows.length; i += chunk) {
               final end = i + chunk > rows.length ? rows.length : i + chunk;
               putRows(table, rows.sublist(i, end));
@@ -307,6 +307,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   int _dueRev = -1;
   List<DueItem> _dueCache = const [];
+
+  /// شارة المالية في الشريط: من الخبيئة فقط — لا حساب ثقيل في كل إعادة رسم.
+  int get dueItemsBadgeCount => _dueRev < 0 ? 0 : _dueCache.length;
 
   static String looseKey(String studentId, String date) => '$studentId|$date';
   static String ownedKey(String ownerId, String studentId, String date) => '$ownerId|$studentId|$date';

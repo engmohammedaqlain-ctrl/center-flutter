@@ -71,6 +71,8 @@ class PortalOffline {
         'colors': data.branding.colors.toMap(),
         'grading_scheme': data.branding.gradingScheme.toMap(),
       },
+      // الميزات تُحفظ حتى لا تختفي تبويبات المودل/الدرجات عند فتح البوابة بلا نت
+      if (data.features != null) 'features': data.features,
     });
     await _db.setSetting(_kSyncedAt, DateTime.now().toIso8601String());
   }
@@ -114,8 +116,10 @@ class PortalOffline {
             ),
     ];
 
+    final featuresRaw = raw['features'];
     return TeacherPortalData(
       branding: branding,
+      features: featuresRaw is Map ? Map<String, dynamic>.from(featuresRaw) : null,
       classes: [
         for (final c in classesRaw)
           if (c is Map)
@@ -140,6 +144,33 @@ class PortalOffline {
       ],
       homerooms: homerooms,
     );
+  }
+
+  /// وصف عربي لعملية معلّقة — ورقة تفاصيل المزامنة في بوابة المعلم.
+  static String pendingOpLabel(Map<String, dynamic> op) {
+    switch ('${op['kind']}') {
+      case 'attendance':
+        return 'رصد حضور · ${op['date'] ?? ''}';
+      case 'evaluations':
+        final n = (op['rows'] as List?)?.length ?? 0;
+        return n > 0 ? 'درجات ($n)' : 'درجات';
+      case 'evaluation_score':
+        return 'تعديل علامة';
+      case 'evaluation_delete':
+        return 'حذف تقييم';
+      case 'section_upsert':
+        return 'وحدة دراسية';
+      case 'section_visible':
+        return 'إظهار/إخفاء وحدة';
+      case 'section_delete':
+        return 'حذف وحدة';
+      case 'item_upsert':
+        return 'مادة / واجب';
+      case 'item_delete':
+        return 'حذف مادة';
+      default:
+        return '${op['kind'] ?? 'عملية'}';
+    }
   }
 
   // ── وحدات المودل ─────────────────────────────────────────────────────────

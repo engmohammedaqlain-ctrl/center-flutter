@@ -28,8 +28,6 @@ class TableGate extends StatefulWidget {
 class _TableGateState extends State<TableGate> {
   var _ready = false;
   var _loading = false;
-  /// بعد اكتمال القرص: إطار إضافي قبل كشف الواجهة الثقيلة حتى لا يتوقف المؤشر فجأة.
-  var _revealing = false;
   String? _error;
 
   @override
@@ -44,7 +42,6 @@ class _TableGateState extends State<TableGate> {
     if (!listEquals(oldWidget.tables, widget.tables)) {
       _ready = false;
       _loading = false;
-      _revealing = false;
       _error = null;
       _sync();
     }
@@ -54,7 +51,6 @@ class _TableGateState extends State<TableGate> {
     final store = StoreScope.of(context);
     if (store.tablesReady(widget.tables)) {
       _ready = true;
-      _revealing = false;
       _error = null;
       return;
     }
@@ -68,20 +64,14 @@ class _TableGateState extends State<TableGate> {
     try {
       await store.ensureTables(widget.tables);
       if (!mounted) return;
-      // إفساح قبل كشف الشاشة: آخر دفعات putRows كانت توقف دوران المؤشر
+      // إفساح قبل كشف الشاشة حتى يكتمل دوران آخر إطار للمؤشر
       await yieldUi(2);
       if (!mounted) return;
       setState(() {
         _ready = true;
         _loading = false;
-        _revealing = true;
         _error = null;
       });
-      // يبقى المؤشر فوق المحتوى ريثما يكتمل أول رسم ثقيل
-      await WidgetsBinding.instance.endOfFrame;
-      await yieldUi(2);
-      if (!mounted) return;
-      setState(() => _revealing = false);
     } catch (e, st) {
       debugPrint('TableGate ensureTables(${widget.tables}): $e\n$st');
       if (!mounted) return;
@@ -89,14 +79,12 @@ class _TableGateState extends State<TableGate> {
         setState(() {
           _ready = true;
           _loading = false;
-          _revealing = false;
           _error = null;
         });
         return;
       }
       setState(() {
         _loading = false;
-        _revealing = false;
         _error = 'تعذّر تحميل البيانات';
       });
     }
@@ -108,7 +96,6 @@ class _TableGateState extends State<TableGate> {
       final store = StoreScope.of(context);
       if (store.tablesReady(widget.tables)) {
         _ready = true;
-        _revealing = false;
         _error = null;
       }
     }
@@ -131,7 +118,6 @@ class _TableGateState extends State<TableGate> {
                   setState(() {
                     _ready = false;
                     _loading = false;
-                    _revealing = false;
                     _error = null;
                   });
                   _sync();
@@ -146,19 +132,6 @@ class _TableGateState extends State<TableGate> {
 
     if (!_ready) {
       return AppLoader(message: widget.message);
-    }
-
-    if (_revealing) {
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          widget.child,
-          ColoredBox(
-            color: AppColors.bg.withValues(alpha: 0.92),
-            child: AppLoader(message: widget.message),
-          ),
-        ],
-      );
     }
 
     return widget.child;

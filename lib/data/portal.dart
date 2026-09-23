@@ -1371,11 +1371,7 @@ class PortalService {
           ...list,
           for (final s in students)
             if (!seen.contains(s.id) &&
-                groupRooms.any((room) => studentInRoom(
-                      s,
-                      roomName: '${room['name'] ?? ''}',
-                      roomGrade: '${room['grade_level'] ?? ''}',
-                    )))
+                groupRooms.any((room) => studentBelongsToRoom(s, Classroom.fromCloud(room))))
               s,
         ];
       }
@@ -1432,37 +1428,48 @@ class PortalService {
       for (final r in filtered)
         if ('${r['grade_level'] ?? ''}'.trim().isNotEmpty) '${r['grade_level']}'.trim(),
     };
-    if (grades.isEmpty) return const [];
 
-    final rows = await supabaseSelect(
-          'students',
-          filters: {...tenant, 'grade_level': _inList(grades)},
-          columns: _homeroomStudentCols,
-        ) ??
-        await supabaseSelect(
-          'portal_students',
-          filters: {...tenant, 'grade_level': _inList(grades)},
-          columns: _portalStudentCols,
-        ) ??
-        const <Map<String, dynamic>>[];
+    // جلب الطلاب: جدول students قد يرجع [] بسبب RLS للمعلم (نجاح بلا صفوف)
+    // فلا نكتفي بـ ?? — إن فرغ نجرّب portal_students ثم بدون فلتر مرحلة.
+    Future<List<Map<String, dynamic>>> fetch({
+      required String table,
+      required String columns,
+      Map<String, String> extra = const {},
+    }) async {
+      final rows = await supabaseSelect(table, filters: {...tenant, ...extra}, columns: columns);
+      return rows ?? const [];
+    }
+
+    var rows = <Map<String, dynamic>>[];
+    if (grades.isNotEmpty) {
+      rows = await fetch(table: 'students', columns: _homeroomStudentCols, extra: {'grade_level': _inList(grades)});
+      if (rows.isEmpty) {
+        rows = await fetch(table: 'portal_students', columns: _portalStudentCols, extra: {'grade_level': _inList(grades)});
+      }
+    }
+    // بلا نتائج بفلتر المرحلة: اجلب كل طلاب المنشأة المتاحين للبوابة وطابِق محلياً
+    if (rows.isEmpty) {
+      rows = await fetch(table: 'portal_students', columns: _portalStudentCols);
+      if (rows.isEmpty) {
+        rows = await fetch(table: 'students', columns: _homeroomStudentCols);
+      }
+    }
 
     final students = [for (final r in rows) Student.fromCloud(_withFullName(r))];
     final out = <HomeroomClass>[];
     for (final room in filtered) {
-      final name = '${room['name'] ?? ''}'.trim();
-      final grade = '${room['grade_level'] ?? ''}'.trim();
+      final classroom = Classroom.fromCloud(room);
+      // studentBelongsToRoom ي容忍 «أ» مقابل «شعبة (أ)» — studentInRoom كان يُفرّغ القائمة
       final list = [
         for (final s in students)
-          if (s.status != 'withdrawn' &&
-              PortalService.studentInRoom(s, roomName: name, roomGrade: grade))
-            s,
+          if (s.status != 'withdrawn' && studentBelongsToRoom(s, classroom)) s,
       ]..sort((a, b) => a.fullName.compareTo(b.fullName));
       out.add(
         HomeroomClass(
           room: PortalRoom(
-            id: '${room['id'] ?? ''}',
-            name: name,
-            gradeLevel: grade,
+            id: classroom.id,
+            name: classroom.name,
+            gradeLevel: classroom.gradeLevel,
           ),
           students: list,
         ),

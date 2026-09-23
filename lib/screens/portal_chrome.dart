@@ -335,17 +335,18 @@ class _PortalInlineImageState extends State<PortalInlineImage> {
       padding: const EdgeInsets.only(top: 10),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(Corner.box),
-        child: AspectRatio(
-          aspectRatio: 16 / 10,
+        // contain لا cover: الصورة كاملة بلا قصّ لأطرافها
+        child: ColoredBox(
+          color: AppColors.hover,
           child: Image.network(
             src,
-            fit: BoxFit.cover,
+            fit: BoxFit.contain,
             width: double.infinity,
-            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
             loadingBuilder: (context, child, progress) {
               if (progress == null) return child;
-              return const ColoredBox(
-                color: AppColors.hover,
+              return const SizedBox(
+                height: 160,
                 child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
               );
             },

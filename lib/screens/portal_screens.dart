@@ -716,10 +716,25 @@ Future<void> _openMaterial(
     openPortalMaterial(context, url, service: service, fileName: fileName);
 
 /// حالة تحميل أو خطأ بشكل Center.
-Widget _loadingView() => const Center(
+Widget _loadingView([String message = 'جارِ تحميل البيانات...']) => Center(
       child: Padding(
-        padding: EdgeInsets.all(40),
-        child: Text('جارِ تحميل البيانات...', style: TextStyle(color: _C.muted, fontSize: 12, fontWeight: FontWeight.w800)),
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2, color: _C.navy),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: _C.muted, fontSize: 12, fontWeight: FontWeight.w800),
+            ),
+          ],
+        ),
       ),
     );
 
@@ -769,6 +784,8 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   TeacherPortalData? data;
   String? error;
   bool loading = true;
+  /// رسالة مرحلة تحميل موارد المعلم عند أول دخول.
+  String loadMessage = 'جارِ تحميل بيانات صفوفك...';
 
   String tab = 'class';
   String groupId = '';
@@ -907,6 +924,12 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   @override
   void initState() {
     super.initState();
+    // نسخة الجهاز قبل أول رسم — بلا وميض تحميل عند فتح البوابة بلا نت
+    final cached = _offline.loadTeacherData();
+    if (cached != null) {
+      _applyTeacherData(cached, fromCache: true);
+      pendingOps = _offline.pendingCountOf(widget.user.id);
+    }
     _load();
     _startPortalRealtime();
   }
@@ -967,45 +990,78 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     }
   }
 
+  /// مهلة طلبات بوابة المعلم — بلاها يعلق الانتظار عند انقطاع الشبكة.
+  static const _cloudTimeout = Duration(seconds: 10);
+
+  /// تطبيق بيانات المعلم على الحالة (كاش أو سحابة) مع اختيار الصف/الشعبة.
+  void _applyTeacherData(TeacherPortalData result, {required bool fromCache}) {
+    final tabs = teacherPortalTabs(resolveFeatures(result.features));
+    if (tabs.isNotEmpty && !tabs.contains(tab)) tab = tabs.first;
+    if (result.classes.every((c) => c.group.id != groupId)) {
+      groupId = result.classes.isEmpty ? '' : result.classes.first.group.id;
+    }
+    final current = result.classes.where((c) => c.group.id == groupId).firstOrNull;
+    if (current != null) {
+      final g = current.group.gradeLevel.trim();
+      if (g.isNotEmpty) gradeFilter = g;
+      // الحضور يُرصد لشعبة بعينها: صفٌّ بلا شعبة يخلط كشفين في واحد
+      final secs = {
+        for (final s in current.students)
+          if (s.section.trim().isNotEmpty) s.section.trim(),
+      }.toList()
+        ..sort();
+      if (secs.isNotEmpty && (sectionFilter.isEmpty || !secs.contains(sectionFilter))) {
+        sectionFilter = secs.first;
+      }
+    }
+    data = result;
+    loading = false;
+    error = null;
+    offline = fromCache;
+    pendingOps = _offline.pendingCountOf(widget.user.id);
+  }
+
   Future<void> _load() async {
-    setState(() {
-      loading = true;
-      error = null;
-    });
+    // كاش أولاً كالإدارة: الشاشة تُفتح فوراً بلا انتظار شبكة
+    final cached = _offline.loadTeacherData();
+    final hadCache = cached != null;
+    if (hadCache) {
+      if (!mounted) return;
+      setState(() => _applyTeacherData(cached, fromCache: true));
+      _refreshTab();
+    } else if (data == null) {
+      setState(() {
+        loading = true;
+        error = null;
+        loadMessage = 'جارِ تحميل بيانات صفوفك...';
+      });
+    }
+
     try {
-      final result = await _service.teacherData(widget.user);
+      final result = await _service.teacherData(widget.user).timeout(_cloudTimeout);
       await _offline.saveTeacherData(result);
       if (!mounted) return;
       setState(() {
-        data = result;
-        loading = false;
-        offline = false;
-        final tabs = teacherPortalTabs(resolveFeatures(result.features));
-        if (tabs.isNotEmpty && !tabs.contains(tab)) tab = tabs.first;
-        if (result.classes.every((c) => c.group.id != groupId)) {
-          groupId = result.classes.isEmpty ? '' : result.classes.first.group.id;
-        }
-        final current = result.classes.where((c) => c.group.id == groupId).firstOrNull;
-        if (current != null) {
-          final g = current.group.gradeLevel.trim();
-          if (g.isNotEmpty) gradeFilter = g;
-          // الحضور يُرصد لشعبة بعينها: صفٌّ بلا شعبة يخلط كشفين في واحد،
-          // فتُختار الأولى دائماً ويبدّلها المعلم من زر الصف
-          final secs = {
-            for (final s in current.students)
-              if (s.section.trim().isNotEmpty) s.section.trim(),
-          }.toList()
-            ..sort();
-          if (secs.isNotEmpty) sectionFilter = secs.first;
+        _applyTeacherData(result, fromCache: false);
+        // أول دخول: أبقِ شاشة التجهيز حتى تكتمل موارد المعلم
+        if (!hadCache) {
+          loading = true;
+          loadMessage = 'جارِ تجهيز مواردك على الجهاز...';
         }
       });
+      unawaited(_flushPending());
+
+      if (!hadCache) {
+        await _hydrateTeacherResources(result, blocking: true);
+        if (!mounted) return;
+        setState(() => loading = false);
+      } else {
+        unawaited(_hydrateTeacherResources(result, blocking: false));
+      }
       _refreshTab();
-      _flushPending();
     } catch (_) {
-      // سقط الاتصال: تُفتح البوابة من نسخة الجهاز كما تفعل واجهة الإدارة
-      final cached = _offline.loadTeacherData();
       if (!mounted) return;
-      if (cached == null) {
+      if (data == null) {
         setState(() {
           loading = false;
           error = 'تعذّر الاتصال بالسحابة.';
@@ -1013,25 +1069,99 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         return;
       }
       setState(() {
-        data = cached;
-        loading = false;
         offline = true;
         pendingOps = _offline.pendingCountOf(widget.user.id);
-        if (cached.classes.every((c) => c.group.id != groupId)) {
-          groupId = cached.classes.isEmpty ? '' : cached.classes.first.group.id;
-        }
-        final current = cached.classes.where((c) => c.group.id == groupId).firstOrNull;
-        final g = current?.group.gradeLevel.trim() ?? '';
-        if (g.isNotEmpty) gradeFilter = g;
-        // شعبة أيضاً، كفرع الاتصال: بلا شعبة لا يُعرض كشف
-        final secs = {
-          for (final s in current?.students ?? const <Student>[])
-            if (s.section.trim().isNotEmpty) s.section.trim(),
-        }.toList()
-          ..sort();
-        if (secs.isNotEmpty) sectionFilter = secs.first;
       });
-      _refreshTab();
+    }
+  }
+
+  /// تحميل مرتّب لموارد المعلم فقط (لا جداول الإدارة): مودل ← درجات ← حضور الأسبوع.
+  Future<void> _hydrateTeacherResources(TeacherPortalData result, {required bool blocking}) async {
+    final classes = result.classes;
+    if (classes.isEmpty) return;
+
+    final total = classes.length;
+    var done = 0;
+
+    void progress(String phase) {
+      if (!blocking || !mounted) return;
+      setState(() => loadMessage = '$phase ($done/$total)');
+    }
+
+    // 1) وحدات المودل لكل مادة وكل فصل
+    progress('تحميل المودل');
+    for (final c in classes) {
+      if (!mounted) return;
+      for (final t in const ['term_1', 'term_2', 'other']) {
+        try {
+          final list = await _service
+              .groupSections(
+                tenantId: widget.user.tenantId,
+                groupId: c.group.id,
+                term: t,
+                includeHidden: true,
+              )
+              .timeout(_cloudTimeout);
+          await _offline.saveSections(c.group.id, t, list);
+        } catch (_) {}
+      }
+      done++;
+      progress('تحميل المودل');
+    }
+
+    // 2) سجل درجات كل مادة
+    done = 0;
+    progress('تحميل الدرجات');
+    for (final c in classes) {
+      if (!mounted) return;
+      try {
+        final list = await _service.groupEvaluations(c.group.id).timeout(_cloudTimeout);
+        await _offline.saveEvaluations(c.group.id, list);
+      } catch (_) {}
+      done++;
+      progress('تحميل الدرجات');
+    }
+
+    // 3) حضور أسبوع اليوم لكل مادة/شعبة
+    done = 0;
+    progress('تحميل الحضور');
+    final dates = [for (final d in _schoolWeek(0)) d.dateStr];
+    for (final c in classes) {
+      if (!mounted) return;
+      final roomIds = <String>{
+        for (final r in c.rooms) if (r.id.isNotEmpty) r.id,
+        if (c.group.roomId.isNotEmpty) c.group.roomId,
+      };
+      for (final roomId in roomIds) {
+        try {
+          final roomOf = {
+            for (final s in c.students)
+              s.id: () {
+                final matched = c.roomIdFor(s.section);
+                return matched.isNotEmpty ? matched : roomId;
+              }(),
+          };
+          final saved = await _service
+              .weekTeacherAttendance(groupId: c.group.id, dates: dates, roomOf: roomOf)
+              .timeout(_cloudTimeout);
+          for (final e in saved.entries) {
+            await _offline.saveMarks(roomId, e.key, e.value);
+          }
+        } catch (_) {
+          try {
+            final saved = await _service.weekAttendance(roomId, dates).timeout(_cloudTimeout);
+            for (final e in saved.entries) {
+              await _offline.saveMarks(roomId, e.key, e.value);
+            }
+          } catch (_) {}
+        }
+      }
+      done++;
+      progress('تحميل الحضور');
+    }
+
+    if (blocking && mounted) {
+      setState(() => loadMessage = 'تم تجهيز مواردك');
     }
   }
 
@@ -1085,23 +1215,30 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         t.contains('unavailable');
   }
 
-  /// ضغطة زر المزامنة: يرفع ما انتظر ثم يجلب من جديد.
+  /// ضغطة زر المزامنة: ورقة التفاصيل كالإدارة، ثم رفع/تحديث.
   Future<void> _syncNow() async {
-    try {
-      await _flushPending();
-    } catch (e) {
-      if (!mounted) return;
-      showAppSnack(
-        context,
-        _isServerBusy(e) ? 'الخادم مشغول، أعد المحاولة بعد لحظات' : 'تعذّرت المزامنة',
-        error: true,
-      );
-      return;
-    }
-    if (!mounted) return;
-    await _load();
-    if (!mounted) return;
-    if (!offline && pendingOps == 0) showAppSnack(context, 'كل شيء محدّث');
+    await openPortalSyncSheet(
+      context,
+      offline: _offline,
+      userId: widget.user.id,
+      syncedAt: _offline.syncedAt,
+      onSync: () async {
+        try {
+          await _flushPending();
+        } catch (e) {
+          if (!mounted) return false;
+          showAppSnack(
+            context,
+            _isServerBusy(e) ? 'الخادم مشغول، أعد المحاولة بعد لحظات' : 'تعذّرت المزامنة',
+            error: true,
+          );
+          return false;
+        }
+        if (!mounted) return false;
+        await _load();
+        return !offline && pendingOps == 0;
+      },
+    );
   }
 
   /// رفع ما رُصد بلا شبكة. يُستدعى كلما ثبت أن السحابة في المتناول.
@@ -1180,9 +1317,10 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
             return matched.isNotEmpty ? matched : roomId;
           }(),
       };
-      final saved = groupId.isNotEmpty
-          ? await _service.weekTeacherAttendance(groupId: groupId, dates: dates, roomOf: roomOf)
-          : await _service.weekAttendance(roomId, dates);
+      final saved = await (groupId.isNotEmpty
+              ? _service.weekTeacherAttendance(groupId: groupId, dates: dates, roomOf: roomOf)
+              : _service.weekAttendance(roomId, dates))
+          .timeout(_cloudTimeout);
       if (!mounted || token != _marksToken) return;
       for (final e in saved.entries) {
         await _offline.saveMarks(roomId, e.key, e.value);
@@ -1304,27 +1442,42 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   Future<void> _loadEvaluations() async {
     final c = _current;
     if (c == null) return;
-    try {
-      final list = await _service.groupEvaluations(c.group.id);
-      await _offline.saveEvaluations(c.group.id, list);
-      if (!mounted || _current?.group.id != c.group.id) return;
+    final groupId = c.group.id;
 
-      // أسماء من كل شعب المعلم أولاً، ثم جلب الناقص من السحابة
-      final names = <String, String>{
-        for (final cl in _classes)
-          for (final s in cl.students)
-            if (s.fullName.trim().isNotEmpty) s.id: s.fullName.trim(),
-      };
+    Map<String, String> rosterNames() => {
+          for (final cl in _classes)
+            for (final s in cl.students)
+              if (s.fullName.trim().isNotEmpty) s.id: s.fullName.trim(),
+        };
+
+    // الكاش أولاً — كشف الدرجات يظهر بلا نت فور فتح التبويب
+    final cached = _offline.loadEvaluations(groupId);
+    if (cached != null) {
+      setState(() {
+        recent = cached;
+        evalNames = rosterNames();
+        recentVisible = kListPageSize;
+      });
+    }
+
+    try {
+      final list = await _service.groupEvaluations(groupId).timeout(_cloudTimeout);
+      await _offline.saveEvaluations(groupId, list);
+      if (!mounted || _current?.group.id != groupId) return;
+
+      final names = rosterNames();
       final missing = {
         for (final e in list)
           if (e.studentId.isNotEmpty && !names.containsKey(e.studentId)) e.studentId,
       };
       if (missing.isNotEmpty) {
         try {
-          names.addAll(await _service.studentNamesByIds(missing, widget.user.tenantId));
+          names.addAll(
+            await _service.studentNamesByIds(missing, widget.user.tenantId).timeout(_cloudTimeout),
+          );
         } catch (_) {}
       }
-      if (!mounted || _current?.group.id != c.group.id) return;
+      if (!mounted || _current?.group.id != groupId) return;
       setState(() {
         recent = list;
         evalNames = names;
@@ -1332,19 +1485,8 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         offline = false;
       });
     } catch (_) {
-      // بلا اتصال: يُعرض آخر سجل وصل لهذه المادة
-      final cached = _offline.loadEvaluations(c.group.id);
-      if (!mounted || _current?.group.id != c.group.id) return;
+      if (!mounted || _current?.group.id != groupId) return;
       setState(() {
-        if (cached != null) {
-          recent = cached;
-          evalNames = {
-            for (final cl in _classes)
-              for (final st in cl.students)
-                if (st.fullName.trim().isNotEmpty) st.id: st.fullName.trim(),
-          };
-          recentVisible = kListPageSize;
-        }
         offline = true;
         pendingOps = _offline.pendingCountOf(widget.user.id);
       });
@@ -1390,15 +1532,29 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     final c = _current;
     if (c == null) return;
     final token = ++_moodleToken;
-    setState(() => loadingMoodle = true);
+    final gid = c.group.id;
+
+    // وحدات محفوظة تظهر فوراً — بلا انتظار شبكة (مثل الحضور)
+    final cached = _offline.loadSections(gid, term);
+    setState(() {
+      if (cached != null) {
+        sections = cached;
+        loadingMoodle = false;
+      } else {
+        loadingMoodle = true;
+      }
+    });
+
     try {
-      final list = await _service.groupSections(
-        tenantId: widget.user.tenantId,
-        groupId: c.group.id,
-        term: term,
-        includeHidden: true,
-      );
-      await _offline.saveSections(c.group.id, term, list);
+      final list = await _service
+          .groupSections(
+            tenantId: widget.user.tenantId,
+            groupId: gid,
+            term: term,
+            includeHidden: true,
+          )
+          .timeout(_cloudTimeout);
+      await _offline.saveSections(gid, term, list);
       if (!mounted || token != _moodleToken) return;
       setState(() {
         sections = list;
@@ -1406,8 +1562,6 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         offline = false;
       });
     } catch (_) {
-      // بلا اتصال: وحدات الفصل ومحتواها من نسخة الجهاز
-      final cached = _offline.loadSections(c.group.id, term);
       if (!mounted || token != _moodleToken) return;
       setState(() {
         if (cached != null) sections = cached;
@@ -1660,7 +1814,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
           ),
           Expanded(
             child: loading
-                ? _loadingView()
+                ? _loadingView(loadMessage)
                 : error != null
                     ? _errorView(error!, _load)
                     // الإجراء الأساسي لكل تبويب في منطقة الإبهام، كشاشات الإدارة
@@ -1685,6 +1839,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                                   branding: branding,
                                   service: _service,
                                   accent: brand.active,
+                                  offline: _offline,
                                 ),
                               'evaluations' => _evaluationsTab(brand),
                               'moodle' => _moodleTab(brand),
@@ -2269,7 +2424,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                           ],
                         ),
                       ),
-                      const Icon(Icons.chevron_left, color: _C.faint),
+                      const AppChevron(color: _C.faint),
                     ],
                   ),
                 ),
@@ -3891,7 +4046,7 @@ class _RecentEvaluationCardState extends State<_RecentEvaluationCard> {
 
 /// حالة المزامنة في ترويسة المعلم — مقابل زر المزامنة في ترويسة الإدارة.
 ///
-/// سحابة مشطوبة بلا اتصال، وعدد ما ينتظر الرفع فوقها، وضغطة تعيد المحاولة.
+/// سحابة مشطوبة بلا اتصال، وعدد ما ينتظر الرفع فوقها، وضغطة تفتح تفاصيل المعلّقات.
 class _PortalSyncButton extends StatelessWidget {
   const _PortalSyncButton({
     required this.offline,
@@ -3909,7 +4064,7 @@ class _PortalSyncButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final tooltip = offline
         ? (pending > 0 ? 'لا يوجد اتصال · $pending بانتظار الرفع' : 'لا يوجد اتصال')
-        : (pending > 0 ? '$pending بانتظار الرفع' : 'مزامنة');
+        : (pending > 0 ? '$pending بانتظار الرفع' : 'تفاصيل المزامنة');
 
     return Tooltip(
       message: tooltip,
@@ -3958,6 +4113,194 @@ class _PortalSyncButton extends StatelessWidget {
                     ),
                   ),
                 ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// ورقة تفاصيل مزامنة بوابة المعلم — ما ينتظر الرفع وآخر تحديث من السحابة.
+Future<void> openPortalSyncSheet(
+  BuildContext context, {
+  required PortalOffline offline,
+  required String userId,
+  required DateTime? syncedAt,
+  required Future<bool> Function() onSync,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: 0.5),
+    isScrollControlled: true,
+    builder: (ctx) => _PortalSyncSheet(
+      offline: offline,
+      userId: userId,
+      syncedAt: syncedAt,
+      onSync: onSync,
+    ),
+  );
+}
+
+class _PortalSyncSheet extends StatefulWidget {
+  const _PortalSyncSheet({
+    required this.offline,
+    required this.userId,
+    required this.syncedAt,
+    required this.onSync,
+  });
+
+  final PortalOffline offline;
+  final String userId;
+  final DateTime? syncedAt;
+  final Future<bool> Function() onSync;
+
+  @override
+  State<_PortalSyncSheet> createState() => _PortalSyncSheetState();
+}
+
+class _PortalSyncSheetState extends State<_PortalSyncSheet> {
+  bool running = false;
+  String? resultMessage;
+  bool? resultOk;
+
+  List<Map<String, dynamic>> get _ops => widget.offline.pendingOf(widget.userId);
+
+  String get _syncedLabel {
+    final at = widget.syncedAt;
+    if (at == null) return 'لم تُحدَّث البيانات من السحابة بعد';
+    final local = at.toLocal();
+    final d =
+        '${local.year}/${local.month.toString().padLeft(2, '0')}/${local.day.toString().padLeft(2, '0')}';
+    final t =
+        '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    return 'آخر تحديث من السحابة: $d · $t';
+  }
+
+  Future<void> _run() async {
+    setState(() {
+      running = true;
+      resultMessage = null;
+      resultOk = null;
+    });
+    final ok = await widget.onSync();
+    if (!mounted) return;
+    setState(() {
+      running = false;
+      resultOk = ok;
+      resultMessage = ok ? 'كل شيء محدّث' : 'تعذّرت المزامنة أو بقي رصد معلّق';
+    });
+    if (ok) {
+      await Future<void>.delayed(const Duration(milliseconds: 900));
+      if (mounted) Navigator.pop(context);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ops = _ops;
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet)),
+      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.line,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'تفاصيل المزامنة',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: AppColors.navy),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _syncedLabel,
+                style: const TextStyle(fontSize: 12, color: AppColors.muted, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 14),
+              if (ops.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppColors.sunken,
+                    borderRadius: BorderRadius.circular(Corner.box),
+                  ),
+                  child: const Text(
+                    'لا يوجد رصد معلّق للرفع. البوابة تعمل من نسخة الجهاز عند انقطاع الشبكة.',
+                    style: TextStyle(fontSize: 12.5, color: AppColors.muted, height: 1.45),
+                  ),
+                )
+              else ...[
+                Text(
+                  '${ops.length} بانتظار الرفع',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.navy),
+                ),
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.35),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: ops.length,
+                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    itemBuilder: (_, i) {
+                      final op = ops[i];
+                      return ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(Icons.cloud_upload_outlined, size: 18, color: AppColors.amber),
+                        title: Text(
+                          PortalOffline.pendingOpLabel(op),
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+              if (resultMessage != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  resultMessage!,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: resultOk == true ? AppColors.success : AppColors.danger,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: running ? null : _run,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.navy,
+                  minimumSize: const Size.fromHeight(44),
+                ),
+                child: running
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : Text(ops.isEmpty ? 'تحديث من السحابة' : 'رفع المعلّقات وتحديث'),
+              ),
             ],
           ),
         ),
