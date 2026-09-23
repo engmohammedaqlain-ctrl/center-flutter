@@ -12,6 +12,7 @@ import '../data/portal_offline.dart';
 import '../data/realtime.dart';
 import '../data/store.dart';
 import '../data/academic_matching.dart';
+import '../data/teacher_resources.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
@@ -784,8 +785,6 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   TeacherPortalData? data;
   String? error;
   bool loading = true;
-  /// رسالة مرحلة تحميل موارد المعلم عند أول دخول.
-  String loadMessage = 'جارِ تحميل بيانات صفوفك...';
 
   String tab = 'class';
   String groupId = '';
@@ -1022,10 +1021,9 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   }
 
   Future<void> _load() async {
-    // كاش أولاً كالإدارة: الشاشة تُفتح فوراً بلا انتظار شبكة
+    // الكاش من صفحة التجهيز أو دخول سابق — الشاشة فورية بلا انتظار
     final cached = _offline.loadTeacherData();
-    final hadCache = cached != null;
-    if (hadCache) {
+    if (cached != null) {
       if (!mounted) return;
       setState(() => _applyTeacherData(cached, fromCache: true));
       _refreshTab();
@@ -1033,7 +1031,6 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       setState(() {
         loading = true;
         error = null;
-        loadMessage = 'جارِ تحميل بيانات صفوفك...';
       });
     }
 
@@ -1041,22 +1038,18 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       final result = await _service.teacherData(widget.user).timeout(_cloudTimeout);
       await _offline.saveTeacherData(result);
       if (!mounted) return;
-      setState(() {
-        _applyTeacherData(result, fromCache: false);
-        // أول دخول: أبقِ شاشة التجهيز حتى تكتمل موارد المعلم
-        if (!hadCache) {
-          loading = true;
-          loadMessage = 'جارِ تجهيز مواردك على الجهاز...';
-        }
-      });
+      setState(() => _applyTeacherData(result, fromCache: false));
       unawaited(_flushPending());
-
-      if (!hadCache) {
-        await _hydrateTeacherResources(result, blocking: true);
-        if (!mounted) return;
-        setState(() => loading = false);
-      } else {
-        unawaited(_hydrateTeacherResources(result, blocking: false));
+      // تحديث الموارد بالخلفية إن لم يكتمل تنزيل حديث (صفحة التجهيز)
+      if (!teacherResourcesFresh(_offline)) {
+        unawaited(
+          hydrateTeacherResources(
+            service: _service,
+            offline: _offline,
+            user: widget.user,
+            isCancelled: () => !mounted,
+          ),
+        );
       }
       _refreshTab();
     } catch (_) {
@@ -1072,96 +1065,6 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         offline = true;
         pendingOps = _offline.pendingCountOf(widget.user.id);
       });
-    }
-  }
-
-  /// تحميل مرتّب لموارد المعلم فقط (لا جداول الإدارة): مودل ← درجات ← حضور الأسبوع.
-  Future<void> _hydrateTeacherResources(TeacherPortalData result, {required bool blocking}) async {
-    final classes = result.classes;
-    if (classes.isEmpty) return;
-
-    final total = classes.length;
-    var done = 0;
-
-    void progress(String phase) {
-      if (!blocking || !mounted) return;
-      setState(() => loadMessage = '$phase ($done/$total)');
-    }
-
-    // 1) وحدات المودل لكل مادة وكل فصل
-    progress('تحميل المودل');
-    for (final c in classes) {
-      if (!mounted) return;
-      for (final t in const ['term_1', 'term_2', 'other']) {
-        try {
-          final list = await _service
-              .groupSections(
-                tenantId: widget.user.tenantId,
-                groupId: c.group.id,
-                term: t,
-                includeHidden: true,
-              )
-              .timeout(_cloudTimeout);
-          await _offline.saveSections(c.group.id, t, list);
-        } catch (_) {}
-      }
-      done++;
-      progress('تحميل المودل');
-    }
-
-    // 2) سجل درجات كل مادة
-    done = 0;
-    progress('تحميل الدرجات');
-    for (final c in classes) {
-      if (!mounted) return;
-      try {
-        final list = await _service.groupEvaluations(c.group.id).timeout(_cloudTimeout);
-        await _offline.saveEvaluations(c.group.id, list);
-      } catch (_) {}
-      done++;
-      progress('تحميل الدرجات');
-    }
-
-    // 3) حضور أسبوع اليوم لكل مادة/شعبة
-    done = 0;
-    progress('تحميل الحضور');
-    final dates = [for (final d in _schoolWeek(0)) d.dateStr];
-    for (final c in classes) {
-      if (!mounted) return;
-      final roomIds = <String>{
-        for (final r in c.rooms) if (r.id.isNotEmpty) r.id,
-        if (c.group.roomId.isNotEmpty) c.group.roomId,
-      };
-      for (final roomId in roomIds) {
-        try {
-          final roomOf = {
-            for (final s in c.students)
-              s.id: () {
-                final matched = c.roomIdFor(s.section);
-                return matched.isNotEmpty ? matched : roomId;
-              }(),
-          };
-          final saved = await _service
-              .weekTeacherAttendance(groupId: c.group.id, dates: dates, roomOf: roomOf)
-              .timeout(_cloudTimeout);
-          for (final e in saved.entries) {
-            await _offline.saveMarks(roomId, e.key, e.value);
-          }
-        } catch (_) {
-          try {
-            final saved = await _service.weekAttendance(roomId, dates).timeout(_cloudTimeout);
-            for (final e in saved.entries) {
-              await _offline.saveMarks(roomId, e.key, e.value);
-            }
-          } catch (_) {}
-        }
-      }
-      done++;
-      progress('تحميل الحضور');
-    }
-
-    if (blocking && mounted) {
-      setState(() => loadMessage = 'تم تجهيز مواردك');
     }
   }
 
@@ -1814,7 +1717,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
           ),
           Expanded(
             child: loading
-                ? _loadingView(loadMessage)
+                ? _loadingView()
                 : error != null
                     ? _errorView(error!, _load)
                     // الإجراء الأساسي لكل تبويب في منطقة الإبهام، كشاشات الإدارة

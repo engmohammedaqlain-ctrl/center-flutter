@@ -41,6 +41,12 @@ class PortalOffline {
   /// آخر مرة وصلت فيها بيانات من السحابة.
   DateTime? get syncedAt => DateTime.tryParse(_db.settings[_kSyncedAt] ?? '');
 
+  /// آخر مرة اكتمل فيها تنزيل موارد المعلم (مودل/درجات/حضور).
+  DateTime? get resourcesHydratedAt => DateTime.tryParse(_db.settings['portal_teacher_hydrated_at'] ?? '');
+
+  Future<void> markResourcesHydrated() =>
+      _db.setSetting('portal_teacher_hydrated_at', DateTime.now().toIso8601String());
+
   // ── صفوف المعلم وطلابه ────────────────────────────────────────────────────
 
   Future<void> saveTeacherData(TeacherPortalData data) async {

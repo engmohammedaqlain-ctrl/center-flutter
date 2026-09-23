@@ -15,6 +15,7 @@ import 'screens/app_update_sheet.dart';
 import 'screens/developer_screen.dart';
 import 'screens/device_setup_screen.dart';
 import 'screens/portal_screens.dart';
+import 'screens/teacher_resources_screen.dart';
 import 'screens/shell.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
@@ -548,7 +549,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     Widget page(BuildContext _) => account.isTeacher
-        ? TeacherPortalScreen(user: account, onExit: exit)
+        ? TeacherResourcesScreen(user: account, onExit: exit)
         : StudentPortalScreen(user: account, onExit: exit);
 
     final route = restored

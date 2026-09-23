@@ -215,7 +215,7 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
     );
   }
 
-  /// التنزيل الأول: حلقة بسيطة + نسبة وجدول جارٍ.
+  /// التنزيل الأول: نسبة واضحة + شريط واحد (بلا دويرة مكرّرة).
   Widget _loading() {
     final pct = progressPercent.clamp(0, 100);
     return Padding(
@@ -228,12 +228,17 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
             duration: const Duration(milliseconds: 500),
             curve: Curves.easeOut,
             builder: (context, value, _) {
-              final shown = pct <= 0 ? null : value;
-              return AppLoader(
-                compact: true,
-                size: 36,
-                value: shown,
-                message: pct <= 0 ? 'جارٍ التحضير…' : '${(value * 100).round()}%',
+              final shown = pct <= 0 ? '…' : '${(value * 100).round()}%';
+              return Text(
+                shown,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: AppText.family,
+                  color: AppColors.navy,
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  height: 1.1,
+                ),
               );
             },
           ),
@@ -267,7 +272,7 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
             borderRadius: BorderRadius.circular(99),
             child: LinearProgressIndicator(
               value: pct <= 0 ? null : pct / 100,
-              minHeight: 3,
+              minHeight: 6,
               backgroundColor: AppColors.navy.withValues(alpha: 0.08),
               color: AppColors.navy,
             ),
