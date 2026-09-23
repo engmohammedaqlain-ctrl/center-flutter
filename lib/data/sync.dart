@@ -638,9 +638,15 @@ const syncedTables = [
   'student_evaluations',
 ];
 
-/// عدد الجداول التي تُسأل عنها السحابة معاً. التتابع كان يجعل كل سحب ينتظر نحو
-/// عشرين رحلة ذهاب وإياب واحدة بعد أخرى، فبدا السحب التلقائي بطيئاً.
-const pullConcurrency = 6;
+/// عدد الجداول التي تُسأل عنها السحابة معاً.
+///
+/// الويب يسحب جدولاً بعد جدول (`sync.ts` / `pullFromCloud`). التزامن العالي على
+/// الجوال كان يُسقِط صفحاتاً (مهلة/ضغط شبكة) فيصل الجهاز بآلاف السجلات أقل من
+/// السحابة، والمؤشّر يتقدّم فيبدو السحب «ناجحاً». واحدٌ كالوطّ يضمن نفس الاكتمال.
+const pullConcurrency = 1;
+
+/// محاولات إعادة جلب الصفحة عند خطأ شبكة عابر قبل اعتبار الجدول فاشلاً.
+const pullPageRetries = 3;
 
 /// تشغيل [task] على [items] بحدٍّ أقصى [limit] معاً، والنتائج بترتيب العناصر.
 Future<List<R>> mapPooled<T, R>(
@@ -1074,6 +1080,9 @@ abstract class SyncLocalStore {
   /// حفظ صفوف سحب لجدول غير محمّل في الذاكرة.
   Future<void> persistPullOnly(String table, List<Map<String, dynamic>> rows) async {}
 
+  /// عدد صفوف الجدول محلياً (القرص إن وُجد، وإلا الذاكرة) — لمطابقة عدّ السحابة.
+  Future<int> countOf(String table) async => allOf(table).length;
+
   /// ختم السيرفر المحفوظ لسجل، أو `null` إن لم يصل من السحابة بعد.
   String? serverStamp(String table, String id);
 
@@ -1260,17 +1269,21 @@ class SyncService {
             tenantId,
             newIds.take(10).toList(),
           );
-          for (final row in full) {
-            samples.add(
-              PendingSummaryItem(
-                table: cloud,
-                action: local.recordOf(cloud, '${row['id']}') != null
-                    ? 'UPDATE'
-                    : 'INSERT',
-                label: describeRecord(cloud, row, null),
-                at: '${row['updated_at'] ?? ''}',
-              ),
-            );
+          if (full == null) {
+            tableFailed = true;
+          } else {
+            for (final row in full) {
+              samples.add(
+                PendingSummaryItem(
+                  table: cloud,
+                  action: local.recordOf(cloud, '${row['id']}') != null
+                      ? 'UPDATE'
+                      : 'INSERT',
+                  label: describeRecord(cloud, row, null),
+                  at: '${row['updated_at'] ?? ''}',
+                ),
+              );
+            }
           }
         }
       } catch (_) {
@@ -1811,24 +1824,78 @@ class SyncService {
 
     report(percent: 1, table: tables.first, done: 0, phase: PullProgressPhase.fetching);
 
+    // أوزان الجلب بعدد السجلات المتوقع (عدّ السحابة) لا بالتساوي بين الجداول:
+    // جدول المالية بـ 10 آلاف كان يُحسب ~2٪ فيتجمّد الشريط، والصغير يقفز بسرعة.
+    var expectedFetchRows = 0;
+    for (final cloud in tables) {
+      final since = await _cursor(tenantId, cloud);
+      if (since != null) continue; // تزايدي: حجمه غير معروف مسبقاً
+      final n = await _cloudExactCount(cloud, tenantId);
+      expectedFetchRows += n ?? 0;
+      report(
+        percent: 2,
+        table: cloud,
+        done: 0,
+        phase: PullProgressPhase.fetching,
+        records: expectedFetchRows,
+      );
+    }
+
     var fetchedCount = 0;
     var fetchedRowsSoFar = 0;
+
+    int fetchPercent() {
+      if (expectedFetchRows > 0) {
+        // 3–48٪ بنسبة ما نُزِّل من المتوقع
+        final ratio = (fetchedRowsSoFar / expectedFetchRows).clamp(0.0, 1.0);
+        return (3 + ratio * 45).floor().clamp(3, 48);
+      }
+      // سحب تزايدي بلا عدّ: تقدّم بعدد الجداول
+      if (tables.isEmpty) return 3;
+      return (3 + (fetchedCount / tables.length) * 45).floor().clamp(3, 48);
+    }
+
+    void onFetchRows(String cloud, int n) {
+      if (n <= 0) return;
+      fetchedRowsSoFar += n;
+      report(
+        percent: fetchPercent(),
+        table: cloud,
+        done: fetchedCount,
+        phase: PullProgressPhase.fetching,
+        records: fetchedRowsSoFar,
+      );
+    }
+
     final fetched = await mapPooled(
       tables,
       pullConcurrency,
       (cloud) async {
-        final result = await _fetchTableChanges(cloud, tenantId);
-        fetchedCount++;
-        fetchedRowsSoFar += result.rows?.length ?? 0;
-        // الجلب 1–40٪ بعدد الجداول (الشبكة متقاربة)، والسجلات تُبلَّغ للواجهة
-        final pct = (1 + (fetchedCount / tables.length) * 39).floor();
-        report(
-          percent: pct.clamp(1, 40),
-          table: cloud,
-          done: fetchedCount,
-          phase: PullProgressPhase.fetching,
-          records: fetchedRowsSoFar,
+        final result = await _fetchTableChanges(
+          cloud,
+          tenantId,
+          onRows: (n) => onFetchRows(cloud, n),
         );
+        fetchedCount++;
+        // إن لم يُبلَّغ أثناء الصفحات (جدول فارغ/فشل): ثبّت موضع الجدول
+        final got = result.rows?.length ?? 0;
+        if (got == 0) {
+          report(
+            percent: fetchPercent(),
+            table: cloud,
+            done: fetchedCount,
+            phase: PullProgressPhase.fetching,
+            records: fetchedRowsSoFar,
+          );
+        } else {
+          report(
+            percent: fetchPercent(),
+            table: cloud,
+            done: fetchedCount,
+            phase: PullProgressPhase.fetching,
+            records: fetchedRowsSoFar,
+          );
+        }
         return result;
       },
     );
@@ -1846,11 +1913,11 @@ class SyncService {
       final tableRows = f.rows?.length ?? 0;
 
       int applyPercent() {
-        // التطبيق 40–95٪ بوزن السجلات: طلاب 11 ألف يحرّكون الشريط، لا جدول المالية بـ 29
+        // التطبيق 48–95٪ بوزن السجلات الفعلي
         if (totalRows > 0) {
-          return (40 + (rowsApplied / rowDenom) * 55).floor().clamp(40, 95);
+          return (48 + (rowsApplied / rowDenom) * 47).floor().clamp(48, 95);
         }
-        return (40 + (applied / tables.length) * 55).floor().clamp(40, 95);
+        return (48 + (applied / tables.length) * 47).floor().clamp(48, 95);
       }
 
       if (f.error != null) {
@@ -2009,6 +2076,81 @@ class SyncService {
     totalRemoved += await _applyRemoteDeletes(tenantId);
     await Future<void>.delayed(Duration.zero);
 
+    // مطابقة العدد مع السحابة: أي جدول أقل من `count:exact` يُصفَّر مؤشّره ويُعدّ ناقصاً
+    report(
+      percent: 97,
+      table: 'students',
+      done: tables.length,
+      phase: PullProgressPhase.finishing,
+      records: totalPulled,
+    );
+    await _flagShortTables(tenantId, tables, failedTables);
+
+    // إصلاح فوري لمرة واحدة: الجداول التي نقصت يُعاد جلبها كاملاً في نفس السحب
+    final short = [
+      for (final e in failedTables.entries)
+        if (e.value.startsWith('نقص في')) e.key,
+    ];
+    if (short.isNotEmpty) {
+      for (final cloud in short) {
+        failedTables.remove(cloud);
+        final again = await _fetchTableChanges(cloud, tenantId);
+        if (again.error != null || again.rows == null) {
+          failedTables[cloud] =
+              again.error ??
+              'تعذّر إعادة جلب ${tableLabelsAr[cloud] ?? cloud}';
+          continue;
+        }
+        final rows = again.rows!;
+        try {
+          final pendingIds = local.pendingSyncs
+              .where((p) => p.tableName == cloud)
+              .map((p) => p.recordId)
+              .toSet();
+          final toWrite = <Map<String, dynamic>>[];
+          final stamps = <String, String>{};
+          for (final record in rows) {
+            final id = '${record['id']}';
+            if (pendingIds.contains(id)) continue;
+            final loc = local.recordOf(cloud, id);
+            if (loc != null &&
+                loc['sync_status'] == 'pending' &&
+                toTimestamp(loc['updated_at']) >
+                    toTimestamp(record['updated_at']) + stampToleranceMs) {
+              continue;
+            }
+            final rest = Map<String, dynamic>.from(record)..remove('tenant_id');
+            final stamp = '${rest.remove('server_updated_at') ?? ''}';
+            if (stamp.isNotEmpty) stamps[id] = stamp;
+            if (cloud == 'enrollments' &&
+                (rest['enrolled_at'] == null ||
+                    '${rest['enrolled_at']}'.isEmpty) &&
+                rest['enrollment_date'] != null) {
+              rest['enrolled_at'] = rest['enrollment_date'];
+            }
+            rest['sync_status'] = 'synced';
+            toWrite.add(rest);
+          }
+          if (!local.hydrateOnPull(cloud)) {
+            if (toWrite.isNotEmpty) {
+              await local.persistPullOnly(cloud, toWrite);
+              totalPulled += toWrite.length;
+              local.rememberServerStamps(cloud, stamps);
+            }
+          } else if (toWrite.isNotEmpty) {
+            await local.prepareApply(cloud);
+            local.putRows(cloud, toWrite);
+            totalPulled += toWrite.length;
+            local.rememberServerStamps(cloud, stamps);
+          }
+          await _setCursor(tenantId, cloud, again.maxStamp);
+        } catch (err) {
+          failedTables[cloud] = describeSupabaseError(err, cloud);
+        }
+      }
+      await _flagShortTables(tenantId, short, failedTables);
+    }
+
     // أرصدة الطلاب تُعاد من السجلات بعد كل سحب — بإفساح أطر كي لا تتجمّد الواجهة
     if (totalPulled > 0 || totalRemoved > 0) {
       await local.recalculateAllBalancesYielding();
@@ -2035,9 +2177,72 @@ class SyncService {
     }
   }
 
+  /// يقارن عدد الصفوف المحلية بعد السحابة (`Prefer: count=exact`) ويُسقط مؤشّر
+  /// أي جدول ناقص كي يُعاد جلبه كاملاً في السحب التالي — بدل الاكتفاء بصفحةٍ
+  /// ناجحة جزئياً والختم يتقدّم.
+  Future<void> _flagShortTables(
+    String tenantId,
+    List<String> tables,
+    Map<String, String> failedTables,
+  ) async {
+    for (final cloud in tables) {
+      if (failedTables.containsKey(cloud) || missingTables.contains(cloud)) {
+        continue;
+      }
+      final remote = await _cloudExactCount(cloud, tenantId);
+      if (remote == null) continue;
+      final localCount = await local.countOf(cloud);
+      if (localCount >= remote) continue;
+      await _clearCursor(tenantId, cloud);
+      failedTables[cloud] =
+          'نقص في ${tableLabelsAr[cloud] ?? cloud}: '
+          'محلي $localCount / سحابة $remote';
+    }
+  }
+
+  /// عدد صفوف الجدول في السحابة لهذه المنشأة، أو `null` إن تعذّر العدّ.
+  Future<int?> _cloudExactCount(String table, String tenantId) async {
+    await SupabaseAuth.ensureFresh();
+    final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(
+      queryParameters: {
+        'select': 'id',
+        'tenant_id': 'eq.$tenantId',
+      },
+    );
+    try {
+      final res = await SupabaseAuth.withRetryOnExpiry(
+        () => http.get(
+          uri,
+          headers: {
+            ...SupabaseConfig.headers,
+            'Prefer': 'count=exact',
+            'Range': '0-0',
+          },
+        ),
+        expired: (r) => SupabaseAuth.isExpiredResponse(r.statusCode, r.body),
+      );
+      if (res.statusCode >= 400) {
+        if (isMissingTableError(res.statusCode, res.body)) {
+          missingTables.add(table);
+        }
+        return null;
+      }
+      final range =
+          res.headers['content-range'] ?? res.headers['Content-Range'] ?? '';
+      final slash = range.lastIndexOf('/');
+      if (slash < 0 || slash + 1 >= range.length) return null;
+      final total = range.substring(slash + 1).trim();
+      if (total == '*') return null;
+      return int.tryParse(total);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// الشقّ الشبكي من سحب جدول: ما تغيّر منذ مؤشره، بلا لمس للبيانات المحلية.
   ///
   /// [rows] `null` مع [error] فارغ يعني جدولاً غير موجود في قاعدة المنشأة بعد.
+  /// [onRows] يُستدعى بكل دفعة صفوف أثناء التصفّح — لتقدّم الشريط بوزن السجلات.
   Future<
     ({
       String cloud,
@@ -2048,7 +2253,11 @@ class SyncService {
       String? error,
     })
   >
-  _fetchTableChanges(String cloud, String tenantId) async {
+  _fetchTableChanges(
+    String cloud,
+    String tenantId, {
+    void Function(int rows)? onRows,
+  }) async {
     final startedAt = DateTime.now().millisecondsSinceEpoch;
     String? since;
     try {
@@ -2057,7 +2266,7 @@ class SyncService {
       List<Map<String, dynamic>>? rows;
 
       if (since == null) {
-        rows = await _fetchPages(cloud, tenantId, null);
+        rows = await _fetchPages(cloud, tenantId, null, onRows: onRows);
         for (final r in rows ?? const <Map<String, dynamic>>[]) {
           maxStamp = laterStamp(maxStamp, '${r['server_updated_at'] ?? ''}');
         }
@@ -2080,8 +2289,8 @@ class SyncService {
         rows = changed.ids.isEmpty
             ? <Map<String, dynamic>>[]
             : changed.ids.length > maxIdFetch
-            ? await _fetchPages(cloud, tenantId, since)
-            : await _fetchByIds(cloud, tenantId, changed.ids);
+            ? await _fetchPages(cloud, tenantId, since, onRows: onRows)
+            : await _fetchByIds(cloud, tenantId, changed.ids, onRows: onRows);
       }
 
       final error = rows == null && !missingTables.contains(cloud)
@@ -2193,8 +2402,9 @@ class SyncService {
   Future<List<Map<String, dynamic>>?> _fetchPages(
     String cloud,
     String tenantId,
-    String? since,
-  ) async {
+    String? since, {
+    void Function(int rows)? onRows,
+  }) async {
     final all = <Map<String, dynamic>>[];
     for (var from = 0; ; from += pullPageSize) {
       final page = await _select(
@@ -2208,6 +2418,7 @@ class SyncService {
       );
       if (page == null) return null;
       all.addAll(page);
+      onRows?.call(page.length);
       if (page.length < pullPageSize) return all;
     }
   }
@@ -2215,8 +2426,9 @@ class SyncService {
   Future<List<Map<String, dynamic>>?> _fetchByIds(
     String cloud,
     String tenantId,
-    List<String> ids,
-  ) async {
+    List<String> ids, {
+    void Function(int rows)? onRows,
+  }) async {
     final all = <Map<String, dynamic>>[];
     for (var i = 0; i < ids.length; i += idFetchChunk) {
       final chunk = ids.sublist(
@@ -2224,7 +2436,10 @@ class SyncService {
         i + idFetchChunk > ids.length ? ids.length : i + idFetchChunk,
       );
       final page = await _selectIn(cloud, tenantId, chunk);
+      // كالويب: أي دفعة فاشلة تُلغي الجلب كله — لا يُقدَّم المؤشّر على نقص
+      if (page == null) return null;
       all.addAll(page);
+      onRows?.call(page.length);
     }
     return all;
   }
@@ -2257,6 +2472,76 @@ class SyncService {
     if (stamp == null || stamp.isEmpty) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(cursorKey(tenantId, table), stamp);
+  }
+
+  Future<void> _clearCursor(String tenantId, String table) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(cursorKey(tenantId, table));
+  }
+
+  /// يصفر كل مؤشرات السحب (والحذوفات) ليجلب السحب التالي الجداول كاملةً —
+  /// لاسترجاع جهاز وصل بناقص بعد سحب جزئي وختم متقدّم.
+  Future<void> resetAllPullCursors(String tenantId) async {
+    final prefs = await SharedPreferences.getInstance();
+    for (final table in [...syncedTables, deletesCursor]) {
+      await prefs.remove(cursorKey(tenantId, table));
+    }
+    await prefs.remove(lastPullKey(tenantId));
+  }
+
+  /// سحب كامل بعد تصفير المؤشرات — بنفس قفل [pull] حتى لا يتداخل سحبان.
+  Future<SyncResult> pullAllFresh({PullProgressCallback? onProgress}) async {
+    if (_syncing) {
+      return SyncResult(success: false, message: 'عملية مزامنة أخرى جارية');
+    }
+    if (local.isMaster) {
+      return SyncResult(
+        success: false,
+        message: 'وضع المطور لا يقوم بمزامنة بيانات المدارس',
+      );
+    }
+    final tenantId = local.tenantId;
+    if (tenantId == null) {
+      return SyncResult(success: false, message: 'لا توجد منشأة محددة');
+    }
+    final dbTenant = local.dbTenantId;
+    if (dbTenant != null && dbTenant != tenantId) {
+      return SyncResult(
+        success: false,
+        message: 'البيانات المحلية تخص منشأة أخرى. أعد تسجيل الدخول.',
+      );
+    }
+
+    _syncing = true;
+    try {
+      await resetAllPullCursors(tenantId);
+      final result = await pullFromCloud(tenantId, onProgress: onProgress);
+      await local.onPulled();
+      local.notifySync();
+      if (!result.isComplete) {
+        final names = result.failedTables.keys
+            .map((t) => tableLabelsAr[t] ?? t)
+            .join('، ');
+        return SyncResult(
+          success: false,
+          message:
+              'تنزيل ناقص: ${result.pulled} سجلاً — تعذّر ($names). '
+              '${result.failedTables.values.first}',
+          pulled: result.pulled,
+          removed: result.removed,
+        );
+      }
+      return SyncResult(
+        success: true,
+        message: 'تم تنزيل ${result.pulled} سجلاً بالكامل',
+        pulled: result.pulled,
+        removed: result.removed,
+      );
+    } catch (err) {
+      return SyncResult(success: false, message: err.toString());
+    } finally {
+      _syncing = false;
+    }
   }
 
   /// تراجعٌ عن المؤشر قبل الجلب — انظر [cursorOverlapMs].
@@ -2297,23 +2582,41 @@ class SyncService {
     final uri = Uri.parse(
       '$supabaseUrl/rest/v1/$table',
     ).replace(queryParameters: params);
-    try {
-      final res = await SupabaseAuth.withRetryOnExpiry(
-        () => http.get(uri, headers: {..._headers, 'Range': '$from-$to'}),
-        expired: (r) => SupabaseAuth.isExpiredResponse(r.statusCode, r.body),
-      );
-      if (res.statusCode >= 400) {
-        if (isMissingTableError(res.statusCode, res.body))
-          missingTables.add(table);
+
+    Object? lastError;
+    for (var attempt = 0; attempt < pullPageRetries; attempt++) {
+      try {
+        final res = await SupabaseAuth.withRetryOnExpiry(
+          () => http.get(uri, headers: {..._headers, 'Range': '$from-$to'}),
+          expired: (r) => SupabaseAuth.isExpiredResponse(r.statusCode, r.body),
+        );
+        if (res.statusCode >= 400) {
+          if (isMissingTableError(res.statusCode, res.body)) {
+            missingTables.add(table);
+            return null;
+          }
+          lastError = 'HTTP ${res.statusCode} ${res.body}';
+          if (attempt + 1 < pullPageRetries && isTransientSyncError(lastError)) {
+            await Future<void>.delayed(Duration(milliseconds: 400 * (attempt + 1)));
+            continue;
+          }
+          return null;
+        }
+        return await decodeRowsOffThread(res.body);
+      } catch (err) {
+        lastError = err;
+        if (attempt + 1 < pullPageRetries && isTransientSyncError(err)) {
+          await Future<void>.delayed(Duration(milliseconds: 400 * (attempt + 1)));
+          continue;
+        }
         return null;
       }
-      return await decodeRowsOffThread(res.body);
-    } catch (_) {
-      return null;
     }
+    return null;
   }
 
-  Future<List<Map<String, dynamic>>> _selectIn(
+  /// جلب صفوف بمعرّفاتها. يعيد `null` عند الفشل — كالويب — لا قائمة فارغة تُخفي العطل.
+  Future<List<Map<String, dynamic>>?> _selectIn(
     String table,
     String tenantId,
     List<String> ids,
@@ -2327,13 +2630,32 @@ class SyncService {
         'id': 'in.(${ids.join(',')})',
       },
     );
-    try {
-      final res = await http.get(uri, headers: _headers);
-      if (res.statusCode >= 400) return [];
-      return await decodeRowsOffThread(res.body);
-    } catch (_) {
-      return [];
+    Object? lastError;
+    for (var attempt = 0; attempt < pullPageRetries; attempt++) {
+      try {
+        final res = await SupabaseAuth.withRetryOnExpiry(
+          () => http.get(uri, headers: _headers),
+          expired: (r) => SupabaseAuth.isExpiredResponse(r.statusCode, r.body),
+        );
+        if (res.statusCode >= 400) {
+          lastError = 'HTTP ${res.statusCode} ${res.body}';
+          if (attempt + 1 < pullPageRetries && isTransientSyncError(lastError)) {
+            await Future<void>.delayed(Duration(milliseconds: 400 * (attempt + 1)));
+            continue;
+          }
+          return null;
+        }
+        return await decodeRowsOffThread(res.body);
+      } catch (err) {
+        lastError = err;
+        if (attempt + 1 < pullPageRetries && isTransientSyncError(err)) {
+          await Future<void>.delayed(Duration(milliseconds: 400 * (attempt + 1)));
+          continue;
+        }
+        return null;
+      }
     }
+    return null;
   }
 
   /// رفع دفعة، وحفظ ختم السيرفر الذي تعيده القاعدة لكل صف.

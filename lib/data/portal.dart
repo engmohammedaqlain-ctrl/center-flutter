@@ -41,7 +41,14 @@ Map<String, dynamic> _withFullName(Map<String, dynamic> row) {
 
 /// أعمدة العرض في البوابة — بلا بيانات شخصية، ومنها الاسمان للصفوف التي لا
 /// تحمل `full_name` جاهزاً.
+/// أسماء طلاب البوابة بلا PII — للرصد والحضور.
 const _portalStudentCols = 'id,first_name,last_name,full_name,section,grade_level,status';
+
+/// تفاصيل طالب شعبة المربي: تواصل + كلمات مرور — بلا أرصدة ومالية.
+const _homeroomStudentCols =
+    'id,first_name,last_name,full_name,section,grade_level,status,gender,'
+    'phone,phone_prefix,parent_name,parent_phone,parent_phone_prefix,'
+    'national_id,parent_national_id,portal_code,parent_portal_code';
 
 String _inList(Iterable<String> values) => 'in.(${values.map((v) => '"$v"').join(',')})';
 
@@ -572,17 +579,32 @@ class PortalRoom {
   final String gradeLevel;
 }
 
+/// شعبة يكون المعلم مربيها — طلابها لمتابعة «صفي» بلا مالية.
+class HomeroomClass {
+  const HomeroomClass({
+    required this.room,
+    required this.students,
+  });
+
+  final PortalRoom room;
+  final List<Student> students;
+}
+
 /// كل ما تعرضه بوابة المعلم.
 class TeacherPortalData {
   const TeacherPortalData({
     this.branding = const PortalBranding(),
     this.classes = const [],
+    this.homerooms = const [],
     this.subjects = const [],
     this.features,
   });
 
   final PortalBranding branding;
   final List<TeacherClass> classes;
+
+  /// شعب يكون المستخدم مربيها — تبويب «صفي».
+  final List<HomeroomClass> homerooms;
   final List<SubjectItem> subjects;
 
   /// ميزات المنشأة كما في `tenants.features`.
@@ -1379,7 +1401,116 @@ class PortalService {
       features: results[1] as Map<String, dynamic>?,
       classes: classes,
       subjects: subjects,
+      homerooms: await _homeroomClasses(teacherIds, tenant, teacherYearId, rooms),
     );
+  }
+
+  /// شعب المربي وطلابها بتفاصيل التواصل وكلمات المرور — بلا حقول مالية.
+  Future<List<HomeroomClass>> _homeroomClasses(
+    Set<String> teacherIds,
+    Map<String, String> tenant,
+    String? teacherYearId,
+    Map<String, Map<String, dynamic>> roomsById,
+  ) async {
+    final mine = <Map<String, dynamic>>[
+      for (final room in roomsById.values)
+        if (teacherIds.contains('${room['homeroom_teacher_id'] ?? ''}')) room,
+    ];
+    if (mine.isEmpty) return const [];
+
+    // صفوف العام الحالي فقط إن عُرف عام المعلم
+    final filtered = [
+      for (final room in mine)
+        if (teacherYearId == null ||
+            '${room['academic_year_id'] ?? ''}'.isEmpty ||
+            '${room['academic_year_id']}' == teacherYearId)
+          room,
+    ];
+    if (filtered.isEmpty) return const [];
+
+    final grades = <String>{
+      for (final r in filtered)
+        if ('${r['grade_level'] ?? ''}'.trim().isNotEmpty) '${r['grade_level']}'.trim(),
+    };
+    if (grades.isEmpty) return const [];
+
+    final rows = await supabaseSelect(
+          'students',
+          filters: {...tenant, 'grade_level': _inList(grades)},
+          columns: _homeroomStudentCols,
+        ) ??
+        await supabaseSelect(
+          'portal_students',
+          filters: {...tenant, 'grade_level': _inList(grades)},
+          columns: _portalStudentCols,
+        ) ??
+        const <Map<String, dynamic>>[];
+
+    final students = [for (final r in rows) Student.fromCloud(_withFullName(r))];
+    final out = <HomeroomClass>[];
+    for (final room in filtered) {
+      final name = '${room['name'] ?? ''}'.trim();
+      final grade = '${room['grade_level'] ?? ''}'.trim();
+      final list = [
+        for (final s in students)
+          if (s.status != 'withdrawn' &&
+              PortalService.studentInRoom(s, roomName: name, roomGrade: grade))
+            s,
+      ]..sort((a, b) => a.fullName.compareTo(b.fullName));
+      out.add(
+        HomeroomClass(
+          room: PortalRoom(
+            id: '${room['id'] ?? ''}',
+            name: name,
+            gradeLevel: grade,
+          ),
+          students: list,
+        ),
+      );
+    }
+    out.sort((a, b) {
+      final g = a.room.gradeLevel.compareTo(b.room.gradeLevel);
+      return g != 0 ? g : a.room.name.compareTo(b.room.name);
+    });
+    return out;
+  }
+
+  /// تقييمات طالب واحد — لملف «صفي» عند المربي.
+  Future<List<StudentEvaluation>> studentEvaluations(String studentId) async {
+    if (studentId.isEmpty) return const [];
+    final rows = await supabaseSelect(
+      'student_evaluations',
+      filters: {'student_id': 'eq.$studentId'},
+      order: 'created_at.desc',
+    );
+    return [for (final r in rows ?? const <Map<String, dynamic>>[]) StudentEvaluation.fromCloud(r)];
+  }
+
+  /// ملخص حضور طالب على أيام معلومة.
+  Future<Map<String, String>> studentAttendanceMarks({
+    required String studentId,
+    required String roomId,
+    required List<String> dates,
+  }) async {
+    if (studentId.isEmpty || roomId.isEmpty || dates.isEmpty) return {};
+    final sessionIds = {for (final d in dates) PortalService.roomSessionIdFor(roomId, d)};
+    final rows = await supabaseSelect(
+      'attendance',
+      filters: {
+        'session_id': 'in.(${sessionIds.join(',')})',
+        'student_id': 'eq.$studentId',
+      },
+      columns: 'session_id,status',
+    );
+    final bySession = {
+      for (final r in rows ?? const <Map<String, dynamic>>[])
+        '${r['session_id']}': '${r['status'] ?? ''}',
+    };
+    return {
+      for (final d in dates)
+        if ((bySession[PortalService.roomSessionIdFor(roomId, d)] ?? '').isNotEmpty)
+          d: bySession[PortalService.roomSessionIdFor(roomId, d)]!,
+    };
   }
 
   /// الحصة القائمة لهذه الشعبة واليوم إن وُجدت — أنشأها جهاز الإدارة بمعرّف

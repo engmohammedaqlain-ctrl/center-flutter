@@ -35,6 +35,9 @@ abstract class Persistence {
   /// حضور واحد، فيتأخر التبديل بين الأيام تأخراً محسوساً.
   Future<void> saveRecords(String table, List<Map<String, dynamic>> rows);
 
+  /// عدد صفوف جدول على القرص — لإحصاء «سجلات النظام» ومطابقة السحابة.
+  Future<int> countTable(String table);
+
   /// حذف سجلات محددة.
   Future<void> deleteRecords(String table, List<String> ids);
 
@@ -71,6 +74,9 @@ class NoPersistence implements Persistence {
 
   @override
   Future<void> saveRecords(String table, List<Map<String, dynamic>> rows) async {}
+
+  @override
+  Future<int> countTable(String table) async => 0;
 
   @override
   Future<void> deleteRecords(String table, List<String> ids) async {}
@@ -247,6 +253,18 @@ class SqflitePersistence implements Persistence {
       await batch.commit(noResult: true);
       await Future<void>.delayed(Duration.zero);
     }
+  }
+
+  @override
+  Future<int> countTable(String table) async {
+    final rows = await _require.rawQuery(
+      'SELECT COUNT(*) AS c FROM records WHERE table_name = ?',
+      [table],
+    );
+    final value = rows.isEmpty ? null : rows.first['c'];
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse('$value') ?? 0;
   }
 
   @override

@@ -20,6 +20,7 @@ import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import '../widgets/list_paging.dart';
 import 'portal_chrome.dart';
+import 'teacher_homeroom_tab.dart';
 
 export 'student_portal_screen.dart' show StudentPortalScreen;
 
@@ -769,7 +770,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   String? error;
   bool loading = true;
 
-  String tab = 'attendance';
+  String tab = 'class';
   String groupId = '';
 
   /// الرصد يمشي كالويب: الصف ← الشعبة ← المادة، لا اختيار مجموعة مباشرةً.
@@ -979,6 +980,8 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         data = result;
         loading = false;
         offline = false;
+        final tabs = teacherPortalTabs(resolveFeatures(result.features));
+        if (tabs.isNotEmpty && !tabs.contains(tab)) tab = tabs.first;
         if (result.classes.every((c) => c.group.id != groupId)) {
           groupId = result.classes.isEmpty ? '' : result.classes.first.group.id;
         }
@@ -1116,6 +1119,8 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   /// بيانات التبويب المفتوح للشعبة المختارة.
   void _refreshTab() {
     switch (tab) {
+      case 'class':
+        break;
       case 'attendance':
         _loadMarks();
       case 'evaluations':
@@ -1581,6 +1586,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
 
   /// إجراء التبويب المفتوح، قريباً من الإبهام بدل أعلى الشاشة.
   ThumbAction? _thumbAction(_Brand brand) {
+    if (tab == 'class') return null;
     if (groupId.isEmpty && tab != 'attendance') return null;
     return switch (tab) {
       'moodle' => ThumbAction(
@@ -1674,6 +1680,12 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                           child: ListView(
                             padding: const EdgeInsets.fromLTRB(16, 16, 16, thumbActionClearance),
                             children: switch (tab) {
+                              'class' => teacherHomeroomTabChildren(
+                                  homerooms: data?.homerooms ?? const [],
+                                  branding: branding,
+                                  service: _service,
+                                  accent: brand.active,
+                                ),
                               'evaluations' => _evaluationsTab(brand),
                               'moodle' => _moodleTab(brand),
                               _ => _attendanceTab(brand),
@@ -1685,7 +1697,9 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
           PortalBottomNav(
             items: [
               for (final id in teacherPortalTabs(resolveFeatures(data?.features)))
-                if (id == 'attendance')
+                if (id == 'class')
+                  const PortalNavItem(id: 'class', label: 'صفي', icon: Icons.groups_outlined, activeIcon: Icons.groups)
+                else if (id == 'attendance')
                   const PortalNavItem(id: 'attendance', label: 'الحضور', icon: Icons.how_to_reg_outlined)
                 else if (id == 'evaluations')
                   const PortalNavItem(id: 'evaluations', label: 'الدرجات', icon: Icons.workspace_premium_outlined)

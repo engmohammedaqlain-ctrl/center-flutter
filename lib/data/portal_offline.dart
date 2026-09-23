@@ -57,6 +57,13 @@ class PortalOffline {
             'students': [for (final s in c.students) s.toCloud()],
           },
       ],
+      'homerooms': [
+        for (final h in data.homerooms)
+          {
+            'room': {'id': h.room.id, 'name': h.room.name, 'grade_level': h.room.gradeLevel},
+            'students': [for (final s in h.students) s.toCloud()],
+          },
+      ],
       'branding': {
         'name': data.branding.name,
         'logo': data.branding.logo,
@@ -89,6 +96,24 @@ class PortalOffline {
           )
         : const PortalBranding();
 
+    final homeroomsRaw = raw['homerooms'];
+    final homerooms = <HomeroomClass>[
+      if (homeroomsRaw is List)
+        for (final h in homeroomsRaw)
+          if (h is Map && h['room'] is Map)
+            HomeroomClass(
+              room: PortalRoom(
+                id: '${(h['room'] as Map)['id'] ?? ''}',
+                name: '${(h['room'] as Map)['name'] ?? ''}',
+                gradeLevel: '${(h['room'] as Map)['grade_level'] ?? ''}',
+              ),
+              students: [
+                for (final s in (h['students'] as List? ?? const []))
+                  if (s is Map) Student.fromCloud(Map<String, dynamic>.from(s)),
+              ],
+            ),
+    ];
+
     return TeacherPortalData(
       branding: branding,
       classes: [
@@ -113,6 +138,7 @@ class PortalOffline {
               ],
             ),
       ],
+      homerooms: homerooms,
     );
   }
 

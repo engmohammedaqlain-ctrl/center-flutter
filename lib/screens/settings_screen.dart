@@ -2482,24 +2482,47 @@ Future<void> _deleteUser(BuildContext context, AppUser u) async {
 
 // ═══ البيانات والمطور ═══════════════════════════════════════════════════════
 
-class _DataTab extends StatelessWidget {
+class _DataTab extends StatefulWidget {
   const _DataTab();
+
+  @override
+  State<_DataTab> createState() => _DataTabState();
+}
+
+class _DataTabState extends State<_DataTab> {
+  List<(String, int)>? counts;
+  int? totalSynced;
+  Object? countsError;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadCounts());
+  }
+
+  Future<void> _loadCounts() async {
+    final store = StoreScope.of(context);
+    try {
+      final inv = await store.localInventoryCounts();
+      final total = await store.localSyncedTotal();
+      if (!mounted) return;
+      setState(() {
+        counts = inv;
+        totalSynced = total;
+        countsError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => countsError = e);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final failed = store.sync.getFailedActions();
     final tenant = store.currentTenant;
-    final counts = <(String, int)>[
-      ('الطلاب', store.students.length),
-      ('الصفوف', store.roomsInViewedYear.length),
-      ('المدرسون', store.teachersInViewedYear.length),
-      ('المواد', store.subjectsInViewedYear.length),
-      ('المقبوضات', store.payments.length),
-      ('الأقساط', store.installments.length),
-      ('الحضور', store.attendance.length),
-      ('المراحل', store.gradeFeesInViewedYear.length),
-    ];
+    final inv = counts;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
@@ -2533,7 +2556,58 @@ class _DataTab extends StatelessWidget {
           icon: Icons.storage_outlined,
           title: 'البيانات المحلية على هذا الجهاز',
         ),
-        _CountGrid(counts: counts),
+        if (totalSynced != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: InfoStrip(
+              child: Row(
+                children: [
+                  const Text(
+                    'إجمالي سجلات الموارد',
+                    style: TextStyle(color: AppColors.muted, fontSize: 12),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '$totalSynced',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                      color: AppColors.navy,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (inv == null && countsError == null)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))),
+          )
+        else if (countsError != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              'تعذّر قراءة الإحصاءات',
+              style: TextStyle(color: AppColors.danger, fontSize: 12),
+            ),
+          )
+        else
+          _CountGrid(counts: inv!),
+        const SizedBox(height: 8),
+        _NavTile(
+          icon: Icons.refresh,
+          title: 'تحديث الإحصاءات',
+          subtitle: 'عدّ الصفوف من القرص كما على الويب',
+          onTap: _loadCounts,
+        ),
+        const SizedBox(height: 8),
+        _NavTile(
+          icon: Icons.cloud_download_outlined,
+          title: 'إعادة تنزيل كل الموارد',
+          subtitle: 'إن نقصت السجلات عن الويب — سحب كامل من السحابة',
+          onTap: () => _forceFullPull(context),
+        ),
 
         const FormSection(
           icon: Icons.backup_outlined,
@@ -2583,6 +2657,42 @@ class _DataTab extends StatelessWidget {
         ],
       ],
     );
+  }
+
+  Future<void> _forceFullPull(BuildContext context) async {
+    final store = StoreScope.of(context);
+    final ok = await confirmSheet(
+      context,
+      title: 'إعادة تنزيل الموارد',
+      message:
+          'سيُعاد سحب كل الجداول من السحابة بالكامل (مثل أول تهيئة). '
+          'استخدمها إذا كان العدد أقل من الويب أو ناقصة طلاب/مالية.',
+      confirmLabel: 'تنزيل كامل',
+    );
+    if (!ok || !context.mounted) return;
+    try {
+      final pulled = await runBusyOp(
+        context,
+        () => store.forceFullResourcePull(),
+        message: 'جاري تنزيل الموارد…',
+      );
+      if (!context.mounted) return;
+      await _loadCounts();
+      if (!context.mounted) return;
+      final total = totalSynced;
+      showAppSnack(
+        context,
+        total != null
+            ? 'اكتمل التنزيل — $pulled سجلاً هذه الجولة · الإجمالي على الجهاز: $total'
+            : 'اكتمل التنزيل — $pulled سجلاً',
+      );
+    } on StoreException catch (e) {
+      if (context.mounted) showAppSnack(context, e.message, error: true);
+    } catch (e) {
+      if (context.mounted) {
+        showAppSnack(context, 'تعذّر إعادة التنزيل: $e', error: true);
+      }
+    }
   }
 }
 

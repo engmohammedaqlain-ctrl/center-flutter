@@ -111,6 +111,16 @@ void main() {
       expect(outcome.isComplete, isFalse);
       expect(outcome.failedTables['payments'], contains('سندات القبض'));
     });
+
+    test('نقص العدد مقابل السحابة يمنع اكتمال السحب', () {
+      const outcome = PullOutcome(
+        pulled: 50,
+        removed: 0,
+        failedTables: {'payments': 'نقص في المقبوضات: محلي 100 / سحابة 200'},
+      );
+      expect(outcome.isComplete, isFalse);
+      expect(outcome.failedTables['payments'], contains('سحابة'));
+    });
   });
 
   group('دمج الطابور', () {

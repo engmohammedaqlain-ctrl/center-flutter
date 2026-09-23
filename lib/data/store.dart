@@ -869,6 +869,42 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     notifyListeners();
   }
 
+  @override
+  Future<int> countOf(String table) async {
+    // محمّل في الذاكرة (أو نواة الإقلاع): العدد الحي أثناء/بعد السحب.
+    // مؤجّل وغير مفتوح: القرص — وإلا يظهر 0 فيطابق السحابة خطأً فيُعاد جلبه كل مرة.
+    if (hydrateOnPull(table)) return allOf(table).length;
+    return db.countTable(table);
+  }
+
+  /// إحصاء محلي كـ BackupSettings على الويب — من القرص لا من ذاكرة الشاشة.
+  Future<List<(String, int)>> localInventoryCounts() async {
+    Future<(String, int)> one(String label, String table) async =>
+        (label, await db.countTable(table));
+    return [
+      await one('الطلاب', 'students'),
+      await one('الشعب والصفوف', 'rooms'),
+      await one('المراحل الدراسية', 'grade_fees'),
+      await one('المعلمون', 'teachers'),
+      await one('المواد', 'subjects'),
+      await one('المقبوضات', 'payments'),
+      await one('الرسوم', 'installments'),
+      await one('الحضور', 'attendance'),
+      await one('المصروفات', 'expenses'),
+      await one('الحصص', 'sessions'),
+    ];
+  }
+
+  /// مجموع سجلات المزامنة على القرص (بلا المرفقات) — يُقارَن برقم تنزيل الموارد.
+  Future<int> localSyncedTotal() async {
+    var sum = 0;
+    for (final t in syncedTables) {
+      if (t == 'student_attachments' || t == 'finance_attachments') continue;
+      sum += await db.countTable(t);
+    }
+    return sum;
+  }
+
   /// تحميل كل ما على القرص إلى الذاكرة، ثم استعادة الجلسة.
   Future<void> bootstrap(Persistence persistence) async {
     db = persistence;
@@ -7445,7 +7481,32 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       throw StoreException('لا يمكن تهيئة الجهاز دون اتصال بالإنترنت.');
     }
     final res = await sync.pullFromCloud(tid, onProgress: onProgress);
+    if (!res.isComplete) {
+      final names = res.failedTables.keys
+          .map((t) => tableLabelsAr[t] ?? t)
+          .join('، ');
+      throw StoreException(
+        'تنزيل ناقص (${res.pulled} سجلاً). تعذّر اكتمال: $names. '
+        '${res.failedTables.values.first} — أعد المحاولة.',
+      );
+    }
     cleanLocalDemoUsers();
+    await hydrateInstitution();
+    await settleAcademicYears();
+    notifyListeners();
+    return res.pulled;
+  }
+
+  /// إعادة تنزيل كل الموارد من السحابة: يصفّر المؤشرات ثم يسحب كاملاً.
+  /// لأجهزة وصلت بنقص بعد سحب جزئي بدا ناجحاً.
+  Future<int> forceFullResourcePull({PullProgressCallback? onProgress}) async {
+    if (!networkEnabled) {
+      throw StoreException('يلزم اتصال بالإنترنت لإعادة تنزيل الموارد.');
+    }
+    final res = await sync.pullAllFresh(onProgress: onProgress);
+    if (!res.success) {
+      throw StoreException(res.message);
+    }
     await hydrateInstitution();
     await settleAcademicYears();
     notifyListeners();
