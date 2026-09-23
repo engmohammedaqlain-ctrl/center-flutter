@@ -2,7 +2,7 @@ import '../data/phone.dart';
 
 const currency = 'شيكل';
 const appName = 'النظام المدرسي';
-const appVersion = '4.2';
+const appVersion = '4.3';
 
 /// مطابق لقائمة الأحياء في StudentForm.tsx
 const neighborhoods = [
