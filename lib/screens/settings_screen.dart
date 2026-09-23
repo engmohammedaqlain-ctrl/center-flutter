@@ -577,7 +577,7 @@ class _FeesTab extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '$missing طالباً نشطاً بلا خطة أقساط لمرحلته',
+                    '$missing طالباً نشطاً بلا أقساط مسجّلة هذا العام',
                     style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.danger),
                   ),
                 ),

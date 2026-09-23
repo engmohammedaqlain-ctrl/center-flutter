@@ -2161,10 +2161,18 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// بنود خطة المرحلة؛ فارغة حين لم تُضبط بعد.
   List<PlanItem> planItemsOf(GradeFee? grade) => grade?.planItems ?? const [];
 
-  /// عدد الطلاب النشطين بلا خطة لمرحلتهم — تحذير في شاشة المراحل.
+  /// عدد الطلاب النشطين في العام المعروض بلا أي أقساط مسجّلة.
+  ///
+  /// العدّ السابق كان «مرحلة بلا بنود خطة» حتى لو للطالب أقساط فعلاً — فيظهر
+  /// عشرات الطلاب «بلا خطة» وهم مسدَّدون أو عليهم مطالبات.
   int get studentsMissingPlan {
-    final plans = gradePlans();
-    return students.where((s) => s.status == 'active' && planItemsOf(planForStudent(s, plans)).isEmpty).length;
+    final hasInstallments = <String>{
+      for (final i in installments)
+        if (!i.isExempt) i.studentId,
+    };
+    return studentsInViewedYear
+        .where((s) => s.status == 'active' && !hasInstallments.contains(s.id))
+        .length;
   }
 
   /// أقساط الطالب من خطة مرحلته، مع خصمه ورسم الحجز — `buildStudentPlan`.

@@ -137,7 +137,7 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
     });
   }
 
-  /// حفظ الخطة، ثم فتح معاينة الأثر على الطلاب إن وُجد أثر — كويب.
+  /// حفظ الخطة، ثم فتح معاينة الأثر على الطلاب دائماً — أسئلة التطبيق كما على الويب.
   Future<void> _save() async {
     final store = StoreScope.of(context);
     setState(() => busy = true);
@@ -151,12 +151,6 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
       if (!mounted) return;
 
       final preview = store.syncGradePlan(widget.fee.gradeName);
-      if (preview.isEmpty) {
-        showAppSnack(context, 'تم حفظ خطة «${widget.fee.gradeName}»');
-        Navigator.pop(context);
-        return;
-      }
-
       final summary = await showModalBottomSheet<String>(
         context: context,
         isScrollControlled: true,
@@ -172,6 +166,10 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
       if (!mounted) return;
       if (summary != null) {
         showAppSnack(context, summary);
+        Navigator.pop(context);
+      } else if (preview.isEmpty) {
+        // أُلغيت الورقة بلا تطبيق، والخطة محفوظة بلا أثر على الطلاب
+        showAppSnack(context, 'تم حفظ خطة «${widget.fee.gradeName}»');
         Navigator.pop(context);
       }
     } on StoreException catch (e) {
@@ -420,7 +418,10 @@ class _GradePlanSyncSheetState extends State<GradePlanSyncSheet> {
                 ),
               )
             else
-              Flexible(
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.45,
+                ),
                 child: ListView(
                   shrinkWrap: true,
                   children: [

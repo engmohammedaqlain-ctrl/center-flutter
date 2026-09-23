@@ -43,7 +43,6 @@ class _FinanceScreenState extends State<FinanceScreen> {
   final search = TextEditingController();
   String method = '';
   String status = '';
-  String dueStage = '';
 
   /// مصدر المقبوضات: '' الكل | students | other
   String sourceFilter = '';
@@ -68,11 +67,6 @@ class _FinanceScreenState extends State<FinanceScreen> {
     '': 'كل الحالات',
     'active': 'مقبوضة',
     'cancelled': 'ملغاة',
-  };
-  static const _stageOptions = {
-    '': 'كل الحالات',
-    'due': 'مستحق',
-    'late': 'متأخر عن السداد',
   };
 
   String _resolvedFinanceYearId(AppStore store) {
@@ -452,7 +446,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
     if (termFilter != 'all') n++;
     switch (tab) {
       case _Tab.dues:
-        if (dueStage.isNotEmpty) n++;
+        break;
       case _Tab.payments:
         n += [method, status, sourceFilter].where((v) => v.isNotEmpty).length;
         if (paymentsBasis != 'payment') n++;
@@ -586,7 +580,6 @@ class _FinanceScreenState extends State<FinanceScreen> {
                           termFilter,
                           (v) => termFilter = v,
                         ),
-                        if (tab == _Tab.dues) group('الحالة', _stageOptions, dueStage, (v) => dueStage = v),
                         if (tab == _Tab.payments) ...[
                           group('الحالة', _statusOptions, status, (v) => status = v),
                           group(
@@ -634,7 +627,6 @@ class _FinanceScreenState extends State<FinanceScreen> {
   void _clearFilters() {
     financeYearFilter = 'current';
     termFilter = 'all';
-    dueStage = '';
     method = '';
     status = '';
     sourceFilter = '';
@@ -736,10 +728,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
           d.student.fullName.toLowerCase().contains(q) ||
           d.student.phone.contains(q) ||
           d.title.toLowerCase().contains(q);
-      final matchS = dueStage.isEmpty ||
-          (dueStage == 'late' && d.late) ||
-          (dueStage == 'due' && !d.late && !d.scheduled);
-      return matchQ && matchS;
+      return matchQ;
     }).toList();
 
     // بتاريخ الاستحقاق كما في الويب، فتتجاور بنود الشهر الواحد
