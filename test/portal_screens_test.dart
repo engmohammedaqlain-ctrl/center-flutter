@@ -264,7 +264,9 @@ void main() {
       expect(find.byType(AttendanceStudentRow), findsNWidgets(2));
       expect(find.text('علي أبو حسنين'), findsOneWidget);
       expect(find.text('حفظ الرصد'), findsNothing, reason: 'زر الحفظ يظهر بعد التعديل');
-      expect(find.byTooltip('تفاصيل المزامنة'), findsOneWidget);
+      // خدمة الاختبار لا تصل السحابة، فالزر يعلن انقطاعها — وهو المقصود:
+      // زر المزامنة معروض في الشريط العلوي لا مخفي.
+      expect(find.byTooltip('لا يوجد اتصال'), findsOneWidget);
 
       // الدرجات: زر يفتح صفحة الرصد + اختيار النطاق للسجل
       await tester.tap(find.text('الدرجات'));

@@ -1,10 +1,9 @@
 import 'package:center_mobile/data/local_db.dart';
 import 'package:center_mobile/data/portal.dart';
-import 'package:center_mobile/data/portal_offline.dart';
-import 'package:center_mobile/models/models.dart';
 import 'package:center_mobile/data/store.dart';
 import 'package:center_mobile/main.dart';
 import 'package:center_mobile/screens/portal_screens.dart';
+import 'package:center_mobile/screens/teacher_resources_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -26,53 +25,37 @@ const _teacher = PortalUser(
 /// كل نداء يفشل: يحاكي فتح التطبيق بلا إنترنت.
 http.Client _deadClient() => MockClient((_) async => throw Exception('offline'));
 
-/// جهازٌ سبق أن نزّل موارد صاحبه — وهي الحال المعتادة عند كل فتحة بعد الأولى.
-///
-/// بلا نسخة على الجهاز تقف شاشة التجهيز على مؤشرٍ لا ينتهي، وهو ما يُقصد به
-/// أول دخول لا العودة إلى التطبيق.
-Future<AppStore> _storeWithSession({bool withResources = true}) async {
+Future<AppStore> _storeWithSession(WidgetTester tester) async {
   final store = AppStore.forTesting();
-  await store.bootstrap(NoPersistence());
+  // bootstrap يتنفّس بـ Delayed(zero) كي لا يجمّد الواجهة، وساعة اختبار
+  // الودجات وهمية فلا يقع ذلك التأخير — يلزمه ساعة حقيقية.
+  await tester.runAsync(() => store.bootstrap(NoPersistence()));
   await store.savePortalSession(
     nationalId: _teacher.nationalId,
     code: _teacher.portalCode,
     userId: _teacher.id,
     user: _teacher,
   );
-  if (withResources) {
-    await PortalOffline(store.db).saveTeacherData(
-      TeacherPortalData(
-        classes: [
-          TeacherClass(
-            group: Group(
-              id: 'g1',
-              name: 'اللغة العربية',
-              subjectId: 'sub1',
-              teacherId: 't1',
-              roomId: 'r1',
-              gradeLevel: 'ثاني عشر أدبي',
-            ),
-            subjectName: 'اللغة العربية',
-            roomName: 'شعبة (1)',
-            rooms: const [PortalRoom(id: 'r1', name: 'شعبة (1)', gradeLevel: 'ثاني عشر أدبي')],
-            students: const [],
-          ),
-        ],
-      ),
-    );
-  }
   return store;
+}
+
+/// شاشة الإقلاع تدير مؤشراً لا يقف، فـ`pumpAndSettle` لا تعود أبداً.
+/// إطاراتٌ معدودة تكفي لتستقرّ الحالة.
+Future<void> _settle(WidgetTester tester) async {
+  for (var i = 0; i < 20; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+  }
 }
 
 void main() {
   testWidgets('جلسة محفوظة: لا يومض نموذج الدخول بين الشعار والبوابة', (tester) async {
-    final store = await _storeWithSession();
+    final store = await _storeWithSession(tester);
 
     await http.runWithClient(() async {
       await tester.pumpWidget(StoreScope(store: store, child: const CenterApp()));
 
-      // أول إطار: شاشة الإقلاع لا نموذج الدخول
-      expect(find.byType(SplashScreen), findsOneWidget);
+      // أول إطار: لا نموذج دخول. (شاشة الإقلاع نفسها تسبق جاهزية المخزن،
+      // والمخزن هنا مُقلَع سلفاً، فوجودها من عدمه ليس موضع الاختبار.)
       expect(find.text('بوابة تسجيل الدخول الرسمية'), findsNothing);
 
       // كل إطار حتى تُفتح البوابة: النموذج لا يظهر في أيٍّ منها
@@ -83,21 +66,25 @@ void main() {
           findsNothing,
           reason: 'نموذج الدخول ظهر عند الإطار $i',
         );
-        if (tester.any(find.byType(TeacherPortalScreen))) break;
+        if (tester.any(find.byType(TeacherResourcesScreen))) break;
       }
 
-      expect(find.byType(TeacherPortalScreen), findsOneWidget, reason: 'البوابة تُفتح بالحساب المحفوظ بلا شبكة');
-      await tester.pumpAndSettle();
+      expect(
+        find.byType(TeacherResourcesScreen),
+        findsOneWidget,
+        reason: 'الحساب المحفوظ يفتح شاشات المعلم لا نموذج الدخول',
+      );
+      await _settle(tester);
     }, _deadClient);
   });
 
   testWidgets('بلا جلسة محفوظة: نموذج الدخول كالمعتاد', (tester) async {
-    final store = AppStore.forTesting();
-    await store.bootstrap(NoPersistence());
+    final store = await _storeWithSession(tester);
+    await store.clearPortalSession();
 
     await http.runWithClient(() async {
       await tester.pumpWidget(StoreScope(store: store, child: const CenterApp()));
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
       expect(find.byType(SplashScreen), findsNothing);
       expect(find.text('بوابة تسجيل الدخول الرسمية'), findsOneWidget);
@@ -105,7 +92,7 @@ void main() {
   });
 
   testWidgets('رمز مرفوض من السيرفر: تُنهى الجلسة ويُطلب الدخول', (tester) async {
-    final store = await _storeWithSession();
+    final store = await _storeWithSession(tester);
 
     // ردّ صريح من السيرفر لا انقطاع: الرمز لم يعد صالحاً
     http.Client rejecting() => MockClient((_) async => http.Response(
@@ -119,7 +106,7 @@ void main() {
       // تفتح البوابة فوراً ثم يرفض السيرفر في الخلفية فيُغلق الحساب
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
       expect(find.byType(TeacherPortalScreen), findsNothing);
       expect(find.text('بوابة تسجيل الدخول الرسمية'), findsOneWidget);
@@ -128,11 +115,11 @@ void main() {
   });
 
   testWidgets('انقطاع الشبكة لا يُتلف الجلسة المحفوظة', (tester) async {
-    final store = await _storeWithSession();
+    final store = await _storeWithSession(tester);
 
     await http.runWithClient(() async {
       await tester.pumpWidget(StoreScope(store: store, child: const CenterApp()));
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
       expect(store.portalSession, isNotNull, reason: 'بلا نت يبقى الحساب على الجهاز');
       expect(store.portalSession?.user?.id, 't1');

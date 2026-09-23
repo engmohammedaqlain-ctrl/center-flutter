@@ -11,7 +11,6 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/auth_frame.dart';
 import '../widgets/animated_count.dart';
-import '../widgets/widgets.dart';
 import 'portal_screens.dart';
 
 /// صفحة تجهيز موارد المعلم — المقابل لـ [DeviceSetupScreen] عند الإدارة.
