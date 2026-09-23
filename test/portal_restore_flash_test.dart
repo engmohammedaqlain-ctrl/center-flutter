@@ -1,5 +1,7 @@
 import 'package:center_mobile/data/local_db.dart';
 import 'package:center_mobile/data/portal.dart';
+import 'package:center_mobile/data/portal_offline.dart';
+import 'package:center_mobile/models/models.dart';
 import 'package:center_mobile/data/store.dart';
 import 'package:center_mobile/main.dart';
 import 'package:center_mobile/screens/portal_screens.dart';
@@ -24,7 +26,11 @@ const _teacher = PortalUser(
 /// كل نداء يفشل: يحاكي فتح التطبيق بلا إنترنت.
 http.Client _deadClient() => MockClient((_) async => throw Exception('offline'));
 
-Future<AppStore> _storeWithSession() async {
+/// جهازٌ سبق أن نزّل موارد صاحبه — وهي الحال المعتادة عند كل فتحة بعد الأولى.
+///
+/// بلا نسخة على الجهاز تقف شاشة التجهيز على مؤشرٍ لا ينتهي، وهو ما يُقصد به
+/// أول دخول لا العودة إلى التطبيق.
+Future<AppStore> _storeWithSession({bool withResources = true}) async {
   final store = AppStore.forTesting();
   await store.bootstrap(NoPersistence());
   await store.savePortalSession(
@@ -33,6 +39,28 @@ Future<AppStore> _storeWithSession() async {
     userId: _teacher.id,
     user: _teacher,
   );
+  if (withResources) {
+    await PortalOffline(store.db).saveTeacherData(
+      TeacherPortalData(
+        classes: [
+          TeacherClass(
+            group: Group(
+              id: 'g1',
+              name: 'اللغة العربية',
+              subjectId: 'sub1',
+              teacherId: 't1',
+              roomId: 'r1',
+              gradeLevel: 'ثاني عشر أدبي',
+            ),
+            subjectName: 'اللغة العربية',
+            roomName: 'شعبة (1)',
+            rooms: const [PortalRoom(id: 'r1', name: 'شعبة (1)', gradeLevel: 'ثاني عشر أدبي')],
+            students: const [],
+          ),
+        ],
+      ),
+    );
+  }
   return store;
 }
 
