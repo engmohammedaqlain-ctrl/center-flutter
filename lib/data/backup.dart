@@ -221,4 +221,4 @@ class BackupService {
   }
 }
 
-const appVersionLabel = '4.1';
+const appVersionLabel = '4.2';
