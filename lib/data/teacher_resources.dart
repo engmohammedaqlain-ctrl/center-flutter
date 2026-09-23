@@ -86,8 +86,7 @@ Future<TeacherPortalData> hydrateTeacherResources({
   await offline.saveTeacherData(data);
   final classes = data.classes;
   final n = classes.isEmpty ? 1 : classes.length;
-  var records = classes.fold<int>(0, (s, c) => s + c.students.length) +
-      data.homerooms.fold<int>(0, (s, h) => s + h.students.length);
+  var records = classes.fold<int>(0, (s, c) => s + c.students.length);
   report(
     percent: 20,
     label: 'حفظ صفوفك وطلابك…',

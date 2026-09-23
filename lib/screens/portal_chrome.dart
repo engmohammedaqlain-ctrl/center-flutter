@@ -34,20 +34,16 @@ class PortalChromeHeader extends StatelessWidget {
   const PortalChromeHeader({
     super.key,
     required this.branding,
-    required this.roleLabel,
     required this.displayName,
     required this.gradeLine,
     required this.onExit,
-    this.nationalId = '',
     this.action,
   });
 
   final PortalBranding branding;
-  final String roleLabel;
   final String displayName;
   final String gradeLine;
   final VoidCallback onExit;
-  final String nationalId;
 
   /// زر يسبق زر الخروج — المزامنة في بوابة المعلم، كترويسة الإدارة.
   final Widget? action;
@@ -55,11 +51,9 @@ class PortalChromeHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.paddingOf(context).top;
-    final details = [
-      if (gradeLine.trim().isNotEmpty) gradeLine.trim(),
-      if (nationalId.trim().isNotEmpty) nationalId.trim(),
-      if (roleLabel.trim().isNotEmpty) roleLabel.trim(),
-    ].join('  ·  ');
+    // الصف والشعبة وحدهما. الهوية واسم وليّ الأمر لا يُعرضان: الترويسة تبقى
+    // مفتوحة على الشاشة أمام الصف ومن يمرّ بجانبها.
+    final details = gradeLine.trim();
     // بلا تفاصيل (بوابة المعلم): الاسم بجانب الشعار يستغل عرض الترويسة
     // بدل سطر فارغ تحتها. مع التفاصيل (طالب/ولي أمر): اسم المدرسة فوق والاسم تحته.
     final nameBesideLogo = details.isEmpty;

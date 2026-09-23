@@ -150,6 +150,12 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return run;
   }
 
+  /// صفوف تُدخل بين فحصَي وقت — صغيرة بما يكفي ألّا تتجاوز الدفعةُ الميزانية.
+  static const _diskApplyStep = 500;
+
+  /// ميزانية الشريحة قبل الإفساح للرسم — دون إطار الستّين هرتز.
+  static const _diskApplySliceMs = 6;
+
   Future<void> _loadTablesFromDisk(List<String> tables) async {
     final data = await db.loadTables(tables);
     _loading = true;
@@ -174,13 +180,18 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
           } else if (rows.isEmpty) {
             // لا شيء
           } else {
-            // دفعات أصغر + إفساح أكثر: جداول المالية الكبيرة كانت توقف دوران المؤشر
+            // الإفساح بحساب الوقت لا بعدد ثابت. دفعات الخمسة والعشرين كانت
+            // تُنتج آلاف الإفساحات لجدولٍ من مئة ألف صف، وكلفة الإفساحات نفسها
+            // — لا إدخال الصفوف — هي ما يُقعد المستخدم أمام المؤشر ثوانيَ.
             await prepareApply(table);
-            final chunk = (table == 'payments' || table == 'installments') ? 25 : 100;
-            for (var i = 0; i < rows.length; i += chunk) {
-              final end = i + chunk > rows.length ? rows.length : i + chunk;
+            final slice = Stopwatch()..start();
+            for (var i = 0; i < rows.length; i += _diskApplyStep) {
+              final end = i + _diskApplyStep > rows.length ? rows.length : i + _diskApplyStep;
               putRows(table, rows.sublist(i, end));
-              await Future<void>.delayed(Duration.zero);
+              if (slice.elapsedMilliseconds >= _diskApplySliceMs) {
+                await Future<void>.delayed(Duration.zero);
+                slice.reset();
+              }
             }
           }
           loadedTables.add(table);

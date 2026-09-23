@@ -460,12 +460,13 @@ void main() {
       await _pump(tester, StudentPortalScreen(user: _studentUser, onExit: () {}, service: fake), width: width);
 
       expect(find.textContaining('علي أبو حسنين'), findsOneWidget, reason: 'الاسم مرة واحدة في الترويسة');
-      // سطر واحد تحت الاسم: الصف والشعبة والهوية، والشعبة لا تتكرر فيه
+      // سطر واحد تحت الاسم: الصف والشعبة، والشعبة لا تتكرر فيه
       expect(
         find.textContaining('ثاني عشر علمي ذكور · شعبة (1)'),
         findsOneWidget,
       );
-      expect(find.textContaining('401334845'), findsOneWidget);
+      // الهوية لا تُعرض: الترويسة تبقى مفتوحة أمام الصف ومن يمرّ بجانب الشاشة
+      expect(find.textContaining('401334845'), findsNothing);
       for (final t in ['مودل', 'مواد', 'حضور', 'درجات', 'رسوم']) {
         expect(find.text(t), findsOneWidget, reason: t);
       }
@@ -531,7 +532,8 @@ void main() {
       final fake = _FakePortal(student: _studentData(), sections: _sections());
       await _pump(tester, StudentPortalScreen(user: _parentUser, onExit: () {}, service: fake), width: width);
 
-      expect(find.textContaining('ولي الأمر: أبو علي'), findsOneWidget);
+      // اسم وليّ الأمر لا يُعرض: الترويسة مفتوحة على شاشة يراها غيره
+      expect(find.textContaining('ولي الأمر: أبو علي'), findsNothing);
       expect(find.textContaining('علي أبو حسنين'), findsOneWidget, reason: 'الترويسة باسم الابن');
       expect(find.text('مودل'), findsNothing);
       expect(find.text('المودل'), findsNothing);

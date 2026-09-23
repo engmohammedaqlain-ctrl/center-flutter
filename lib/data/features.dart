@@ -11,7 +11,6 @@ const featureKeys = <String>[
   'finance.expenses',
   'students.attachments',
   'portal.teacher',
-  'portal.teacher.class',
   'portal.teacher.attendance',
   'portal.teacher.grades',
   'portal.teacher.moodle',
@@ -112,13 +111,6 @@ const features = <String, FeatureDef>{
     group: FeatureGroup.teacherPortal,
     defaultOn: true,
     requires: ['portal.teacher', 'moodle'],
-  ),
-  'portal.teacher.class': FeatureDef(
-    label: 'صفي',
-    description: 'شعبة المربي: الطلاب وكلمات المرور والدرجات بلا مالية',
-    group: FeatureGroup.teacherPortal,
-    defaultOn: true,
-    requires: ['portal.teacher'],
   ),
   'portal.student': FeatureDef(
     label: 'بوابة الطالب',
@@ -226,8 +218,6 @@ List<String> featureBlockers(String key, Object? raw) {
 
 List<String> teacherPortalTabs(FeatureState state) {
   final tabs = <String>[];
-  // صفي أولاً: متابعة شعبة المربي قبل الرصد
-  if (state['portal.teacher.class'] == true) tabs.add('class');
   if (state['portal.teacher.attendance'] == true) tabs.add('attendance');
   if (state['portal.teacher.grades'] == true) tabs.add('evaluations');
   if (state['portal.teacher.moodle'] == true) tabs.add('moodle');

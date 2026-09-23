@@ -44,12 +44,6 @@ Map<String, dynamic> _withFullName(Map<String, dynamic> row) {
 /// أسماء طلاب البوابة بلا PII — للرصد والحضور.
 const _portalStudentCols = 'id,first_name,last_name,full_name,section,grade_level,status';
 
-/// تفاصيل طالب شعبة المربي: تواصل + كلمات مرور — بلا أرصدة ومالية.
-const _homeroomStudentCols =
-    'id,first_name,last_name,full_name,section,grade_level,status,gender,'
-    'phone,phone_prefix,parent_name,parent_phone,parent_phone_prefix,'
-    'national_id,parent_national_id,portal_code,parent_portal_code';
-
 String _inList(Iterable<String> values) => 'in.(${values.map((v) => '"$v"').join(',')})';
 
 /// صفوف لا بدّ أن تصل. `null` من [supabaseSelect] يعني أن السحابة لم تُجب،
@@ -599,22 +593,11 @@ class PortalRoom {
 }
 
 /// شعبة يكون المعلم مربيها — طلابها لمتابعة «صفي» بلا مالية.
-class HomeroomClass {
-  const HomeroomClass({
-    required this.room,
-    required this.students,
-  });
-
-  final PortalRoom room;
-  final List<Student> students;
-}
-
 /// كل ما تعرضه بوابة المعلم.
 class TeacherPortalData {
   const TeacherPortalData({
     this.branding = const PortalBranding(),
     this.classes = const [],
-    this.homerooms = const [],
     this.subjects = const [],
     this.features,
     this.complete = true,
@@ -630,9 +613,6 @@ class TeacherPortalData {
 
   final PortalBranding branding;
   final List<TeacherClass> classes;
-
-  /// شعب يكون المستخدم مربيها — تبويب «صفي».
-  final List<HomeroomClass> homerooms;
   final List<SubjectItem> subjects;
 
   /// ميزات المنشأة كما في `tenants.features`.
@@ -1436,106 +1416,16 @@ class PortalService {
       ));
     }
 
-    final homerooms = await _homeroomClasses(teacherIds, tenant, teacherYearId, rooms);
-    if (homerooms == null) complete = false;
-
     return TeacherPortalData(
       branding: results[0] as PortalBranding,
       features: results[1] as Map<String, dynamic>?,
       classes: classes,
       subjects: subjects,
-      homerooms: homerooms ?? const [],
       complete: complete,
     );
   }
 
-  /// شعب المربي وطلابها بتفاصيل التواصل وكلمات المرور — بلا حقول مالية.
-  /// `null` = لم تُجب السحابة عن طلاب الشعب.
-  Future<List<HomeroomClass>?> _homeroomClasses(
-    Set<String> teacherIds,
-    Map<String, String> tenant,
-    String? teacherYearId,
-    Map<String, Map<String, dynamic>> roomsById,
-  ) async {
-    final mine = <Map<String, dynamic>>[
-      for (final room in roomsById.values)
-        if (teacherIds.contains('${room['homeroom_teacher_id'] ?? ''}')) room,
-    ];
-    if (mine.isEmpty) return const [];
-
-    // صفوف العام الحالي فقط إن عُرف عام المعلم
-    final filtered = [
-      for (final room in mine)
-        if (teacherYearId == null ||
-            '${room['academic_year_id'] ?? ''}'.isEmpty ||
-            '${room['academic_year_id']}' == teacherYearId)
-          room,
-    ];
-    if (filtered.isEmpty) return const [];
-
-    final grades = <String>{
-      for (final r in filtered)
-        if ('${r['grade_level'] ?? ''}'.trim().isNotEmpty) '${r['grade_level']}'.trim(),
-    };
-
-    // جلب الطلاب: جدول students قد يرجع [] بسبب RLS للمعلم (نجاح بلا صفوف)
-    // فلا نكتفي بـ ?? — إن فرغ نجرّب portal_students ثم بدون فلتر مرحلة.
-    // أجابت السحابة ولو مرة واحدة؟ لو لم تُجب قط فالشبكة مقطوعة، لا الشعبة خالية.
-    var answered = false;
-    Future<List<Map<String, dynamic>>> fetch({
-      required String table,
-      required String columns,
-      Map<String, String> extra = const {},
-    }) async {
-      final rows = await supabaseSelect(table, filters: {...tenant, ...extra}, columns: columns);
-      if (rows != null) answered = true;
-      return rows ?? const [];
-    }
-
-    var rows = <Map<String, dynamic>>[];
-    if (grades.isNotEmpty) {
-      rows = await fetch(table: 'students', columns: _homeroomStudentCols, extra: {'grade_level': _inList(grades)});
-      if (rows.isEmpty) {
-        rows = await fetch(table: 'portal_students', columns: _portalStudentCols, extra: {'grade_level': _inList(grades)});
-      }
-    }
-    // بلا نتائج بفلتر المرحلة: اجلب كل طلاب المنشأة المتاحين للبوابة وطابِق محلياً
-    if (rows.isEmpty) {
-      rows = await fetch(table: 'portal_students', columns: _portalStudentCols);
-      if (rows.isEmpty) {
-        rows = await fetch(table: 'students', columns: _homeroomStudentCols);
-      }
-    }
-    if (!answered) return null;
-
-    final students = [for (final r in rows) Student.fromCloud(_withFullName(r))];
-    final out = <HomeroomClass>[];
-    for (final room in filtered) {
-      final classroom = Classroom.fromCloud(room);
-      // studentBelongsToRoom ي容忍 «أ» مقابل «شعبة (أ)» — studentInRoom كان يُفرّغ القائمة
-      final list = [
-        for (final s in students)
-          if (s.status != 'withdrawn' && studentBelongsToRoom(s, classroom)) s,
-      ]..sort((a, b) => a.fullName.compareTo(b.fullName));
-      out.add(
-        HomeroomClass(
-          room: PortalRoom(
-            id: classroom.id,
-            name: classroom.name,
-            gradeLevel: classroom.gradeLevel,
-          ),
-          students: list,
-        ),
-      );
-    }
-    out.sort((a, b) {
-      final g = a.room.gradeLevel.compareTo(b.room.gradeLevel);
-      return g != 0 ? g : a.room.name.compareTo(b.room.name);
-    });
-    return out;
-  }
-
-  /// تقييمات طالب واحد — لملف «صفي» عند المربي.
+  /// تقييمات طالب واحد.
   Future<List<StudentEvaluation>> studentEvaluations(String studentId) async {
     if (studentId.isEmpty) return const [];
     final rows = await _must(

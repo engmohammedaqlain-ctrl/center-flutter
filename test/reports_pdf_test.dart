@@ -10,14 +10,21 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('خط المستندات TrueType ويحمل أشكال العربية', () async {
-    final data = await rootBundle.load('assets/fonts/pdf/ThmanyahSans-Regular.ttf');
-    final bytes = data.buffer.asUint8List();
-    // توقيع TrueType: 0x00010000 — لا 'OTTO'
-    expect(bytes.sublist(0, 4), [0, 1, 0, 0], reason: 'OTTO لا تقرأه مكتبة المستندات');
+  /// كل خط يُحمَّل فعلاً في [PdfKit] — لا خطاً مهجوراً في الأصول.
+  const shipped = [
+    'assets/fonts/pdf/NotoNaskhArabic-Regular.ttf',
+    'assets/fonts/pdf/NotoNaskhArabic-Bold.ttf',
+    'assets/fonts/pdf/NotoSans-Regular.ttf',
+    'assets/fonts/pdf/NotoSans-Bold.ttf',
+    'assets/fonts/pdf/NotoSansSymbols2-Regular.ttf',
+  ];
 
-    final bold = await rootBundle.load('assets/fonts/pdf/ThmanyahSans-Bold.ttf');
-    expect(bold.buffer.asUint8List().sublist(0, 4), [0, 1, 0, 0]);
+  test('خطوط المستندات كلها TrueType وموجودة في الحزمة', () async {
+    for (final path in shipped) {
+      final bytes = (await rootBundle.load(path)).buffer.asUint8List();
+      // توقيع TrueType: 0x00010000 — لا 'OTTO'
+      expect(bytes.sublist(0, 4), [0, 1, 0, 0], reason: '$path: OTTO لا تقرأه مكتبة المستندات');
+    }
   });
 
   test('مستند بعناوين وجدول عربيين يُبنى صالحاً', () async {

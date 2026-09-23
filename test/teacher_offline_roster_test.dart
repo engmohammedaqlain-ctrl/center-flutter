@@ -45,7 +45,6 @@ const _room = {
   'id': 'r1',
   'name': 'شعبة (1)',
   'grade_level': 'حادي عشر علمي',
-  'homeroom_teacher_id': 't1',
   'tenant_id': 'tenant-1',
 };
 
@@ -97,12 +96,6 @@ TeacherPortalData _saved() => TeacherPortalData(
           students: [for (final s in _students) Student.fromCloud(Map<String, dynamic>.from(s))],
         ),
       ],
-      homerooms: [
-        HomeroomClass(
-          room: const PortalRoom(id: 'r1', name: 'شعبة (1)', gradeLevel: 'حادي عشر علمي'),
-          students: [for (final s in _students) Student.fromCloud(Map<String, dynamic>.from(s))],
-        ),
-      ],
     );
 
 void main() {
@@ -116,7 +109,6 @@ void main() {
 
     expect(data.complete, isFalse);
     expect(data.classes, isEmpty);
-    expect(data.homerooms, isEmpty);
   });
 
   test('بلا شبكة: نسخة الجهاز تبقى ولا تُكتب فوقها نسخة فارغة', () async {
@@ -133,10 +125,10 @@ void main() {
     final kept = offline.loadTeacherData();
     expect(kept, isNotNull);
     expect(kept!.classes.single.students, hasLength(2));
-    expect(kept.homerooms.single.room.name, 'شعبة (1)');
+    expect(kept.classes.single.rooms.single.name, 'شعبة (1)');
   });
 
-  test('بشبكة: الردّ كامل ويُحفظ بصفوفه وشعبة المربي', () async {
+  test('بشبكة: الردّ كامل ويُحفظ بصفوفه وطلابه', () async {
     final db = NoPersistence();
     final offline = PortalOffline(db);
 
@@ -146,12 +138,10 @@ void main() {
     );
     expect(data.complete, isTrue);
     expect(data.classes.single.students, hasLength(2));
-    expect(data.homerooms.single.students, hasLength(2));
 
     await offline.saveTeacherData(data);
     final loaded = offline.loadTeacherData()!;
     expect(loaded.classes.single.students.map((s) => s.fullName), contains('ميرا الدحدوح'));
-    expect(loaded.homerooms.single.students, hasLength(2));
     expect(loaded.subjects.map((s) => s.name), contains('اللغة الإنجليزية'));
   });
 

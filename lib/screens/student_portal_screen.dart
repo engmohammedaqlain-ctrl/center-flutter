@@ -228,7 +228,6 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     final displayName = isParent
         ? (user.studentName.isNotEmpty ? user.studentName : (student?.fullName ?? user.name))
         : user.name;
-    final roleLabel = isParent ? 'ولي الأمر: ${user.name}' : '';
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -236,10 +235,9 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
         children: [
           PortalChromeHeader(
             branding: branding,
-            roleLabel: roleLabel,
+            // بلا اسم وليّ الأمر: الترويسة تُعرض على شاشة يراها غير صاحبها
             displayName: displayName,
             gradeLine: portalGradeLine(user: user, student: student),
-            nationalId: user.nationalId.trim(),
             onExit: widget.onExit,
           ),
           // أبناء وليّ الأمر: لمس اسم يفتح ملفه — دخولٌ بهويته وكلمة وليّ
@@ -410,7 +408,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                           ],
                         ),
                       ),
-                      const Icon(Icons.chevron_left, color: AppColors.faint),
+                      const AppChevron(color: AppColors.faint),
                     ],
                   ),
                 ),

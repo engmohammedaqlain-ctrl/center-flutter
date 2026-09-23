@@ -8,6 +8,7 @@ import '../data/features.dart';
 import '../data/grading.dart';
 import '../data/institution.dart';
 import '../data/portal.dart';
+import '../data/image_shrink.dart';
 import '../data/portal_offline.dart';
 import '../data/realtime.dart';
 import '../data/store.dart';
@@ -21,7 +22,6 @@ import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import '../widgets/list_paging.dart';
 import 'portal_chrome.dart';
-import 'teacher_homeroom_tab.dart';
 
 export 'student_portal_screen.dart' show StudentPortalScreen;
 
@@ -786,10 +786,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   String? error;
   bool loading = true;
 
-  String tab = 'class';
-
-  /// هل اختيرت تبويبة الافتتاح؟ تُختار مرة واحدة، ثم لا تُنتزع من يد المعلم.
-  bool _tabPicked = false;
+  String tab = 'attendance';
   String groupId = '';
 
   /// الرصد يمشي كالويب: الصف ← الشعبة ← المادة، لا اختيار مجموعة مباشرةً.
@@ -999,14 +996,6 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   void _applyTeacherData(TeacherPortalData result, {required bool fromCache}) {
     final tabs = teacherPortalTabs(resolveFeatures(result.features));
     if (tabs.isNotEmpty && !tabs.contains(tab)) tab = tabs.first;
-    // «صفي» لا تصلح افتتاحاً لمن ليس مربياً: يفتح بوابته على رسالة «لست مربياً»
-    // وكأن لا صفوف له. تُفتح أول تبويبة فيها عمل.
-    if (!_tabPicked) {
-      _tabPicked = true;
-      if (tab == 'class' && result.homerooms.isEmpty) {
-        tab = tabs.firstWhere((t) => t != 'class', orElse: () => tab);
-      }
-    }
     if (result.classes.every((c) => c.group.id != groupId)) {
       groupId = result.classes.isEmpty ? '' : result.classes.first.group.id;
     }
@@ -1183,8 +1172,6 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   /// بيانات التبويب المفتوح للشعبة المختارة.
   void _refreshTab() {
     switch (tab) {
-      case 'class':
-        break;
       case 'attendance':
         _loadMarks();
       case 'evaluations':
@@ -1667,7 +1654,6 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
 
   /// إجراء التبويب المفتوح، قريباً من الإبهام بدل أعلى الشاشة.
   ThumbAction? _thumbAction(_Brand brand) {
-    if (tab == 'class') return null;
     if (groupId.isEmpty && tab != 'attendance') return null;
     return switch (tab) {
       'moodle' => ThumbAction(
@@ -1728,7 +1714,6 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         children: [
           PortalChromeHeader(
             branding: branding,
-            roleLabel: '',
             displayName: widget.user.name,
             gradeLine: '',
             onExit: widget.onExit,
@@ -1761,13 +1746,6 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                           child: ListView(
                             padding: const EdgeInsets.fromLTRB(16, 16, 16, thumbActionClearance),
                             children: switch (tab) {
-                              'class' => teacherHomeroomTabChildren(
-                                  homerooms: data?.homerooms ?? const [],
-                                  branding: branding,
-                                  service: _service,
-                                  accent: brand.active,
-                                  offline: _offline,
-                                ),
                               'evaluations' => _evaluationsTab(brand),
                               'moodle' => _moodleTab(brand),
                               _ => _attendanceTab(brand),
@@ -1779,9 +1757,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
           PortalBottomNav(
             items: [
               for (final id in teacherPortalTabs(resolveFeatures(data?.features)))
-                if (id == 'class')
-                  const PortalNavItem(id: 'class', label: 'صفي', icon: Icons.groups_outlined, activeIcon: Icons.groups)
-                else if (id == 'attendance')
+                if (id == 'attendance')
                   const PortalNavItem(id: 'attendance', label: 'الحضور', icon: Icons.how_to_reg_outlined)
                 else if (id == 'evaluations')
                   const PortalNavItem(id: 'evaluations', label: 'الدرجات', icon: Icons.workspace_premium_outlined)
@@ -3503,8 +3479,15 @@ class _NewItemSheetState extends State<_NewItemSheet> {
   XFile? file;
   int fileSize = 0;
   List<int>? fileBytes;
+
+  /// اسم ما يُرفع فعلاً — قد يختلف امتداده عن المختار بعد التصغير.
+  String fileName = '';
   String? titleError;
   String? error;
+
+  /// يُصغَّر الآن: اللمس على «حفظ» قبل انتهائه يرفع الأصل الضخم.
+  bool shrinking = false;
+  String? shrunkNotice;
   bool busy = false;
 
   @override
@@ -3527,22 +3510,33 @@ class _NewItemSheetState extends State<_NewItemSheet> {
       ],
     );
     if (picked == null) return;
-    final bytes = await picked.readAsBytes();
+    final original = await picked.readAsBytes();
+    if (!mounted) return;
+    setState(() => shrinking = ImageShrink.isImage(picked.name));
+
+    // صورة الهاتف تأتي بأبعاد ضخمة: تُصغَّر قبل أن تستهلك باقة المعلم رفعاً
+    // وباقة الطالب تنزيلاً — وقبل أن ترتد عند حد العشرة ميجابايت.
+    final shrunk = await ImageShrink.forUpload(original, picked.name);
+    final bytes = shrunk.bytes;
+    final saved = ImageShrink.savedPercent(original.length, bytes.length);
     if (!mounted) return;
     setState(() {
+      shrinking = false;
       if (bytes.length > PortalService.maxMaterialBytes) {
         error = 'حجم الملف يتجاوز 10 ميجابايت';
         file = null;
         fileBytes = null;
-      } else if (PortalService.materialMime(picked.name) == null) {
+      } else if (PortalService.materialMime(shrunk.fileName) == null) {
         error = 'نوع الملف غير مدعوم؛ يُسمح بملفات PDF والصور فقط';
         file = null;
         fileBytes = null;
       } else {
         error = null;
         file = picked;
+        fileName = shrunk.fileName;
         fileBytes = bytes;
         fileSize = bytes.length;
+        shrunkNotice = saved >= 10 ? 'صُغّرت الصورة $saved٪' : null;
       }
     });
   }
@@ -3569,15 +3563,16 @@ class _NewItemSheetState extends State<_NewItemSheet> {
     setState(() => busy = true);
     try {
       var contentUrl = type == 'link' ? link : '';
-      var fileName = '';
+      var uploadedName = '';
       int? size;
       if (type == 'file') {
+        final name = fileName.isEmpty ? file!.name : fileName;
         contentUrl = await widget.service.uploadMaterial(
           bytes: fileBytes!,
-          fileName: file!.name,
+          fileName: name,
           tenantId: widget.tenantId,
         );
-        fileName = file!.name;
+        uploadedName = name;
         size = fileSize;
       }
       // تُبنى بمعرّفها هنا: المادة النصية والرابط والواجب تُنشأ بلا شبكة،
@@ -3590,7 +3585,7 @@ class _NewItemSheetState extends State<_NewItemSheet> {
         title: title.text,
         type: type,
         contentUrl: contentUrl,
-        fileName: fileName,
+        fileName: uploadedName,
         fileSize: size,
         description: description.text,
         dueDate: dueDate,
@@ -3648,11 +3643,14 @@ class _NewItemSheetState extends State<_NewItemSheet> {
           const _Label('الملف المرفق (PDF أو صورة - أقصى حد 10MB):'),
           Row(
             children: [
-              _Soft(label: 'اختيار ملف', icon: Icons.attach_file, fg: _C.navy, bg: _C.soft, border: _C.soft, height: 36, radius: Corner.field, onTap: _pick),
+              _Soft(label: 'اختيار ملف', icon: Icons.attach_file, fg: _C.navy, bg: _C.soft, border: _C.soft, height: 36, radius: Corner.field, onTap: shrinking ? null : _pick),
               const SizedBox(width: 8),
+              if (shrinking)
+                const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: _C.muted)),
+              if (shrinking) const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  file?.name ?? 'لم يُختر ملف',
+                  shrinking ? 'جارٍ تصغير الصورة...' : (file?.name ?? 'لم يُختر ملف'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: _C.muted, fontSize: 12),
@@ -3660,6 +3658,13 @@ class _NewItemSheetState extends State<_NewItemSheet> {
               ),
             ],
           ),
+          if (shrunkNotice != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              shrunkNotice!,
+              style: const TextStyle(color: _C.muted, fontSize: 10.5, fontWeight: FontWeight.w700),
+            ),
+          ],
         ],
         if (type == 'link') ...[
           const SizedBox(height: 12),
@@ -3704,7 +3709,7 @@ class _NewItemSheetState extends State<_NewItemSheet> {
             ),
           ),
         ],
-        _sheetActions(context, label: 'حفظ المادة', color: widget.color, busy: busy, onSave: _save),
+        _sheetActions(context, label: 'حفظ المادة', color: widget.color, busy: busy || shrinking, onSave: _save),
     ];
     if (widget.asPage) {
       return ListView(
