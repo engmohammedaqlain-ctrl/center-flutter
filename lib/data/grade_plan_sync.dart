@@ -16,7 +16,7 @@ bool _inYear(Installment inst, String yearId) =>
 
 String _seatIdFor(String studentId, String yearId, List<Installment> own) {
   final hasOlderSeat = own.any(
-    (i) => i.title == seatTitle && !_inYear(i, yearId),
+    (i) => isSeatInstallmentTitle(i.title) && !_inYear(i, yearId),
   );
   return hasOlderSeat
       ? seatInstallmentId(studentId, yearId)
@@ -122,6 +122,7 @@ class GradePlanSyncResult {
     this.build = const SyncBucket(),
     this.add = const SyncBucket(),
     this.reprice = const SyncBucket(),
+    this.reschedule = const SyncBucket(),
     this.repricePaid = const SyncBucket(),
     this.remove = const SyncBucket(),
     this.removePaid = const SyncPaidRemove(),
@@ -133,16 +134,20 @@ class GradePlanSyncResult {
   SyncBucket build;
   SyncBucket add;
   SyncBucket reprice;
+  /// تحديث تاريخ أو عنوان قسط قادم غير مدفوع — كويب `reschedule`.
+  SyncBucket reschedule;
   SyncBucket repricePaid;
   SyncBucket remove;
   SyncPaidRemove removePaid;
   SyncPaidRemove unexplained;
   SyncSkipped skipped;
 
+  /// هل في المعاينة ما يُطبَّق فعلاً؟ — `syncHasChanges` على الويب.
   bool get isEmpty =>
       build.students == 0 &&
       add.installments == 0 &&
       reprice.installments == 0 &&
+      reschedule.installments == 0 &&
       repricePaid.installments == 0 &&
       remove.installments == 0 &&
       removePaid.installments == 0 &&
@@ -205,7 +210,7 @@ class GradePlanSync {
         if (planItemIdOf(i.id, student.id) != null) return false;
         if (i.id.startsWith(AppStore.feeIdPrefix)) return false;
         if (isExtraChargeId(i.id)) return false;
-        if (i.title == seatTitle) return false;
+        if (isSeatInstallmentTitle(i.title)) return false;
         return true;
       }).toList();
 
@@ -219,6 +224,8 @@ class GradePlanSync {
           <
             ({Installment inst, double amount, double original, double share})
           >[];
+      final toReschedule =
+          <({Installment inst, String? title, DateTime? dueDate})>[];
       var toInsert = <Installment>[];
 
       if (planRows.isEmpty) {
@@ -229,7 +236,7 @@ class GradePlanSync {
           );
           continue;
         }
-        final hasSeat = yearOwn.any((i) => i.title == seatTitle);
+        final hasSeat = yearOwn.any((i) => isSeatInstallmentTitle(i.title));
         final source = [
           for (final item in items)
             PlanItem(
@@ -313,18 +320,52 @@ class GradePlanSync {
 
         var repriced = false;
         var repricedPaid = false;
+        var rescheduled = false;
         for (final inst in planRows) {
           final item = itemById[planItemIdOf(inst.id, student.id)!];
-          if (item == null || inst.isExempt) continue;
+          if (item == null) continue;
           final hasPaid = inst.paidAmount > cent;
+
+          // تاريخ واسم الرسوم يتبعان الخطة ما دامت قادمة ولم يُدفع منها شيء
+          var due = isoDate(inst.dueDate);
+          if (!opts.repriceOnly &&
+              !opts.discountChange &&
+              !hasPaid &&
+              !isInstallmentDue(inst)) {
+            String? newTitle;
+            DateTime? newDue;
+            final itemDue = item.dueDate.length >= 10
+                ? item.dueDate.substring(0, 10)
+                : item.dueDate;
+            if (itemDue.isNotEmpty && itemDue != due) {
+              newDue = parseIsoDate(itemDue);
+              if (newDue != null) due = itemDue;
+            }
+            if (item.title.isNotEmpty && item.title != inst.title) {
+              newTitle = item.title;
+            }
+            if (newTitle != null || newDue != null) {
+              toReschedule.add((
+                inst: inst,
+                title: newTitle,
+                dueDate: newDue,
+              ));
+              result.reschedule = result.reschedule.copyWith(
+                installments: result.reschedule.installments + 1,
+              );
+              rescheduled = true;
+            }
+          }
+
+          if (inst.isExempt) continue;
           if (opts.discountChange) {
             if (inst.status == 'paid' && isInstallmentDue(inst)) continue;
           } else if (!hasPaid && isInstallmentDue(inst)) {
+            // حلّ موعده ولم يُدفع منه: طولب به بسعره فلا يتغير بأثر رجعي
             continue;
           }
 
           final planAmount = item.amount;
-          final due = isoDate(inst.dueDate);
           final expected = planInstallmentAmount(
             planAmount,
             due,
@@ -391,6 +432,11 @@ class GradePlanSync {
             students: result.reprice.students + 1,
           );
         }
+        if (rescheduled) {
+          result.reschedule = result.reschedule.copyWith(
+            students: result.reschedule.students + 1,
+          );
+        }
         if (repricedPaid) {
           result.repricePaid = result.repricePaid.copyWith(
             students: result.repricePaid.students + 1,
@@ -414,7 +460,7 @@ class GradePlanSync {
             return due.compareTo(planStart) >= 0;
           }).toList();
           if (missing.isNotEmpty) {
-            final hasSeat = yearOwn.any((i) => i.title == seatTitle);
+            final hasSeat = yearOwn.any((i) => isSeatInstallmentTitle(i.title));
             final source = [
               for (final item in missing)
                 PlanItem(
@@ -448,7 +494,7 @@ class GradePlanSync {
             ];
             // لا نكرر قسط الحجز إن وُجد هذا العام
             final filtered = hasSeat
-                ? withOriginal.where((r) => r.title != seatTitle).toList()
+                ? withOriginal.where((r) => !isSeatInstallmentTitle(r.title)).toList()
                 : withOriginal;
             toInsert = toInstallments(
               filtered,
@@ -467,10 +513,25 @@ class GradePlanSync {
       }
 
       if (!opts.apply) continue;
-      if (toDelete.isEmpty && toUpdate.isEmpty && toInsert.isEmpty) continue;
+      if (toDelete.isEmpty &&
+          toUpdate.isEmpty &&
+          toReschedule.isEmpty &&
+          toInsert.isEmpty) {
+        continue;
+      }
 
       for (final d in toDelete) {
         store.unlinkAndDeleteInstallment(d.inst, now);
+      }
+      // تعديل واحد لكل قسط يجمع المبلغ والتاريخ والاسم — كويب
+      final patched = <String, Installment>{};
+      for (final r in toReschedule) {
+        final inst = r.inst;
+        if (r.title != null) inst.title = r.title!;
+        if (r.dueDate != null) inst.dueDate = r.dueDate!;
+        inst.updatedAt = now;
+        inst.syncStatus = 'pending';
+        patched[inst.id] = inst;
       }
       for (final u in toUpdate) {
         final inst = u.inst;
@@ -483,6 +544,9 @@ class GradePlanSync {
           chargeableAmount(inst),
           inst.paidAmount,
         );
+        patched[inst.id] = inst;
+      }
+      for (final inst in patched.values) {
         store.queueInstallmentUpdate(inst);
       }
       for (final inst in toInsert) {
@@ -518,4 +582,41 @@ class GradePlanSync {
 
     return result;
   }
+}
+
+/// هل تاريخ بند الخطة حلّ أو فات — لـ `lockedPlanItemIds`.
+bool isPlanItemDue(PlanItem item, [DateTime? today]) {
+  final d = parseIsoDate(item.dueDate);
+  if (d == null) return false;
+  final day = today ?? startOfToday();
+  return dayKey(d) <= dayKey(day);
+}
+
+/// بنود الخطة المقفلة: حلّ موعدها، أو دفع منها طالب واحد على الأقل.
+/// تعديلها أو حذفها بعد ذلك يمسح ديوناً أو يُبقي الخطة مختلفة عن حسابات الطلاب.
+/// — `lockedPlanItemIds` على الويب.
+Set<String> lockedPlanItemIds(AppStore store, List<PlanItem> items) {
+  final locked = <String>{};
+  for (final item in items) {
+    if (item.dueDate.isNotEmpty && isPlanItemDue(item)) {
+      locked.add(item.id);
+      continue;
+    }
+    final prefix = '$planIdPrefix${item.id}_';
+    final rows = store.installments
+        .where((i) => i.id.startsWith(prefix))
+        .toList();
+    if (rows.any((i) => i.paidAmount > 0.005)) {
+      locked.add(item.id);
+      continue;
+    }
+    final ids = {for (final i in rows) i.id};
+    if (ids.isNotEmpty &&
+        store.payments.any(
+          (p) => !p.cancelled && p.installmentId != null && ids.contains(p.installmentId),
+        )) {
+      locked.add(item.id);
+    }
+  }
+  return locked;
 }

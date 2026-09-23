@@ -1590,8 +1590,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final tid = s[_kTenantId];
     final tenant = tenants.where((t) => t.id == tid).firstOrNull;
     if (tenant == null) return;
-    final check = subscriptionProblem(tenant);
-    if (check != null) return;
+    // كالويب: الجلسة تُستعاد ولو انتهى الاشتراك — الشريط يُنبِّه والإدارة تبقى تعمل
     loggedIn = true;
     isMasterAdmin = false;
     currentTenant = tenant;
@@ -2990,11 +2989,15 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   /// سبب عدم سريان الاشتراك، أو `null` إن كان سارياً.
   /// مطابق لـ `tenantService.isSubscriptionValid` في النسخة المكتبية.
+  ///
+  /// الدخول الجديد للإدارة يُرفض عند وجود سبب؛ الجلسة القائمة ودخول المطور
+  /// للمنشأة يستمران مع شريط تنبيه — كالويب.
   String? subscriptionProblem(Tenant t) {
-    if (!t.active) return 'تم إيقاف هذه المنشأة من قبل إدارة المنصة.';
-    if (t.planType == 'lifetime') return null;
-    if (t.expiresAt.isBefore(DateTime.now())) {
-      return 'انتهت فترة اشتراك هذه المنشأة. يرجى التواصل مع المطور لتجديد الاشتراك.';
+    if (!t.active) {
+      return 'تم إيقاف هذه المدرسة من قبل إدارة المنصة.';
+    }
+    if (t.planType == 'rental' && t.expiresAt.isBefore(DateTime.now())) {
+      return 'انتهت فترة اشتراك هذه المدرسة. يرجى التواصل مع المطور لتجديد الاشتراك.';
     }
     return null;
   }
@@ -3759,10 +3762,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// كان يمرّ على `login` بكلمة مرور المنشأة، وكلمات المرور صارت في Supabase Auth
   /// ولا تصل الجهاز، فيفشل الدخول. توكن المطور نفسه يبقى: سياسات RLS تفتح له
   /// جداول كل منشأة (`is_developer()`)، والمنشأة النشطة تُحفظ فتُستعاد عند الإقلاع.
+  /// اشتراك منتهٍ أو موقوف لا يمنع الدخول — الشريط يُنبِّه كالويب.
   Future<String?> enterTenantAsDeveloper(Tenant tenant) async {
     if (!isMasterAdmin) return 'الدخول للمنشآت من بوابة المطور';
-    final problem = subscriptionProblem(tenant);
-    if (problem != null) return problem;
     await _enterTenant(tenant);
     return null;
   }
@@ -5225,7 +5227,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     var linkedInstallmentId = installmentId;
     if ((linkedInstallmentId == null || linkedInstallmentId.isEmpty) && purpose == 'seat_reservation') {
       final open = installments.where((i) => i.studentId == studentId && i.remaining > cent).toList()..sort(compareInstallments);
-      linkedInstallmentId = open.where((i) => i.title == seatTitle).map((i) => i.id).firstOrNull ?? open.firstOrNull?.id;
+      linkedInstallmentId = open.where((i) => isSeatInstallmentTitle(i.title)).map((i) => i.id).firstOrNull ?? open.firstOrNull?.id;
     }
 
     final p = Payment(

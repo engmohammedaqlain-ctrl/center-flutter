@@ -20,6 +20,7 @@ import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 import 'widgets/auth_frame.dart';
 import 'widgets/animated_count.dart';
+import 'widgets/subscription_banner.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -266,10 +267,21 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
           screen = const AppShell();
         }
 
+        Widget body = KeyedSubtree(key: ValueKey(screen.runtimeType), child: screen);
+        // كالويب: شريط الاشتراك فوق الشاشة دون منع العمل
+        if (store.loggedIn && !store.isMasterAdmin) {
+          body = Column(
+            children: [
+              SubscriptionStatusBanner(store: store),
+              Expanded(child: body),
+            ],
+          );
+        }
+
         return AnimatedSwitcher(
           duration: _booted ? Duration.zero : const Duration(milliseconds: 260),
           switchInCurve: Curves.easeOut,
-          child: KeyedSubtree(key: ValueKey(screen.runtimeType), child: screen),
+          child: body,
         );
       },
     );

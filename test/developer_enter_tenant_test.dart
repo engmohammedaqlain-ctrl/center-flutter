@@ -60,11 +60,12 @@ void main() {
     expect(s.currentTenant, isNull);
   });
 
-  test('اشتراك منتهٍ لا يُدخل', () async {
+  test('اشتراك منتهٍ يُدخل ويظهر كمشكلة اشتراك', () async {
     final s = await developer(FakeDisk());
     final tenant = s.tenants.first..expiresAt = DateTime(2020, 1, 1);
 
-    expect(await s.enterTenantAsDeveloper(tenant), isNotNull);
-    expect(s.isMasterAdmin, isTrue);
+    expect(await s.enterTenantAsDeveloper(tenant), isNull);
+    expect(s.currentTenant?.id, tenant.id);
+    expect(s.subscriptionProblem(tenant), isNotNull);
   });
 }

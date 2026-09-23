@@ -77,7 +77,7 @@ const paymentMethodNames = {
 const paymentPurposeNames = {
   'monthly_fee': 'رسوم دراسية',
   'installment': 'دفعة قسط مجدول',
-  'seat_reservation': 'رسم حجز مقعد',
+  'seat_reservation': 'رسوم حجز مقعد',
   'extra_sessions': 'حصص إضافية',
   'monthly_reward': 'خصم تفوق',
   'other_income': 'إيراد آخر',

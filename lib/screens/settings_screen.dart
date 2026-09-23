@@ -6,7 +6,6 @@ import '../data/academic_matching.dart';
 import '../data/backup.dart';
 import '../data/permissions.dart';
 import '../data/phone.dart';
-import '../data/payment_methods.dart';
 import '../data/store.dart';
 import '../data/sync.dart';
 import '../data/user_message.dart';
@@ -586,15 +585,13 @@ class _FeesTab extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 10),
-        // كالويب: رسم الحجز وخصم المتفوقين في قسم واحد تحت المراحل
+        // كالويب: رسم الحجز فقط هنا — خصم التفوق من «نظام العلامات» (نمط شهري)
         _FeeSection(
           icon: Icons.local_offer_outlined,
-          title: 'الرسوم المحددة والخصومات',
-          summary: 'رسم الحجز وخصم المتفوقين',
+          title: 'الرسوم المحددة',
+          summary: 'رسم الحجز',
           children: [
             _SeatFeeCard(store: store),
-            const SizedBox(height: 8),
-            _ExcellenceDiscountCard(store: store),
           ],
         ),
         const SizedBox(height: 8),
@@ -1373,207 +1370,6 @@ class _SeatFeeCardState extends State<_SeatFeeCard> {
               color: AppColors.faint,
               fontWeight: FontWeight.w600,
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// خصم المتفوقين — المقابل لخياره في GradeFeesSettings.tsx.
-///
-/// اقتراح عند التسجيل لمن بلغ المعدل؛ القرار يبقى للإدارة. منفصل عن قواعد
-/// خصم التفوق في نظام العلامات (نمط المعدل الشهري).
-class _ExcellenceDiscountCard extends StatefulWidget {
-  const _ExcellenceDiscountCard({required this.store});
-
-  final AppStore store;
-
-  @override
-  State<_ExcellenceDiscountCard> createState() => _ExcellenceDiscountCardState();
-}
-
-class _ExcellenceDiscountCardState extends State<_ExcellenceDiscountCard> {
-  late bool enabled;
-  late final TextEditingController minGpa;
-  late final TextEditingController rate;
-  bool saved = false;
-  bool editing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    final rules = widget.store.discountRules;
-    enabled = rules.autoSuggestExcellence;
-    minGpa = TextEditingController(text: _num(rules.excellenceMinGpa));
-    rate = TextEditingController(text: _num(rules.excellenceDiscountRate));
-  }
-
-  static String _num(double v) => v == v.roundToDouble() ? '${v.round()}' : '$v';
-
-  @override
-  void didUpdateWidget(covariant _ExcellenceDiscountCard old) {
-    super.didUpdateWidget(old);
-    if (editing) return;
-    final rules = widget.store.discountRules;
-    enabled = rules.autoSuggestExcellence;
-    final g = _num(rules.excellenceMinGpa);
-    final r = _num(rules.excellenceDiscountRate);
-    if (minGpa.text != g) minGpa.text = g;
-    if (rate.text != r) rate.text = r;
-  }
-
-  @override
-  void dispose() {
-    minGpa.dispose();
-    rate.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save({bool? turnOn}) async {
-    final on = turnOn ?? enabled;
-    final gpa = double.tryParse(minGpa.text.trim()) ?? 90;
-    final pct = double.tryParse(rate.text.trim()) ?? 10;
-    final cleanGpa = gpa <= 0 || gpa > 100 ? 90.0 : gpa;
-    final cleanPct = pct <= 0 || pct > 100 ? 10.0 : pct;
-    try {
-      await widget.store.saveDiscountRules(
-        SchoolDiscountRules(
-          autoSuggestExcellence: on,
-          excellenceMinGpa: cleanGpa,
-          excellenceDiscountRate: cleanPct,
-        ),
-      );
-      if (!mounted) return;
-      setState(() {
-        enabled = on;
-        saved = true;
-        editing = false;
-        minGpa.text = _num(cleanGpa);
-        rate.text = _num(cleanPct);
-      });
-      showAppSnack(context, on ? 'تم حفظ خصم المتفوقين' : 'تم إيقاف خصم المتفوقين');
-    } on StoreException catch (e) {
-      if (mounted) showAppSnack(context, e.message, error: true);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'خصم المتفوقين',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12.5,
-                    color: AppColors.heading,
-                  ),
-                ),
-              ),
-              if (saved)
-                const Padding(
-                  padding: EdgeInsetsDirectional.only(end: 6),
-                  child: Text(
-                    'حُفظ',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.success,
-                    ),
-                  ),
-                ),
-              Switch.adaptive(
-                value: enabled,
-                activeThumbColor: AppColors.amber,
-                onChanged: (v) {
-                  setState(() {
-                    enabled = v;
-                    editing = true;
-                    saved = false;
-                  });
-                  if (!v) _save(turnOn: false);
-                },
-              ),
-            ],
-          ),
-          if (enabled) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'أدنى معدل (%)',
-                        style: TextStyle(color: AppColors.muted, fontSize: 10.5, fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 4),
-                      TextField(
-                        controller: minGpa,
-                        keyboardType: TextInputType.number,
-                        textDirection: TextDirection.ltr,
-                        textAlign: TextAlign.center,
-                        onChanged: (_) => setState(() {
-                          editing = true;
-                          saved = false;
-                        }),
-                        decoration: const InputDecoration(hintText: '90'),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'نسبة الخصم (%)',
-                        style: TextStyle(color: AppColors.muted, fontSize: 10.5, fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 4),
-                      TextField(
-                        controller: rate,
-                        keyboardType: TextInputType.number,
-                        textDirection: TextDirection.ltr,
-                        textAlign: TextAlign.center,
-                        onChanged: (_) => setState(() {
-                          editing = true;
-                          saved = false;
-                        }),
-                        decoration: const InputDecoration(hintText: '10'),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                PrimaryButton(
-                  label: 'حفظ',
-                  color: AppColors.navy,
-                  onPressed: () => _save(turnOn: true),
-                ),
-              ],
-            ),
-          ] else
-            const Padding(
-              padding: EdgeInsets.only(top: 4),
-              child: Text(
-                'معطّل — لا يُقترح خصم تلقائي عند التسجيل',
-                style: TextStyle(fontSize: 11.5, color: AppColors.muted, fontWeight: FontWeight.w600),
-              ),
-            ),
-          const SizedBox(height: 6),
-          const Text(
-            'اقتراح لا إلزام: عند التسجيل يُنبَّه لمن بلغ الحد الأدنى، والقرار للإدارة.',
-            style: TextStyle(fontSize: 10.5, color: AppColors.faint, fontWeight: FontWeight.w600),
           ),
         ],
       ),

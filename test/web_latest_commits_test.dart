@@ -69,7 +69,7 @@ void main() {
       ];
       s.upsertStudent(student, isNew: true, customPlanItems: schedule);
       expect(student.usesCustomPlan, isTrue);
-      final own = s.installments.where((i) => i.studentId == student.id && i.title != seatTitle).toList();
+      final own = s.installments.where((i) => i.studentId == student.id && !isSeatInstallmentTitle(i.title)).toList();
       expect(own, hasLength(2));
       expect(own.every((i) => isCustomInstallmentId(i.id)), isTrue);
     });

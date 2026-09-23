@@ -228,13 +228,9 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
   }
 
   /// «دخول للمنشأة» — تقمّص المنشأة لمعاينة بياناتها كما يراها موظفوها.
+  /// اشتراك منتهٍ لا يمنع — كالويب؛ يظهر شريط التنبيه داخل الشاشة.
   Future<void> _enterTenant(BuildContext context, Tenant t) async {
     final store = StoreScope.of(context);
-    final problem = store.subscriptionProblem(t);
-    if (problem != null) {
-      showAppSnack(context, problem, error: true);
-      return;
-    }
     final ok = await confirmSheet(
       context,
       title: 'دخول للمنشأة',

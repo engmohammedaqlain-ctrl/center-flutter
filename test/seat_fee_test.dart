@@ -42,6 +42,14 @@ void main() {
       expect(allocated['i-seat'], 50, reason: 'الحجز كاملاً');
       expect(allocated['i-sep'], 10, reason: 'والباقي على الشهر');
     });
+
+    test('الاسم القديم يُحسب حجزاً في الترتيب والتوزيع', () {
+      final legacy = _inst('i-old', 'رسم حجز مقعد', 50, DateTime(2026, 9, 20));
+      final month = _inst('i-sep', 'رسوم 09/2026', 100, DateTime(2026, 9, 1));
+      expect(isSeatInstallmentTitle(legacy.title), isTrue);
+      final ordered = [month, legacy]..sort(compareInstallments);
+      expect(ordered.first.id, 'i-old');
+    });
   });
 
   group('سقف رسم الحجز على خطة الطالب', () {

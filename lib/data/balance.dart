@@ -104,12 +104,20 @@ double paymentAdvance(Payment p) {
   return extra > 0 ? extra : 0;
 }
 
-/// عنوان قسط رسم الحجز — مطابق لـ `SEAT_INSTALLMENT_TITLE`.
-const seatTitle = 'رسم حجز مقعد';
+/// عنوان قسط رسم الحجز — مطابق لـ `SEAT_INSTALLMENT_TITLE` على الويب.
+const seatTitle = 'رسوم حجز مقعد';
+
+/// الاسم القديم قبل التوحيد — يُعرف القسط بالاسمين كالويب.
+const legacySeatTitles = ['رسم حجز مقعد'];
+
+/// هل العنوان قسط حجز مقعد (الحالي أو القديم)؟ — `isSeatInstallmentTitle`.
+bool isSeatInstallmentTitle(String? title) =>
+    title == seatTitle || legacySeatTitles.contains(title ?? '');
 
 /// ترتيب السداد: رسم الحجز أولاً ثم الأقدم استحقاقاً — `compareInstallments`.
 int compareInstallments(Installment a, Installment b) {
-  final seatFirst = (b.title == seatTitle ? 1 : 0) - (a.title == seatTitle ? 1 : 0);
+  final seatFirst =
+      (isSeatInstallmentTitle(b.title) ? 1 : 0) - (isSeatInstallmentTitle(a.title) ? 1 : 0);
   if (seatFirst != 0) return seatFirst;
   final byDate = dayKey(a.dueDate).compareTo(dayKey(b.dueDate));
   return byDate != 0 ? byDate : a.id.compareTo(b.id);

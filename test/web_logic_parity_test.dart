@@ -56,7 +56,7 @@ void main() {
 
       s.upsertStudent(student, isNew: true, discount: const PlanDiscount.percent(10));
 
-      final own = s.installments.where((i) => i.studentId == student.id && i.title != seatTitle).toList();
+      final own = s.installments.where((i) => i.studentId == student.id && !isSeatInstallmentTitle(i.title)).toList();
       expect(own, hasLength(2));
       expect(own.map((i) => i.amount), everyElement(90));
       expect(own.map((i) => i.originalAmount), everyElement(100));
@@ -82,7 +82,7 @@ void main() {
       final done = s.repriceGradePlan('عاشر', apply: true);
       expect(done.installments, 2);
 
-      final own = s.installments.where((i) => i.studentId == student.id && i.title != seatTitle).toList();
+      final own = s.installments.where((i) => i.studentId == student.id && !isSeatInstallmentTitle(i.title)).toList();
       expect(own.map((i) => i.amount), everyElement(180));
       expect(own.map((i) => i.originalAmount), everyElement(200));
     });
@@ -223,7 +223,7 @@ void main() {
         enrollmentDate: '2026-06-01',
         enrollmentMode: EnrollmentPlanMode.fromEnrollment,
       );
-      expect(rows.where((r) => r.title != seatTitle).map((r) => r.title), ['2', '3']);
+      expect(rows.where((r) => !isSeatInstallmentTitle(r.title)).map((r) => r.title), ['2', '3']);
     });
   });
 }

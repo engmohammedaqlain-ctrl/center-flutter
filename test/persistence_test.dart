@@ -37,6 +37,12 @@ class FakeDisk implements Persistence {
   }
 
   @override
+  Future<int> countTable(String table) async {
+    final rows = await loadTable(table);
+    return rows.length;
+  }
+
+  @override
   Future<Map<String, List<Map<String, dynamic>>>> loadTables(Iterable<String> tables) async {
     final out = <String, List<Map<String, dynamic>>>{};
     for (final table in tables) {

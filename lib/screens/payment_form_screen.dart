@@ -534,7 +534,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                               !store.paymentsOf(selected.id).any((p) =>
                                   !p.cancelled && p.purpose == 'seat_reservation') &&
                               !store.installments.any((i) =>
-                                  i.studentId == selected.id && i.title == seatTitle))
+                                  i.studentId == selected.id && isSeatInstallmentTitle(i.title)))
                             const DropdownMenuItem(
                               value: 'seat_reservation',
                               child: Text('حجز مقعد'),

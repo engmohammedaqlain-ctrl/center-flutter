@@ -973,7 +973,7 @@ class _MonthlyRulesEditor extends StatelessWidget {
                         },
                       ),
                     ),
-                    Text('فأعلى ← خصم', style: AppText.label),
+                    Text('فأعلى، خصم', style: AppText.label),
                     SizedBox(
                       width: 70,
                       child: _NumberField(
@@ -987,6 +987,7 @@ class _MonthlyRulesEditor extends StatelessWidget {
                         },
                       ),
                     ),
+                    Text('من الرسوم القادمة', style: AppText.label),
                     IconButton(
                       tooltip: 'حذف',
                       visualDensity: VisualDensity.compact,

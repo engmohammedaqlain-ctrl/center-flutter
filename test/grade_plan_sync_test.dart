@@ -1,5 +1,6 @@
 import 'package:center_mobile/data/demo_data.dart';
 import 'package:center_mobile/data/fee_plan.dart';
+import 'package:center_mobile/data/grade_plan_sync.dart';
 import 'package:center_mobile/data/store.dart';
 import 'package:center_mobile/models/models.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -125,6 +126,56 @@ void main() {
           .toList();
       expect(own.map((i) => i.amount), everyElement(180));
       expect(own.map((i) => i.originalAmount), everyElement(200));
+    });
+
+    test('يحدّث تاريخ وعنوان القسط القادم غير المدفوع (reschedule)', () {
+      final s = _seeded();
+      _plan(s, 'عاشر', count: 2);
+      final student = _student(s);
+      s.syncGradePlan('عاشر', apply: true);
+
+      final fee = s.gradeFees.firstWhere((f) => f.gradeName == 'عاشر');
+      final first = fee.planItems.first;
+      final newDue = isoDate(DateTime.now().add(const Duration(days: 45)));
+      fee.planItems = [
+        PlanItem(id: first.id, title: 'قسط معدَّل', amount: first.amount, dueDate: newDue),
+        ...fee.planItems.skip(1),
+      ];
+
+      final preview = s.syncGradePlan('عاشر');
+      expect(preview.reschedule.installments, greaterThan(0));
+
+      s.syncGradePlan('عاشر', apply: true);
+      final row = s.installments.firstWhere(
+        (i) => i.studentId == student.id && i.id.contains(first.id),
+      );
+      expect(row.title, 'قسط معدَّل');
+      expect(isoDate(row.dueDate), newDue);
+    });
+
+    test('lockedPlanItemIds يقفل المستحق والمدفوع منه', () {
+      final s = _seeded();
+      final past = PlanItem(
+        id: 'due_item',
+        title: 'قديم',
+        amount: 100,
+        dueDate: isoDate(DateTime.now().subtract(const Duration(days: 5))),
+      );
+      final future = PlanItem(
+        id: 'future_item',
+        title: 'قادم',
+        amount: 100,
+        dueDate: isoDate(DateTime.now().add(const Duration(days: 40))),
+      );
+      expect(lockedPlanItemIds(s, [past, future]), {'due_item'});
+
+      final student = _student(s);
+      final fee = s.gradeFees.firstWhere((f) => f.gradeName == 'عاشر');
+      fee.planItems = [future];
+      s.syncGradePlan('عاشر', apply: true);
+      final inst = s.installments.firstWhere((i) => i.studentId == student.id);
+      inst.paidAmount = 10;
+      expect(lockedPlanItemIds(s, [future]), {'future_item'});
     });
   });
 }

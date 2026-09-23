@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../data/fee_plan.dart';
 import '../data/grade_plan_sync.dart';
@@ -10,7 +10,7 @@ import '../widgets/widgets.dart';
 
 /// محرر خطة أقساط المرحلة — المقابل لـ `GradePlanModal.tsx`.
 ///
-/// توليد جدول وتعديل الأقساط ثم حفظ يفتح معاينة الأثر على الطلاب.
+/// توليد جدول وتعديل الأقساط ثم حفظ؛ إن وُجد أثر على الطلاب تُفتح معاينته.
 /// تواريخ الفصلين تُدار من «الأعوام الدراسية» لا من هنا.
 class GradePlanScreen extends StatefulWidget {
   const GradePlanScreen({super.key, required this.fee});
@@ -28,6 +28,7 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
 
   /// بعد أول حفظ: ممنوع إعادة التوليد حتى لا تتغيّر المعرّفات وتزدوج الأقساط.
   late bool planLocked = widget.fee.planItems.isNotEmpty;
+  late final bool hadPlan = widget.fee.planItems.isNotEmpty;
 
   late final countCtl = TextEditingController(text: items.isEmpty ? '10' : '${items.length}');
   late final amountCtl = TextEditingController(text: trimNum(widget.fee.monthlyFee));
@@ -35,10 +36,18 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
   bool busy = false;
   String message = '';
 
+  /// سنة غير عام التشغيل = للعرض فقط — كويب.
+  bool readOnly = false;
+
+  /// بنود مقفلة (حلّ موعدها أو دُفع منها) — `null` حتى تُحسب.
+  Set<String>? lockedIds;
+
   String get _defaultFirstDue =>
       items.isNotEmpty && items.first.dueDate.isNotEmpty
           ? items.first.dueDate
           : isoDate(DateTime.now());
+
+  bool _isRowLocked(String id) => readOnly || (lockedIds?.contains(id) ?? false);
 
   @override
   void initState() {
@@ -50,6 +59,28 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
         _generate();
       });
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadLocks());
+  }
+
+  void _loadLocks() {
+    final store = StoreScope.of(context);
+    final opId = store.operationalAcademicYear?.id ?? '';
+    final yearId = widget.fee.academicYearId;
+    final pastYear = yearId.isNotEmpty && opId.isNotEmpty && yearId != opId;
+    final ids = lockedPlanItemIds(store, [
+      for (final i in items)
+        PlanItem(
+          id: i.id,
+          title: i.title.text,
+          amount: double.tryParse(i.amount.text.trim()) ?? 0,
+          dueDate: i.dueDate,
+        ),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      readOnly = pastYear;
+      lockedIds = ids;
+    });
   }
 
   @override
@@ -89,7 +120,10 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
       term2Start: f.term2Start,
       term2End: f.term2End,
       planItems: _cleanItems(),
+      academicYearId: f.academicYearId,
+      syncStatus: f.syncStatus,
       createdAt: f.createdAt,
+      updatedAt: f.updatedAt,
     );
   }
 
@@ -105,7 +139,7 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
   }
 
   void _generate() {
-    if (planLocked) return;
+    if (planLocked || readOnly) return;
     final store = StoreScope.of(context);
     final next = generatePlanItems(
       count: int.tryParse(countCtl.text.trim()) ?? 0,
@@ -124,6 +158,7 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
   }
 
   void _addItem() {
+    if (readOnly) return;
     final store = StoreScope.of(context);
     setState(() {
       items.add(
@@ -137,9 +172,23 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
     });
   }
 
-  /// حفظ الخطة، ثم فتح معاينة الأثر على الطلاب دائماً — أسئلة التطبيق كما على الويب.
+  /// حفظ الخطة، ثم فتح معاينة الأثر فقط إن وُجد أثر — كويب `handleSave`.
   Future<void> _save() async {
+    if (readOnly || lockedIds == null) return;
     final store = StoreScope.of(context);
+    final today = isoDate(DateTime.now());
+    // رسوم جديدة بتاريخ قبل اليوم تُسجَّل متأخرةً فوراً
+    if (hadPlan &&
+        items.any(
+          (i) =>
+              !_isRowLocked(i.id) &&
+              i.dueDate.isNotEmpty &&
+              i.dueDate.compareTo(today) < 0,
+        )) {
+      showAppSnack(context, 'التاريخ قبل اليوم', error: true);
+      return;
+    }
+
     setState(() => busy = true);
     await yieldUi(2);
     try {
@@ -151,6 +200,12 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
       if (!mounted) return;
 
       final preview = store.syncGradePlan(widget.fee.gradeName);
+      if (preview.isEmpty) {
+        showAppSnack(context, 'تم حفظ خطة «${widget.fee.gradeName}»');
+        Navigator.pop(context);
+        return;
+      }
+
       final summary = await showModalBottomSheet<String>(
         context: context,
         isScrollControlled: true,
@@ -166,10 +221,6 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
       if (!mounted) return;
       if (summary != null) {
         showAppSnack(context, summary);
-        Navigator.pop(context);
-      } else if (preview.isEmpty) {
-        // أُلغيت الورقة بلا تطبيق، والخطة محفوظة بلا أثر على الطلاب
-        showAppSnack(context, 'تم حفظ خطة «${widget.fee.gradeName}»');
         Navigator.pop(context);
       }
     } on StoreException catch (e) {
@@ -191,6 +242,7 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
     }
 
     final total = planTotal(_cleanItems());
+    final canEdit = !readOnly && lockedIds != null;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -198,17 +250,38 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
         title: Text(title),
         titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
       ),
-      bottomNavigationBar: FormActionBar(
-        label: 'حفظ الخطة',
-        busy: busy,
-        onSave: () => _save(),
-      ),
+      bottomNavigationBar: readOnly
+          ? FormActionBar(
+              label: 'إغلاق',
+              busy: false,
+              onSave: () => Navigator.pop(context),
+            )
+          : FormActionBar(
+              label: 'حفظ الخطة',
+              busy: busy || lockedIds == null,
+              onSave: canEdit ? () => _save() : null,
+            ),
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
           children: [
-            if (!planLocked) ...[
+            if (readOnly) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.line),
+                ),
+                child: const Text(
+                  'للعرض فقط',
+                  style: TextStyle(fontSize: 12, color: AppColors.muted, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ] else if (!planLocked) ...[
               const FormSection(icon: Icons.auto_awesome_outlined, title: 'توليد جدول'),
               FieldPair(
                 start: [
@@ -265,18 +338,25 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
                 _PlanItemRow(
                   index: i + 1,
                   item: items[i],
-                  onPickDue: () => _pickDate(items[i].dueDate, (v) => setState(() => items[i].dueDate = v)),
-                  onDelete: () => setState(() {
-                    items[i].dispose();
-                    items.removeAt(i);
-                  }),
+                  locked: _isRowLocked(items[i].id),
+                  onPickDue: _isRowLocked(items[i].id)
+                      ? null
+                      : () => _pickDate(items[i].dueDate, (v) => setState(() => items[i].dueDate = v)),
+                  onDelete: (readOnly || _isRowLocked(items[i].id))
+                      ? null
+                      : () => setState(() {
+                            items[i].dispose();
+                            items.removeAt(i);
+                          }),
                 ),
               ],
-            const SizedBox(height: 10),
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: GhostButton(label: 'إضافة قسط', icon: Icons.add, onPressed: busy ? null : _addItem),
-            ),
+            if (!readOnly) ...[
+              const SizedBox(height: 10),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: GhostButton(label: 'إضافة قسط', icon: Icons.add, onPressed: busy ? null : _addItem),
+              ),
+            ],
 
             if (message.isNotEmpty) ...[
               const SizedBox(height: 12),
@@ -433,6 +513,10 @@ class _GradePlanSyncSheetState extends State<GradePlanSyncSheet> {
                       _SyncRow(
                         '${p.reprice.students} طالب أقساطهم القادمة بسعر مختلف: ${p.reprice.installments} قسط، الفرق ${_signed(p.reprice.difference)}',
                       ),
+                    if (p.reschedule.installments > 0)
+                      _SyncRow(
+                        '${p.reschedule.students} طالب: تحديث تاريخ أو اسم ${p.reschedule.installments} قسط',
+                      ),
                     if (p.remove.installments > 0)
                       _SyncRow(
                         '${p.remove.installments} قسط لم يعد في الخطة يُحذف عند ${p.remove.students} طالب'
@@ -508,6 +592,7 @@ class _GradePlanSyncSheetState extends State<GradePlanSyncSheet> {
       if (d.build.students > 0) 'بُنيت الخطة لـ ${d.build.students} طالب',
       if (d.add.installments > 0) 'أُضيف ${d.add.installments} قسط لـ ${d.add.students} طالب',
       if (d.reprice.installments > 0) 'حُدّث ${d.reprice.installments} قسط',
+      if (d.reschedule.installments > 0) 'حُدّث تاريخ أو اسم ${d.reschedule.installments} قسط',
       if (includePaid && d.repricePaid.installments > 0) 'حُدّث ${d.repricePaid.installments} قسط مدفوع منه',
       if (d.remove.installments > 0) 'حُذف ${d.remove.installments} قسط لم يعد في الخطة',
       if (removePaid && d.removePaid.installments > 0) 'حُذف ${d.removePaid.installments} قسط مدفوع منه',
@@ -603,14 +688,16 @@ class _PlanItemRow extends StatelessWidget {
   const _PlanItemRow({
     required this.index,
     required this.item,
-    required this.onPickDue,
-    required this.onDelete,
+    required this.locked,
+    this.onPickDue,
+    this.onDelete,
   });
 
   final int index;
   final _EditablePlanItem item;
-  final VoidCallback onPickDue;
-  final VoidCallback onDelete;
+  final bool locked;
+  final VoidCallback? onPickDue;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -619,6 +706,7 @@ class _PlanItemRow extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppColors.line),
+        color: locked ? AppColors.surface : null,
       ),
       child: Column(
         children: [
@@ -629,13 +717,20 @@ class _PlanItemRow extends StatelessWidget {
               Expanded(
                 child: TextField(
                   controller: item.title,
+                  enabled: !locked,
                   decoration: const InputDecoration(hintText: 'عنوان القسط', isDense: true),
                 ),
               ),
-              IconButton(
-                onPressed: onDelete,
-                icon: const Icon(Icons.delete_outline, color: AppColors.danger, size: 20),
-              ),
+              if (locked)
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  child: Icon(Icons.lock_outline, size: 18, color: AppColors.muted),
+                )
+              else if (onDelete != null)
+                IconButton(
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline, color: AppColors.danger, size: 20),
+                ),
             ],
           ),
           const SizedBox(height: 8),
@@ -644,6 +739,7 @@ class _PlanItemRow extends StatelessWidget {
               const FieldLabel('المبلغ'),
               TextField(
                 controller: item.amount,
+                enabled: !locked,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(hintText: '0', isDense: true),
               ),
@@ -652,7 +748,7 @@ class _PlanItemRow extends StatelessWidget {
               const FieldLabel('الاستحقاق'),
               SelectField(
                 text: item.dueDate.isEmpty ? 'اختر' : item.dueDate,
-                icon: Icons.calendar_today_outlined,
+                icon: locked ? Icons.lock_outline : Icons.calendar_today_outlined,
                 placeholder: item.dueDate.isEmpty,
                 onTap: onPickDue,
               ),

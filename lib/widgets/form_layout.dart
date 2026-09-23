@@ -76,7 +76,7 @@ class SelectField extends StatelessWidget {
 
   final String text;
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final bool placeholder;
   final String? errorText;
 

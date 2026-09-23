@@ -968,15 +968,12 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   /// خصم على الأقساط — المقابل لقسم الخصم في StudentForm.tsx.
   ///
   /// للطالب القائم: القسم معطّل (يُعدَّل من ملفه). عند التسجيل: نسبة أو مبلغ مقطوع فقط.
+  /// خصم التفوق التشجيعي من المعدلات الشهرية لا من هنا — كويب.
   List<Widget> _discountSection(BuildContext context) {
     final store = StoreScope.of(context);
     final canDiscount = store.can('finance.discount');
     final editing = widget.student != null;
     final gradeFee = _gradeFeeOf(context);
-    final rules = store.discountRules;
-    final gpaValue = double.tryParse(gpa.text.trim()) ?? 0;
-    final suggestExcellence =
-        !editing && canDiscount && rules.autoSuggestExcellence && !hasDiscount && gpaValue >= rules.excellenceMinGpa;
 
     return [
       _section(
@@ -1015,20 +1012,6 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           child: Text(
             '— لا تملك صلاحية الخصم: سجّل الطالب ثم اطلب الخصم من ملفه',
             style: TextStyle(fontSize: 11.5, color: AppColors.amber, fontWeight: FontWeight.w600),
-          ),
-        ),
-      if (suggestExcellence)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 4),
-          child: GhostButton(
-            label: 'اقتراح خصم التفوق (${trimNum(rules.excellenceDiscountRate)}%)',
-            icon: Icons.auto_awesome_outlined,
-            onPressed: () => setState(() {
-              hasDiscount = true;
-              discountType = 'percentage';
-              discountRate.text = trimNum(rules.excellenceDiscountRate);
-              discountReason.text = 'خصم تفوق دراسي';
-            }),
           ),
         ),
       if (hasDiscount && !editing && canDiscount) ...[
