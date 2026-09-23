@@ -785,120 +785,66 @@ void showAppSnack(BuildContext context, String msg, {bool error = false}) {
 
 OverlayEntry? _toast;
 
-/// مؤشر تحميل بسيط — ثلاث نقاط بلون الثيم فقط، بلا رمادي ولا طبقات.
-class AppLoader extends StatefulWidget {
+/// مؤشر تحميل مرتّب وبسيط — حلقة رفيعة ونص قصير.
+class AppLoader extends StatelessWidget {
   const AppLoader({
     super.key,
     this.message,
-    this.size = 10,
+    this.size = 28,
     this.compact = false,
+    this.value,
+    this.color,
   });
 
   final String? message;
-  /// قطر النقطة الواحدة.
+
+  /// قطر الحلقة.
   final double size;
+
+  /// داخل بطاقة/طبقة: بدون توسيط كامل الشاشة.
   final bool compact;
 
-  @override
-  State<AppLoader> createState() => _AppLoaderState();
-}
+  /// نسبة 0–1 للتقدّم المحدّد، أو `null` لدوران مستمر.
+  final double? value;
 
-class _AppLoaderState extends State<AppLoader> with SingleTickerProviderStateMixin {
-  late final AnimationController _tick;
-
-  @override
-  void initState() {
-    super.initState();
-    _tick = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
-      ..repeat();
-  }
-
-  @override
-  void dispose() {
-    _tick.dispose();
-    super.dispose();
-  }
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    final color = AppColors.amber;
-    final dot = widget.size;
+    final ring = color ?? AppColors.navy;
+    final label = message?.trim();
     final column = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
-          height: dot * 2.2,
-          child: AnimatedBuilder(
-            animation: _tick,
-            builder: (context, _) {
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (var i = 0; i < 3; i++) ...[
-                    if (i > 0) SizedBox(width: dot * 0.7),
-                    _ThemeDot(progress: _tick.value, index: i, size: dot, color: color),
-                  ],
-                ],
-              );
-            },
+          width: size,
+          height: size,
+          child: CircularProgressIndicator(
+            value: value,
+            strokeWidth: size >= 36 ? 2.8 : 2.4,
+            strokeCap: StrokeCap.round,
+            color: ring,
+            backgroundColor: ring.withValues(alpha: 0.12),
           ),
         ),
-        if (widget.message != null && widget.message!.isNotEmpty) ...[
-          SizedBox(height: widget.compact ? 12 : 16),
+        if (label != null && label.isNotEmpty) ...[
+          SizedBox(height: compact ? 12 : 14),
           Text(
-            widget.message!,
+            label,
             textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: AppText.family,
-              color: color.withValues(alpha: 0.9),
-              fontSize: widget.compact ? 12.5 : 13,
+              color: AppColors.muted,
+              fontSize: compact ? 12.5 : 13,
               fontWeight: FontWeight.w600,
+              height: 1.35,
             ),
           ),
         ],
       ],
     );
-    if (widget.compact) return column;
+    if (compact) return column;
     return Center(child: column);
-  }
-}
-
-class _ThemeDot extends StatelessWidget {
-  const _ThemeDot({
-    required this.progress,
-    required this.index,
-    required this.size,
-    required this.color,
-  });
-
-  final double progress;
-  final int index;
-  final double size;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final phase = (progress + index * 0.22) % 1.0;
-    final wave = (1 - (phase - 0.5).abs() * 2).clamp(0.0, 1.0);
-    final t = Curves.easeInOut.transform(wave);
-    if (const bool.fromEnvironment('FLUTTER_TEST')) {
-      return Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(color: color.withValues(alpha: 0.55), shape: BoxShape.circle),
-      );
-    }
-    return Opacity(
-      opacity: 0.35 + t * 0.65,
-      child: Transform.translate(
-        offset: Offset(0, -size * 0.35 * t),
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-      ),
-    );
   }
 }
 
@@ -913,17 +859,17 @@ Future<T> runBusyOp<T>(
   if (overlay != null) {
     entry = OverlayEntry(
       builder: (_) => Material(
-        color: Colors.black.withValues(alpha: 0.38),
+        color: Colors.black.withValues(alpha: 0.28),
         child: Center(
           child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 40),
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
+            margin: const EdgeInsets.symmetric(horizontal: 48),
+            padding: const EdgeInsets.fromLTRB(28, 24, 28, 22),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(Corner.card),
-              boxShadow: cardShadow,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.line),
             ),
-            child: AppLoader(message: message, compact: true),
+            child: AppLoader(message: message, compact: true, size: 26),
           ),
         ),
       ),
@@ -931,7 +877,7 @@ Future<T> runBusyOp<T>(
     overlay.insert(entry);
   }
   try {
-    // ثلاثة إطارات: رسم الطبقة + بدء النبض قبل العمل الثقيل على نفس العزل
+    // ثلاثة إطارات: رسم الطبقة قبل العمل الثقيل على نفس العزل
     await yieldUi(3);
     return await op();
   } finally {

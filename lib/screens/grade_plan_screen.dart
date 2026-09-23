@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 import '../data/fee_plan.dart';
 import '../data/grade_plan_sync.dart';

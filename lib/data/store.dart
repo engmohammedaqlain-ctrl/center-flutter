@@ -2833,18 +2833,22 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       institutionName = name.trim();
       await db.setSetting(institutionNameKey, institutionName.isEmpty ? null : institutionName);
     }
-    if (logo != null) await db.setSetting(institutionLogoKey, logo.isEmpty ? null : logo);
+    var clearLogo = false;
+    if (logo != null) {
+      clearLogo = logo.isEmpty;
+      await db.setSetting(institutionLogoKey, logo.isEmpty ? null : logo);
+    }
     if (colors != null) {
       await db.setSetting(institutionColorsKey, jsonEncode({..._storedColorsMap, ...colors.toMap()}));
     }
     applyBrandColors();
-    _persistInstitutionRow();
+    _persistInstitutionRow(clearLogo: clearLogo);
     notifyListeners();
   }
 
   /// حفظ هوية المنشأة في جدول `institution_settings` لتصل كل الأجهزة.
   /// حفظها محلياً وحده كان يعني أن الشعار لا يظهر على جهاز الاستقبال أبداً.
-  void _persistInstitutionRow() {
+  void _persistInstitutionRow({bool clearLogo = false}) {
     final tid = tenantId;
     if (tid == null) return;
     final stored = _storedColorsMap;
@@ -2885,12 +2889,22 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       }
     }
 
+    // لا تُفرَّغ شعار/اسم السحابة بفراغ محلّي: دخول الجوال قبل اكتمال السحب
+    // أو بلا شعار محفوظ كان يرفع `logo: null` فيعود الويب لشعار التطبيق الافتراضي.
+    final existingLogo = _usableImageData(existing?['logo']);
+    final settingsLogo = (db.settings[institutionLogoKey] ?? '').trim();
+    final logoOut = clearLogo
+        ? ''
+        : (settingsLogo.isNotEmpty ? settingsLogo : existingLogo);
+    final existingName = '${existing?['institution_name'] ?? ''}'.trim();
+    final nameOut = institutionName.trim().isNotEmpty ? institutionName.trim() : existingName;
+
     final row = {
       'id': tid,
       // النظام مدرسي وحده: يُكتب ثابتاً ولا يُقرأ، لأن أجهزة لم تُحدَّث ما زالت تقرؤه
       'institution_type': 'school',
-      'institution_name': institutionName,
-      'logo': institutionLogo.isEmpty ? null : institutionLogo,
+      'institution_name': nameOut,
+      'logo': logoOut.isEmpty ? null : logoOut,
       'colors': colorsPayload,
       'settings': settings.toMap(),
       'updated_at': _nowIso(),
@@ -3255,10 +3269,20 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
             ..['sync_status'] = 'synced',
       ];
       putRows('institution_settings', cleaned);
-      // أسقط رفعاً معلّقاً بألوان افتراضية كان سيكتب فوق السحابة
+      // أسقط/صحّح رفعاً معلّقاً كان سيكتب فوق السحابة بهوية فارغة أو ألوان افتراضية
+      final cloud = cleaned.first;
+      final cloudLogo = _usableImageData(cloud['logo']);
       final pending = pendingSyncs.where((p) => p.tableName == 'institution_settings' && p.recordId == tid).toList();
       for (final p in pending) {
-        final colors = p.payload?['colors'];
+        final payload = p.payload;
+        if (payload == null) continue;
+        final pendingLogo = _usableImageData(payload['logo']);
+        // رفع بشعار فارغ فوق شعار سحابة: أعد الشعار للصف السحابي بدل محوه
+        if (pendingLogo.isEmpty && cloudLogo.isNotEmpty) {
+          payload['logo'] = cloud['logo'];
+          markDirty(_pendingTable);
+        }
+        final colors = payload['colors'];
         if (colors is! Map) continue;
         final local = InstitutionColors.fromMap(Map<String, dynamic>.from(colors));
         if (_isSystemDefaultPalette(local)) {

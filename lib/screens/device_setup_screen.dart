@@ -215,7 +215,7 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
     );
   }
 
-  /// التنزيل الأول: نسبة حقيقية وجدول جارٍ — ويمكن تصغير التطبيق والإشعار يتابع.
+  /// التنزيل الأول: حلقة بسيطة + نسبة وجدول جارٍ.
   Widget _loading() {
     final pct = progressPercent.clamp(0, 100);
     return Padding(
@@ -223,57 +223,36 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // النسبة تصل من المزامنة دفعةً عند اكتمال كل جدول، فتقفز 5 نقاط مرة
-          // واحدة. تُعرض منزلقةً إلى قيمتها الجديدة: ما يراه المستخدم تقدّمٌ
-          // متصل لا قفزات، والرقم نفسه هو الرقم الحقيقي.
-          SizedBox(
-            width: 72,
-            height: 72,
-            child: TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0, end: pct / 100),
-              duration: const Duration(milliseconds: 650),
-              curve: Curves.easeOut,
-              builder: (context, value, _) => Stack(
-                alignment: Alignment.center,
-                children: [
-                  SizedBox.expand(
-                    child: CircularProgressIndicator(
-                      value: pct <= 0 ? null : value,
-                      strokeWidth: 3.5,
-                      strokeCap: StrokeCap.round,
-                      backgroundColor: AppColors.hover,
-                      color: AppColors.amber,
-                    ),
-                  ),
-                  Text(
-                    '${(value * 100).round()}%',
-                    style: TextStyle(
-                      fontFamily: AppText.family,
-                      color: AppColors.heading,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: pct / 100),
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeOut,
+            builder: (context, value, _) {
+              final shown = pct <= 0 ? null : value;
+              return AppLoader(
+                compact: true,
+                size: 36,
+                value: shown,
+                message: pct <= 0 ? 'جارٍ التحضير…' : '${(value * 100).round()}%',
+              );
+            },
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           Text(
             'جاري تنزيل بيانات المنشأة',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: AppText.family,
               color: AppColors.heading,
-              fontSize: 15,
+              fontSize: 14.5,
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             progressLabel,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.muted, fontSize: 12.5, height: 1.55),
+            style: const TextStyle(color: AppColors.muted, fontSize: 12.5, height: 1.5),
           ),
           if (pulledCount > 0) ...[
             const SizedBox(height: 4),
@@ -283,14 +262,14 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
               style: const TextStyle(color: AppColors.faint, fontSize: 11.5),
             ),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           ClipRRect(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(99),
             child: LinearProgressIndicator(
               value: pct <= 0 ? null : pct / 100,
-              minHeight: 6,
-              backgroundColor: AppColors.hover,
-              color: AppColors.amber,
+              minHeight: 3,
+              backgroundColor: AppColors.navy.withValues(alpha: 0.08),
+              color: AppColors.navy,
             ),
           ),
           const SizedBox(height: 14),
