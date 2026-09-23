@@ -49,7 +49,11 @@ class PortalOffline {
 
   // ── صفوف المعلم وطلابه ────────────────────────────────────────────────────
 
+  /// حفظ نسخة الجهاز. الردّ الناقص لا يُكتب: فتح البوابة بلا شبكة كان يبني
+  /// نسخةً فارغة (لا مجموعات ولا طلاب) ويضعها مكان كشوف المعلم، فيصبح بلا
+  /// صفوف ولا شعبة يربّيها حتى ينجح سحبٌ كامل. الناقص يُعرض ولا يُحفظ.
   Future<void> saveTeacherData(TeacherPortalData data) async {
+    if (!data.complete) return;
     await _write(_kData, {
       'classes': [
         for (final c in data.classes)
@@ -77,6 +81,8 @@ class PortalOffline {
         'colors': data.branding.colors.toMap(),
         'grading_scheme': data.branding.gradingScheme.toMap(),
       },
+      // أسماء المواد: بلا حفظها يفتح المعلم «الدرجات» بلا نت على قائمة مواد فارغة
+      'subjects': [for (final s in data.subjects) s.toCloud()],
       // الميزات تُحفظ حتى لا تختفي تبويبات المودل/الدرجات عند فتح البوابة بلا نت
       if (data.features != null) 'features': data.features,
     });
@@ -123,9 +129,15 @@ class PortalOffline {
     ];
 
     final featuresRaw = raw['features'];
+    final subjectsRaw = raw['subjects'];
     return TeacherPortalData(
       branding: branding,
       features: featuresRaw is Map ? Map<String, dynamic>.from(featuresRaw) : null,
+      subjects: [
+        if (subjectsRaw is List)
+          for (final s in subjectsRaw)
+            if (s is Map) SubjectItem.fromCloud(Map<String, dynamic>.from(s)),
+      ],
       classes: [
         for (final c in classesRaw)
           if (c is Map)

@@ -79,6 +79,9 @@ Future<TeacherPortalData> hydrateTeacherResources({
 
   // ── 0–20٪: بيانات الصفوف والطلاب ──────────────────────────────────────────
   final data = await service.teacherData(user).timeout(teacherResourceTimeout);
+  // ردّ ناقص = الشبكة لم تُجب. المضيّ به يُعلن «تم التجهيز» على لا شيء،
+  // ويُسجَّل التنزيل مكتملاً فلا يُعاد.
+  if (!data.complete) throw const PortalUnavailable('موارد المعلم');
   if (stop()) return data;
   await offline.saveTeacherData(data);
   final classes = data.classes;

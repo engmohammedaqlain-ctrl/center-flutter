@@ -547,7 +547,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                       runSpacing: 8,
                       children: [
                         for (final e in gradeOptions.entries)
-                          _SheetChoiceChip(
+                          SheetChoiceChip(
                             label: e.value,
                             selected: draftGrade == e.key,
                             onTap: () => setSheet(() {
@@ -565,13 +565,13 @@ class _StudentsScreenState extends State<StudentsScreen> {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
-                          _SheetChoiceChip(
+                          SheetChoiceChip(
                             label: 'كل الشعب',
                             selected: draftSection.isEmpty,
                             onTap: () => setSheet(() => draftSection = ''),
                           ),
                           for (final s in sections.toList()..sort())
-                            _SheetChoiceChip(
+                            SheetChoiceChip(
                               label: s.replaceAll(RegExp(r'[()]'), ''),
                               selected: draftSection == s,
                               onTap: () => setSheet(() => draftSection = s),
@@ -594,7 +594,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           'archived': 'مؤرشف',
                           'completed': 'أنهى السنة',
                         }.entries)
-                          _SheetChoiceChip(
+                          SheetChoiceChip(
                             label: e.value,
                             selected: draftStatus == e.key,
                             onTap: () => setSheet(() => draftStatus = e.key),
@@ -712,43 +712,6 @@ class _ActiveFilterChip extends StatelessWidget {
               const SizedBox(width: 2),
               Icon(Icons.close_rounded, size: 14, color: AppColors.amberDark),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SheetChoiceChip extends StatelessWidget {
-  const _SheetChoiceChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return PressableScale(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.heading : AppColors.hover,
-          borderRadius: BorderRadius.circular(Corner.field),
-          border: Border.all(color: selected ? AppColors.heading : AppColors.line),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontFamily: AppText.family,
-            fontSize: 12.5,
-            fontWeight: FontWeight.w700,
-            color: selected ? Colors.white : AppColors.text,
           ),
         ),
       ),

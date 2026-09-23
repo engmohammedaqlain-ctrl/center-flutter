@@ -10,8 +10,52 @@ import '../data/user_message.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import 'animated_count.dart';
 
 final _r = BorderRadius.circular(Corner.field);
+
+/// شريحة اختيار داخل ورقة سفلية: ممتلئة بلون الثيم حين تُختار، وكتابتها
+/// بيضاء فوقه.
+///
+/// `ChoiceChip` الخام كان يأخذ أخضر ماتيريال الافتراضي ويترك الكتابة داكنة
+/// فوقه، فلا تكاد تُقرأ — ويخالف شرائح شاشات الإدارة.
+class SheetChoiceChip extends StatelessWidget {
+  const SheetChoiceChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return PressableScale(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.heading : AppColors.hover,
+          borderRadius: BorderRadius.circular(Corner.field),
+          border: Border.all(color: selected ? AppColors.heading : AppColors.line),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontFamily: AppText.family,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+            color: selected ? Colors.white : AppColors.text,
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// سهم «فتح / التالي» — `chevron_right` مع انعكاس تلقائي في العربية فيصير «‹».
 class AppChevron extends StatelessWidget {

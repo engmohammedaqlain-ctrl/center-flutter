@@ -53,6 +53,14 @@ class _OnlinePortal extends PortalService {
   Future<Map<String, Map<String, String>>> weekAttendance(String roomId, List<String> dates) async => {};
 
   @override
+  Future<Map<String, Map<String, String>>> weekTeacherAttendance({
+    required String groupId,
+    required List<String> dates,
+    required Map<String, String> roomOf,
+  }) async =>
+      {};
+
+  @override
   Future<List<StudentEvaluation>> groupEvaluations(String groupId) async => const [];
 
   @override
@@ -351,9 +359,6 @@ void main() {
         ),
       );
 
-      // لا زر حفظ: كشف الإدارة يثبّت الرصد عند اللمس
-      expect(find.text('حفظ كشف الحضور'), findsNothing);
-
       await tester.tap(find.descendant(
         of: find.byType(AttendanceStudentRow).first,
         matching: find.text('غائب'),
@@ -361,8 +366,13 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
       await tester.pumpAndSettle();
 
+      // اللمسة وحدها تنزل على القرص: إغلاق التطبيق بلا نت لا يضيّع الرصد
       final offline = PortalOffline(db);
       expect(offline.loadMarks('r1', isoDate(DateTime.now())), {'s1': 'absent'});
+
+      // ثم يُصفّ للرفع عند الحفظ، لأن السحابة بعيدة
+      await tester.tap(find.text('حفظ الرصد'));
+      await tester.pumpAndSettle();
       expect(offline.pendingCountOf('t1'), 1, reason: 'تعذّر الرفع فصُفَّ');
 
       // عاد الاتصال: يُرفع ما انتظر
@@ -398,6 +408,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('الوحدة الأولى - النحو والصرف'), findsOneWidget);
+
+      // الوحدات تُفتح مطوية: محتواها يظهر بلمسة، وهو المحفوظ على الجهاز
+      await tester.tap(find.text('الوحدة الأولى - النحو والصرف'));
+      await tester.pumpAndSettle();
       expect(find.text('ملخص درس المبتدأ والخبر'), findsOneWidget);
     });
 

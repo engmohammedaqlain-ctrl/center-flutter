@@ -52,6 +52,25 @@ const _homeroomStudentCols =
 
 String _inList(Iterable<String> values) => 'in.(${values.map((v) => '"$v"').join(',')})';
 
+/// صفوف لا بدّ أن تصل. `null` من [supabaseSelect] يعني أن السحابة لم تُجب،
+/// فيُرمى بدل أن يُبتلع كأنه «لا صفوف»: القارئ عنده كاشٌ يعرضه ومؤشر اتصال
+/// يرفعه — وابتلاعه كان يُري المعلم سحابةً خضراء وهو بلا شبكة.
+Future<List<Map<String, dynamic>>> _must(
+  String what,
+  Future<List<Map<String, dynamic>>?> request,
+) async =>
+    await request ?? (throw PortalUnavailable(what));
+
+/// السحابة لم تُجب: شبكة مقطوعة أو طلب مرفوض — لا «أجابت بلا صفوف».
+class PortalUnavailable implements Exception {
+  const PortalUnavailable(this.what);
+
+  final String what;
+
+  @override
+  String toString() => 'تعذّر جلب $what من السحابة';
+}
+
 /// حساب في البوابة: طالب أو معلم.
 /// ابن في جلسة وليّ الأمر: يُفتح ملفه بالدخول برقم هويته وكلمة وليّ الأمر نفسها.
 class PortalChild {
@@ -598,7 +617,16 @@ class TeacherPortalData {
     this.homerooms = const [],
     this.subjects = const [],
     this.features,
+    this.complete = true,
   });
+
+  /// هل أجابت السحابة عن كل ما لا غنى عنه (المجموعات، الشعب، الطلاب)؟
+  ///
+  /// `supabaseSelect` يعيد `null` عند انقطاع الشبكة كما يعيد قائمة فارغة عند
+  /// نجاحٍ بلا صفوف. بلا التمييز بينهما كانت البوابة بلا نت تبني نسخة فارغة
+  /// وتكتبها فوق كشوف الجهاز، فيفتح المعلم بوابته بلا صفوف ولا طلاب ولا شعبة
+  /// يربّيها — ولا تعود حتى ينجح سحبٌ كامل. ما كان ناقصاً يُعرض ولا يُحفظ.
+  final bool complete;
 
   final PortalBranding branding;
   final List<TeacherClass> classes;
@@ -1111,6 +1139,7 @@ class PortalService {
     List<Map<String, dynamic>> at(int i) =>
         (results[i] as List<Map<String, dynamic>>?) ?? const <Map<String, dynamic>>[];
 
+
     final groupById = {for (final g in at(3)) '${g['id']}': g};
     final teacherName = {for (final t in at(4)) '${t['id']}': '${t['name'] ?? ''}'};
     final subjectName = {for (final s in at(5)) '${s['id']}': '${s['name'] ?? ''}'};
@@ -1231,18 +1260,25 @@ class PortalService {
   /// أسماء طلاب البوابة بلا PII — عبر `portal_students` إن وُجدت، وإلا أعمدة محدودة.
   /// طلاب مراحل بعينها — لمدرسة لا تسجّل الطلاب في المجموعات، فشعبة المادة
   /// هي ما يربط المعلم بطلابه. أعمدة آمنة بلا بيانات شخصية.
-  Future<List<Student>> _portalStudentsOfGrades(
+  /// `null` = لم تُجب السحابة. القائمة الفارغة = أجابت ولا طلاب.
+  Future<List<Student>?> _portalStudentsOfGrades(
     Set<String> grades,
     Map<String, String> tenant,
   ) async {
     final filters = {...tenant, 'grade_level': _inList(grades)};
-    final rows = await supabaseSelect('portal_students', filters: filters, columns: _portalStudentCols) ??
-        await supabaseSelect('students', filters: filters, columns: _portalStudentCols) ??
-        const <Map<String, dynamic>>[];
-    return [for (final r in rows) Student.fromCloud(_withFullName(r))];
+    // المنظر قد ينجح بلا صفوف لقيد RLS — عندها يُجرَّب الجدول قبل الاستسلام،
+    // وإلا بقي كشف الشعبة فارغاً والسحابة مليئة بطلابها.
+    final viaView = await supabaseSelect('portal_students', filters: filters, columns: _portalStudentCols);
+    if (viaView != null && viaView.isNotEmpty) {
+      return [for (final r in viaView) Student.fromCloud(_withFullName(r))];
+    }
+    final rows = await supabaseSelect('students', filters: filters, columns: _portalStudentCols);
+    if (rows != null) return [for (final r in rows) Student.fromCloud(_withFullName(r))];
+    return viaView == null ? null : const [];
   }
 
-  Future<List<Map<String, dynamic>>> _portalStudentRows(
+  /// `null` = لم تُجب السحابة. القائمة الفارغة = أجابت ولا طلاب.
+  Future<List<Map<String, dynamic>>?> _portalStudentRows(
     Set<String> enrolledIds,
     Map<String, String> tenant,
   ) async {
@@ -1254,17 +1290,18 @@ class PortalService {
       filters: {...tenant, ...idFilter},
       columns: _portalStudentCols,
     );
-    if (viaView != null) return [for (final r in viaView) _withFullName(r)];
+    if (viaView != null && viaView.isNotEmpty) return [for (final r in viaView) _withFullName(r)];
 
-    final rows = await supabaseSelect('students', filters: idFilter, columns: _portalStudentCols) ?? const [];
-    return [for (final r in rows) _withFullName(r)];
+    final rows = await supabaseSelect('students', filters: idFilter, columns: _portalStudentCols);
+    if (rows != null) return [for (final r in rows) _withFullName(r)];
+    return viaView == null ? null : const [];
   }
 
   /// بحث أسماء طلاب بمعرّفاتهم — لسجل التقييمات حين يغيب الطالب عن كشف الشعبة الحالية.
   Future<Map<String, String>> studentNamesByIds(Set<String> ids, String tenantId) async {
     final clean = {for (final id in ids) if (id.trim().isNotEmpty) id.trim()};
     if (clean.isEmpty) return const {};
-    final rows = await _portalStudentRows(clean, {'tenant_id': 'eq.$tenantId'});
+    final rows = await _portalStudentRows(clean, {'tenant_id': 'eq.$tenantId'}) ?? const [];
     return {
       for (final r in rows)
         if ('${r['id']}'.isNotEmpty)
@@ -1305,6 +1342,10 @@ class PortalService {
     List<Map<String, dynamic>> at(int i) =>
         (results[i] as List<Map<String, dynamic>>?) ?? const <Map<String, dynamic>>[];
 
+    // عمود الردّ: المجموعات والشعب. سقوط أيٍّ منهما يعني أن السحابة لم تُجب،
+    // فما يُبنى بعده ناقص ولا يصلح أن يُكتب فوق نسخة الجهاز.
+    var complete = results[2] != null && results[4] != null;
+
     final teacherYearId = () {
       final rows = at(5);
       if (rows.isEmpty) return null;
@@ -1327,16 +1368,18 @@ class PortalService {
     final rooms = {for (final r in at(4)) '${r['id']}': r};
 
     // طلاب التسجيلات فقط — عبر portal_students إن وُجدت (بلا PII)، وإلا أعمدة محدودة
-    final enrollments = groups.isEmpty
+    final enrollmentRows = groups.isEmpty
         ? const <Map<String, dynamic>>[]
-        : (await supabaseSelect('enrollments', filters: {'group_id': _inList(groups.map((g) => g.id))})) ??
-            const <Map<String, dynamic>>[];
+        : await supabaseSelect('enrollments', filters: {'group_id': _inList(groups.map((g) => g.id))});
+    if (enrollmentRows == null) complete = false;
+    final enrollments = enrollmentRows ?? const <Map<String, dynamic>>[];
     final enrolledIds = {
       for (final e in enrollments)
         if ('${e['status'] ?? 'active'}' == 'active') '${e['student_id']}',
     }..removeWhere((id) => id.isEmpty);
     final studentRows = await _portalStudentRows(enrolledIds, tenant);
-    var students = studentRows.map(Student.fromCloud).toList();
+    if (studentRows == null) complete = false;
+    var students = (studentRows ?? const <Map<String, dynamic>>[]).map(Student.fromCloud).toList();
 
     // المدرسة تُسند المادة للشعبة: الطلاب يُعرفون بشعبتهم لا بتسجيل كلٍّ منهم
     // في المادة. فيُجلب طلاب مراحل شعب المعلم دائماً، ويُطابَقون بالشعبة أدناه.
@@ -1347,8 +1390,9 @@ class PortalService {
     }..removeWhere((g) => g.isEmpty);
     if (gradesOfRooms.isNotEmpty) {
       final ofGrades = await _portalStudentsOfGrades(gradesOfRooms, tenant);
+      if (ofGrades == null) complete = false;
       final seen = {for (final s in students) s.id};
-      students = [...students, ...ofGrades.where((s) => !seen.contains(s.id))];
+      students = [...students, ...?ofGrades?.where((s) => !seen.contains(s.id))];
     }
     final byId = {for (final s in students) s.id: s};
 
@@ -1392,17 +1436,22 @@ class PortalService {
       ));
     }
 
+    final homerooms = await _homeroomClasses(teacherIds, tenant, teacherYearId, rooms);
+    if (homerooms == null) complete = false;
+
     return TeacherPortalData(
       branding: results[0] as PortalBranding,
       features: results[1] as Map<String, dynamic>?,
       classes: classes,
       subjects: subjects,
-      homerooms: await _homeroomClasses(teacherIds, tenant, teacherYearId, rooms),
+      homerooms: homerooms ?? const [],
+      complete: complete,
     );
   }
 
   /// شعب المربي وطلابها بتفاصيل التواصل وكلمات المرور — بلا حقول مالية.
-  Future<List<HomeroomClass>> _homeroomClasses(
+  /// `null` = لم تُجب السحابة عن طلاب الشعب.
+  Future<List<HomeroomClass>?> _homeroomClasses(
     Set<String> teacherIds,
     Map<String, String> tenant,
     String? teacherYearId,
@@ -1431,12 +1480,15 @@ class PortalService {
 
     // جلب الطلاب: جدول students قد يرجع [] بسبب RLS للمعلم (نجاح بلا صفوف)
     // فلا نكتفي بـ ?? — إن فرغ نجرّب portal_students ثم بدون فلتر مرحلة.
+    // أجابت السحابة ولو مرة واحدة؟ لو لم تُجب قط فالشبكة مقطوعة، لا الشعبة خالية.
+    var answered = false;
     Future<List<Map<String, dynamic>>> fetch({
       required String table,
       required String columns,
       Map<String, String> extra = const {},
     }) async {
       final rows = await supabaseSelect(table, filters: {...tenant, ...extra}, columns: columns);
+      if (rows != null) answered = true;
       return rows ?? const [];
     }
 
@@ -1454,6 +1506,7 @@ class PortalService {
         rows = await fetch(table: 'students', columns: _homeroomStudentCols);
       }
     }
+    if (!answered) return null;
 
     final students = [for (final r in rows) Student.fromCloud(_withFullName(r))];
     final out = <HomeroomClass>[];
@@ -1485,12 +1538,15 @@ class PortalService {
   /// تقييمات طالب واحد — لملف «صفي» عند المربي.
   Future<List<StudentEvaluation>> studentEvaluations(String studentId) async {
     if (studentId.isEmpty) return const [];
-    final rows = await supabaseSelect(
-      'student_evaluations',
-      filters: {'student_id': 'eq.$studentId'},
-      order: 'created_at.desc',
+    final rows = await _must(
+      'تقييمات الطالب',
+      supabaseSelect(
+        'student_evaluations',
+        filters: {'student_id': 'eq.$studentId'},
+        order: 'created_at.desc',
+      ),
     );
-    return [for (final r in rows ?? const <Map<String, dynamic>>[]) StudentEvaluation.fromCloud(r)];
+    return [for (final r in rows) StudentEvaluation.fromCloud(r)];
   }
 
   /// ملخص حضور طالب على أيام معلومة.
@@ -1501,17 +1557,19 @@ class PortalService {
   }) async {
     if (studentId.isEmpty || roomId.isEmpty || dates.isEmpty) return {};
     final sessionIds = {for (final d in dates) PortalService.roomSessionIdFor(roomId, d)};
-    final rows = await supabaseSelect(
-      'attendance',
-      filters: {
-        'session_id': 'in.(${sessionIds.join(',')})',
-        'student_id': 'eq.$studentId',
-      },
-      columns: 'session_id,status',
+    final rows = await _must(
+      'حضور الطالب',
+      supabaseSelect(
+        'attendance',
+        filters: {
+          'session_id': 'in.(${sessionIds.join(',')})',
+          'student_id': 'eq.$studentId',
+        },
+        columns: 'session_id,status',
+      ),
     );
     final bySession = {
-      for (final r in rows ?? const <Map<String, dynamic>>[])
-        '${r['session_id']}': '${r['status'] ?? ''}',
+      for (final r in rows) '${r['session_id']}': '${r['status'] ?? ''}',
     };
     return {
       for (final d in dates)
@@ -1555,14 +1613,17 @@ class PortalService {
       for (final r in roomIds) roomSessionIdFor(r, date),
     };
 
-    final rows = await supabaseSelect(
-      'attendance',
-      filters: {'session_id': 'in.(${sessionIds.join(',')})'},
-      columns: 'session_id,student_id,status,updated_at,notes',
+    final rows = await _must(
+      'رصد اليوم',
+      supabaseSelect(
+        'attendance',
+        filters: {'session_id': 'in.(${sessionIds.join(',')})'},
+        columns: 'session_id,student_id,status,updated_at,notes',
+      ),
     );
 
     final chosen = <String, Map<String, dynamic>>{};
-    for (final rec in rows ?? const <Map<String, dynamic>>[]) {
+    for (final rec in rows) {
       final studentId = '${rec['student_id'] ?? ''}';
       if (!roomOf.containsKey(studentId)) continue;
       final sessionId = '${rec['session_id'] ?? ''}';
@@ -1601,18 +1662,20 @@ class PortalService {
   Future<Map<String, Map<String, String>>> weekAttendance(String roomId, List<String> dates) async {
     if (roomId.isEmpty || dates.isEmpty) return {};
 
-    final sessions = await supabaseSelect(
-      'sessions',
-      filters: {
-        'room_id': 'eq.$roomId',
-        'session_date': 'in.(${dates.join(',')})',
-      },
-      columns: 'id,session_date',
+    final sessions = await _must(
+      'حصص الأسبوع',
+      supabaseSelect(
+        'sessions',
+        filters: {
+          'room_id': 'eq.$roomId',
+          'session_date': 'in.(${dates.join(',')})',
+        },
+        columns: 'id,session_date',
+      ),
     );
 
     final dateOf = <String, String>{
-      for (final r in sessions ?? const <Map<String, dynamic>>[])
-        '${r['id']}': '${r['session_date'] ?? ''}'.split('T').first,
+      for (final r in sessions) '${r['id']}': '${r['session_date'] ?? ''}'.split('T').first,
     };
     if (dateOf.isEmpty) return {};
 
@@ -1722,8 +1785,11 @@ class PortalService {
 
   /// تقييمات شعبة، الأحدث أولاً — `getEvaluationsByGroup`.
   Future<List<StudentEvaluation>> groupEvaluations(String groupId) async {
-    final rows = await supabaseSelect('student_evaluations', filters: {'group_id': 'eq.$groupId'});
-    return (rows ?? const <Map<String, dynamic>>[]).map(StudentEvaluation.fromCloud).toList()
+    final rows = await _must(
+      'درجات المادة',
+      supabaseSelect('student_evaluations', filters: {'group_id': 'eq.$groupId'}),
+    );
+    return rows.map(StudentEvaluation.fromCloud).toList()
       ..sort((a, b) => b.evaluationDate.compareTo(a.evaluationDate));
   }
 
@@ -1764,8 +1830,11 @@ class PortalService {
     }
     if (!includeHidden) filters['is_visible'] = 'eq.true';
 
-    final rows = await supabaseSelect('course_sections', filters: filters, order: 'sort_order.asc,created_at.asc');
-    if (rows == null || rows.isEmpty) return const [];
+    final rows = await _must(
+      'وحدات المادة',
+      supabaseSelect('course_sections', filters: filters, order: 'sort_order.asc,created_at.asc'),
+    );
+    if (rows.isEmpty) return const [];
     var sections = rows.map(CourseSection.fromCloud).toList();
     if (roomId != null && roomId.isNotEmpty) {
       sections = [for (final s in sections) if (sectionVisibleToRoom(s, roomId)) s];

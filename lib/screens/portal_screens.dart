@@ -787,6 +787,9 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   bool loading = true;
 
   String tab = 'class';
+
+  /// هل اختيرت تبويبة الافتتاح؟ تُختار مرة واحدة، ثم لا تُنتزع من يد المعلم.
+  bool _tabPicked = false;
   String groupId = '';
 
   /// الرصد يمشي كالويب: الصف ← الشعبة ← المادة، لا اختيار مجموعة مباشرةً.
@@ -996,6 +999,14 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   void _applyTeacherData(TeacherPortalData result, {required bool fromCache}) {
     final tabs = teacherPortalTabs(resolveFeatures(result.features));
     if (tabs.isNotEmpty && !tabs.contains(tab)) tab = tabs.first;
+    // «صفي» لا تصلح افتتاحاً لمن ليس مربياً: يفتح بوابته على رسالة «لست مربياً»
+    // وكأن لا صفوف له. تُفتح أول تبويبة فيها عمل.
+    if (!_tabPicked) {
+      _tabPicked = true;
+      if (tab == 'class' && result.homerooms.isEmpty) {
+        tab = tabs.firstWhere((t) => t != 'class', orElse: () => tab);
+      }
+    }
     if (result.classes.every((c) => c.group.id != groupId)) {
       groupId = result.classes.isEmpty ? '' : result.classes.first.group.id;
     }
@@ -1036,6 +1047,19 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
 
     try {
       final result = await _service.teacherData(widget.user).timeout(_cloudTimeout);
+      // ردّ ناقص والجهاز يحمل نسخة: نسخة الجهاز أوثق. عرضها بدل الردّ الفارغ
+      // يمنع اختفاء الصفوف والطلاب لحظةَ انقطاع الشبكة.
+      if (!result.complete) {
+        if (!mounted) return;
+        final haveCopy = cached != null || data != null;
+        setState(() {
+          offline = true;
+          loading = false;
+          if (!haveCopy) error = 'تعذّر الاتصال بالسحابة.';
+          pendingOps = _offline.pendingCountOf(widget.user.id);
+        });
+        return;
+      }
       await _offline.saveTeacherData(result);
       if (!mounted) return;
       setState(() => _applyTeacherData(result, fromCache: false));
@@ -4298,10 +4322,10 @@ class _AttendanceClassSheetState extends State<_AttendanceClassSheet> {
               runSpacing: 6,
               children: [
                 for (final g in widget.grades)
-                  ChoiceChip(
-                    label: Text(g, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                  SheetChoiceChip(
+                    label: g,
                     selected: g == grade,
-                    onSelected: (_) => setState(() => grade = g),
+                    onTap: () => setState(() => grade = g),
                   ),
               ],
             ),
