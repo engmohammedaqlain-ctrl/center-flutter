@@ -678,6 +678,9 @@ class AppUpdater extends ChangeNotifier {
   /// للتو إن فُتح التطبيق قبل ساعات، فيبقى الجهاز على نسخة قديمة بلا تنبيه.
   /// لا يُرفع [loaded] إلا بعد الفحص (أو مهلة قصيرة) حتى لا تُفتح جلسة محفوظة
   /// فوق تحديث إلزامي — وبلا نت تُفتح البوابة من المحفوظ دون انتظار.
+  ///
+  /// التحديث الصامت يُفحص في الخلفية بعد فتح البوابة: لا يعلّق الإقلاع على
+  /// Shorebird، ويُنزَّل إن وُجد ثم يُطبَّق عند الفتح التالي.
   Future<void> start() => _starting ??= () async {
         if (!supported) return;
         try {
@@ -692,6 +695,8 @@ class AppUpdater extends ChangeNotifier {
           } catch (_) {
             // بلا نت أو فشل: نفتح بما في المحفوظ؛ الفحص يُعاد عند العودة للواجهة
           }
+          // خلفية: لا await حتى لا تُعلّق بوابة الإقلاع على تنزيل الـ patch
+          unawaited(checkPatch());
         } finally {
           _bootCheckDone = true;
           notifyListeners();

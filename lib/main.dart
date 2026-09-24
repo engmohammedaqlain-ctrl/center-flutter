@@ -221,10 +221,11 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     updater.inForeground = state == AppLifecycleState.resumed;
     if (state != AppLifecycleState.resumed) return;
-    // فحص تحديث صامت عند العودة — يحترم الفاصل، ويكشف إصداراً نُشر أثناء الغياب
+    // فحص بناء APK وتحديث صامت عند العودة — كلٌّ يحترم فاصلة، ويكشف ما نُشر أثناء الغياب
     unawaited(updater.check(silent: true).then((_) {
       if (mounted) _maybePrompt();
     }));
+    unawaited(updater.checkPatch());
     final store = AppStore.instance;
     if (!store.loggedIn || store.isMasterAdmin || !store.networkEnabled) return;
     if (store.autoSync) {

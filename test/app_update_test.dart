@@ -831,6 +831,24 @@ void main() {
   group('التحديث الصامت', () {
     setUp(() => SharedPreferences.setMockInitialValues({}));
 
+    test('الإقلاع ينزّل التحديث الصامت تلقائياً بلا فتح الورقة', () async {
+      final dir = await _tempDir();
+      final patches = _FakePatches([PatchStatus.available]);
+      final updater = _updater(dir: dir, client: _offline(), patches: patches);
+      final seen = <PatchPhase>[];
+      updater.addListener(() {
+        if (seen.isEmpty || seen.last != updater.patchPhase) seen.add(updater.patchPhase);
+      });
+
+      await updater.start();
+      // start يطلق checkPatch في الخلفية — ننتظر نفس العملية
+      await updater.checkPatch();
+
+      expect(seen, containsAllInOrder([PatchPhase.downloading, PatchPhase.ready]));
+      expect(patches.downloads, 1);
+      expect(patches.checks, 1);
+    });
+
     test('تحديثٌ متاح يُنزَّل في الخلفية ثم ينتظر فتح التطبيق التالي', () async {
       final dir = await _tempDir();
       final patches = _FakePatches([PatchStatus.available]);
@@ -875,6 +893,24 @@ void main() {
       await updater.checkPatch(force: true);
       expect(updater.patchPhase, PatchPhase.ready, reason: 'إعادة المحاولة بعد الفشل');
       expect(patches.downloads, before + 1, reason: 'محاولة واحدة عند الإعادة');
+    });
+
+    test('فاصل الثلاثين دقيقة يمنع إعادة الفحص التلقائي', () async {
+      var now = DateTime.utc(2026, 1, 1, 12);
+      final dir = await _tempDir();
+      final patches = _FakePatches([PatchStatus.upToDate]);
+      final updater = _updater(dir: dir, client: _offline(), patches: patches, clock: () => now);
+
+      await updater.start();
+      await updater.checkPatch();
+      expect(patches.checks, 1);
+
+      await updater.checkPatch();
+      expect(patches.checks, 1, reason: 'قبل انتهاء الفاصل لا يُعاد الفحص');
+
+      now = now.add(AppUpdater.patchCheckEvery);
+      await updater.checkPatch();
+      expect(patches.checks, 2, reason: 'بعد الفاصل يُفحص مجدداً');
     });
 
     test('لا تحديث صامت: لا شيء يُعرض', () async {
