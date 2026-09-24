@@ -95,14 +95,16 @@ class _MoodleAdminScreenState extends State<MoodleAdminScreen> {
   }
 
   Future<void> _toggle(CourseSection sec) async {
+    final next = !sec.isVisible;
     try {
-      await _service.setSectionVisible(sec.id, !sec.isVisible);
+      await _service.setSectionVisible(sec.id, next);
       if (!mounted) return;
       setState(() {
         sections = [
-          for (final s in sections) s.id == sec.id ? s.copyWith(isVisible: !sec.isVisible) : s,
+          for (final s in sections) s.id == sec.id ? s.copyWith(isVisible: next) : s,
         ];
       });
+      showAppSnack(context, next ? 'الوحدة ظاهرة للطلاب' : 'الوحدة مخفية عن الطلاب');
     } catch (_) {
       if (mounted) showAppSnack(context, 'تعذّر تغيير الإظهار', error: true);
     }

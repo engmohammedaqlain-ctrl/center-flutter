@@ -1791,7 +1791,10 @@ class PortalService {
   Future<void> saveItem(CourseItem item) => supabaseUpsert('course_items', [item.toCloud()]);
 
   Future<void> setSectionVisible(String sectionId, bool visible) =>
-      supabaseUpdate('course_sections', {'id': 'eq.$sectionId'}, {'is_visible': visible});
+      supabaseUpdate('course_sections', {'id': 'eq.$sectionId'}, {
+        'is_visible': visible,
+        'updated_at': _nowIso(),
+      });
 
   /// حذف وحدة وملفات موادها غير المشتركة مع شعب أخرى.
   Future<void> deleteSection(CourseSection section, String tenantId) async {
@@ -1871,7 +1874,9 @@ class PortalService {
       fileName: draft.fileName,
       fileSize: draft.fileSize,
       description: draft.description.trim(),
-      dueDate: draft.type == 'assignment' ? draft.dueDate : '',
+      dueDate: draft.type == 'assignment'
+          ? (draft.dueDate.trim().isEmpty ? isoDate(DateTime.now()) : draft.dueDate.trim())
+          : '',
       sortOrder: draft.sortOrder,
       createdAt: _nowIso(),
     );

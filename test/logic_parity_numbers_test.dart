@@ -155,4 +155,51 @@ void main() {
       expect(p.totalDueAtPayment, 100);
     });
   });
+
+  group('رفض الدفعة المقدمة', () {
+    test('يرفض مبلغاً أكبر من المستحق والمجدول', () {
+      final s = AppStore.forTesting();
+      injectDemoData(s);
+      final student = s.students.firstWhere((stu) => stu.status == 'active');
+      s.installments.removeWhere((i) => i.studentId == student.id);
+      final past = DateTime.now().subtract(const Duration(days: 10));
+      final future = DateTime.now().add(const Duration(days: 40));
+      s.installments.addAll([
+        Installment(
+          id: 'due1',
+          studentId: student.id,
+          title: 'مستحق',
+          amount: 200,
+          dueDate: past,
+          academicYearId: s.viewedAcademicYearId,
+        ),
+        Installment(
+          id: 'sch1',
+          studentId: student.id,
+          title: 'مجدول',
+          amount: 300,
+          dueDate: future,
+          academicYearId: s.viewedAcademicYearId,
+        ),
+      ]);
+      student.balance = s.computeStudentBalance(student.id);
+
+      expect(
+        () => s.addPayment(
+          studentId: student.id,
+          amount: 600,
+          method: 'cash',
+          date: DateTime.now(),
+        ),
+        throwsA(isA<StoreException>().having((e) => e.message, 'msg', contains('المستحق والمجدول'))),
+      );
+      final ok = s.addPayment(
+        studentId: student.id,
+        amount: 500,
+        method: 'cash',
+        date: DateTime.now(),
+      );
+      expect(ok.amount, 500);
+    });
+  });
 }

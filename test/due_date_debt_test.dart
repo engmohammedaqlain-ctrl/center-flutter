@@ -7,6 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 AppStore _seeded() {
   final s = AppStore.forTesting();
   injectDemoData(s);
+  s.loadedTables
+    ..add('students')
+    ..addAll(AppStore.deferredTables);
   return s;
 }
 

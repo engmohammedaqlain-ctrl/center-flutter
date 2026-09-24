@@ -1251,6 +1251,18 @@ class _ContentTile extends StatelessWidget {
                   ),
                 ),
               ],
+              if (item.type == 'assignment' && item.dueDate.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'تاريخ التسليم: ${portalDayLabel(item.dueDate)}${item.isOverdue() ? ' (منتهٍ)' : ''}',
+                  style: TextStyle(
+                    fontFamily: AppText.family,
+                    color: item.isOverdue() ? AppColors.danger : const Color(0xFF2E7D57),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
               if (showImage)
                 PortalInlineImage(url: item.contentUrl, fileName: item.fileName, service: service),
             ],

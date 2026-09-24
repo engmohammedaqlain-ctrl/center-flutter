@@ -6,7 +6,17 @@ import 'package:flutter_test/flutter_test.dart';
 AppStore seeded() {
   final s = AppStore.forTesting();
   injectDemoData(s);
+  // recalculateAllBalances وغيره يشترط جداول محمّلة
+  s.loadedTables
+    ..add('students')
+    ..addAll(AppStore.deferredTables);
   return s;
+}
+
+/// طالب عليه أقساط مفتوحة — بعد رفض الدفعة المقدمة لا تُقبل دفعة على من رصيده خالص.
+Student debtorStudent(AppStore s) {
+  final unpaid = s.installments.firstWhere((i) => i.remaining > 0.005);
+  return s.studentById(unpaid.studentId)!;
 }
 
 void main() {
@@ -30,7 +40,7 @@ void main() {
 
     test('serials never restart below 1001 and never collide locally', () {
       final s = seeded();
-      final student = s.students.first;
+      final student = debtorStudent(s);
       final issued = <String>{};
       for (var i = 0; i < 5; i++) {
         final p = s.addPayment(studentId: student.id, amount: 5, method: 'cash', date: DateTime.now());
@@ -72,7 +82,7 @@ void main() {
       final code = await s.deviceReceiptCode();
       expect(code, isNotEmpty);
       expect(RegExp(r'^[A-Z]{1,3}$').hasMatch(code), isTrue);
-      final student = s.students.first;
+      final student = debtorStudent(s);
       final p = s.addPayment(studentId: student.id, amount: 5, method: 'cash', date: DateTime.now());
       expect(p.receiptNumber.startsWith('$code-'), isTrue);
       expect(await s.deviceReceiptCode(), code, reason: 'الرمز ثابت للجهاز');
@@ -170,7 +180,7 @@ void main() {
       final cashier = s.users.last;
       await s.setDeviceIdentity(cashier, 'أمين الصندوق');
       final p = s.addPayment(
-        studentId: s.students.first.id,
+        studentId: debtorStudent(s).id,
         amount: 20,
         method: 'cash',
         date: DateTime.now(),
@@ -183,7 +193,7 @@ void main() {
     test('a payment can be linked to a group', () {
       final s = seeded();
       final p = s.addPayment(
-        studentId: s.students.first.id,
+        studentId: debtorStudent(s).id,
         amount: 20,
         method: 'cash',
         date: DateTime.now(),
@@ -207,7 +217,7 @@ void main() {
 
     test('cancelling twice does not double-revert the balance', () {
       final s = seeded();
-      final student = s.students.first;
+      final student = debtorStudent(s);
       final p = s.addPayment(studentId: student.id, amount: 30, method: 'cash', date: DateTime.now());
       final afterPay = student.balance;
       s.cancelPayment(p);

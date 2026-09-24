@@ -38,7 +38,7 @@ void main() {
     final s = await _store();
     final student = s.students.first;
     // مبلغ لا يتكرّر في سنداته: الباحث بالنص يجب أن يقع على بلاطة واحدة
-    final payment = s.addPayment(studentId: student.id, amount: 1234.5, method: 'cash', date: DateTime.now());
+    final payment = s.addPayment(studentId: student.id, amount: 17.5, method: 'cash', date: DateTime.now());
 
     await _pump(tester, s, student.id);
     // البطاقات مطوية: تُفتح بالضغط على عنوانها (الدفعات N)

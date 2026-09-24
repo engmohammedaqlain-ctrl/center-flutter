@@ -1537,10 +1537,17 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     final next = !sec.isVisible;
     setState(() => sections = [for (final s in sections) s.id == sec.id ? s.copyWith(isVisible: next) : s]);
     await _cacheSections();
-    await _writeOrQueue(
+    final sent = await _writeOrQueue(
       () => _service.setSectionVisible(sec.id, next),
       {'kind': 'section_visible', 'id': sec.id, 'visible': next},
+      announceTables: const ['course_sections'],
     );
+    if (!mounted) return;
+    if (sent) {
+      _flash(next ? 'الوحدة ظاهرة للطلاب' : 'الوحدة مخفية عن الطلاب');
+    } else {
+      _flash('حُفظ الإظهار محلياً، سيُرفع عند عودة الاتصال');
+    }
   }
 
   /// حفظ وحدات الفصل المعروضة على الجهاز بعد كل تعديل.
@@ -3577,6 +3584,9 @@ class _NewItemSheetState extends State<_NewItemSheet> {
       }
       // تُبنى بمعرّفها هنا: المادة النصية والرابط والواجب تُنشأ بلا شبكة،
       // ويتولّى الرفع من فتح الورقة. الملف وحده يلزمه اتصال لرفع بايتاته.
+      // تاريخ التسليم: إن لم يختر المعلم يوماً نستخدم المعروض (اليوم) لا فراغاً.
+      final resolvedDue =
+          type == 'assignment' ? (dueDate.isEmpty ? isoDate(DateTime.now()) : dueDate) : '';
       final item = CourseItem(
         id: const Uuid().v4(),
         tenantId: widget.tenantId,
@@ -3588,7 +3598,7 @@ class _NewItemSheetState extends State<_NewItemSheet> {
         fileName: uploadedName,
         fileSize: size,
         description: description.text,
-        dueDate: dueDate,
+        dueDate: resolvedDue,
         sortOrder: widget.section.items.length,
         createdAt: DateTime.now().toIso8601String(),
       );
@@ -3626,6 +3636,10 @@ class _NewItemSheetState extends State<_NewItemSheet> {
           onChanged: (v) => setState(() {
             type = v ?? type;
             error = null;
+            // العرض يظهر اليوم افتراضياً؛ نحفظه حتى لا يُرفع الواجب بلا تاريخ
+            if (type == 'assignment' && dueDate.isEmpty) {
+              dueDate = isoDate(DateTime.now());
+            }
           }),
         ),
         const SizedBox(height: 12),
