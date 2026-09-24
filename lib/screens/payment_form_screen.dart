@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../data/arabic_search.dart';
 import '../data/balance.dart';
 import '../data/payment_methods.dart';
 import '../data/store.dart';
@@ -400,9 +401,15 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
         final unpaid = store.studentsInViewedYear.where((s) {
           // البحث يشمل الجميع: الدفع المقدَّم يقبضه من لا ذمة عليه
           if (q.isNotEmpty) {
-            return s.fullName.contains(q) ||
-                s.phone.contains(q) ||
-                s.parentPhone.contains(q) ||
+            return matchStudentSearch(
+                  fullName: s.fullName,
+                  query: q,
+                  phone: s.phone,
+                  parentPhone: s.parentPhone,
+                  nationalId: s.nationalId,
+                  parentName: s.parentName,
+                  parentNationalId: s.parentNationalId,
+                ) ||
                 s.gradeLevel.contains(q);
           }
           final isUnpaid =

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../data/academic_matching.dart';
+import '../data/arabic_search.dart';
 import '../data/backup.dart';
 import '../data/permissions.dart';
 import '../data/phone.dart';
@@ -1062,16 +1063,22 @@ Future<List<String>?> showFeeStudentsSheet(
     backgroundColor: Colors.white,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setSt) {
-        final q = search.text.trim().toLowerCase();
+        final q = search.text.trim();
         final all = store.students.where((s) => s.status == 'active').toList();
-        // بالاسم أو الهوية كما تفلتر شاشة الطلاب
+        // بالاسم أو الهوية كما تفلتر شاشة الطلاب / FeeStudentsModal
         final shown = q.isEmpty
             ? all
             : all
                   .where(
-                    (s) =>
-                        s.fullName.toLowerCase().contains(q) ||
-                        s.nationalId.contains(q),
+                    (s) => matchStudentSearch(
+                      fullName: s.fullName,
+                      query: q,
+                      phone: s.phone,
+                      parentPhone: s.parentPhone,
+                      nationalId: s.nationalId,
+                      parentName: s.parentName,
+                      parentNationalId: s.parentNationalId,
+                    ),
                   )
                   .toList();
         final page = listPage(shown, visibleCount);

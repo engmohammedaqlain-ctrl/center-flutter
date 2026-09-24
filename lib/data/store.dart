@@ -5224,17 +5224,20 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final stu = studentById(studentId);
     if (stu == null) throw StoreException('يرجى اختيار الطالب أولاً');
 
-    // المستحق وقت الدفع = ما حلّ موعده فقط — مطابق لـ PaymentForm `dueNow`
+    // المستحق وقت الدفع = ما حلّ موعده حتى تاريخ السند — مطابق لـ finance.service
     final dueNow =
         totalDueAtPayment ??
         (() {
           final own = installments.where((i) => i.studentId == studentId).toList();
           if (own.isEmpty) return stu.balance < 0 ? stu.balance.abs() : 0.0;
+          final payDay = DateTime(date.year, date.month, date.day);
           var total = 0.0;
           for (final i in own) {
-            if (isInstallmentDue(i)) total += math.max(0.0, i.remaining);
+            if (isInstallmentDue(i, payDay)) {
+              total += math.max(0.0, chargeableAmount(i) - i.paidAmount);
+            }
           }
-          return total;
+          return (total * 100).round() / 100;
         })();
 
     // سند الحجز يُربط بقسط الحجز (أو أول قسط مفتوح) — كما في finance.service.ts

@@ -3,9 +3,10 @@
 /// بدل تخزين الرصيد رقماً جامداً يُعدَّل مع كل حركة — فيتضارب بين جهازين يعملان
 /// بلا اتصال ويفوز آخر من يصل السحابة — يُحسب دائماً من السجلات الأصلية:
 ///
-///   الرصيد = (مجموع السندات النشطة + خصوماتها) − (رسوم التسجيلات النشطة + الأقساط المطالَب بها)
+///   الرصيد = (مجموع السندات النشطة + خصوماتها) − الأقساط المطالَب بها
 ///
-/// القسط المعفى (`is_exempt`) لا يدخل المطالبة — `chargeableAmount` في الويب.
+/// الأقساط (ومنها المستحقات الشهرية ورسم الحجز) مصدر المطالبة الوحيد كالويب.
+/// القسط المعفى (`is_exempt`) لا يدخل المطالبة — `chargeableAmount`.
 library;
 
 import 'dart:math' as math;
@@ -193,21 +194,39 @@ Map<String, double> allocatePaymentsToInstallments(
   return paid;
 }
 
+/// مجاميع مجموعة أقساط — مطابق لـ `summarizeInstallments`.
+({double required, double paid, double remaining, double due}) summarizeInstallments(
+  Iterable<Installment> installments, [
+  DateTime? today,
+]) {
+  final day = today ?? startOfToday();
+  var required = 0.0;
+  var paid = 0.0;
+  var due = 0.0;
+  for (final i in installments) {
+    final charge = chargeableAmount(i);
+    required += charge;
+    paid += math.min(charge, i.paidAmount);
+    if (isInstallmentDue(i, day)) due += unpaidOf(i);
+  }
+  return (
+    required: required,
+    paid: paid,
+    remaining: math.max(0.0, required - paid),
+    due: due,
+  );
+}
+
 /// الرصيد من السجلات — مطابق لـ `balanceFrom` في الويب.
 ///
-/// في المدرسة تدخل **كل** الأقساط المطالَب بها (غير المعفاة) في الرصيد.
+/// [enrollments] مُتجاهَل عمداً: الويب لا يخصم رسوم التسجيل من الرصيد؛ بقي
+/// المعامل حتى لا تنكسر استدعاءات المتجر القديمة.
 double balanceFrom({
-  required Iterable<StudentEnrollment> enrollments,
+  Iterable<StudentEnrollment> enrollments = const [],
   required Iterable<Installment> installments,
   required Iterable<Payment> payments,
   DateTime? today,
 }) {
-  var enrollmentFees = 0.0;
-  for (final e in enrollments) {
-    if (e.status != 'active' && e.status != 'completed') continue;
-    enrollmentFees += e.appliedPrice ?? e.customPrice ?? 0;
-  }
-
   var installmentFees = 0.0;
   for (final i in installments) {
     installmentFees += chargeableAmount(i);
@@ -219,5 +238,5 @@ double balanceFrom({
     totalPaid += p.amount + p.discountAmount;
   }
 
-  return totalPaid - enrollmentFees - installmentFees;
+  return totalPaid - installmentFees;
 }

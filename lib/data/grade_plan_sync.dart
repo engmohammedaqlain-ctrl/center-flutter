@@ -378,10 +378,10 @@ class GradePlanSync {
           var consistent = true;
           if (inst.originalAmount != null) {
             final builtOn = inst.originalAmount!;
-            // الصفر قيمة محفوظة صحيحة: يعني أن القسط بُني بلا خصم طالب.
-            // اعتباره «مفقوداً» بعد تسجيل خصم جديد يجعل القسط يبدو تعديلاً حراً
-            // ويمنع إعادة تسعيره، خلاف حقل الويب nullable.
-            final appliedShare = inst.planDiscountShare;
+            // كالويب: حقل nullable — إن غاب نُعيد حساب حصة خصم الطالب وقتها.
+            // الصفر المحفوظ قيمة صحيحة (بُني بلا خصم)، فلا يُستبدل.
+            final appliedShare = inst.planDiscountShare ??
+                studentDiscountShare(builtOn, isoDate(inst.dueDate), discount);
             final rebuilt = _round2(
               builtOn - appliedShare - inst.seatDeduction - inst.discountAmount,
             );

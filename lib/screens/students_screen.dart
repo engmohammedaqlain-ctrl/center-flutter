@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/arabic_search.dart';
 import '../data/balance.dart';
 import '../data/store.dart';
 import '../models/models.dart';
@@ -191,11 +192,15 @@ class _StudentsScreenState extends State<StudentsScreen> {
                 }
                 if (customPlanOnly && !s.usesCustomPlan) return false;
                 if (q.isEmpty) return true;
-                return s.fullName.toLowerCase().contains(q) ||
-                    s.phone.contains(q) ||
-                    s.parentName.toLowerCase().contains(q) ||
-                    s.parentPhone.contains(q) ||
-                    s.nationalId.contains(q);
+                return matchStudentSearch(
+                  fullName: s.fullName,
+                  query: search.text,
+                  phone: s.phone,
+                  parentPhone: s.parentPhone,
+                  nationalId: s.nationalId,
+                  parentName: s.parentName,
+                  parentNationalId: s.parentNationalId,
+                );
               }).toList()
               ..sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
 

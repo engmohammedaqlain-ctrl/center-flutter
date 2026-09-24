@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../data/arabic_search.dart';
 import '../data/store.dart';
 import '../data/teacher_salary.dart';
 import '../models/models.dart';
@@ -761,7 +762,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
   ) {
     final dues = all.where((d) {
       final matchQ = q.isEmpty ||
-          d.student.fullName.toLowerCase().contains(q) ||
+          matchArabicName(d.student.fullName, q) ||
           d.student.phone.contains(q) ||
           d.title.toLowerCase().contains(q);
       return matchQ;
@@ -821,11 +822,11 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
     final periodPays = store.payments.where(inPeriod).toList();
     final pays = periodPays.where((p) {
-      final name = (store.studentById(p.studentId)?.fullName ?? '${p.payerName} ${p.incomeCategory}').toLowerCase();
+      final studentName = store.studentById(p.studentId)?.fullName ?? '${p.payerName} ${p.incomeCategory}';
       // البحث يشمل البيان والمحوِّل وجهة التحويل، كما في Finance.tsx
       final matchQ = q.isEmpty ||
           p.receiptNumber.toLowerCase().contains(q) ||
-          name.contains(q) ||
+          matchArabicName(studentName, q) ||
           p.reference.toLowerCase().contains(q) ||
           p.notes.toLowerCase().contains(q) ||
           p.senderName.toLowerCase().contains(q) ||

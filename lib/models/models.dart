@@ -1927,7 +1927,7 @@ class Installment {
     this.exemptReason = '',
     this.discountAmount = 0,
     this.discountReason = '',
-    this.planDiscountShare = 0,
+    this.planDiscountShare,
     this.seatDeduction = 0,
     this.academicYearId = '',
     this.status = 'unpaid',
@@ -1953,7 +1953,8 @@ class Installment {
 
   double discountAmount;
   String discountReason;
-  double planDiscountShare;
+  /// حصة خصم الطالب من سعر الخطة وقت البناء — `null` إن لم يُحفظ (سجلات قديمة).
+  double? planDiscountShare;
   double seatDeduction;
   String academicYearId;
 
@@ -2016,7 +2017,7 @@ class Installment {
     exemptReason: '${m['exempt_reason'] ?? ''}',
     discountAmount: (m['discount_amount'] as num?)?.toDouble() ?? 0,
     discountReason: '${m['discount_reason'] ?? ''}',
-    planDiscountShare: (m['plan_discount_share'] as num?)?.toDouble() ?? 0,
+    planDiscountShare: (m['plan_discount_share'] as num?)?.toDouble(),
     seatDeduction: (m['seat_deduction'] as num?)?.toDouble() ?? 0,
     academicYearId: '${m['academic_year_id'] ?? ''}',
     status: '${m['status'] ?? 'pending'}',
