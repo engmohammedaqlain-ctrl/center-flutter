@@ -464,6 +464,17 @@ Future<void> supabaseUpdate(String table, Map<String, String> filters, Map<Strin
   }
 }
 
+/// إدراج صفوف جديدة بلا دمج — لمن يملك صلاحية الإضافة وحدها (ولي الأمر يرسل
+/// طلب دفع ولا يعدّله)، فالدمج يحتاج صلاحية التعديل أيضاً.
+Future<void> supabaseInsert(String table, List<Map<String, dynamic>> rows) async {
+  await SupabaseAuth.ensureFresh();
+  final uri = Uri.parse('${SupabaseConfig.url}/rest/v1/$table');
+  final res = await http.post(uri, headers: SupabaseConfig.headers, body: jsonEncode(rows));
+  if (res.statusCode >= 400) {
+    throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
+  }
+}
+
 /// كـ [supabaseUpdate] لكنه يعيد عدد الصفوف التي مسّها التعديل فعلاً.
 ///
 /// الصلاحيات (RLS) لا ترفض التعديل بخطأ بل تتجاهل الصف بصمت: صفر صفوف يعني أن

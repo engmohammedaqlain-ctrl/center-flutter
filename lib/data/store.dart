@@ -237,6 +237,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     'student_evaluations': [],
     'class_announcements': [],
     'finance_attachments': [],
+    'payment_requests': [],
   };
   final attachmentsByStudent = <String, StudentAttachments>{};
 
@@ -1462,6 +1463,143 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       amount: request.amount,
       reason: note,
     );
+  }
+
+  // ── طلبات الدفع من ولي الأمر (المقابل لـ paymentRequests.service.ts) ──────
+  //
+  // البوابة تكتب في السحابة مباشرة، وتصل الطلبات أجهزة المدرسة بالسحب العادي.
+  // الموافقة والرفض فعل موظف فيمرّان بالطابور كأي كتابة.
+
+  static const paymentRequestsBucket = 'payment-requests';
+
+  /// صور الطلبات بعد تنزيلها مرة: لا تُنزَّل ثانية في الجلسة نفسها.
+  final _requestImages = <String, String>{};
+
+  List<Map<String, dynamic>> get _paymentRequestRows => extraCloud.putIfAbsent('payment_requests', () => []);
+
+  /// كل الطلبات، الأحدث أولاً.
+  List<PaymentRequest> get paymentRequests =>
+      _paymentRequestRows.map(PaymentRequest.fromCloud).toList()..sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
+
+  List<PaymentRequest> get pendingPaymentRequests => [for (final r in paymentRequests) if (r.status == 'pending') r];
+
+  /// صور الطلب: تُنزَّل عند فتحه وحده، كإشعارات السندات. `null` لما تعذّر تنزيله.
+  Future<List<String?>> paymentRequestImages(PaymentRequest request) async {
+    if (!networkEnabled) return [for (final p in request.imagePaths) _requestImages[p]];
+    return Future.wait([
+      for (final path in request.imagePaths)
+        () async {
+          final cached = _requestImages[path];
+          if (cached != null) return cached;
+          final file = await storageDownload(paymentRequestsBucket, path);
+          if (file == null) return null;
+          final data = 'data:${file.mime};base64,${base64Encode(file.bytes)}';
+          _requestImages[path] = data;
+          return data;
+        }(),
+    ]);
+  }
+
+  PaymentRequest _pendingPaymentRequest(String id) {
+    final row = _paymentRequestRows.where((r) => '${r['id']}' == id).firstOrNull;
+    if (row == null) throw StoreException('الطلب غير موجود');
+    final request = PaymentRequest.fromCloud(row);
+    if (request.status != 'pending') throw StoreException('الطلب محسوم مسبقاً');
+    return request;
+  }
+
+  void _writePaymentRequestDecision(PaymentRequest request) {
+    final row = {...request.toCloud(), 'sync_status': 'pending'};
+    _paymentRequestRows
+      ..removeWhere((r) => '${r['id']}' == request.id)
+      ..add(row);
+    _queue('payment_requests', request.id, 'UPDATE', request.toCloud());
+    markDirty('payment_requests');
+  }
+
+  /// الموافقة: سند قبض عادي بما في الطلب، فيُحسب للطالب كأي دفعة ويظهر في سجل
+  /// المقبوضات، وأول صورة تصير إشعاره. للموظف أن يصحح المبلغ إن قرأه من الإشعار
+  /// مختلفاً. يعيد السند الصادر.
+  Future<Payment> approvePaymentRequest(String id, {double? amount, String? method}) async {
+    requireFinanceAction('finance.collect');
+    var request = _pendingPaymentRequest(id);
+    if (studentById(request.studentId) == null) {
+      throw StoreException('الطالب غير موجود على هذا الجهاز، زامن ثم أعد المحاولة');
+    }
+    final value = ((amount ?? request.amount) * 100).round() / 100;
+    if (!(value > 0)) throw StoreException('المبلغ غير صحيح');
+    final payMethod = (method ?? '').isNotEmpty
+        ? method!
+        : (request.paymentMethod.isNotEmpty ? request.paymentMethod : 'bank_transfer');
+
+    final images = await paymentRequestImages(request);
+    final firstImage = images.whereType<String>().firstOrNull;
+    // قد يكون حسمه جهاز آخر أثناء تنزيل الصورة
+    request = _pendingPaymentRequest(id);
+
+    final payment = addPayment(
+      studentId: request.studentId,
+      amount: value,
+      method: payMethod,
+      date: DateTime.now(),
+      purpose: 'دفعة عامة',
+      notes: ['طلب من بوابة ولي الأمر', if (request.notes.isNotEmpty) request.notes].join(' — '),
+      reference: request.referenceNumber,
+      senderName: request.senderName,
+      channel: request.transferChannel.isNotEmpty ? request.transferChannel : paymentMethodLabel(payMethod),
+      transferDate: request.transferDate,
+      allowAdvance: true,
+    );
+    if (firstImage != null) unawaited(saveFinanceAttachment(payment.id, 'payment', firstImage));
+
+    final now = _nowIso();
+    request
+      ..status = 'approved'
+      ..paymentId = payment.id
+      ..decidedById = currentUserId
+      ..decidedByName = deviceUser?.name ?? receiptReceiver
+      ..decidedAt = now
+      ..updatedAt = now;
+    _writePaymentRequestDecision(request);
+
+    final changed = (value - request.amount).abs() > cent ? ' (الطلب ${money(request.amount)})' : '';
+    _recordFinanceAudit(
+      action: 'payment_request_approved',
+      summary: 'قبول دفعة ولي أمر ${money(value)}$changed — سند ${payment.receiptNumber}',
+      studentId: request.studentId,
+      entityId: request.id,
+      amount: value,
+    );
+    notifyListeners();
+    return payment;
+  }
+
+  /// الرفض بسبب مكتوب يخبر ولي الأمر ماذا يصلح؛ القاعدة ترفض الأقصر أيضاً.
+  void rejectPaymentRequest(String id, String reason) {
+    requireFinanceAction('finance.collect');
+    final clean = reason.trim();
+    if (clean.length < minRejectionReason) {
+      throw StoreException('اكتب سبباً واضحاً للرفض يفهمه ولي الأمر');
+    }
+    final request = _pendingPaymentRequest(id);
+    final now = _nowIso();
+    request
+      ..status = 'rejected'
+      ..rejectionReason = clean
+      ..decidedById = currentUserId
+      ..decidedByName = deviceUser?.name ?? receiptReceiver
+      ..decidedAt = now
+      ..updatedAt = now;
+    _writePaymentRequestDecision(request);
+    _recordFinanceAudit(
+      action: 'payment_request_rejected',
+      summary: 'رفض دفعة ولي أمر ${money(request.amount)}',
+      studentId: request.studentId,
+      entityId: request.id,
+      amount: request.amount,
+      reason: clean,
+    );
+    notifyListeners();
   }
 
   void _executeFinanceRequest(FinanceRequest request) {
@@ -5222,6 +5360,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     String discountReason = '',
     double? originalAmount,
     double? totalDueAtPayment,
+    // دفعة ولي أمر قبلتها المالية: حُوّلت فعلاً، فالزائد عن المستحق رصيد له لا رفض
+    bool allowAdvance = false,
   }) {
     requireFinanceAction('finance.collect');
     final disc = discountAmount < 0 ? 0.0 : discountAmount;
@@ -5241,7 +5381,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
     // لا دفعة مقدمة من نموذج القبض: المبلغ ≤ المستحق + المجدول (أو ذمة بلا أقساط)
     final ownForCap = installments.where((i) => i.studentId == studentId).toList();
-    if (ownForCap.isNotEmpty) {
+    if (allowAdvance) {
+      // لا سقف
+    } else if (ownForCap.isNotEmpty) {
       final buckets = dueAndScheduled(ownForCap, fallbackBalance: stu.balance, today: DateTime(date.year, date.month, date.day));
       final maxPayable = ((buckets.due + buckets.scheduled) * 100).round() / 100;
       if (totalSettled > maxPayable + cent) {

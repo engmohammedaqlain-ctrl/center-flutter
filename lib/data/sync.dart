@@ -216,6 +216,28 @@ const tableAllowedColumns = <String, List<String>>{
     'created_at',
     'updated_at',
   ],
+  'payment_requests': [
+    'id',
+    'student_id',
+    'student_name',
+    'amount',
+    'sender_name',
+    'payment_method',
+    'transfer_channel',
+    'transfer_date',
+    'reference_number',
+    'notes',
+    'image_paths',
+    'status',
+    'rejection_reason',
+    'decided_by_id',
+    'decided_by_name',
+    'decided_at',
+    'payment_id',
+    'tenant_id',
+    'created_at',
+    'updated_at',
+  ],
   'audit_log': [
     'id',
     'action',
@@ -439,6 +461,15 @@ const nonTextColumns = <String, List<String>>{
     'tenant_id',
     'updated_at',
   ],
+  'payment_requests': [
+    'amount',
+    'created_at',
+    'decided_at',
+    'image_paths',
+    'tenant_id',
+    'transfer_date',
+    'updated_at',
+  ],
   'grade_fees': [
     'created_at',
     'is_custom',
@@ -604,6 +635,7 @@ const tableLabelsAr = <String, String>{
   'class_announcements': 'إعلانات الصفوف',
   'student_evaluations': 'التقييمات والدرجات',
   'finance_requests': 'طلبات الموافقة',
+  'payment_requests': 'طلبات الدفع من أولياء الأمور',
   'audit_log': 'سجل الحركات المالية',
 };
 
@@ -636,6 +668,7 @@ const syncedTables = [
   'expenses',
   'audit_log',
   'finance_requests',
+  'payment_requests',
   'student_evaluations',
 ];
 
@@ -943,6 +976,8 @@ String describeRecord(
     case 'finance_requests':
     case 'audit_log':
       return '${r['summary'] ?? '—'}';
+    case 'payment_requests':
+      return '${r['student_name'] ?? ''}'.trim().isEmpty ? 'طلب دفع' : 'طلب دفع — ${r['student_name']}';
     case 'grade_fees':
       return '${r['grade_name'] ?? 'رسوم صف'}';
     case 'sessions':

@@ -1485,6 +1485,8 @@ const financeAuditActionLabels = <String, String>{
   'request_submitted': 'طلب موافقة',
   'request_approved': 'موافقة على طلب',
   'request_rejected': 'رفض طلب',
+  'payment_request_approved': 'قبول دفعة ولي أمر',
+  'payment_request_rejected': 'رفض دفعة ولي أمر',
 };
 
 String financeRequestLabel(String kind) => financeRequestLabels[kind] ?? kind;
@@ -1576,6 +1578,138 @@ class FinanceRequest {
     decidedByName: '${m['decided_by_name'] ?? ''}',
     decidedAt: m['decided_at']?.toString(),
     decisionNote: '${m['decision_note'] ?? ''}',
+    createdAt: m['created_at']?.toString(),
+    updatedAt: m['updated_at']?.toString(),
+    syncStatus: '${m['sync_status'] ?? 'synced'}',
+  );
+}
+
+const paymentRequestStatusLabels = <String, String>{
+  'pending': 'قيد المراجعة',
+  'approved': 'مقبول',
+  'rejected': 'مرفوض',
+};
+
+/// أقل طول لسبب الرفض: «لا» أو «خطأ» لا تخبر ولي الأمر ماذا يصلح.
+const minRejectionReason = 10;
+
+/// أسباب الرفض الشائعة: تُختار ثم تُكمَّل بالتفصيل.
+const rejectionReasonPresets = [
+  'المبلغ في الإشعار لا يطابق المبلغ المُدخل',
+  'صورة الإشعار غير واضحة، أعد إرسالها بصورة أوضح',
+  'لم يصل التحويل إلى حساب المدرسة حتى الآن',
+  'الإشعار مرسل مسبقاً في طلب آخر',
+  'التحويل إلى حساب غير حساب المدرسة',
+];
+
+const maxRequestImages = 3;
+
+/// طلب دفع من ولي الأمر — `PaymentRequest`: حوّل ثم أرسل صورة الإشعار من بوابته.
+///
+/// لا يمسّ حساب الطالب وهو معلق. الموافقة تُصدر سند قبض عادياً ([paymentId]) فيُحسب
+/// له كأي دفعة، والرفض يحمل سبباً مكتوباً يراه ولي الأمر. الصور في حاوية خاصة
+/// `payment-requests`، والصف يحمل مساراتها فقط.
+class PaymentRequest {
+  PaymentRequest({
+    required this.id,
+    required this.studentId,
+    required this.amount,
+    required this.senderName,
+    this.studentName = '',
+    this.paymentMethod = '',
+    this.transferChannel = '',
+    this.transferDate = '',
+    this.referenceNumber = '',
+    this.notes = '',
+    this.imagePaths = const [],
+    this.status = 'pending',
+    this.rejectionReason = '',
+    this.decidedById = '',
+    this.decidedByName = '',
+    this.decidedAt,
+    this.paymentId = '',
+    this.createdAt,
+    this.updatedAt,
+    this.syncStatus = 'synced',
+  });
+
+  final String id;
+  final String studentId;
+  String studentName;
+  double amount;
+
+  /// اسم صاحب الحساب الذي حوّل.
+  String senderName;
+
+  /// وسيلة الدفع التي حُوّل إليها (معرّفها في `payment_methods`).
+  String paymentMethod;
+
+  /// اسم الوسيلة وقت الإرسال: يبقى مقروءاً لو حُذفت الوسيلة لاحقاً.
+  String transferChannel;
+  String transferDate;
+  String referenceNumber;
+  String notes;
+  List<String> imagePaths;
+
+  /// `pending | approved | rejected`
+  String status;
+  String rejectionReason;
+  String decidedById;
+  String decidedByName;
+  String? decidedAt;
+
+  /// سند القبض الذي صدر بالموافقة.
+  String paymentId;
+  String? createdAt;
+  String? updatedAt;
+  String syncStatus;
+
+  String get statusLabel => paymentRequestStatusLabels[status] ?? status;
+
+  Map<String, dynamic> toCloud() => {
+    'id': id,
+    'student_id': studentId,
+    'student_name': studentName.isEmpty ? null : studentName,
+    'amount': amount,
+    'sender_name': senderName,
+    'payment_method': paymentMethod.isEmpty ? null : paymentMethod,
+    'transfer_channel': transferChannel.isEmpty ? null : transferChannel,
+    'transfer_date': transferDate.isEmpty ? null : transferDate,
+    'reference_number': referenceNumber.isEmpty ? null : referenceNumber,
+    'notes': notes.isEmpty ? null : notes,
+    'image_paths': imagePaths,
+    'status': status,
+    'rejection_reason': rejectionReason.isEmpty ? null : rejectionReason,
+    'decided_by_id': decidedById.isEmpty ? null : decidedById,
+    'decided_by_name': decidedByName.isEmpty ? null : decidedByName,
+    'decided_at': decidedAt,
+    'payment_id': paymentId.isEmpty ? null : paymentId,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+  };
+
+  factory PaymentRequest.fromCloud(Map<String, dynamic> m) => PaymentRequest(
+    id: '${m['id']}',
+    studentId: '${m['student_id'] ?? ''}',
+    studentName: '${m['student_name'] ?? ''}',
+    amount: m['amount'] is num ? (m['amount'] as num).toDouble() : double.tryParse('${m['amount']}') ?? 0,
+    senderName: '${m['sender_name'] ?? ''}',
+    paymentMethod: '${m['payment_method'] ?? ''}',
+    transferChannel: '${m['transfer_channel'] ?? ''}',
+    transferDate: '${m['transfer_date'] ?? ''}'.split('T').first,
+    referenceNumber: '${m['reference_number'] ?? ''}',
+    notes: '${m['notes'] ?? ''}',
+    imagePaths: [
+      if (m['image_paths'] is List)
+        for (final p in m['image_paths'] as List)
+          if ('$p'.isNotEmpty) '$p',
+    ],
+    status: '${m['status'] ?? 'pending'}',
+    rejectionReason: '${m['rejection_reason'] ?? ''}',
+    decidedById: '${m['decided_by_id'] ?? ''}',
+    decidedByName: '${m['decided_by_name'] ?? ''}',
+    decidedAt: m['decided_at']?.toString(),
+    paymentId: '${m['payment_id'] ?? ''}',
     createdAt: m['created_at']?.toString(),
     updatedAt: m['updated_at']?.toString(),
     syncStatus: '${m['sync_status'] ?? 'synced'}',

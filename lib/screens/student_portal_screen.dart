@@ -13,6 +13,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/moodle_style.dart';
 import '../widgets/widgets.dart';
+import 'parent_payments.dart';
 import 'portal_chrome.dart';
 
 /// بوابة الطالب وولي الأمر — تخطيط جوال بهوية AppColors وشريط سفلي.
@@ -674,6 +675,13 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     final hidden = all.length - visible.length;
 
     return [
+      if (isParent)
+        ParentPaymentsSection(
+          user: user,
+          suggestedAmount: f.currentDue,
+          accent: parseHexColor(data!.branding.colors.primaryButton) ?? AppColors.amber,
+          refreshTick: _realtimeTick,
+        ),
       _PortalSummary(
         label: owes ? 'المستحق حالياً' : 'حالة الحساب',
         value: owes ? money(f.currentDue) : 'مسدد بالكامل',

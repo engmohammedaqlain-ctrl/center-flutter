@@ -17,6 +17,7 @@ import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import 'expense_form_sheet.dart';
 import 'payment_form_screen.dart';
+import 'payment_requests_panel.dart';
 import 'expense_voucher_screen.dart';
 import 'general_income_sheet.dart';
 import 'receipt_screen.dart';
@@ -407,7 +408,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
           (_Tab.dues, 'المستحقات', 0),
           (_Tab.payments, 'المقبوضات', 0),
           if (showExpenses) (_Tab.expenses, 'المصروفات', 0),
-          (_Tab.controls, 'الرقابة', store.pendingFinanceRequests.length),
+          // طلبات الموظفين ودفعات أولياء الأمور معاً: كلاهما ينتظر قراراً
+          (_Tab.controls, 'الرقابة', store.pendingFinanceRequests.length + store.pendingPaymentRequests.length),
         ],
       ),
     );
@@ -1226,6 +1228,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
     }
 
     return [
+        PaymentRequestsPanel(store: store),
         Text(
           'طلبات بانتظار الموافقة (${pending.length})',
           style: TextStyle(

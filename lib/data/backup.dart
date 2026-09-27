@@ -42,6 +42,7 @@ class BackupService {
     'finance_attachments': 'financeAttachments',
     'audit_log': 'auditLog',
     'finance_requests': 'financeRequests',
+    'payment_requests': 'paymentRequests',
     'student_evaluations': 'evaluations',
   };
 

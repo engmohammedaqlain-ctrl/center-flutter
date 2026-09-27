@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:uuid/uuid.dart';
 
 import '../models/models.dart';
@@ -1749,6 +1751,99 @@ class PortalService {
         {'id': 'eq.$id'},
         {'score': score, 'updated_at': _nowIso()},
       );
+
+  // ── طلبات الدفع من ولي الأمر (ParentPaymentRequests) ─────────────────────
+
+  static const paymentRequestsBucket = 'payment-requests';
+
+  /// إرسال طلب: الصور أولاً ثم الصف. صورة تُرفع وصف يفشل يتركان ملفاً يتيماً في
+  /// مجلد الطالب لا يراه أحد، أهون من صف بلا صورة تراجعه المالية.
+  ///
+  /// [images] صور الإشعار `data:` بعد الضغط. المسار `<منشأة>/<طالب>/<طلب>-<n>.<امتداد>`:
+  /// ولي الأمر يرفع ويقرأ مجلد ابنه وحده.
+  Future<PaymentRequest> submitPaymentRequest({
+    required String tenantId,
+    required String studentId,
+    required String studentName,
+    required double amount,
+    required String senderName,
+    required List<String> images,
+    String paymentMethod = '',
+    String transferChannel = '',
+    String transferDate = '',
+    String referenceNumber = '',
+    String notes = '',
+  }) async {
+    final value = (amount * 100).round() / 100;
+    if (value <= 0) throw const PortalException('أدخل مبلغاً صحيحاً');
+    if (senderName.trim().isEmpty) throw const PortalException('أدخل اسم صاحب الحساب المحوِّل');
+    if (images.isEmpty) throw const PortalException('أرفق صورة الإشعار');
+    if (images.length > maxRequestImages) throw const PortalException('$maxRequestImages صور على الأكثر');
+
+    final id = _uuid.v4();
+    final paths = <String>[];
+    for (var i = 0; i < images.length; i++) {
+      final file = decodeDataUrl(images[i]);
+      if (file == null) throw const PortalException('تعذّر قراءة صورة الإشعار');
+      final path = '$tenantId/$studentId/$id-${i + 1}.${storageExtensionForMime(file.mime)}';
+      try {
+        await storageUpload(paymentRequestsBucket, path, file.bytes, file.mime);
+      } catch (_) {
+        throw const PortalException('تعذّر رفع صورة الإشعار، حاول مجدداً');
+      }
+      paths.add(path);
+    }
+
+    final now = _nowIso();
+    final request = PaymentRequest(
+      id: id,
+      studentId: studentId,
+      studentName: studentName,
+      amount: value,
+      senderName: senderName.trim(),
+      paymentMethod: paymentMethod,
+      transferChannel: transferChannel.trim(),
+      transferDate: transferDate,
+      referenceNumber: referenceNumber.trim(),
+      notes: notes.trim(),
+      imagePaths: paths,
+      createdAt: now,
+      updatedAt: now,
+    );
+    try {
+      await supabaseInsert('payment_requests', [
+        {...request.toCloud(), 'tenant_id': tenantId},
+      ]);
+    } catch (_) {
+      unawaited(storageRemove(paymentRequestsBucket, paths));
+      throw const PortalException('تعذّر إرسال الطلب، حاول مجدداً');
+    }
+    return request;
+  }
+
+  /// طلبات الابن، الأحدث أولاً. عند التعذّر: `null`.
+  Future<List<PaymentRequest>?> paymentRequestsOf(String studentId) async {
+    final rows = await supabaseSelect(
+      'payment_requests',
+      filters: {'student_id': 'eq.$studentId'},
+      order: 'created_at.desc',
+    );
+    return rows?.map(PaymentRequest.fromCloud).toList();
+  }
+
+  /// وسائل الدفع الإلكترونية للمدرسة: إليها يُحوَّل، والنقد لا يمرّ بالبوابة.
+  Future<List<({String id, String name})>> transferMethods(String tenantId) async {
+    final rows = await supabaseSelect(
+      'payment_methods',
+      columns: 'id,name,type,enabled,order_index',
+      filters: {'tenant_id': 'eq.$tenantId', 'enabled': 'eq.true'},
+      order: 'order_index.asc',
+    );
+    return [
+      for (final m in rows ?? const <Map<String, dynamic>>[])
+        if ('${m['type']}' != 'cash') (id: '${m['id']}', name: '${m['name'] ?? ''}'),
+    ];
+  }
 
   // ── المودل (المقابل لـ moodle.service.ts) ─────────────────────────────────
 
