@@ -4610,12 +4610,21 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       // خطة مخصصة أو نسخة من خطة المرحلة — تُبنى دائماً حتى لو بلا بنود
       // فيُقيَّد رسم الحجز وحده (كـ buildStudentPlan على الويب).
       final custom = customPlanItems;
-      final items = (useCustom && custom != null) ? custom : planItemsOf(planForStudent(incoming));
+      final grade = planForStudent(incoming);
+      // الشهرية تُحسب من تاريخ تسجيله داخل فصول عام التشغيل، فلا نطاق خطة لها
+      final items = (useCustom && custom != null)
+          ? custom
+          : gradePlanItemsFor(
+              grade,
+              enrollmentDate: isoDate(incoming.enrollmentDate),
+              year: operationalAcademicYear,
+              today: isoDate(DateTime.now()),
+            );
       for (final inst in _studentPlanInstallments(
         incoming,
         items: items,
         discount: useCustom ? null : discount,
-        enrollmentMode: useCustom ? EnrollmentPlanMode.full : enrollmentMode,
+        enrollmentMode: useCustom || isMonthlyGrade(grade) ? EnrollmentPlanMode.full : enrollmentMode,
         customIds: useCustom,
       )) {
         installments.add(inst);
@@ -5863,16 +5872,21 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final now = _nowIso();
     final plans = gradePlans();
     final fee = plans[planGrade.toLowerCase()];
-    final items = [...planItemsOf(fee)]
-      ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+    final year = operationalAcademicYear;
 
-    List<PlanItem> scoped;
-    if (scope == _kPlanScopeFuture) {
-      scoped = [
-        for (final i in items)
-          if ((i.dueDate.length >= 10 ? i.dueDate.substring(0, 10) : i.dueDate).compareTo(today) >= 0) i,
-      ];
-    } else if (scope == _kPlanScopeFromItem) {
+    // بنود المرحلة لطالب ثم نطاقها. الشهرية تختلف بين طالب وآخر (من تاريخ تسجيله)،
+    // فالبدء من بند بعينه فيها يكون بتاريخه
+    List<PlanItem> scopedFor(Student student) {
+      final items = [
+        ...gradePlanItemsFor(fee, enrollmentDate: isoDate(student.enrollmentDate), year: year, today: today),
+      ]..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+      if (scope == _kPlanScopeFuture) {
+        return [
+          for (final i in items)
+            if ((i.dueDate.length >= 10 ? i.dueDate.substring(0, 10) : i.dueDate).compareTo(today) >= 0) i,
+        ];
+      }
+      if (scope != _kPlanScopeFromItem) return items;
       var startIdx = -1;
       final fromId = fromPlanItemId?.trim() ?? '';
       if (fromId.isNotEmpty) {
@@ -5885,10 +5899,12 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
           return due.compareTo(from) >= 0;
         });
       }
-      if (startIdx < 0) throw StoreException('القسط المختار غير موجود في خطة هذه المرحلة');
-      scoped = items.sublist(startIdx);
-    } else {
-      scoped = items;
+      if (startIdx < 0) {
+        // الشهرية: طالب لا شهر له بعد التاريخ المختار لا يُضاف له شيء
+        if (isMonthlyGrade(fee)) return const [];
+        throw StoreException('القسط المختار غير موجود في خطة هذه المرحلة');
+      }
+      return items.sublist(startIdx);
     }
 
     final idFilter = studentIds.toSet();
@@ -5918,7 +5934,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       }
 
       final toAdd = [
-        for (final item in scoped)
+        for (final item in scopedFor(student))
           if (!byId.containsKey(planInstallmentId(item.id, student.id))) item,
       ];
       final needsFlagClear = student.usesCustomPlan;

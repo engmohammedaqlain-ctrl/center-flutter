@@ -130,6 +130,7 @@ Future<YearStructureCloneResult> cloneYearStructure(
             dueDate: shiftDateOneYear(item.dueDate),
           ),
       ],
+      feeMode: old.feeMode,
       academicYearId: toYearId,
       syncStatus: 'pending',
       createdAt: now,

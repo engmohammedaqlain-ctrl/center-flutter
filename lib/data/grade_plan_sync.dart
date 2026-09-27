@@ -165,14 +165,17 @@ class GradePlanSync {
   }) {
     if (opts.checkPermission) store.requireSection('settings');
     final result = GradePlanSyncResult();
-    final items = store.planItemsOf(
-      store.gradePlans()[gradeName.trim().toLowerCase()],
-    );
-    if (items.isEmpty) return result;
+    final grade = store.gradePlans()[gradeName.trim().toLowerCase()];
+    // الشهرية لا بنود ثابتة لها: تُحسب لكل طالب من تاريخ تسجيله، ويكفي أن لها مبلغاً
+    if (grade == null) return result;
+    if (isMonthlyGrade(grade) ? !(grade.monthlyFee > 0) : store.planItemsOf(grade).isEmpty) {
+      return result;
+    }
 
-    final itemById = {for (final i in items) i.id: i};
-    final yearId =
-        store.operationalAcademicYear?.id ?? store.viewedAcademicYearId;
+    // الأقساط تُكتب في عام التشغيل، ومن فصوله مواعيد الرسوم الشهرية
+    final year = store.operationalAcademicYear;
+    final yearId = year?.id ?? store.viewedAcademicYearId;
+    final today = isoDate(startOfToday());
     final now = store.nowIsoForSync();
     final onlyIds = opts.studentIds;
 
@@ -195,6 +198,8 @@ class GradePlanSync {
         continue;
       }
       result.considered++;
+      final items = gradePlanItemsFor(grade, enrollmentDate: isoDate(student.enrollmentDate), year: year, today: today);
+      final itemById = {for (final i in items) i.id: i};
 
       final discount = opts.discountOverride?.containsKey(student.id) == true
           ? opts.discountOverride![student.id]

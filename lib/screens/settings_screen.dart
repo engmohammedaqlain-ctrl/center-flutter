@@ -7,6 +7,7 @@ import '../data/arabic_search.dart';
 import '../data/backup.dart';
 import '../data/permissions.dart';
 import '../data/phone.dart';
+import '../data/fee_plan.dart';
 import '../data/store.dart';
 import '../data/sync.dart';
 import '../data/user_message.dart';
@@ -534,7 +535,7 @@ class _FeesTab extends StatelessWidget {
     final store = StoreScope.of(context);
     final fees = store.gradeFeesInViewedYear;
     final missing = store.studentsMissingPlan;
-    final withoutPlan = fees.where((f) => f.planItems.isEmpty).length;
+    final withoutPlan = fees.where((f) => isMonthlyGrade(f) ? !(f.monthlyFee > 0) : f.planItems.isEmpty).length;
 
     return _cardList(
       header: [
@@ -1575,7 +1576,8 @@ class _GradePlanRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = fee.planItems;
-    final missing = items.isEmpty;
+    final monthly = isMonthlyGrade(fee);
+    final missing = monthly ? !(fee.monthlyFee > 0) : items.isEmpty;
     final total = items.fold<double>(0, (a, i) => a + i.amount);
 
     return InkWell(
@@ -1596,7 +1598,9 @@ class _GradePlanRow extends StatelessWidget {
               child: Text(
                 missing
                     ? 'لا خطة أقساط — من يُسجَّل في المرحلة لا تُقيَّد عليه أقساط'
-                    : '${items.length} قسطاً  ·  ${money(total)}',
+                    : monthly
+                        ? 'شهري  ·  ${money(fee.monthlyFee)} من تاريخ التسجيل'
+                        : '${items.length} قسطاً  ·  ${money(total)}',
                 maxLines: 2,
                 style: TextStyle(
                   fontSize: 11.5,

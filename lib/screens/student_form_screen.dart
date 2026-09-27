@@ -385,6 +385,15 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     ];
   }
 
+  /// خطة المرحلة لهذا الطالب: الثابتة كما هي، والشهرية من تاريخ تسجيله داخل
+  /// فصول عام التشغيل — `gradePlanItemsFor`.
+  List<PlanItem> _gradePlanItems(AppStore store) => gradePlanItemsFor(
+        store.feeFor(grade),
+        enrollmentDate: isoDate(enrollmentDate),
+        year: store.operationalAcademicYear,
+        today: isoDate(DateTime.now()),
+      );
+
   /// معاينة الأقساط قبل التسجيل — `planPreview` في StudentForm.tsx.
   List<StudentPlanRow> _planPreview(BuildContext context) {
     if (widget.student != null) return const [];
@@ -394,7 +403,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     if (planSource == 'custom') {
       source = custom ?? const [];
     } else {
-      source = store.planItemsOf(store.feeFor(grade));
+      source = _gradePlanItems(store);
     }
     if (source.isEmpty) return const [];
     return buildStudentPlan(
@@ -671,6 +680,12 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
         body: NoAccess(section: 'students', roleName: store.roleName),
       );
     }
+    // مرحلة برسوم شهرية: خطتها من تاريخ التسجيل أصلاً، فلا خيارات خطة للطالب
+    final gradeMonthly = isMonthlyGrade(store.feeFor(grade));
+    if (gradeMonthly) {
+      planSource = 'grade';
+      enrollmentMode = EnrollmentPlanMode.full;
+    }
     final studentLen = phoneTargetLength(phonePrefix);
     final studentComplete = isPhoneComplete(phoneNumber, phonePrefix);
     final fullStudentPhone = combinePhoneAndPrefix(phoneNumber, phonePrefix);
@@ -858,6 +873,20 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
               const FormSection(icon: Icons.account_balance_wallet_outlined, title: 'نوع خطة الأقساط'),
               // ثلاثة خيارات في صفّ واحد: «خطة المرحلة» كاملةً، أو منها من شهر
               // التسجيل، أو خطة يكتبها المستخدم — بدل سؤالين متتاليين
+              if (gradeMonthly)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: AppColors.bg,
+                    borderRadius: BorderRadius.circular(Corner.box),
+                    border: Border.all(color: AppColors.line),
+                  ),
+                  child: Text(
+                    'رسوم شهرية ${money(store.feeFor(grade)?.monthlyFee ?? 0)} من تاريخ التسجيل',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.heading),
+                  ),
+                )
+              else
               Row(
                 children: [
                   Expanded(
@@ -939,7 +968,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                 ),
               ] else
                 const SizedBox(height: 8),
-              if (planSource == 'grade') ...[
+              if (planSource == 'grade' && !gradeMonthly) ...[
                 Text(
                   enrollmentMode == EnrollmentPlanMode.fromEnrollment
                       ? 'لن تُحتسب أقساط الأشهر السابقة لشهر التسجيل (${isoDate(enrollmentDate).substring(0, 7)}).'
@@ -1093,7 +1122,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   Widget _planPreviewSection(BuildContext context) {
     final store = StoreScope.of(context);
     final preview = _planPreview(context);
-    final gradeItems = store.planItemsOf(store.feeFor(grade));
+    final gradeItems = _gradePlanItems(store);
 
     if (planSource == 'grade' && grade.trim().isEmpty) {
       return const Text(

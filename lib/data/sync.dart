@@ -102,6 +102,7 @@ const tableAllowedColumns = <String, List<String>>{
     'term_2_start',
     'term_2_end',
     'plan_items',
+    'fee_mode',
     'academic_year_id',
     'tenant_id',
     'created_at',

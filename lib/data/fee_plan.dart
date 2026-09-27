@@ -111,6 +111,134 @@ String addMonths(String date, int months) {
       '${day.toString().padLeft(2, '0')}';
 }
 
+// ── الرسوم الشهرية: مواعيد كل طالب من تاريخ تسجيله، داخل فصول المرحلة ─────
+
+/// بند شهري في خطة الطالب: `monthly_<سنة>_<فصل>_<ترتيب>`.
+const monthlyItemPrefix = 'monthly_';
+
+/// أيام الشهر في حساب الدفعة الناقصة: 15 يوماً = نصف الرسوم بلا كسور تتغير بطول الشهر.
+const daysPerFeeMonth = 30;
+
+/// «رسوم شهر يناير» من تاريخ الاستحقاق — `formatFeeMonthTitle` في الويب.
+String feeMonthTitle(String date, [int? fallbackIndex]) {
+  final parts = date.split('T').first.trim().split('-');
+  if (parts.length == 3) {
+    final m = int.tryParse(parts[1]);
+    if (m != null && m >= 1 && m <= 12) return 'رسوم شهر ${gregorianMonths[m - 1]}';
+  }
+  return fallbackIndex != null ? 'رسوم شهر $fallbackIndex' : 'رسوم دراسية';
+}
+
+bool isMonthlyGrade(GradeFee? grade) => grade?.feeMode == 'monthly';
+
+/// فصل تُحسب فيه الرسوم الشهرية — `FeeTerm`. [key]: `term_1` | `term_2` | `year`.
+class FeeTerm {
+  const FeeTerm(this.key, this.start, this.end);
+
+  final String key;
+  final String start;
+  final String end;
+
+  @override
+  bool operator ==(Object other) => other is FeeTerm && other.key == key && other.start == start && other.end == end;
+
+  @override
+  int get hashCode => Object.hash(key, start, end);
+
+  @override
+  String toString() => '$key:$start..$end';
+}
+
+final _isoDay = RegExp(r'^\d{4}-\d{2}-\d{2}');
+
+bool _validRange(String start, String end) =>
+    _isoDay.hasMatch(start) && _isoDay.hasMatch(end) && start.substring(0, 10).compareTo(end.substring(0, 10)) <= 0;
+
+/// فصول المرحلة: تواريخها الخاصة إن ضُبطت (التمهيدي قد ينتهي قبل العاشر)، وإلا
+/// تواريخ فصلي العام. بلا فصول مضبوطة: العام كله فصل واحد — `feeTermsFor`.
+List<FeeTerm> feeTermsFor(GradeFee? grade, AcademicYear? year) {
+  String pick(String own, String fallback) => own.isNotEmpty ? own : fallback;
+  final terms = <FeeTerm>[];
+  final t1s = pick(grade?.term1Start ?? '', year?.term1Start ?? '');
+  final t1e = pick(grade?.term1End ?? '', year?.term1End ?? '');
+  final t2s = pick(grade?.term2Start ?? '', year?.term2Start ?? '');
+  final t2e = pick(grade?.term2End ?? '', year?.term2End ?? '');
+  if (_validRange(t1s, t1e)) terms.add(FeeTerm('term_1', t1s.substring(0, 10), t1e.substring(0, 10)));
+  if (_validRange(t2s, t2e)) terms.add(FeeTerm('term_2', t2s.substring(0, 10), t2e.substring(0, 10)));
+  final ys = year?.startsOn ?? '';
+  final ye = year?.endsOn ?? '';
+  if (terms.isEmpty && _validRange(ys, ye)) {
+    terms.add(FeeTerm('year', ys.substring(0, 10), ye.substring(0, 10)));
+  }
+  terms.sort((a, b) => a.start.compareTo(b.start));
+  return terms;
+}
+
+int _dayNumber(String date) =>
+    DateTime.utc(int.parse(date.substring(0, 4)), int.parse(date.substring(5, 7)), int.parse(date.substring(8, 10))).millisecondsSinceEpoch ~/
+    86400000;
+
+int _daysBetween(String from, String to) => _dayNumber(to) - _dayNumber(from);
+
+/// بنود الرسوم الشهرية لطالب، فصلاً فصلاً — `monthlyPlanItems`:
+/// - أول دفعة يوم تسجيله إن سجّل داخل الفصل، أو يوم بداية الفصل إن سبقه. ثم اليوم
+///   نفسه من كل شهر (يوم 31 في شهر أقصر ينزل لآخر أيامه).
+/// - أول دفعة كاملة دائماً: تغطي شهراً قادماً.
+/// - آخر دفعة في الفصل إن لم يبقَ منه شهر كامل: بقدر أيامها الباقية
+///   (المبلغ ÷ 30 × الأيام). سجّل 15/3 والفصل ينتهي 30/4 ← 15/3 كاملة، 15/4 نصف.
+/// - الفصل التالي يبدأ من بدايته.
+///
+/// المعرّف بالسنة والفصل وترتيب الشهر: تصحيح تاريخ التسجيل يعيد جدولة القادمة بدل
+/// تكرارها، والباقي للعام التالي لا يصطدم بأقساط عامه الماضي.
+List<PlanItem> monthlyPlanItems({required double amount, required String enrollmentDate, required List<FeeTerm> terms}) {
+  final fee = _round2(amount);
+  final enrolled = enrollmentDate.length >= 10 ? enrollmentDate.substring(0, 10) : enrollmentDate;
+  if (!(fee > 0) || !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(enrolled)) return const [];
+
+  // بلا فصول معروفة: سنة من التسجيل
+  final effective = terms.isNotEmpty ? terms : [FeeTerm('year', enrolled, addMonths(enrolled, 12))];
+  final yearKey = effective.last.end.substring(0, 4);
+
+  final items = <PlanItem>[];
+  for (final term in effective) {
+    if (term.end.compareTo(enrolled) < 0) continue;
+    final anchor = enrolled.compareTo(term.start) > 0 ? enrolled : term.start;
+    for (var i = 0; i < 24; i++) {
+      final due = addMonths(anchor, i);
+      if (due.compareTo(term.end) > 0) break;
+      final next = addMonths(anchor, i + 1);
+      // الشهر كامل إن كان موعد الدفعة التالية بعد نهاية الفصل بيوم أو أقل
+      final full = i == 0 || _daysBetween(term.end, next) <= 1;
+      final remaining = _daysBetween(due, term.end);
+      final days = full ? daysPerFeeMonth : (remaining < daysPerFeeMonth ? remaining : daysPerFeeMonth);
+      if (days <= 0) break;
+      final title = feeMonthTitle(due, items.length + 1);
+      items.add(PlanItem(
+        id: '$monthlyItemPrefix${yearKey}_${term.key}_${i + 1}',
+        title: full ? title : '$title ($days يوم)',
+        amount: full ? fee : _round2(fee / daysPerFeeMonth * days),
+        dueDate: due,
+      ));
+    }
+  }
+  return items;
+}
+
+/// بنود خطة مرحلة لطالب بعينه — `gradePlanItemsFor`: الأقساط الثابتة للمرحلة كما هي،
+/// والشهرية تُحسب من تاريخ تسجيله داخل فصول مرحلته. المرجع الواحد لكل من يبني
+/// أقساط طالب من خطة مرحلته.
+List<PlanItem> gradePlanItemsFor(GradeFee? grade, {String enrollmentDate = '', AcademicYear? year, required String today}) {
+  if (grade == null) return const [];
+  if (isMonthlyGrade(grade)) {
+    return monthlyPlanItems(
+      amount: grade.monthlyFee,
+      enrollmentDate: enrollmentDate.isNotEmpty ? enrollmentDate : today,
+      terms: feeTermsFor(grade, year),
+    );
+  }
+  return grade.planItems;
+}
+
 /// جدول أقساط متساوٍ يبدأ من تاريخ ويتكرر كل [everyMonths] — نقطة بداية تُعدَّل
 /// يدوياً بعدها، لا قاعدة مفروضة.
 List<PlanItem> generatePlanItems({

@@ -10,8 +10,8 @@ import '../widgets/widgets.dart';
 
 /// محرر خطة أقساط المرحلة — المقابل لـ `GradePlanModal.tsx`.
 ///
-/// توليد جدول وتعديل الأقساط ثم حفظ؛ إن وُجد أثر على الطلاب تُفتح معاينته.
-/// تواريخ الفصلين تُدار من «الأعوام الدراسية» لا من هنا.
+/// نظامان: أقساط بتواريخ ثابتة للمرحلة (توليد جدول وتعديله ثم حفظ، وإن وُجد أثر على
+/// الطلاب تُفتح معاينته)، أو رسوم شهرية من تاريخ تسجيل كل طالب داخل فصول المرحلة.
 class GradePlanScreen extends StatefulWidget {
   const GradePlanScreen({super.key, required this.fee});
 
@@ -33,6 +33,22 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
   late final countCtl = TextEditingController(text: items.isEmpty ? '10' : '${items.length}');
   late final amountCtl = TextEditingController(text: trimNum(widget.fee.monthlyFee));
   late final everyCtl = TextEditingController(text: '1');
+
+  /// نظام الرسوم، والنظام عند الفتح: تغييره يستبدل خطة الطلاب كلها.
+  late String mode = widget.fee.feeMode;
+  late final String originalMode = widget.fee.feeMode;
+  bool get modeSwitch => mode != originalMode;
+  late final monthlyCtl = TextEditingController(text: widget.fee.monthlyFee > 0 ? trimNum(widget.fee.monthlyFee) : '');
+
+  /// تواريخ فصول خاصة بالمرحلة (التمهيدي قد ينتهي فصله قبل العاشر)؛ الفارغ من العام.
+  late final gradeTerms = <String, String>{
+    'term_1_start': widget.fee.term1Start,
+    'term_1_end': widget.fee.term1End,
+    'term_2_start': widget.fee.term2Start,
+    'term_2_end': widget.fee.term2End,
+  };
+  late bool customTerms = gradeTerms.values.any((v) => v.isNotEmpty);
+
   bool busy = false;
   String message = '';
 
@@ -88,6 +104,7 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
     countCtl.dispose();
     amountCtl.dispose();
     everyCtl.dispose();
+    monthlyCtl.dispose();
     for (final i in items) {
       i.dispose();
     }
@@ -120,6 +137,7 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
       term2Start: f.term2Start,
       term2End: f.term2End,
       planItems: _cleanItems(),
+      feeMode: 'installments',
       academicYearId: f.academicYearId,
       syncStatus: f.syncStatus,
       createdAt: f.createdAt,
@@ -172,10 +190,71 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
     });
   }
 
+  /// المرحلة بتواريخ فصولها الخاصة، أو بتواريخ العام حين لا تواريخ خاصة.
+  GradeFee _termsFee() => GradeFee(
+        id: widget.fee.id,
+        gradeName: widget.fee.gradeName,
+        monthlyFee: 0,
+        term1Start: customTerms ? gradeTerms['term_1_start']! : '',
+        term1End: customTerms ? gradeTerms['term_1_end']! : '',
+        term2Start: customTerms ? gradeTerms['term_2_start']! : '',
+        term2End: customTerms ? gradeTerms['term_2_end']! : '',
+      );
+
+  /// تغيير النظام أو الرسوم الشهرية: تأكيد بسيط ثم حفظ وتطبيق معاً. لا يُكتب شيء
+  /// قبل التأكيد، وعند تغيير النظام تُحذف أقساط الخطة القديمة ولو دُفع منها،
+  /// والمدفوع يُحسب على الجديدة — `confirmAndApply`.
+  Future<void> _confirmAndApply(String message, GradeFee draft) async {
+    final ok = await confirmSheet(
+      context,
+      title: 'حفظ الخطة',
+      message: message,
+      confirmLabel: 'حفظ',
+      confirmColor: AppColors.heading,
+    );
+    if (!ok || !mounted) return;
+    final store = StoreScope.of(context);
+    setState(() => busy = true);
+    await yieldUi(2);
+    try {
+      store.updateGradeFee(draft);
+      store.syncGradePlan(widget.fee.gradeName, apply: true, removePaid: modeSwitch);
+      if (!mounted) return;
+      showAppSnack(context, 'تم الحفظ');
+      Navigator.pop(context);
+    } on StoreException catch (e) {
+      if (mounted) showAppSnack(context, e.message, error: true);
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   /// حفظ الخطة، ثم فتح معاينة الأثر فقط إن وُجد أثر — كويب `handleSave`.
   Future<void> _save() async {
     if (readOnly || lockedIds == null) return;
     final store = StoreScope.of(context);
+    if (mode == 'monthly') {
+      final amount = double.tryParse(monthlyCtl.text.trim()) ?? 0;
+      if (!(amount > 0)) {
+        showAppSnack(context, 'أدخل المبلغ الشهري', error: true);
+        return;
+      }
+      // خطة الأقساط المحفوظة تبقى كما هي، وتواريخ الفصول الفارغة تُؤخذ من العام
+      final terms = _termsFee();
+      final draft = _draftFee()
+        ..feeMode = 'monthly'
+        ..monthlyFee = amount
+        ..planItems = widget.fee.planItems
+        ..term1Start = terms.term1Start
+        ..term1End = terms.term1End
+        ..term2Start = terms.term2Start
+        ..term2End = terms.term2End;
+      await _confirmAndApply(
+        modeSwitch ? 'سيتم استبدال أقساط طلاب المرحلة بالرسوم الشهرية. متابعة؟' : 'سيتم تحديث الرسوم الشهرية لطلاب المرحلة. متابعة؟',
+        draft,
+      );
+      return;
+    }
     final today = isoDate(DateTime.now());
     // رسوم جديدة بتاريخ قبل اليوم تُسجَّل متأخرةً فوراً
     if (hadPlan &&
@@ -186,6 +265,10 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
               i.dueDate.compareTo(today) < 0,
         )) {
       showAppSnack(context, 'التاريخ قبل اليوم', error: true);
+      return;
+    }
+    if (modeSwitch) {
+      await _confirmAndApply('سيتم استبدال الرسوم الشهرية لطلاب المرحلة بخطة الأقساط. متابعة؟', _draftFee());
       return;
     }
 
@@ -266,6 +349,15 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
           children: [
+            const SizedBox(height: 12),
+            _ModeToggle(
+              value: mode,
+              enabled: !readOnly && !busy,
+              onChanged: (v) => setState(() => mode = v),
+            ),
+            if (mode == 'monthly')
+              ..._monthlyPanel(store)
+            else ...[
             if (readOnly) ...[
               const SizedBox(height: 12),
               Container(
@@ -362,8 +454,146 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
               const SizedBox(height: 12),
               Text(message, style: const TextStyle(color: AppColors.success, fontWeight: FontWeight.w600, fontSize: 12)),
             ],
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  /// الرسوم الشهرية: مبلغ واحد، والمواعيد لكل طالب من يوم تسجيله داخل فصول المرحلة.
+  /// جدول المثال لطالب سجّل أول يوم في الفصل الأول، ومنه الدفعة الناقصة آخر كل فصل.
+  List<Widget> _monthlyPanel(AppStore store) {
+    final year = store.operationalAcademicYear;
+    final effective = feeTermsFor(customTerms ? _termsFee() : null, year);
+    final amount = double.tryParse(monthlyCtl.text.trim()) ?? 0;
+    final sampleStart = effective.isNotEmpty ? effective.first.start : isoDate(DateTime.now());
+    final sample = monthlyPlanItems(amount: amount, enrollmentDate: sampleStart, terms: effective);
+    String termLabel(String key) => key == 'term_1' ? 'الفصل الأول' : key == 'term_2' ? 'الفصل الثاني' : 'العام';
+
+    Widget dateField(String key) {
+      final value = gradeTerms[key]!;
+      return SelectField(
+        text: value.isEmpty ? 'من العام' : value,
+        icon: Icons.calendar_today_outlined,
+        placeholder: value.isEmpty,
+        onTap: readOnly ? null : () => _pickDate(value, (v) => setState(() => gradeTerms[key] = v)),
+      );
+    }
+
+    return [
+      const FormSection(icon: Icons.payments_outlined, title: 'الرسوم الشهرية'),
+      const FieldLabel('المبلغ الشهري (شيكل)'),
+      TextField(
+        controller: monthlyCtl,
+        enabled: !readOnly,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: const InputDecoration(hintText: '0'),
+        onChanged: (_) => setState(() {}),
+      ),
+      const FormSection(icon: Icons.date_range_outlined, title: 'الفصول'),
+      CheckboxListTile(
+        value: customTerms,
+        onChanged: readOnly ? null : (v) => setState(() => customTerms = v ?? false),
+        contentPadding: EdgeInsets.zero,
+        dense: true,
+        controlAffinity: ListTileControlAffinity.leading,
+        title: const Text('تواريخ فصول خاصة بهذه المرحلة', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+      ),
+      if (customTerms) ...[
+        FieldPair(
+          start: [const FieldLabel('بداية الفصل الأول'), dateField('term_1_start')],
+          end: [const FieldLabel('نهايته'), dateField('term_1_end')],
+        ),
+        const SizedBox(height: 10),
+        FieldPair(
+          start: [const FieldLabel('بداية الفصل الثاني'), dateField('term_2_start')],
+          end: [const FieldLabel('نهايته'), dateField('term_2_end')],
+        ),
+      ] else if (effective.isEmpty)
+        Text('لم تُضبط تواريخ الفصول في العام الدراسي', style: TextStyle(fontSize: 12, color: AppColors.amberDark))
+      else
+        for (final t in effective)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text('${termLabel(t.key)}: ${t.start} ← ${t.end}', style: const TextStyle(fontSize: 12, color: AppColors.muted)),
+          ),
+      if (sample.isNotEmpty) ...[
+        FormSection(
+          icon: Icons.playlist_add_check_outlined,
+          title: 'مثال: تسجيل $sampleStart',
+          note: '${sample.length} دفعة · ${money(planTotal(sample))}',
+        ),
+        for (final item in sample)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 5),
+            child: Row(
+              children: [
+                Expanded(child: Text(item.title, style: const TextStyle(fontSize: 12))),
+                Text(item.dueDate, style: const TextStyle(fontSize: 11.5, color: AppColors.muted, fontFamily: 'monospace')),
+                const SizedBox(width: 12),
+                Text(
+                  money(item.amount),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: item.amount < amount ? AppColors.amberDark : AppColors.heading,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    ];
+  }
+}
+
+/// نظام الرسوم: أقساط بتواريخ ثابتة، أو رسوم شهرية من تاريخ التسجيل.
+class _ModeToggle extends StatelessWidget {
+  const _ModeToggle({required this.value, required this.enabled, required this.onChanged});
+
+  final String value;
+  final bool enabled;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget segment(String key, String label) {
+      final selected = value == key;
+      return Expanded(
+        child: GestureDetector(
+          onTap: enabled && !selected ? () => onChanged(key) : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            height: 36,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: selected ? Colors.white : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: selected ? const [BoxShadow(color: Color(0x14000000), blurRadius: 3, offset: Offset(0, 1))] : null,
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: selected ? AppColors.heading : AppColors.muted,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(color: AppColors.hover, borderRadius: BorderRadius.circular(10)),
+      child: Row(
+        children: [
+          segment('installments', 'أقساط بتواريخ ثابتة'),
+          const SizedBox(width: 3),
+          segment('monthly', 'شهري من تاريخ التسجيل'),
+        ],
       ),
     );
   }

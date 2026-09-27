@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/fee_plan.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -113,8 +114,13 @@ class _ReturnToGradePlanSheetState extends State<_ReturnToGradePlanSheet> {
     _syncFromItem();
   }
 
+  GradeFee? _gradeFee(AppStore store) => store.gradePlans()[gradeName.trim().toLowerCase()] ?? store.feeFor(gradeName);
+
+  /// مرحلة برسوم شهرية: مواعيدها لكل طالب من تسجيله، فلا «قسط محدد» مشترك يبدأ منه.
+  bool _gradeMonthly(AppStore store) => isMonthlyGrade(_gradeFee(store));
+
   List<PlanItem> _planItems(AppStore store) {
-    final fee = store.gradePlans()[gradeName.trim().toLowerCase()] ?? store.feeFor(gradeName);
+    final fee = _gradeFee(store);
     final items = [...store.planItemsOf(fee)]
       ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
     return items;
@@ -236,6 +242,8 @@ class _ReturnToGradePlanSheetState extends State<_ReturnToGradePlanSheet> {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final items = _planItems(store);
+    final gradeMonthly = _gradeMonthly(store);
+    if (gradeMonthly && scope == PlanReturnScope.fromItem) scope = PlanReturnScope.future;
     final bottom = MediaQuery.viewInsetsOf(context).bottom;
 
     return Padding(
@@ -288,6 +296,12 @@ class _ReturnToGradePlanSheetState extends State<_ReturnToGradePlanSheet> {
               onTap: () => setState(() => scope = PlanReturnScope.future),
             ),
             const SizedBox(height: 6),
+            if (gradeMonthly)
+              const Text(
+                'رسوم شهرية: من تاريخ تسجيل كل طالب',
+                style: TextStyle(color: AppColors.muted, fontSize: 11),
+              )
+            else
             _ScopeOption(
               active: scope == PlanReturnScope.fromItem,
               title: 'البدء من قسط معيّن',

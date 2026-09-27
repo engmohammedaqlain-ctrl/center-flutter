@@ -563,6 +563,7 @@ class _GradeFeeFormScreenState extends State<GradeFeeFormScreen> {
             term2Start: f.term2Start,
             term2End: f.term2End,
             planItems: f.planItems,
+            feeMode: f.feeMode,
             createdAt: f.createdAt,
           ),
         );

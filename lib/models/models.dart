@@ -1177,6 +1177,7 @@ class GradeFee {
     this.term2Start = '',
     this.term2End = '',
     this.planItems = const [],
+    this.feeMode = 'installments',
     this.academicYearId = '',
     this.syncStatus = 'synced',
     this.createdAt,
@@ -1199,6 +1200,10 @@ class GradeFee {
   /// جدول أقساط المرحلة؛ فارغٌ حين لم تُضبط خطتها.
   List<PlanItem> planItems;
 
+  /// نظام الرسوم — `fee_mode`: `installments` خطة بتواريخ ثابتة للمرحلة ([planItems])،
+  /// و`monthly` [monthlyFee] كل شهر من تاريخ تسجيل الطالب داخل فصول المرحلة.
+  String feeMode;
+
   String academicYearId;
   String syncStatus;
   String? createdAt;
@@ -1216,6 +1221,7 @@ class GradeFee {
     'term_2_start': term2Start.isEmpty ? null : term2Start,
     'term_2_end': term2End.isEmpty ? null : term2End,
     'plan_items': [for (final i in planItems) i.toMap()],
+    'fee_mode': feeMode,
     'academic_year_id': academicYearId.isEmpty ? null : academicYearId,
     'created_at': createdAt,
     'updated_at': updatedAt,
@@ -1238,6 +1244,7 @@ class GradeFee {
         for (final e in (items is List ? items : const []))
           if (e is Map) PlanItem.fromMap(Map<String, dynamic>.from(e)),
       ],
+      feeMode: m['fee_mode'] == 'monthly' ? 'monthly' : 'installments',
       academicYearId: '${m['academic_year_id'] ?? ''}',
       syncStatus: '${m['sync_status'] ?? 'synced'}',
       createdAt: m['created_at']?.toString(),
