@@ -45,7 +45,7 @@ void main() {
     final decoded = jsonDecode(service.encode(s)) as Map<String, dynamic>;
     decoded.remove('cloud_data');
     expect(service.cloudOnlyRows(decoded), 0);
-    final result = await service.restore(s, jsonEncode(decoded));
+    final result = await service.write(s, service.prepare(s, jsonEncode(decoded)));
     expect(result.moodle, 0);
     expect(result.moodleNote, isEmpty);
   });
@@ -54,7 +54,7 @@ void main() {
     final s = await seeded();
     expect(s.networkEnabled, isFalse);
     final json = service.encode(s, cloudData: moodle);
-    final result = await service.restore(s, json);
+    final result = await service.write(s, service.prepare(s, json));
     expect(result.moodle, 0);
     expect(result.moodleNote, anyOf(contains('بلا إنترنت'), contains('بلا منشأة نشطة')));
   });

@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import 'backup_validate.dart';
+import 'payment_methods.dart';
 import 'store.dart';
 import 'supabase.dart';
 import 'user_message.dart';
@@ -234,25 +236,92 @@ class BackupService {
     return utf8.decode(await file.readAsBytes());
   }
 
-  /// دمج: السجل الأحدث محلياً لا يُستبدل، وكل مسترجَع يُسجَّل للرفع.
-  /// يعيد (مسترجَع، متخطّى لأنه أحدث محلياً، عناصر مودل كُتبت في السحابة، ملاحظة المودل).
-  Future<({int restored, int skipped, int moodle, String moodleNote})> restore(AppStore store, String json) async {
+  /// ملف مفحوص جاهز للكتابة — ما يمرّ به الاسترجاع بين الفحص والتأكيد والكتابة.
+  BackupPlan prepare(AppStore store, String json) {
     final decoded = jsonDecode(json);
     if (decoded is! Map || decoded['data'] is! Map) {
       throw const FormatException('الملف ليس نسخة احتياطية صالحة');
     }
     validateTenant(store, decoded);
 
-    final data = Map<String, dynamic>.from(decoded['data'] as Map);
+    // ملف مُجهَّز خارج البرنامج: معرّف عامه المؤقت (ay_@...) يُستبدل بعام الجهاز
+    // نفسه أو بالمعرّف الحتمي، وإلا نشأ عام ثانٍ «حالي» وتوزعت البيانات بين عامين
+    final deviceYears = [for (final y in store.academicYears) (id: y.id, label: y.label)];
+    final data = remapYearPlaceholders(
+      Map<String, dynamic>.from(decoded['data'] as Map),
+      (label) => pickRealYearId(label, deviceYears, store.yearIdFor),
+    );
+
+    // ── الفحص قبل أي كتابة ─────────────────────────────────────────────
+    final byCloud = <String, List>{};
+    for (final e in data.entries) {
+      if (e.key == 'pendingSyncs' || e.value is! List) continue;
+      byCloud[resolveCloudTable(e.key)] = e.value as List;
+    }
+    final existingIds = <String, Set<String>>{
+      for (final cloud in cloudToDexie.keys) cloud: {for (final r in store.allOf(cloud)) '${r['id']}'},
+    };
+    final cloudData = decoded['cloud_data'];
+    if (cloudData is Map) {
+      for (final t in cloudOnlyTables) {
+        if (cloudData[t] is List) byCloud[t] = cloudData[t] as List;
+      }
+    }
+    final check = validateBackupTables(
+      byCloud,
+      existingIds: existingIds,
+      existingRows: {'payments': store.allOf('payments'), 'installments': store.allOf('installments')},
+    );
+    return BackupPlan(backup: decoded, data: data, byCloud: byCloud, check: check, moodleRows: cloudOnlyRows(decoded));
+  }
+
+  /// أول جدول في الملف له سجلات مملوكة لمنشأة أخرى في السحابة — `findForeignOwnedTable`.
+  ///
+  /// ملف مدرسة يُسترجع في مدرسة ثانية كان يُقبل ثم يعلق رفعه كله: المعرّف فريد
+  /// على مستوى المنصة، وRLS تخفي صف الآخرين. يتطلب اتصالاً؛ الفشل يُرمى.
+  Future<({String table, int count})?> findForeignOwnedTable(Map<String, List> byCloud) async {
+    for (final e in byCloud.entries) {
+      if (e.key == 'payment_methods' || cloudOnlyTables.contains(e.key)) continue;
+      final ids = [
+        for (final r in e.value)
+          if (r is Map && r['id'] is String && (r['id'] as String).isNotEmpty) r['id'] as String,
+      ];
+      for (var i = 0; i < ids.length; i += 1000) {
+        final chunk = ids.sublist(i, i + 1000 > ids.length ? ids.length : i + 1000);
+        final res = await supabaseRpc('ids_owned_elsewhere', {'p_table': e.key, 'p_ids': chunk});
+        if (res == null) throw const FormatException('تعذّر فحص ملكية السجلات');
+        if (res is num && res > 0) return (table: e.key, count: res.toInt());
+      }
+    }
+    return null;
+  }
+
+  /// فحص ثم كتابة. ملف فيه خطأ يُرفض قبل أن يُكتب منه شيء.
+  Future<({int restored, int skipped, int moodle, String moodleNote})> restore(AppStore store, String json) async {
+    final plan = prepare(store, json);
+    if (plan.check.errorCount > 0) {
+      throw FormatException(
+        'الملف مرفوض: ${plan.check.errorCount} خطأ. أوّلها — ${formatBackupIssues(plan.check.errors.take(1).toList())}',
+      );
+    }
+    return write(store, plan);
+  }
+
+  /// دمج ملف مفحوص: السجل الأحدث محلياً لا يُستبدل، وكل مسترجَع يُسجَّل للرفع.
+  /// يعيد (مسترجَع، متخطّى لأنه أحدث محلياً، عناصر مودل كُتبت في السحابة، ملاحظة المودل).
+  Future<({int restored, int skipped, int moodle, String moodleNote})> write(AppStore store, BackupPlan plan) async {
+    final decoded = plan.backup;
+    final data = plan.data;
     var restored = 0;
     var skipped = 0;
 
     for (final entry in data.entries) {
-      if (entry.key == 'pendingSyncs' || entry.key == 'institutionSettings') continue;
+      if (entry.key == 'pendingSyncs') continue;
       final rows = entry.value;
       if (rows is! List) continue;
-      final cloud = resolveCloudTable('${entry.key}');
-      if (cloud == 'tenants') continue;
+      final cloud = resolveCloudTable(entry.key);
+      // جدول لا يعرفه النظام: نبّه الفحص أنه سيُتجاهل
+      if (!cloudToDexie.containsKey(cloud)) continue;
 
       final typed = rows
           .whereType<Map>()
@@ -263,18 +332,18 @@ class BackupService {
 
       final toRestore = <Map<String, dynamic>>[];
       for (final r in typed) {
-        final id = '${r['id']}';
-        final local = store.recordOf(cloud, id);
+        final local = store.recordOf(cloud, '${r['id']}');
         if (local != null) {
-          final localTs = DateTime.tryParse('${local['updated_at'] ?? ''}')?.millisecondsSinceEpoch ?? 0;
-          final fileTs = DateTime.tryParse('${r['updated_at'] ?? ''}')?.millisecondsSinceEpoch ?? 0;
-          if (localTs > fileTs) {
+          // الصف المؤرَّخ يُقدَّم على غير المؤرَّخ: ملف بلا وقت تعديل لا يدهس الأحدث
+          final localTs = DateTime.tryParse('${local['updated_at'] ?? ''}');
+          final fileTs = DateTime.tryParse('${r['updated_at'] ?? ''}');
+          if (localTs != null && (fileTs == null || localTs.isAfter(fileTs))) {
             skipped++;
             continue;
           }
         }
-        r['sync_status'] = 'pending';
-        toRestore.add(r);
+        // المبلغ النصي يمرّ من الفحص ثم يكسر حساب الأرصدة: يُحوَّل رقماً قبل الكتابة
+        toRestore.add({...normalizeBackupRow(cloud, r), 'sync_status': 'pending'});
       }
       if (toRestore.isEmpty) continue;
 
@@ -283,6 +352,23 @@ class BackupService {
         store.queueBackupSync(cloud, '${r['id']}', r);
       }
       restored += toRestore.length;
+    }
+
+    // عام مسترجَع حالي بجوار عام حالي آخر على الجهاز: يُوحَّد الآن
+    final years = data['academicYears'];
+    if (years is List && years.isNotEmpty) {
+      try {
+        await store.ensureCurrentAcademicYear();
+      } catch (_) {}
+    }
+
+    // وسائل الدفع في ملف قديم (قبل جدولها): النسخة الجديدة تحملها ضمن الجداول
+    final methodsTable = data['paymentMethods'];
+    final legacyMethods = decoded['payment_methods'];
+    if (!(methodsTable is List && methodsTable.isNotEmpty) && legacyMethods is List && legacyMethods.isNotEmpty) {
+      try {
+        await store.savePaymentMethods(decodePaymentMethods(legacyMethods));
+      } catch (_) {}
     }
 
     // صيغة الجوال القديمة: إعدادات الجهاز داخل الملف
@@ -294,6 +380,7 @@ class BackupService {
       }
     }
 
+    if (data['institutionSettings'] is List) await store.hydrateInstitution();
     store.recalculateAllBalances();
     await store.flush();
     store.notifySync();
@@ -324,3 +411,18 @@ class BackupService {
 }
 
 const appVersionLabel = '2.2';
+
+/// ملف مفحوص قبل الكتابة: بياناته بعد استبدال الأعوام المؤقتة، وجداوله بأسمائها
+/// السحابية، ونتيجة الفحص، وعدد عناصر المودل.
+class BackupPlan {
+  const BackupPlan({required this.backup, required this.data, required this.byCloud, required this.check, required this.moodleRows});
+
+  final Map backup;
+  final Map<String, dynamic> data;
+  final Map<String, List> byCloud;
+  final BackupCheckResult check;
+  final int moodleRows;
+
+  /// ملف جُهّز خارج البرنامج (بلا رمز منشأة) لا يُقبل دون فحص الملكية.
+  bool get hasTenantCode => '${backup['tenant_code'] ?? ''}'.isNotEmpty;
+}

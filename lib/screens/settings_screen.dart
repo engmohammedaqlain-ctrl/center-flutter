@@ -1,10 +1,12 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../data/academic_matching.dart';
 import '../data/arabic_search.dart';
 import '../data/backup.dart';
+import '../data/backup_validate.dart';
 import '../data/permissions.dart';
 import '../data/phone.dart';
 import '../data/fee_plan.dart';
@@ -2769,48 +2771,111 @@ Future<void> _restore(BuildContext context, AppStore store) async {
   }
   if (json == null || !context.mounted) return;
 
-  Map decoded;
-  Map<String, int> summary;
+  // ── الفحص قبل أي كتابة — كـ handleImportBackup في الويب ──────────────
+  BackupPlan plan;
   try {
-    decoded = jsonDecode(json) as Map;
-    service.validateTenant(store, decoded);
-    summary = service.summarize(json);
+    plan = service.prepare(store, json);
   } catch (e) {
     if (!context.mounted) return;
     showAppSnack(context, userMessage(e, 'ملف النسخة غير صالح'), error: true);
     return;
   }
+  final check = plan.check;
+  if (check.errorCount > 0) {
+    // تقرير كامل يُنسخ: الملف مرفوض ولم يُكتب منه شيء
+    final report = 'تقرير فحص ملف الاسترجاع\n${check.errorCount} خطأ. لم تُكتب أي بيانات.\n\n'
+        '${formatBackupIssues(check.errors)}'
+        '${check.errorCount > check.errors.length ? '\n\n... و${check.errorCount - check.errors.length} خطأ آخر' : ''}';
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('الملف مرفوض', style: AppText.title.copyWith(color: AppColors.danger)),
+              const SizedBox(height: 8),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.55),
+                child: SingleChildScrollView(child: SelectableText(report, style: const TextStyle(fontSize: 11.5, height: 1.5))),
+              ),
+              const SizedBox(height: 12),
+              ActionButtons(
+                primary: PrimaryButton(
+                  label: 'نسخ التقرير',
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: report));
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  },
+                ),
+                secondary: GhostButton(label: 'إغلاق', onPressed: () => Navigator.pop(ctx)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return;
+  }
 
-  final total = summary.values.fold<int>(0, (a, b) => a + b);
-  final moodleRows = service.cloudOnlyRows(decoded);
-  final lines = [
-    for (final e in summary.entries) '${tableLabelsAr[e.key] ?? e.key}: ${e.value}',
-    if (moodleRows > 0) 'محتوى المودل: $moodleRows',
-  ].join('\n');
+  // سجلات الملف مملوكة لمدرسة أخرى في السحابة: الاسترجاع يمرّ ثم يعلق رفعه كله.
+  // الملف بلا رمز منشأة (مُجهَّز خارج البرنامج) لا يُقبل دون هذا الفحص.
+  if ((store.tenantId ?? '').isNotEmpty) {
+    try {
+      final foreign = await runBusyOp(
+        context,
+        () => service.findForeignOwnedTable(plan.byCloud),
+        message: 'فحص ملكية السجلات...',
+      );
+      if (foreign != null) {
+        if (!context.mounted) return;
+        showAppSnack(
+          context,
+          'الملف مرفوض: ${foreign.count} من سجلات «${tableLabelsAr[foreign.table] ?? foreign.table}» تخص مدرسة أخرى. '
+          'احذف تلك المدرسة أولاً أو استرجع الملف فيها.',
+          error: true,
+        );
+        return;
+      }
+    } catch (e) {
+      if (!plan.hasTenantCode) {
+        if (!context.mounted) return;
+        showAppSnack(context, 'تعذّر فحص الملف: ${userMessage(e, 'تحقق من الاتصال')}', error: true);
+        return;
+      }
+    }
+  }
+  if (!context.mounted) return;
+
   final ok = await confirmSheet(
     context,
     title: 'استرجاع نسخة احتياطية',
-    message:
-        'سيتم دمج $total سجلاً في البيانات الحالية، وتسجيلها للرفع إلى السحابة.\n'
-        'السجل الأحدث على الجهاز لا يُستبدل.\n\n$lines\n\nهل تريد المتابعة؟',
+    message: 'دمج ${check.total} سجل؟\n'
+        'المتطابق يُستبدل بنسخة الملف.'
+        '${plan.moodleRows > 0 ? '\nومعها ${plan.moodleRows} عنصر مودل.' : ''}'
+        '${check.warnings.isNotEmpty ? '\n${check.warnings.length} تنبيه غير مانع.' : ''}',
     confirmLabel: 'تنفيذ',
   );
   if (!ok || !context.mounted) return;
 
-  final payload = json;
   try {
     final result = await runBusyOp(
       context,
-      () => service.restore(store, payload),
+      () => service.write(store, plan),
       message: 'جارٍ استرجاع النسخة...',
     );
     if (!context.mounted) return;
     final skipped = result.skipped > 0 ? '، وتُرك ${result.skipped} أحدث محلياً' : '';
     final moodle = result.moodle > 0 ? ' و${result.moodle} عنصر مودل' : '';
     final moodleNote = result.moodleNote.isEmpty ? '' : '، ${result.moodleNote}';
+    final warnings = check.warnings.isNotEmpty ? '، مع ${check.warnings.length} تنبيه' : '';
     showAppSnack(
       context,
-      'تم استرجاع ${result.restored} سجلاً$moodle$moodleNote$skipped',
+      'تم استرجاع ${result.restored} سجلاً$moodle$moodleNote$skipped$warnings. اضغط «رفع» لإرسالها.',
       error: result.moodleNote.startsWith('وتعذّر'),
     );
   } catch (e) {

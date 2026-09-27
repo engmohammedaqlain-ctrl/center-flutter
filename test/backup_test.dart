@@ -55,7 +55,7 @@ void main() {
     await target.bootstrap(FakeDisk());
     expect(target.students, isEmpty);
 
-    final result = await service.restore(target, json);
+    final result = await service.write(target, service.prepare(target, json));
     expect(result.restored, greaterThan(0));
     expect(target.students.length, studentCount);
     expect(target.payments.length, paymentCount);
@@ -71,7 +71,7 @@ void main() {
     target.upsertSubject(SubjectItem(id: extraId, name: 'مادة إضافية', code: 'EXT'));
     expect(target.subjects.any((x) => x.id == extraId), isTrue);
 
-    await service.restore(target, json);
+    await service.write(target, service.prepare(target, json));
     expect(target.subjects.any((x) => x.id == extraId), isTrue, reason: 'الدمج يبقي السجلات المحلية الزائدة');
   });
 
@@ -84,7 +84,7 @@ void main() {
     final target = await seeded();
     // ثبّت رمز منشأة مختلف إن وُجد
     if (target.currentTenant != null) {
-      expect(() => service.restore(target, json), throwsA(isA<FormatException>()));
+      expect(() => service.write(target, service.prepare(target, json)), throwsA(isA<FormatException>()));
     }
   });
 
@@ -95,7 +95,7 @@ void main() {
 
     final target = AppStore.forTesting();
     await target.bootstrap(FakeDisk());
-    await service.restore(target, json);
+    await service.write(target, service.prepare(target, json));
     expect(target.loggedIn, isFalse);
     expect(target.db.settings.containsKey('session_logged_in'), isFalse);
   });
@@ -103,7 +103,7 @@ void main() {
   test('a malformed file is rejected instead of wiping data', () async {
     final s = await seeded();
     final before = s.students.length;
-    expect(() => service.restore(s, '{"nope": 1}'), throwsA(isA<FormatException>()));
+    expect(() => service.write(s, service.prepare(s, '{"nope": 1}')), throwsA(isA<FormatException>()));
     expect(() => service.summarize('not json at all'), throwsA(isA<Object>()));
     expect(s.students.length, before);
   });
