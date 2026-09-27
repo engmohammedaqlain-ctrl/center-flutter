@@ -3516,6 +3516,12 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _realtime?.broadcastChanged(tables);
   }
 
+  /// إشارة «تغيّر» لكتابة لا تمرّ بالمزامنة — `announceChange` في sync.ts.
+  ///
+  /// المودل يُكتب في السحابة مباشرة: بدونها لا تعرف البوابات المفتوحة أن الوحدة
+  /// أُخفيت، فيبقى الطالب يراها حتى يغادر المادة ويعود.
+  void announceChange(List<String> tables) => _notifyPeers(tables);
+
   /// إشارات متتالية من أجهزة أخرى تُجمع في سحبٍ واحد.
   void scheduleAutoPull([Duration delay = autoPullDelay]) {
     if (!autoSync) return;

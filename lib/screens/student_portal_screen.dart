@@ -11,6 +11,7 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/moodle_style.dart';
 import '../widgets/widgets.dart';
 import 'portal_chrome.dart';
 
@@ -141,12 +142,25 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
 
   PortalRealtime? _portalRt;
 
+  /// يزيد مع كل إشارة «تغيّر»: طلبات دفع ولي الأمر تُعاد فيظهر قرار المالية.
+  int _realtimeTick = 0;
+
   void _startPortalRealtime() {
     final tid = user.tenantId;
     if (tid.isEmpty) return;
-    _portalRt = PortalRealtime(onChanged: (_) {
+    _portalRt = PortalRealtime(onChanged: (tables) {
       if (!mounted) return;
-      unawaited(_load());
+      // المودل يُحدَّث بتغيّر المودل وحده وبصمت: كان كل حضور أو دفعة يعيد تحميله
+      // فتختفي الوحدات وتعود أمام الطالب. وبقية البيانات تُحدَّث بلا شاشة تحميل.
+      const moodle = {'course_sections', 'course_items'};
+      final known = tables != null && tables.isNotEmpty;
+      if ((!known || tables.any(moodle.contains)) && tab == 'moodle' && !isParent) {
+        unawaited(_loadMoodle(silent: true));
+      }
+      if (!known || !tables.every(moodle.contains)) {
+        setState(() => _realtimeTick++);
+        unawaited(_load(silent: true));
+      }
     });
     unawaited(_portalRt!.connect(tid));
   }
@@ -157,11 +171,14 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      loading = true;
-      error = null;
-    });
+  /// [silent] تحديث لحظي: البيانات المعروضة تبقى حتى يصل الجديد.
+  Future<void> _load({bool silent = false}) async {
+    if (!silent || data == null) {
+      setState(() {
+        loading = true;
+        error = null;
+      });
+    }
     try {
       final result = await _service.studentData(user);
       if (!mounted) return;
@@ -181,9 +198,9 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
           if (!ids.contains(tab) && ids.isNotEmpty) tab = ids.first;
         }
       });
-      if (tab == 'moodle' && !isParent) _loadMoodle();
+      if (!silent && tab == 'moodle' && !isParent) _loadMoodle();
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || (silent && data != null)) return;
       setState(() {
         loading = false;
         error = 'تعذّر الاتصال بالسحابة.';
@@ -191,11 +208,13 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     }
   }
 
-  Future<void> _loadMoodle() async {
+  /// [silent] تحديث لحظي: الوحدات تبقى ظاهرة حتى تصل الجديدة، لا مؤشر تحميل مكانها.
+  /// ردّ طلب أقدم (مادة بُدّلت بسرعة) لا يغطي على الأحدث.
+  Future<void> _loadMoodle({bool silent = false}) async {
     final gid = moodleGroupId;
     if (gid == null || gid.isEmpty) return;
     final token = ++_moodleToken;
-    setState(() => loadingMoodle = true);
+    if (!silent) setState(() => loadingMoodle = true);
     final roomId = data?.subjects.where((s) => s.groupId == gid).map((s) => s.roomId).firstOrNull ?? '';
     try {
       final list = await _service.groupSections(
@@ -356,11 +375,11 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
           icon: Icons.layers_outlined,
         )
       else
-        for (final sec in sections)
+        for (final (i, sec) in sections.indexed)
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: Material(
-              color: Colors.white,
+              color: unitHeaderBg(unitColor(sec, i)),
               borderRadius: BorderRadius.circular(Corner.card),
               child: InkWell(
                 borderRadius: BorderRadius.circular(Corner.card),
@@ -368,6 +387,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                   MaterialPageRoute<void>(
                     builder: (_) => _StudentSectionPage(
                       section: sec,
+                      color: unitColor(sec, i),
                       service: _service,
                     ),
                   ),
@@ -376,12 +396,12 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(Corner.card),
-                    border: Border.all(color: AppColors.line),
+                    border: Border.all(color: unitBorder(unitColor(sec, i))),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.layers_outlined, size: 18, color: AppColors.heading),
-                      const SizedBox(width: 8),
+                      UnitNumber(n: i + 1, color: unitColor(sec, i)),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -390,9 +410,9 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                               sec.title,
                               style: TextStyle(
                                 fontFamily: AppText.family,
-                                color: AppColors.heading,
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w700,
+                                color: unitColor(sec, i),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
                               ),
                             ),
                             const SizedBox(height: 4),
@@ -1130,9 +1150,12 @@ class _SubjectGradesCard extends StatelessWidget {
 }
 
 class _StudentSectionPage extends StatelessWidget {
-  const _StudentSectionPage({required this.section, required this.service});
+  const _StudentSectionPage({required this.section, required this.color, required this.service});
 
   final CourseSection section;
+
+  /// لون الوحدة: يرقّم دروسها.
+  final Color color;
   final PortalService service;
 
   @override
@@ -1161,11 +1184,13 @@ class _StudentSectionPage extends StatelessWidget {
               ),
             )
           else
-            for (final it in section.items)
+            for (final (i, it) in section.items.indexed)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: _ContentTile(
                   item: it,
+                  number: i + 1,
+                  color: color,
                   service: service,
                   onOpen: it.contentUrl.isEmpty
                       ? null
@@ -1184,9 +1209,19 @@ class _StudentSectionPage extends StatelessWidget {
 }
 
 class _ContentTile extends StatelessWidget {
-  const _ContentTile({required this.item, this.onOpen, this.service = const PortalService()});
+  const _ContentTile({
+    required this.item,
+    required this.number,
+    required this.color,
+    this.onOpen,
+    this.service = const PortalService(),
+  });
 
   final CourseItem item;
+
+  /// رقم الدرس داخل وحدته، ولون وحدته.
+  final int number;
+  final Color color;
   final VoidCallback? onOpen;
   final PortalService service;
 
@@ -1218,15 +1253,8 @@ class _ContentTile extends StatelessWidget {
                       runSpacing: 4,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Text(
-                          item.title,
-                          style: TextStyle(
-                            fontFamily: AppText.family,
-                            color: AppColors.heading,
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
+                        ItemNumber(n: number, color: color),
+                        ItemTitle.of(item, fontSize: 13.5, maxLines: 3),
                         StatusChip.muted(item.typeLabel),
                       ],
                     ),

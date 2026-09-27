@@ -464,6 +464,41 @@ Future<void> supabaseUpdate(String table, Map<String, String> filters, Map<Strin
   }
 }
 
+/// كـ [supabaseUpdate] لكنه يعيد عدد الصفوف التي مسّها التعديل فعلاً.
+///
+/// الصلاحيات (RLS) لا ترفض التعديل بخطأ بل تتجاهل الصف بصمت: صفر صفوف يعني أن
+/// شيئاً لم يُحفظ — `.select('id')` ثم `assertTouched` في الويب.
+Future<int> supabaseUpdateTouched(String table, Map<String, String> filters, Map<String, dynamic> patch) async {
+  await SupabaseAuth.ensureFresh();
+  final uri = Uri.parse('${SupabaseConfig.url}/rest/v1/$table').replace(queryParameters: {...filters, 'select': 'id'});
+  final res = await http.patch(
+    uri,
+    headers: {...SupabaseConfig.authHeaders, 'Prefer': 'return=representation'},
+    body: jsonEncode(patch),
+  );
+  if (res.statusCode >= 400) {
+    throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
+  }
+  return _rowCount(res.body);
+}
+
+/// كـ [supabaseDelete] لكنه يعيد عدد الصفوف المحذوفة فعلاً.
+Future<int> supabaseDeleteTouched(String table, Map<String, String> filters) async {
+  await SupabaseAuth.ensureFresh();
+  final uri = Uri.parse('${SupabaseConfig.url}/rest/v1/$table').replace(queryParameters: {...filters, 'select': 'id'});
+  final res = await http.delete(uri, headers: {...SupabaseConfig.authHeaders, 'Prefer': 'return=representation'});
+  if (res.statusCode >= 400) {
+    throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
+  }
+  return _rowCount(res.body);
+}
+
+int _rowCount(String body) {
+  if (body.trim().isEmpty) return 0;
+  final decoded = jsonDecode(body);
+  return decoded is List ? decoded.length : 0;
+}
+
 // ── التخزين السحابي (Supabase Storage) ─────────────────────────────────────
 
 /// الرابط العام لملف في حاوية عامة — `getPublicUrl`.

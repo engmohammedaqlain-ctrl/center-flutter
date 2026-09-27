@@ -7,6 +7,7 @@ import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
+import '../widgets/moodle_style.dart';
 import '../widgets/widgets.dart';
 import 'portal_chrome.dart';
 
@@ -94,20 +95,58 @@ class _MoodleAdminScreenState extends State<MoodleAdminScreen> {
     await _load();
   }
 
+  /// وحدة يجري حفظ إظهارها: لا تُضغط مرتين قبل أن يصل الأول.
+  String? _pendingSectionId;
+
   Future<void> _toggle(CourseSection sec) async {
+    if (_pendingSectionId != null) return;
     final next = !sec.isVisible;
+    setState(() => _pendingSectionId = sec.id);
     try {
       await _service.setSectionVisible(sec.id, next);
       if (!mounted) return;
+      StoreScope.of(context).announceChange(const ['course_sections']);
       setState(() {
         sections = [
           for (final s in sections) s.id == sec.id ? s.copyWith(isVisible: next) : s,
         ];
       });
       showAppSnack(context, next ? 'الوحدة ظاهرة للطلاب' : 'الوحدة مخفية عن الطلاب');
+    } on PortalException catch (e) {
+      if (mounted) showAppSnack(context, e.message, error: true);
     } catch (_) {
       if (mounted) showAppSnack(context, 'تعذّر تغيير الإظهار', error: true);
+    } finally {
+      if (mounted) setState(() => _pendingSectionId = null);
     }
+  }
+
+  Future<void> _styleSection(CourseSection sec, int index) async {
+    final updated = await showSectionStyleSheet(
+      context,
+      section: sec,
+      index: index,
+      accent: AppColors.heading,
+      save: (title, color) => _service.updateSection(sec.id, title: title, color: color),
+    );
+    if (updated == null || !mounted) return;
+    StoreScope.of(context).announceChange(const ['course_sections']);
+    setState(() => sections = [for (final s in sections) s.id == sec.id ? updated : s]);
+  }
+
+  Future<void> _styleItem(CourseSection sec, CourseItem item) async {
+    final updated = await showItemStyleSheet(
+      context,
+      item: item,
+      accent: AppColors.heading,
+      save: (patch) => _service.updateItem(item.id, patch),
+    );
+    if (updated == null || !mounted) return;
+    StoreScope.of(context).announceChange(const ['course_items']);
+    setState(() => sections = [
+          for (final s in sections)
+            s.id == sec.id ? s.copyWith(items: [for (final i in s.items) i.id == item.id ? updated : i]) : s,
+        ]);
   }
 
   Future<void> _deleteItem(CourseSection sec, CourseItem item) async {
@@ -124,6 +163,7 @@ class _MoodleAdminScreenState extends State<MoodleAdminScreen> {
     try {
       await _service.deleteItem(item, tid);
       if (!mounted) return;
+      store.announceChange(const ['course_items']);
       setState(() {
         sections = [
           for (final s in sections)
@@ -131,6 +171,9 @@ class _MoodleAdminScreenState extends State<MoodleAdminScreen> {
         ];
       });
       showAppSnack(context, 'تم حذف المادة');
+    } on PortalException catch (e) {
+      if (mounted) showAppSnack(context, e.message, error: true);
+      await _load();
     } catch (_) {
       if (mounted) showAppSnack(context, 'فشل حذف المادة', error: true);
     }
@@ -239,8 +282,11 @@ class _MoodleAdminScreenState extends State<MoodleAdminScreen> {
                             _load();
                           },
                           onToggle: _toggle,
+                          pendingSectionId: _pendingSectionId,
                           onOpen: _openItem,
                           onDeleteItem: _deleteItem,
+                          onStyleSection: _styleSection,
+                          onStyleItem: _styleItem,
                         ),
                 ),
               ],
@@ -445,8 +491,11 @@ class _GroupDetail extends StatelessWidget {
     required this.loading,
     required this.onTerm,
     required this.onToggle,
+    required this.pendingSectionId,
     required this.onOpen,
     required this.onDeleteItem,
+    required this.onStyleSection,
+    required this.onStyleItem,
   });
 
   final AppStore store;
@@ -458,6 +507,9 @@ class _GroupDetail extends StatelessWidget {
   final ValueChanged<CourseSection> onToggle;
   final ValueChanged<CourseItem> onOpen;
   final void Function(CourseSection, CourseItem) onDeleteItem;
+  final String? pendingSectionId;
+  final void Function(CourseSection, int) onStyleSection;
+  final void Function(CourseSection, CourseItem) onStyleItem;
 
   @override
   Widget build(BuildContext context) {
@@ -487,9 +539,13 @@ class _GroupDetail extends StatelessWidget {
                         padding: const EdgeInsets.only(bottom: 8),
                         child: _SectionCard(
                           section: sections[i],
+                          index: i,
+                          pending: pendingSectionId == sections[i].id,
                           onToggle: () => onToggle(sections[i]),
                           onOpen: onOpen,
                           onDeleteItem: (it) => onDeleteItem(sections[i], it),
+                          onStyle: () => onStyleSection(sections[i], i),
+                          onStyleItem: (it) => onStyleItem(sections[i], it),
                         ),
                       ),
                     ),
@@ -578,20 +634,29 @@ class _TermSwitch extends StatelessWidget {
   }
 }
 
-/// وحدة في المادة: رأسها اسمها وعدد موادها وحالة ظهورها — والحالة نفسها زرّ
-/// يُظهرها أو يخفيها. تُطوى وتُفتح باللمس، ومادتها تُفتح بلمسها وتُحذف بسحبها.
+/// وحدة في المادة: رأسها رقمها واسمها بلونها وعدد موادها وحالة ظهورها — والحالة
+/// نفسها زرّ يُظهرها أو يخفيها. تُطوى وتُفتح باللمس، ومادتها تُفتح بلمسها وتُحذف
+/// بسحبها، والفرشاة تعدّل تنسيقها.
 class _SectionCard extends StatefulWidget {
   const _SectionCard({
     required this.section,
+    required this.index,
+    required this.pending,
     required this.onToggle,
     required this.onOpen,
     required this.onDeleteItem,
+    required this.onStyle,
+    required this.onStyleItem,
   });
 
   final CourseSection section;
+  final int index;
+  final bool pending;
   final VoidCallback onToggle;
   final ValueChanged<CourseItem> onOpen;
   final ValueChanged<CourseItem> onDeleteItem;
+  final VoidCallback onStyle;
+  final ValueChanged<CourseItem> onStyleItem;
 
   @override
   State<_SectionCard> createState() => _SectionCardState();
@@ -604,13 +669,16 @@ class _SectionCardState extends State<_SectionCard> {
   Widget build(BuildContext context) {
     final sec = widget.section;
     final visible = sec.isVisible;
+    final color = unitColor(sec, widget.index);
 
-    return Container(
+    return Opacity(
+      opacity: visible ? 1 : 0.8,
+      child: Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(Corner.card),
-        border: Border.all(color: AppColors.line),
+        border: Border.all(color: unitBorder(color)),
         boxShadow: cardShadow,
       ),
       child: Column(
@@ -618,10 +686,13 @@ class _SectionCardState extends State<_SectionCard> {
         children: [
           InkWell(
             onTap: sec.items.isEmpty ? null : () => setState(() => open = !open),
-            child: Padding(
-              padding: const EdgeInsetsDirectional.fromSTEB(14, 11, 8, 11),
+            child: Container(
+              color: unitHeaderBg(color),
+              padding: const EdgeInsetsDirectional.fromSTEB(12, 11, 4, 11),
               child: Row(
                 children: [
+                  UnitNumber(n: widget.index + 1, color: color),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -632,9 +703,9 @@ class _SectionCardState extends State<_SectionCard> {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontFamily: AppText.family,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13.5,
-                            color: AppColors.heading,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                            color: color,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -645,10 +716,16 @@ class _SectionCardState extends State<_SectionCard> {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    onPressed: widget.onStyle,
+                    tooltip: 'تنسيق الوحدة',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.palette_outlined, size: 18, color: AppColors.muted),
+                  ),
                   // حالة الظهور شارة تُضغط فتتبدّل — لا أيقونة منفصلة
                   PressableScale(
-                    onTap: widget.onToggle,
+                    onTap: widget.pending ? null : widget.onToggle,
                     child: Container(
                       padding: const EdgeInsetsDirectional.fromSTEB(8, 4, 8, 4),
                       decoration: BoxDecoration(
@@ -720,8 +797,11 @@ class _SectionCardState extends State<_SectionCard> {
                             },
                             child: _ItemRow(
                               item: sec.items[i],
+                              number: i + 1,
+                              color: color,
                               last: i == sec.items.length - 1,
                               onOpen: () => widget.onOpen(sec.items[i]),
+                              onStyle: () => widget.onStyleItem(sec.items[i]),
                             ),
                           ),
                       ],
@@ -730,17 +810,28 @@ class _SectionCardState extends State<_SectionCard> {
           ),
         ],
       ),
+      ),
     );
   }
 }
 
-/// مادة داخل وحدة: نوعها أيقونةً، واسمها، ولمسها يفتحها.
+/// مادة داخل وحدة: رقمها، واسمها بتنسيقه، ونوعها — ولمسها يفتحها.
 class _ItemRow extends StatelessWidget {
-  const _ItemRow({required this.item, required this.last, required this.onOpen});
+  const _ItemRow({
+    required this.item,
+    required this.number,
+    required this.color,
+    required this.last,
+    required this.onOpen,
+    required this.onStyle,
+  });
 
   final CourseItem item;
+  final int number;
+  final Color color;
   final bool last;
   final VoidCallback onOpen;
+  final VoidCallback onStyle;
 
   IconData get _icon => switch (item.type) {
         'url' => Icons.link_rounded,
@@ -764,23 +855,30 @@ class _ItemRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(_icon, size: 17, color: AppColors.muted),
+            ItemNumber(n: number, color: color),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    item.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppColors.text, fontSize: 12.5, fontWeight: FontWeight.w700),
-                  ),
+                  ItemTitle.of(item, fontSize: 12.5),
                   const SizedBox(height: 2),
-                  Text(item.typeLabel, style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
+                  Row(
+                    children: [
+                      Icon(_icon, size: 12, color: AppColors.faint),
+                      const SizedBox(width: 4),
+                      Text(item.typeLabel, style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
+                    ],
+                  ),
                 ],
               ),
+            ),
+            IconButton(
+              onPressed: onStyle,
+              tooltip: 'تعديل الدرس',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.palette_outlined, size: 17, color: AppColors.faint),
             ),
             if (openable) const Icon(Icons.open_in_new, size: 15, color: AppColors.faint),
           ],

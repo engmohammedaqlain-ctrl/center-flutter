@@ -668,6 +668,8 @@ class CourseItem {
     this.dueDate = '',
     this.sortOrder = 0,
     this.createdAt = '',
+    this.titleColor = '',
+    this.titleBold = false,
   });
 
   final String id;
@@ -688,7 +690,40 @@ class CourseItem {
   final int sortOrder;
   final String createdAt;
 
+  /// لون عنوان الدرس (hex من لوحة المودل)؛ الفارغ = لون النص العادي.
+  final String titleColor;
+
+  /// عنوان الدرس بخط عريض.
+  final bool titleBold;
+
   String get typeLabel => courseItemTypeLabels[type] ?? type;
+
+  CourseItem copyWith({
+    String? title,
+    String? contentUrl,
+    String? description,
+    String? dueDate,
+    int? sortOrder,
+    String? titleColor,
+    bool? titleBold,
+  }) =>
+      CourseItem(
+        id: id,
+        tenantId: tenantId,
+        sectionId: sectionId,
+        groupId: groupId,
+        title: title ?? this.title,
+        type: type,
+        contentUrl: contentUrl ?? this.contentUrl,
+        fileName: fileName,
+        fileSize: fileSize,
+        description: description ?? this.description,
+        dueDate: dueDate ?? this.dueDate,
+        sortOrder: sortOrder ?? this.sortOrder,
+        createdAt: createdAt,
+        titleColor: titleColor ?? this.titleColor,
+        titleBold: titleBold ?? this.titleBold,
+      );
 
   /// انتهى موعد التسليم قبل اليوم.
   bool isOverdue([DateTime? now]) {
@@ -716,6 +751,9 @@ class CourseItem {
         'description': description.isEmpty ? null : description,
         'due_date': dueDate.isEmpty ? null : dueDate,
         'sort_order': sortOrder,
+        // التنسيق يُرسل حين يُختار وحده: منشأة لم تشغّل ترحيل التنسيق بعد تبقى تكتب دروسها
+        if (titleColor.isNotEmpty) 'title_color': titleColor,
+        if (titleBold) 'title_bold': true,
         'created_at': createdAt.isEmpty ? _nowIso() : createdAt,
       };
 
@@ -733,6 +771,8 @@ class CourseItem {
         dueDate: '${m['due_date'] ?? ''}'.split('T').first,
         sortOrder: (m['sort_order'] as num?)?.toInt() ?? 0,
         createdAt: '${m['created_at'] ?? ''}',
+        titleColor: '${m['title_color'] ?? ''}',
+        titleBold: m['title_bold'] == true,
       );
 }
 
@@ -801,6 +841,7 @@ class CourseSection {
     this.createdAt = '',
     this.items = const [],
     this.roomIds = const [],
+    this.color = '',
   });
 
   final String id;
@@ -816,6 +857,9 @@ class CourseSection {
   /// شعب الوحدة من شعب المادة؛ فارغ = كل شعب المادة.
   final List<String> roomIds;
 
+  /// لون الوحدة (hex من لوحة المودل)؛ الفارغ = لون تلقائي بترتيبها.
+  final String color;
+
   String get termLabel => academicTermLabels[term] ?? term;
 
   /// الوحدة لكل الشعب (لا تقييد).
@@ -825,18 +869,22 @@ class CourseSection {
     bool? isVisible,
     List<CourseItem>? items,
     List<String>? roomIds,
+    String? title,
+    int? sortOrder,
+    String? color,
   }) =>
       CourseSection(
         id: id,
         tenantId: tenantId,
         groupId: groupId,
         term: term,
-        title: title,
-        sortOrder: sortOrder,
+        title: title ?? this.title,
+        sortOrder: sortOrder ?? this.sortOrder,
         isVisible: isVisible ?? this.isVisible,
         createdAt: createdAt,
         items: items ?? this.items,
         roomIds: roomIds ?? this.roomIds,
+        color: color ?? this.color,
       );
 
   Map<String, dynamic> toCloud() => {
@@ -848,6 +896,7 @@ class CourseSection {
         'sort_order': sortOrder,
         'is_visible': isVisible,
         'room_ids': roomIds.isEmpty ? null : roomIds,
+        if (color.isNotEmpty) 'color': color,
         'created_at': createdAt.isEmpty ? _nowIso() : createdAt,
       };
 
@@ -865,6 +914,7 @@ class CourseSection {
             for (final id in m['room_ids'] as List)
               if ('$id'.trim().isNotEmpty) '$id',
         ],
+        color: '${m['color'] ?? ''}',
       );
 }
 
@@ -1751,6 +1801,7 @@ class PortalService {
     required String title,
     int sortOrder = 0,
     List<String>? roomIds,
+    String color = '',
   }) async {
     final section = CourseSection(
       id: _uuid.v4(),
@@ -1761,27 +1812,47 @@ class PortalService {
       sortOrder: sortOrder,
       createdAt: _nowIso(),
       roomIds: roomIds ?? const [],
+      color: color,
     );
     await supabaseUpsert('course_sections', [section.toCloud()]);
     return section;
   }
 
-  /// تحديث شعب الوحدة أو عنوانها — فارغ = كل شعب المادة.
+  /// تحديث شعب الوحدة أو عنوانها أو لونها — فارغ الشعب = كل شعب المادة، وفارغ
+  /// اللون = اللون التلقائي بترتيبها.
   Future<void> updateSection(
     String sectionId, {
     String? title,
     String? term,
     bool? isVisible,
     List<String>? roomIds,
+    String? color,
   }) async {
     final patch = <String, dynamic>{
       if (title != null) 'title': title,
       if (term != null) 'term': term,
       if (isVisible != null) 'is_visible': isVisible,
       if (roomIds != null) 'room_ids': roomIds.isEmpty ? null : roomIds,
+      if (color != null) 'color': color.isEmpty ? null : color,
     };
     if (patch.isEmpty) return;
-    await supabaseUpdate('course_sections', {'id': 'eq.$sectionId'}, patch);
+    _assertTouched(await supabaseUpdateTouched('course_sections', {'id': 'eq.$sectionId'}, patch));
+  }
+
+  /// تعديل درس: عنوانه ووصفه ورابطه وموعده وتنسيق عنوانه. الفارغ يُمسح في القاعدة.
+  Future<void> updateItem(String itemId, Map<String, dynamic> patch) async {
+    if (patch.isEmpty) return;
+    _assertTouched(await supabaseUpdateTouched('course_items', {'id': 'eq.$itemId'}, patch));
+  }
+
+  /// ترتيب الوحدات أو دروس وحدة — `MoodleService.reorder`: `sort_order` بترتيب
+  /// القائمة، ولا يُكتب إلا ما تغيّر. الترتيب القديم قد يتكرر (كل الدروس 0)،
+  /// فتُرقَّم القائمة كلها من جديد مرة واحدة.
+  Future<void> reorder(String table, List<({String id, int sortOrder})> rows) async {
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].sortOrder == i) continue;
+      _assertTouched(await supabaseUpdateTouched(table, {'id': 'eq.${rows[i].id}'}, {'sort_order': i}));
+    }
   }
 
   /// كتابة وحدة جاهزة (بمعرّفها) — تسمح ببنائها على الجهاز ثم رفعها لاحقاً.
@@ -1790,21 +1861,29 @@ class PortalService {
   /// كتابة مادة جاهزة (بمعرّفها).
   Future<void> saveItem(CourseItem item) => supabaseUpsert('course_items', [item.toCloud()]);
 
-  Future<void> setSectionVisible(String sectionId, bool visible) =>
-      supabaseUpdate('course_sections', {'id': 'eq.$sectionId'}, {
-        'is_visible': visible,
-        'updated_at': _nowIso(),
-      });
+  /// إظهار الوحدة أو إخفاؤها. جدول الوحدات بلا `updated_at`: إرساله كان يرفض
+  /// التعديل كله فتبقى الوحدة ظاهرة للطالب.
+  Future<void> setSectionVisible(String sectionId, bool visible) async =>
+      _assertTouched(await supabaseUpdateTouched('course_sections', {'id': 'eq.$sectionId'}, {'is_visible': visible}));
 
   /// حذف وحدة وملفات موادها غير المشتركة مع شعب أخرى.
+  ///
+  /// الوحدة أولاً ثم ملفاتها: حذف الملفات قبلها ثم فشل حذف الوحدة كان يترك دروساً
+  /// بروابط معطوبة عند الطلاب. الحذف المتتالي (CASCADE) يحذف دروسها.
   Future<void> deleteSection(CourseSection section, String tenantId) async {
     final paths = [
       for (final it in section.items)
         if (materialPath(it.contentUrl) != null) materialPath(it.contentUrl)!,
     ];
-    final removable = await _unsharedFiles(paths, tenantId, sectionId: section.id);
+    _assertTouched(await supabaseDeleteTouched('course_sections', {'id': 'eq.${section.id}', 'tenant_id': 'eq.$tenantId'}));
+    // بعد حذف دروسها لا يشير إلى الملف إلا دروس نُسخت إلى شعب أخرى
+    final removable = await _unsharedFiles(paths, tenantId);
     if (removable.isNotEmpty) await storageRemove(materialsBucket, removable);
-    await supabaseDelete('course_sections', {'id': 'eq.${section.id}', 'tenant_id': 'eq.$tenantId'});
+  }
+
+  /// التعديل والحذف لا يُعدّان ناجحين إلا إن مسّا صفاً فعلاً — `assertTouched`.
+  static void _assertTouched(int rows) {
+    if (rows == 0) throw const MoodleNotSaved();
   }
 
   /// مسار الملف داخل الحاوية من رابطه العام، أو `null` لرابط خارجي.
@@ -1879,18 +1958,21 @@ class PortalService {
           : '',
       sortOrder: draft.sortOrder,
       createdAt: _nowIso(),
+      titleColor: draft.titleColor,
+      titleBold: draft.titleBold,
     );
     await supabaseUpsert('course_items', [item.toCloud()]);
     return item;
   }
 
+  /// حذف درس ثم ملفه: فشل الحذف بعد حذف الملف كان يترك درساً بلا ملفه.
   Future<void> deleteItem(CourseItem item, String tenantId) async {
+    _assertTouched(await supabaseDeleteTouched('course_items', {'id': 'eq.${item.id}', 'tenant_id': 'eq.$tenantId'}));
     final path = materialPath(item.contentUrl);
     if (path != null) {
-      final removable = await _unsharedFiles([path], tenantId, itemId: item.id);
+      final removable = await _unsharedFiles([path], tenantId);
       if (removable.isNotEmpty) await storageRemove(materialsBucket, removable);
     }
-    await supabaseDelete('course_items', {'id': 'eq.${item.id}', 'tenant_id': 'eq.$tenantId'});
   }
 
   /// ملفات لا يشير إليها عنصر آخر — نسخ القسم ينسخ الرابط لا الملف.
@@ -1942,6 +2024,7 @@ class PortalService {
         sortOrder: section.sortOrder,
         isVisible: section.isVisible,
         createdAt: _nowIso(),
+        color: section.color,
       );
       try {
         await supabaseUpsert('course_sections', [copy.toCloud()]);
@@ -1965,6 +2048,8 @@ class PortalService {
               dueDate: it.dueDate,
               sortOrder: it.sortOrder,
               createdAt: _nowIso(),
+              titleColor: it.titleColor,
+              titleBold: it.titleBold,
             ).toCloud(),
         ]);
       }
@@ -1972,6 +2057,14 @@ class PortalService {
     }
     return count;
   }
+}
+
+/// المودل: تعديل أو حذف لم يمسّ صفاً في السحابة — `NOT_SAVED_MESSAGE`.
+///
+/// الصلاحيات (RLS) تتجاهل الصف بصمت بدل أن ترفض بخطأ: كانت الوحدة تختفي من الشاشة
+/// وتعود عند التحديث. ليس انقطاعاً فلا يُصفّ ليُعاد: إعادة المحاولة تنتهي بالنتيجة نفسها.
+class MoodleNotSaved extends PortalException {
+  const MoodleNotSaved() : super('لم يُحفظ التغيير: لا صلاحية، أو حُذف العنصر من جهاز آخر');
 }
 
 /// خطأ برسالة جاهزة للعرض.

@@ -21,6 +21,7 @@ import '../widgets/attendance_view.dart';
 import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import '../widgets/list_paging.dart';
+import '../widgets/moodle_style.dart';
 import 'portal_chrome.dart';
 
 export 'student_portal_screen.dart' show StudentPortalScreen;
@@ -1084,7 +1085,10 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   /// عملية كتابة تعمل بلا شبكة: تُجرَّب على السحابة، وإن تعذّرت تُصفّ لتُرفع
   /// لاحقاً. في الحالتين يُطبَّق أثرها على الشاشة، فلا ينتظر المعلم شبكة.
   /// عند انشغال السيرفر تُعاد المحاولة مرة قصيرة قبل التصفيف.
-  Future<bool> _writeOrQueue(
+  ///
+  /// يعيد `true` إن حُفظ، و`false` إن صُفّ، و`null` إن ردّته السحابة (المودل: لا
+  /// صلاحية أو حُذف العنصر) — فلا يُصفّ ليُعاد بلا جدوى، وتُعاد الوحدات من السحابة.
+  Future<bool?> _writeOrQueue(
     Future<void> Function() send,
     Map<String, dynamic> op, {
     List<String> announceTables = const [],
@@ -1094,6 +1098,12 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       if (announceTables.isNotEmpty) _portalRt?.announce(announceTables);
       if (mounted) setState(() => offline = false);
       return true;
+    } on MoodleNotSaved catch (e) {
+      if (mounted) {
+        showAppSnack(context, e.message, error: true);
+        unawaited(_loadMoodle());
+      }
+      return null;
     } catch (e) {
       await _offline.queueOp(op, widget.user.id);
       if (mounted) {
@@ -1530,11 +1540,17 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       {'kind': 'section_upsert', 'row': created.toCloud()},
       announceTables: const ['course_sections'],
     );
-    if (mounted) _flash(sent ? 'تم إنشاء القسم بنجاح' : 'حُفظ على الجهاز، سيُرفع عند عودة الاتصال');
+    if (mounted && sent != null) _flash(sent ? 'تم إنشاء القسم بنجاح' : 'حُفظ على الجهاز، سيُرفع عند عودة الاتصال');
   }
 
+  /// وحدة يجري حفظ إظهارها: لا تُضغط مرتين قبل أن يصل الأول.
+  String? _pendingSectionId;
+
   Future<void> _toggleVisibility(CourseSection sec) async {
-    final next = !sec.isVisible;
+    if (_pendingSectionId != null) return;
+    final current = sections.where((s) => s.id == sec.id).firstOrNull ?? sec;
+    final next = !current.isVisible;
+    _pendingSectionId = sec.id;
     setState(() => sections = [for (final s in sections) s.id == sec.id ? s.copyWith(isVisible: next) : s]);
     await _cacheSections();
     final sent = await _writeOrQueue(
@@ -1542,12 +1558,93 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       {'kind': 'section_visible', 'id': sec.id, 'visible': next},
       announceTables: const ['course_sections'],
     );
-    if (!mounted) return;
+    _pendingSectionId = null;
+    if (!mounted || sent == null) return;
     if (sent) {
       _flash(next ? 'الوحدة ظاهرة للطلاب' : 'الوحدة مخفية عن الطلاب');
     } else {
       _flash('حُفظ الإظهار محلياً، سيُرفع عند عودة الاتصال');
     }
+  }
+
+  /// ترتيب الوحدات والدروس: الشاشة أولاً، وتُعاد من السحابة إن فشل الحفظ.
+  /// يحتاج اتصالاً: لا يُصفّ، فترتيب قديم يُرفع لاحقاً قد يدهس ترتيباً أحدث.
+  static List<T>? _moved<T>(List<T> list, int index, int dir) {
+    final to = index + dir;
+    if (to < 0 || to >= list.length) return null;
+    final next = [...list];
+    final tmp = next[index];
+    next[index] = next[to];
+    next[to] = tmp;
+    return next;
+  }
+
+  Future<void> _saveOrder(String table, List<({String id, int sortOrder})> rows) async {
+    try {
+      await _service.reorder(table, rows);
+      _portalRt?.announce(const ['course_sections', 'course_items']);
+      await _cacheSections();
+    } on PortalException catch (e) {
+      if (!mounted) return;
+      showAppSnack(context, e.message, error: true);
+      await _loadMoodle();
+    } catch (_) {
+      if (!mounted) return;
+      showAppSnack(context, 'تعذّر حفظ الترتيب', error: true);
+      await _loadMoodle();
+    }
+  }
+
+  Future<void> _moveSection(int index, int dir) async {
+    final next = _moved(sections, index, dir);
+    if (next == null || _pendingSectionId != null) return;
+    setState(() => sections = [for (var i = 0; i < next.length; i++) next[i].copyWith(sortOrder: i)]);
+    await _saveOrder('course_sections', [for (final s in next) (id: s.id, sortOrder: s.sortOrder)]);
+  }
+
+  Future<void> _moveItem(CourseSection sec, int index, int dir) async {
+    final current = sections.where((s) => s.id == sec.id).firstOrNull;
+    final next = current == null ? null : _moved(current.items, index, dir);
+    if (next == null) return;
+    setState(() => sections = [
+          for (final s in sections)
+            s.id == sec.id ? s.copyWith(items: [for (var i = 0; i < next.length; i++) next[i].copyWith(sortOrder: i)]) : s,
+        ]);
+    await _saveOrder('course_items', [for (final it in next) (id: it.id, sortOrder: it.sortOrder)]);
+  }
+
+  /// تنسيق الوحدة: عنوانها ولونها — يحفظ في السحابة قبل أن تتغير الشاشة.
+  Future<void> _styleSection(CourseSection sec) async {
+    final index = sections.indexWhere((s) => s.id == sec.id);
+    final current = index < 0 ? sec : sections[index];
+    final updated = await showSectionStyleSheet(
+      context,
+      section: current,
+      index: index < 0 ? 0 : index,
+      accent: _Brand(data!.branding).primary,
+      save: (title, color) => _service.updateSection(sec.id, title: title, color: color),
+    );
+    if (updated == null || !mounted) return;
+    _portalRt?.announce(const ['course_sections']);
+    setState(() => sections = [for (final s in sections) s.id == sec.id ? updated : s]);
+    await _cacheSections();
+  }
+
+  /// تعديل الدرس: عنوانه ووصفه ورابطه وموعده وتنسيق عنوانه.
+  Future<void> _styleItem(CourseSection sec, CourseItem item) async {
+    final updated = await showItemStyleSheet(
+      context,
+      item: item,
+      accent: _Brand(data!.branding).primary,
+      save: (patch) => _service.updateItem(item.id, patch),
+    );
+    if (updated == null || !mounted) return;
+    _portalRt?.announce(const ['course_items']);
+    setState(() => sections = [
+          for (final s in sections)
+            s.id == sec.id ? s.copyWith(items: [for (final i in s.items) i.id == item.id ? updated : i]) : s,
+        ]);
+    await _cacheSections();
   }
 
   /// حفظ وحدات الفصل المعروضة على الجهاز بعد كل تعديل.
@@ -1575,6 +1672,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         'row': sec.toCloud(),
         'items': [for (final i in sec.items) i.toCloud()],
       },
+      announceTables: const ['course_sections', 'course_items'],
     );
   }
 
@@ -1611,10 +1709,11 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       () => _writeOrQueue(
         () => _service.saveItem(created),
         {'kind': 'item_upsert', 'row': created.toCloud()},
+        announceTables: const ['course_items'],
       ),
       message: 'جارٍ حفظ المادة...',
     );
-    if (mounted) _flash(sent ? 'تمت إضافة المادة بنجاح' : 'حُفظت على الجهاز، سترفع عند عودة الاتصال');
+    if (mounted && sent != null) _flash(sent ? 'تمت إضافة المادة بنجاح' : 'حُفظت على الجهاز، سترفع عند عودة الاتصال');
   }
 
   Future<void> _deleteItem(CourseSection sec, CourseItem item) async {
@@ -1634,6 +1733,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     await _writeOrQueue(
       () => _service.deleteItem(item, widget.user.tenantId),
       {'kind': 'item_delete', 'tenant_id': widget.user.tenantId, 'row': item.toCloud()},
+      announceTables: const ['course_items'],
     );
   }
 
@@ -1656,6 +1756,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         color: _Brand(data!.branding).primary,
       ),
     );
+    if (count != null && count > 0) _portalRt?.announce(const ['course_sections', 'course_items']);
     if (count != null && mounted) _flash('تم نسخ القسم بنجاح إلى $count مادة');
   }
 
@@ -2290,33 +2391,35 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
           onAction: hasGroup ? _newSection : null,
         )
       else
-        for (final sec in sections)
+        for (var i = 0; i < sections.length; i++)
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: Material(
-              color: sec.isVisible ? Colors.white : const Color(0x33FFFBEB),
+              color: sections[i].isVisible ? unitHeaderBg(unitColor(sections[i], i)) : const Color(0x33FFFBEB),
               borderRadius: BorderRadius.circular(Corner.card),
               child: InkWell(
                 borderRadius: BorderRadius.circular(Corner.card),
-                onTap: () => _openSectionPage(sec),
+                onTap: () => _openSectionPage(sections[i]),
                 child: Container(
-                  padding: const EdgeInsetsDirectional.fromSTEB(14, 12, 12, 12),
+                  padding: const EdgeInsetsDirectional.fromSTEB(12, 12, 4, 12),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(Corner.card),
-                    border: Border.all(color: sec.isVisible ? _C.line : _C.amber200),
+                    border: Border.all(color: sections[i].isVisible ? unitBorder(unitColor(sections[i], i)) : _C.amber200),
                   ),
                   child: Row(
                     children: [
+                      UnitNumber(n: i + 1, color: unitColor(sections[i], i)),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              sec.title,
-                              style: const TextStyle(
+                              sections[i].title,
+                              style: TextStyle(
                                 fontFamily: AppText.family,
-                                color: _C.navy,
-                                fontSize: 13.5,
+                                color: unitColor(sections[i], i),
+                                fontSize: 14,
                                 fontWeight: FontWeight.w900,
                               ),
                             ),
@@ -2325,14 +2428,18 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                               spacing: 6,
                               runSpacing: 4,
                               children: [
-                                _Badge(sec.termLabel, fg: _C.muted, bg: _C.line, radius: Corner.chip),
-                                _Badge('${sec.items.length} عنصر', fg: _C.muted, bg: _C.line, radius: Corner.chip),
-                                if (!sec.isVisible)
+                                _Badge(sections[i].termLabel, fg: _C.muted, bg: _C.line, radius: Corner.chip),
+                                _Badge('${sections[i].items.length} عنصر', fg: _C.muted, bg: _C.line, radius: Corner.chip),
+                                if (!sections[i].isVisible)
                                   const _Badge('مخفي', fg: _C.amber700, bg: _C.amber100, radius: Corner.chip),
                               ],
                             ),
                           ],
                         ),
+                      ),
+                      _MoveButtons(
+                        onUp: i == 0 ? null : () => _moveSection(i, -1),
+                        onDown: i == sections.length - 1 ? null : () => _moveSection(i, 1),
                       ),
                       const AppChevron(color: _C.faint),
                     ],
@@ -2354,6 +2461,10 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
           onAddItem: () => _newItem(sec),
           onCopy: () => _copySection(sec),
           onToggle: () => _toggleVisibility(sec),
+          onStyle: () => _styleSection(sec),
+          onStyleItem: (it) => _styleItem(sec, it),
+          onMoveItem: (index, dir) => _moveItem(sec, index, dir),
+          unitIndex: () => sections.indexWhere((s) => s.id == sec.id),
           onDelete: () async {
             await _deleteSection(sec);
             if (mounted) Navigator.of(context).pop();
@@ -2395,14 +2506,15 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
           for (final s in sections) s.id == sec.id ? s.copyWith(roomIds: roomIds) : s,
         ]);
     await _cacheSections();
-    await _writeOrQueue(
+    final sent = await _writeOrQueue(
       () => _service.updateSection(sec.id, roomIds: roomIds),
       {
         'kind': 'section_upsert',
         'row': sections.firstWhere((s) => s.id == sec.id).toCloud(),
       },
+      announceTables: const ['course_sections'],
     );
-    if (mounted) _flash('حُفظت الشعب');
+    if (mounted && sent != null) _flash('حُفظت الشعب');
   }
 }
 
@@ -2978,6 +3090,10 @@ class _TeacherSectionPage extends StatefulWidget {
     required this.onAddItem,
     required this.onCopy,
     required this.onToggle,
+    required this.onStyle,
+    required this.onStyleItem,
+    required this.onMoveItem,
+    required this.unitIndex,
     required this.onDelete,
     required this.onOpenItem,
     required this.onDeleteItem,
@@ -2991,6 +3107,10 @@ class _TeacherSectionPage extends StatefulWidget {
   final Future<void> Function() onAddItem;
   final VoidCallback onCopy;
   final Future<void> Function() onToggle;
+  final Future<void> Function() onStyle;
+  final Future<void> Function(CourseItem) onStyleItem;
+  final Future<void> Function(int index, int dir) onMoveItem;
+  final int Function() unitIndex;
   final Future<void> Function() onDelete;
   final ValueChanged<CourseItem> onOpenItem;
   final Future<void> Function(CourseItem) onDeleteItem;
@@ -3022,6 +3142,8 @@ class _TeacherSectionPageState extends State<_TeacherSectionPage> {
   @override
   Widget build(BuildContext context) {
     final sec = section;
+    final unit = widget.unitIndex();
+    final color = unitColor(sec, unit < 0 ? 0 : unit);
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
@@ -3071,6 +3193,14 @@ class _TeacherSectionPageState extends State<_TeacherSectionPage> {
                     widget.onEditRooms!();
                   }),
                 ),
+              _Soft(
+                label: 'تنسيق',
+                icon: Icons.palette_outlined,
+                fg: _C.muted,
+                height: 34,
+                radius: Corner.field,
+                onTap: () => _refreshAfter(widget.onStyle),
+              ),
               _Soft(label: 'نسخ', icon: Icons.copy_outlined, fg: _C.muted, height: 34, radius: Corner.field, onTap: widget.onCopy),
               _Soft(
                 label: sec.isVisible ? 'إخفاء' : 'إظهار',
@@ -3094,15 +3224,31 @@ class _TeacherSectionPageState extends State<_TeacherSectionPage> {
               ),
             )
           else
-            for (final it in sec.items)
+            for (var i = 0; i < sec.items.length; i++)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: _ItemTile(
-                  item: it,
+                  item: sec.items[i],
+                  number: i + 1,
+                  color: color,
                   service: widget.service,
-                  trailing: Row(
+                  trailing: Builder(builder: (context) {
+                    final it = sec.items[i];
+                    return Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      _MoveButtons(
+                        onUp: i == 0 ? null : () => _refreshAfter(() => widget.onMoveItem(i, -1)),
+                        onDown: i == sec.items.length - 1 ? null : () => _refreshAfter(() => widget.onMoveItem(i, 1)),
+                      ),
+                      IconButton(
+                        tooltip: 'تعديل الدرس',
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                        padding: EdgeInsets.zero,
+                        icon: const Icon(Icons.palette_outlined, size: 16, color: _C.muted),
+                        onPressed: () => _refreshAfter(() => widget.onStyleItem(it)),
+                      ),
                       if (it.contentUrl.isNotEmpty)
                         _Soft(
                           label: 'فتح',
@@ -3121,7 +3267,8 @@ class _TeacherSectionPageState extends State<_TeacherSectionPage> {
                         onPressed: () => _refreshAfter(() => widget.onDeleteItem(it)),
                       ),
                     ],
-                  ),
+                  );
+                  }),
                 ),
               ),
         ],
@@ -3130,13 +3277,53 @@ class _TeacherSectionPageState extends State<_TeacherSectionPage> {
   }
 }
 
+/// سهما تقديم وتأخير الوحدة أو الدرس.
+class _MoveButtons extends StatelessWidget {
+  const _MoveButtons({required this.onUp, required this.onDown});
+
+  final VoidCallback? onUp;
+  final VoidCallback? onDown;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget arrow(IconData icon, VoidCallback? onTap, String tip) => InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(6),
+          child: Tooltip(
+            message: tip,
+            child: Padding(
+              padding: const EdgeInsets.all(2),
+              child: Icon(icon, size: 16, color: onTap == null ? _C.line : _C.muted),
+            ),
+          ),
+        );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        arrow(Icons.keyboard_arrow_up_rounded, onUp, 'تقديم'),
+        arrow(Icons.keyboard_arrow_down_rounded, onDown, 'تأخير'),
+      ],
+    );
+  }
+}
+
 /// مادة تعليمية: نوعها وعنوانها ووصفها وموعد تسليمها، مقابل إجراءاتها.
 class _ItemTile extends StatelessWidget {
-  const _ItemTile({required this.item, required this.trailing, this.service = const PortalService()});
+  const _ItemTile({
+    required this.item,
+    required this.trailing,
+    this.service = const PortalService(),
+    this.number,
+    this.color,
+  });
 
   final CourseItem item;
   final Widget trailing;
   final PortalService service;
+
+  /// رقم الدرس داخل وحدته، ولون وحدته.
+  final int? number;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -3167,16 +3354,9 @@ class _ItemTile extends StatelessWidget {
                       runSpacing: 4,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
+                        if (number != null && color != null) ItemNumber(n: number!, color: color!),
+                        ItemTitle.of(item, maxLines: 3),
                         _Badge(item.typeLabel, fg: colors.fg, bg: colors.bg, radius: Corner.chip),
-                        Text(
-                          item.title,
-                          style: const TextStyle(
-                            fontFamily: AppText.family,
-                            color: _C.text,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
                       ],
                     ),
                     if (item.description.trim().isNotEmpty) ...[
@@ -3297,6 +3477,7 @@ class _NewSectionSheetState extends State<_NewSectionSheet> {
   final title = TextEditingController();
   late String term = widget.initialTerm == 'general' ? 'other' : widget.initialTerm;
   late List<String> selectedRooms = [for (final r in widget.rooms) r.id];
+  String unitColorHex = '';
   String? titleError;
   bool busy = false;
 
@@ -3326,6 +3507,7 @@ class _NewSectionSheetState extends State<_NewSectionSheet> {
         sortOrder: widget.sortOrder,
         createdAt: DateTime.now().toIso8601String(),
         roomIds: roomIds,
+        color: unitColorHex,
       ),
     );
   }
@@ -3353,6 +3535,9 @@ class _NewSectionSheetState extends State<_NewSectionSheet> {
           ],
           onChanged: (v) => setState(() => term = v ?? term),
         ),
+        const SizedBox(height: 12),
+        const _Label('لون الوحدة:'),
+        ColorSwatches(value: unitColorHex, onChanged: (v) => setState(() => unitColorHex = v), noneLabel: 'تلقائي'),
         if (widget.rooms.length > 1) ...[
           const SizedBox(height: 12),
           const _Label('الشعب المستهدفة (فارغ الكل = كل الشعب):'),
@@ -3483,6 +3668,8 @@ class _NewItemSheetState extends State<_NewItemSheet> {
   final description = TextEditingController();
   String type = 'file';
   String dueDate = '';
+  String titleColor = '';
+  bool titleBold = false;
   XFile? file;
   int fileSize = 0;
   List<int>? fileBytes;
@@ -3601,6 +3788,8 @@ class _NewItemSheetState extends State<_NewItemSheet> {
         dueDate: resolvedDue,
         sortOrder: widget.section.items.length,
         createdAt: DateTime.now().toIso8601String(),
+        titleColor: titleColor,
+        titleBold: titleBold,
       );
       if (mounted) Navigator.pop(context, item);
     } on PortalException catch (e) {
@@ -3651,6 +3840,13 @@ class _NewItemSheetState extends State<_NewItemSheet> {
           onChanged: (_) {
             if (titleError != null) setState(() => titleError = null);
           },
+        ),
+        const SizedBox(height: 12),
+        ItemTitleStyleFields(
+          color: titleColor,
+          bold: titleBold,
+          onColor: (v) => setState(() => titleColor = v),
+          onBold: (v) => setState(() => titleBold = v),
         ),
         if (type == 'file') ...[
           const SizedBox(height: 12),
