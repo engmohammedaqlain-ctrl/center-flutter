@@ -94,6 +94,7 @@ class BackupService {
     'groups': 'groups',
     'students': 'students',
     'student_years': 'studentYears',
+    'student_sections': 'studentSections',
     'student_attachments': 'attachments',
     'enrollments': 'enrollments',
     'installments': 'installments',

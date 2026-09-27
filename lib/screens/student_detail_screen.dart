@@ -2051,8 +2051,20 @@ List<String> _studentYearHistory(AppStore store, Student student) {
     final yb = store.academicYears.where((y) => y.id == b.academicYearId).firstOrNull;
     return (ya?.startsOn ?? a.createdAt ?? '').compareTo(yb?.startsOn ?? b.createdAt ?? '');
   });
+  // فترات الشعب في كل عام: تظهر إن تنقّل الطالب بين أكثر من شعبة فيه
+  final periods = store.sectionPeriodsOf(student.id);
+  List<String> periodsOf(String yearId) {
+    final list = [for (final p in periods) if ('${p['academic_year_id'] ?? ''}' == yearId) p];
+    if (list.length < 2) return const [];
+    return [
+      for (final p in list)
+        '    ${p['section'] ?? ''}: ${'${p['from_date'] ?? ''}'.split('T').first} — '
+            '${'${p['to_date'] ?? ''}'.isEmpty ? 'الآن' : '${p['to_date']}'.split('T').first}',
+    ];
+  }
+
   return [
-    for (final y in rows)
+    for (final y in rows) ...[
       () {
         final year = store.academicYears.where((a) => a.id == y.academicYearId).firstOrNull;
         final name = year?.label ?? 'عام دراسي';
@@ -2066,6 +2078,8 @@ List<String> _studentYearHistory(AppStore store, Student student) {
             : '';
         return '$name · $grade$section · $status$discount';
       }(),
+      ...periodsOf(y.academicYearId),
+    ],
   ];
 }
 

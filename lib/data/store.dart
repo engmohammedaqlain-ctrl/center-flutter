@@ -240,6 +240,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     'finance_attachments': [],
     'payment_requests': [],
     'payment_methods': [],
+    'student_sections': [],
   };
   final attachmentsByStudent = <String, StudentAttachments>{};
 
@@ -2618,6 +2619,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         _queue('student_years', snapshot.id, 'INSERT', snapshot.toCloud());
       }
 
+      closeSectionPeriod(student.id, now);
       student.section = '';
       if (to != null && to.trim().isNotEmpty) {
         student.gradeLevel = to.trim();
@@ -5038,6 +5040,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     for (final y in yearRows) {
       queuePendingSync(pendingSyncs, tableName: 'student_years', recordId: y.id, action: 'DELETE', payload: null);
     }
+    for (final p in sectionPeriodsOf(id)) {
+      queuePendingSync(pendingSyncs, tableName: 'student_sections', recordId: '${p['id']}', action: 'DELETE', payload: null);
+    }
+    _sectionRows.removeWhere((r) => '${r['student_id']}' == id);
+    markDirty('student_sections');
 
     students.removeWhere((s) => s.id == id);
     installments.removeWhere((i) => i.studentId == id);
@@ -7079,6 +7086,77 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return desired.length;
   }
 
+  // ── سجل شعب الطالب (المقابل لـ students/sectionHistory.ts) ─────────────
+  //
+  // فترة لكل شعبة، والمفتوحة (بلا `to_date`) هي الحالية.
+
+  List<Map<String, dynamic>> get _sectionRows => extraCloud.putIfAbsent('student_sections', () => []);
+
+  /// فترات شعب الطالب، الأقدم أولاً.
+  List<Map<String, dynamic>> sectionPeriodsOf(String studentId) =>
+      [for (final r in _sectionRows) if ('${r['student_id']}' == studentId) r]
+        ..sort((a, b) => '${a['from_date'] ?? ''}'.compareTo('${b['from_date'] ?? ''}'));
+
+  void _writeSectionPeriod(Map<String, dynamic> row, String action) {
+    final clean = {for (final e in row.entries) if (e.key != 'sync_status') e.key: e.value};
+    _sectionRows
+      ..removeWhere((r) => '${r['id']}' == '${row['id']}')
+      ..add({...clean, 'sync_status': 'pending'});
+    _queue('student_sections', '${row['id']}', action, clean);
+    markDirty('student_sections');
+  }
+
+  /// إغلاق فترة الطالب المفتوحة (انسحاب، ترقية) — `closeSectionPeriod`.
+  void closeSectionPeriod(String studentId, String now) {
+    final today = isoDate(DateTime.now());
+    for (final p in sectionPeriodsOf(studentId).where((p) => '${p['to_date'] ?? ''}'.isEmpty).toList()) {
+      _writeSectionPeriod({...p, 'to_date': today, 'updated_at': now}, 'UPDATE');
+    }
+  }
+
+  /// مواءمة سجل الطالب مع شعبته الحالية — `recordSectionPeriod`.
+  ///
+  /// تصحيح في اليوم نفسه لا يُعدّ انتقالاً. [initialOnly] يُنشئ الفترة الأولى لمن لا
+  /// سجل له ولا يغلق شيئاً.
+  void recordSectionPeriod(Student student, String now, {bool initialOnly = false}) {
+    final today = isoDate(DateTime.now());
+    final rows = sectionPeriodsOf(student.id);
+    final open = rows.where((p) => '${p['to_date'] ?? ''}'.isEmpty).firstOrNull;
+    final section = student.section.trim();
+    final current = student.status == 'active' && section.isNotEmpty
+        ? {'academic_year_id': student.academicYearId.isEmpty ? null : student.academicYearId, 'grade_level': student.gradeLevel, 'section': section}
+        : null;
+
+    bool same(Map<String, dynamic> p) =>
+        '${p['academic_year_id'] ?? ''}' == '${current!['academic_year_id'] ?? ''}' &&
+        isSameGrade('${p['grade_level'] ?? ''}', '${current['grade_level']}') &&
+        isSameSectionName('${p['section'] ?? ''}', '${current['section']}');
+
+    if (open != null && current != null && same(open)) return;
+    if (initialOnly && rows.isNotEmpty) return;
+
+    if (open != null) {
+      if (current != null && '${open['from_date']}' == today) {
+        _writeSectionPeriod({...open, ...current, 'updated_at': now}, 'UPDATE');
+        return;
+      }
+      _writeSectionPeriod({...open, 'to_date': today, 'updated_at': now}, 'UPDATE');
+    }
+    if (current == null) return;
+
+    // أول فترة من يوم التسجيل، وما بعدها من اليوم
+    final from = rows.isEmpty ? isoDate(student.enrollmentDate) : today;
+    _writeSectionPeriod({
+      'id': newId(),
+      'student_id': student.id,
+      ...current,
+      'from_date': from.length >= 10 ? from.substring(0, 10) : from,
+      'to_date': null,
+      'created_at': now,
+      'updated_at': now,
+    }, 'INSERT');
+  }
+
   /// مواءمة تسجيلات الطلاب مع شعبهم الحالية — `syncStudentRoomEnrollments`.
   ///
   /// تغيير شعبة الطالب كان يعدّل `section` وحده، فيبقى مسجّلاً في مواد شعبته
@@ -7092,6 +7170,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     for (final id in studentIds.toSet()) {
       final student = studentById(id);
       if (student == null) continue;
+      recordSectionPeriod(student, now);
 
       final room = student.status == 'active' ? rooms.where((r) => studentBelongsToRoom(student, r)).firstOrNull : null;
       final target = room == null ? const <Group>[] : activeGroups.where((g) => g.isSchoolGroup && g.includesRoom(room.id)).toList();
