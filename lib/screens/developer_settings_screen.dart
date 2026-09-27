@@ -10,6 +10,7 @@ import '../data/institution.dart';
 import '../data/store.dart';
 import '../data/supabase.dart';
 import '../data/tenant_service.dart';
+import '../data/user_message.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
@@ -85,6 +86,8 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
 
   @override
   void dispose() {
+    // جلسة المطور لهذه الشاشة وحدها، كما يُخرج الويب عميله عند مغادرة التبويب
+    SupabaseAuth.developerToken = null;
     gateUser.dispose();
     gate.dispose();
     name.dispose();
@@ -626,23 +629,70 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
         const SizedBox(height: 8),
         _toolTile(
           icon: Icons.delete_forever_outlined,
-          title: 'تصفير القاعدة المحلية',
-          subtitle: 'حذف كل السجلات من هذا الجهاز — بيانات السحابة لا تتأثر',
+          title: 'مسح وتصفير البيانات',
+          subtitle: 'حذف كل البيانات من الجهاز والسحابة',
           danger: true,
-          onTap: () async {
-            final ok = await confirmSheet(
-              context,
-              title: 'تصفير قاعدة البيانات',
-              message: 'سيتم حذف كل الطلاب والدفعات والحضور من هذا الجهاز نهائياً. '
-                  'البيانات المرفوعة للسحابة تبقى كما هي. هل أنت متأكد؟',
-              confirmLabel: 'تصفير',
-            );
-            if (!ok || !context.mounted) return;
-            await store.wipeAllData();
-            if (context.mounted) showAppSnack(context, 'تم تصفير قاعدة البيانات المحلية');
-          },
+          onTap: () => _wipeAll(store),
         ),
       ];
+
+  /// مسح شامل من الجهاز والسحابة — `handleClearData` في الويب: تأكيد بكتابة «مسح»،
+  /// ثم الحذف بجلسة المطور وحدها (بجلسة المدرسة يفشل عند سجل الحركات).
+  Future<void> _wipeAll(AppStore store) async {
+    final typed = TextEditingController();
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.fromLTRB(16, 14, 16, 16 + MediaQuery.viewInsetsOf(ctx).bottom + MediaQuery.paddingOf(ctx).bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('مسح البيانات', style: AppText.title.copyWith(color: AppColors.danger)),
+              const SizedBox(height: 8),
+              Text('حذف كل البيانات من الجهاز والسحابة. لا يمكن التراجع.\nاكتب (مسح) للتأكيد.', style: AppText.muted.copyWith(height: 1.5)),
+              const SizedBox(height: 10),
+              TextField(controller: typed, autofocus: true, onChanged: (_) => setSheet(() {})),
+              const SizedBox(height: 14),
+              ActionButtons(
+                primary: PrimaryButton(
+                  label: 'مسح',
+                  color: AppColors.danger,
+                  onPressed: typed.text.trim() == 'مسح' ? () => Navigator.pop(ctx, true) : null,
+                ),
+                secondary: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx, false)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    typed.dispose();
+    if (ok != true || !mounted) return;
+
+    // جلسة المطور قد تضيع والشاشة مفتوحة: يُقفل التبويب ليُعاد الدخول بدل أن يعمل
+    // المسح بجلسة المدرسة ويفشل عند سجل الحركات
+    final token = SupabaseAuth.developerAccess;
+    if (token == null || token.isEmpty) {
+      setState(() {
+        unlocked = false;
+        gateError = 'انتهت جلسة المطور، سجّل الدخول مجدداً';
+      });
+      return;
+    }
+
+    try {
+      await runBusyOp(context, () => store.wipeAllDataIncludingCloud(developerToken: token), message: 'جارٍ المسح...');
+      if (mounted) showAppSnack(context, 'تم مسح كافة بيانات النظام من الجهاز والسحابة بنجاح.');
+    } on StoreException catch (e) {
+      if (mounted) showAppSnack(context, e.message, error: true);
+    } catch (e) {
+      if (mounted) showAppSnack(context, userMessage(e, 'تعذّر المسح'), error: true);
+    }
+  }
 
   Widget _toolTile({
     required IconData icon,

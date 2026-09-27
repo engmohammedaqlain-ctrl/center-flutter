@@ -94,6 +94,13 @@ abstract final class SupabaseAuth {
 
   static bool get isDeveloper => role == 'developer';
 
+  /// توكن المطور بعد التحقق منه في إعدادات المطور — للذاكرة وحدها، لا يحلّ محل جلسة
+  /// المنشأة. به وحده يُحذف سجل الحركات من السحابة في المسح الشامل.
+  static String? developerToken;
+
+  /// توكن يملك صلاحية المطور الآن: جلسته إن دخل المنشأة من لوحته، وإلا ما تحقق به.
+  static String? get developerAccess => isDeveloper ? accessToken : developerToken;
+
   /// اسم المستخدم يصير بريداً داخلياً ثابت الصيغة لا تُرسل إليه رسالة.
   static String emailFor(String username) => '${username.trim().toLowerCase()}@$emailDomain';
 
@@ -270,6 +277,8 @@ Future<SignInResult> supabaseVerifyDeveloper(String username, String password) a
       return (claims: null, error: 'هذا الحساب ليس حساب مطور');
     }
     // لا تُطبَّق الجلسة: جلسة المنشأة على الجهاز تبقى كما هي
+    final token = '${decoded['access_token'] ?? ''}';
+    SupabaseAuth.developerToken = token.isEmpty ? null : token;
     return (claims: claims, error: null);
   } catch (_) {
     return (claims: null, error: _offlineMessage);
@@ -475,6 +484,17 @@ Future<void> supabaseInsert(String table, List<Map<String, dynamic>> rows) async
   }
 }
 
+/// حذف الصفوف المطابقة بتوكن بعينه — المسح الشامل بصلاحية المطور. الرفض يُرمى.
+Future<void> supabaseDeleteAs(String table, Map<String, String> filters, {String? token}) async {
+  if (token == null) await SupabaseAuth.ensureFresh();
+  final uri = Uri.parse('${SupabaseConfig.url}/rest/v1/$table').replace(queryParameters: filters);
+  final headers = {...SupabaseConfig.headers, if (token != null) 'Authorization': 'Bearer $token'};
+  final res = await http.delete(uri, headers: headers);
+  if (res.statusCode >= 400) {
+    throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
+  }
+}
+
 /// كـ [supabaseUpdate] لكنه يعيد عدد الصفوف التي مسّها التعديل فعلاً.
 ///
 /// الصلاحيات (RLS) لا ترفض التعديل بخطأ بل تتجاهل الصف بصمت: صفر صفوف يعني أن
@@ -603,12 +623,33 @@ Future<String> storageUpload(
   return storagePublicUrl(bucket, path);
 }
 
+/// محتوى مجلد في حاوية — `storage.list`. المجلد الفرعي بلا `id`.
+Future<List<({String name, bool isFolder})>> storageList(String bucket, String prefix, {String? token}) async {
+  if (token == null) await SupabaseAuth.ensureFresh();
+  final headers = {...SupabaseConfig.authHeaders, if (token != null) 'Authorization': 'Bearer $token'};
+  final res = await http.post(
+    Uri.parse('${SupabaseConfig.url}/storage/v1/object/list/$bucket'),
+    headers: headers,
+    body: jsonEncode({'prefix': prefix, 'limit': 1000, 'offset': 0}),
+  );
+  if (res.statusCode >= 400) {
+    throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
+  }
+  final decoded = jsonDecode(res.body);
+  return [
+    if (decoded is List)
+      for (final e in decoded)
+        if (e is Map && '${e['name'] ?? ''}'.isNotEmpty) (name: '${e['name']}', isFolder: e['id'] == null),
+  ];
+}
+
 /// حذف ملفات من حاوية. الفشل لا يوقف حذف السجل نفسه، فيُبتلع.
-Future<void> storageRemove(String bucket, List<String> paths) async {
+Future<void> storageRemove(String bucket, List<String> paths, {String? token}) async {
   if (paths.isEmpty) return;
   try {
     final uri = Uri.parse('${SupabaseConfig.url}/storage/v1/object/$bucket');
-    await http.delete(uri, headers: SupabaseConfig.authHeaders, body: jsonEncode({'prefixes': paths}));
+    final headers = {...SupabaseConfig.authHeaders, if (token != null) 'Authorization': 'Bearer $token'};
+    await http.delete(uri, headers: headers, body: jsonEncode({'prefixes': paths}));
   } catch (_) {
     // ملف يتيم في التخزين أهون من سجل لا يُحذف
   }

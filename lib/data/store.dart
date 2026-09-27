@@ -28,6 +28,7 @@ import 'realtime.dart';
 import 'supabase.dart';
 import 'sync.dart';
 import 'tenant_service.dart';
+import 'user_message.dart';
 import 'year_structure_clone.dart';
 
 class AppStore extends ChangeNotifier implements SyncLocalStore {
@@ -768,6 +769,115 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _dirty.clear();
     loadedTables.clear();
     notifyListeners();
+  }
+
+  /// جداول المنشأة في السحابة بترتيب `SYNCED_TABLES` في الويب؛ تُحذف بالعكس:
+  /// الأبناء قبل الآباء احتراماً للمفاتيح الأجنبية.
+  static const cloudWipeTables = [
+    'users',
+    'academic_years',
+    'subjects',
+    'rooms',
+    'teachers',
+    'grade_fees',
+    'groups',
+    'students',
+    'student_years',
+    'student_sections',
+    'student_attachments',
+    'institution_settings',
+    'payment_methods',
+    'enrollments',
+    'installments',
+    'payments',
+    'sessions',
+    'attendance',
+    'teacher_payouts',
+    'expenses',
+    'finance_attachments',
+    'audit_log',
+    'finance_requests',
+    'payment_requests',
+    'student_evaluations',
+  ];
+
+  /// حاويات ملفات المنشأة، مجلد لكل منشأة.
+  static const cloudWipeBuckets = ['finance-notices', 'student-docs', 'payment-requests'];
+
+  /// مسح شامل: السحابة أولاً ثم الجهاز — `clearAllDataIncludingCloud`.
+  ///
+  /// [developerToken] جلسة المطور: وحدها تحذف سجل الحركات من السحابة. المسح يتطلب
+  /// اتصالاً، وإلا بقيت نسخة السحابة وعادت البيانات مكررة عند أول مزامنة.
+  Future<void> wipeAllDataIncludingCloud({required String developerToken}) async {
+    final tid = tenantId;
+    if (tid != null && tid.isNotEmpty) {
+      if (!networkEnabled || !await probeCloud()) {
+        throw StoreException('المسح يتطلب اتصالاً بالإنترنت، وإلا بقيت نسخة السحابة وعادت البيانات مكررة عند أول مزامنة.');
+      }
+      final filter = {'tenant_id': 'eq.$tid'};
+      // المودل أولاً: وإن تعذّر يُحذف تِبعاً لحذف المجموعات
+      for (final table in const ['course_items', 'course_sections']) {
+        try {
+          await supabaseDeleteAs(table, filter, token: developerToken);
+        } catch (e) {
+          debugPrint('تعذر مسح $table من السحابة، سيُحذف تِبعاً لحذف المجموعات: $e');
+        }
+      }
+      for (final table in cloudWipeTables.reversed) {
+        try {
+          await supabaseDeleteAs(table, filter, token: developerToken);
+        } catch (e) {
+          throw StoreException('تعذّر مسح ${tableLabelsAr[table] ?? table} من السحابة: ${userMessage(e, 'رفضت السحابة الحذف')}');
+        }
+      }
+      for (final bucket in cloudWipeBuckets) {
+        try {
+          await _purgeStorageFolder(bucket, tid, developerToken);
+        } catch (e) {
+          debugPrint('تعذر مسح ملفات $bucket من المخزن: $e');
+        }
+      }
+      // الحذف تمّ في السحابة مباشرة لا عبر الرفع، فلا تصل الأجهزة الأخرى إشارته: كانت
+      // تبقى تعرض الممسوح حتى تُفتح من جديد. بالإشارة تسحب فوراً فتطبّق سجل المحذوفات
+      try {
+        announceChange(const [...cloudWipeTables, 'course_sections', 'course_items']);
+      } catch (e) {
+        debugPrint('تعذّر إبلاغ الأجهزة الأخرى بالمسح: $e');
+      }
+    }
+
+    await wipeAllData();
+    // هوية المنشأة وإعداداتها المحفوظة على الجهاز — كـ `clearAllData` في الويب
+    for (final key in const [
+      institutionNameKey,
+      institutionLogoKey,
+      institutionColorsKey,
+      institutionStampKey,
+      institutionSettingsKey,
+      systemFeaturesKey,
+      customPaymentMethodsKey,
+      discountRulesKey,
+      seatReservationFeeKey,
+    ]) {
+      await db.setSetting(key, null);
+    }
+    await hydrateInstitution();
+    notifyListeners();
+  }
+
+  /// حذف مجلد في المخزن بما فيه من مجلدات فرعية.
+  Future<void> _purgeStorageFolder(String bucket, String prefix, String token) async {
+    final entries = await storageList(bucket, prefix, token: token);
+    final files = <String>[];
+    for (final e in entries) {
+      final full = '$prefix/${e.name}';
+      if (e.isFolder) {
+        await _purgeStorageFolder(bucket, full, token);
+      } else {
+        files.add(full);
+      }
+    }
+    if (files.isNotEmpty) await storageRemove(bucket, files, token: token);
   }
 
   /// رقم بناء الحزمة المثبَّتة — `versionCode` في أندرويد.
