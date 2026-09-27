@@ -622,6 +622,130 @@ class TeacherPortalData {
 }
 
 /// نتيجة محاولة دخول: إما حساب واحد، أو عدّة حسابات يختار منها المستخدم.
+// ── «صفي»: مربي الصف وطلاب شعبته ─────────────────────────────────────────────
+
+class HomeroomRoom {
+  const HomeroomRoom({required this.id, required this.name, this.gradeLevel = ''});
+
+  final String id;
+  final String name;
+  final String gradeLevel;
+
+  String get label => [gradeLevel, name].where((s) => s.trim().isNotEmpty).join(' — ');
+}
+
+/// طالب في شعبة المربي: بياناته الشخصية ورمزا دخوله، بلا شيء مالي.
+class HomeroomStudent {
+  const HomeroomStudent({
+    required this.id,
+    required this.roomId,
+    this.firstName = '',
+    this.lastName = '',
+    this.fullName = '',
+    this.nationalId = '',
+    this.gender = '',
+    this.birthDate = '',
+    this.phone = '',
+    this.gradeLevel = '',
+    this.section = '',
+    this.parentName = '',
+    this.guardianRelationship = '',
+    this.parentPhone = '',
+    this.parentSecondaryPhone = '',
+    this.neighborhood = '',
+    this.detailedAddress = '',
+    this.healthStatus = '',
+    this.medicalCondition = '',
+    this.portalCode = '',
+    this.parentPortalCode = '',
+  });
+
+  final String id;
+  final String roomId;
+  final String firstName;
+  final String lastName;
+  final String fullName;
+  final String nationalId;
+  final String gender;
+  final String birthDate;
+  final String phone;
+  final String gradeLevel;
+  final String section;
+  final String parentName;
+  final String guardianRelationship;
+  final String parentPhone;
+  final String parentSecondaryPhone;
+  final String neighborhood;
+  final String detailedAddress;
+  final String healthStatus;
+  final String medicalCondition;
+  final String portalCode;
+  final String parentPortalCode;
+
+  String get name => fullName.trim().isNotEmpty ? fullName.trim() : '$firstName $lastName'.trim();
+
+  factory HomeroomStudent.fromJson(Map<String, dynamic> m) {
+    String s(String key) => m[key] == null ? '' : '${m[key]}';
+    return HomeroomStudent(
+      id: s('id'),
+      roomId: s('room_id'),
+      firstName: s('first_name'),
+      lastName: s('last_name'),
+      fullName: s('full_name'),
+      nationalId: s('national_id'),
+      gender: s('gender'),
+      birthDate: s('birth_date').split('T').first,
+      phone: s('phone'),
+      gradeLevel: s('grade_level'),
+      section: s('section'),
+      parentName: s('parent_name'),
+      guardianRelationship: s('guardian_relationship'),
+      parentPhone: s('parent_phone'),
+      parentSecondaryPhone: s('parent_secondary_phone'),
+      neighborhood: s('neighborhood'),
+      detailedAddress: s('detailed_address'),
+      healthStatus: s('health_status'),
+      medicalCondition: s('medical_condition'),
+      portalCode: s('portal_code'),
+      parentPortalCode: s('parent_portal_code'),
+    );
+  }
+}
+
+/// ما تُرجعه `homeroom_class()`: شعب المربي وطلابها ودرجاتهم وأسماء المواد.
+class HomeroomClassData {
+  const HomeroomClassData({
+    this.rooms = const [],
+    this.students = const [],
+    this.evaluations = const [],
+    this.subjects = const {},
+  });
+
+  final List<HomeroomRoom> rooms;
+  final List<HomeroomStudent> students;
+  final List<StudentEvaluation> evaluations;
+
+  /// معرّف المادة ← اسمها.
+  final Map<String, String> subjects;
+
+  factory HomeroomClassData.fromJson(Map<String, dynamic> m) {
+    List<Map<String, dynamic>> rows(String key) => [
+          if (m[key] is List)
+            for (final r in m[key] as List)
+              if (r is Map) Map<String, dynamic>.from(r),
+        ];
+    return HomeroomClassData(
+      rooms: [
+        for (final r in rows('rooms'))
+          HomeroomRoom(id: '${r['id']}', name: '${r['name'] ?? ''}', gradeLevel: '${r['grade_level'] ?? ''}'),
+      ],
+      students: rows('students').map(HomeroomStudent.fromJson).toList(),
+      evaluations: rows('evaluations').map(StudentEvaluation.fromCloud).toList(),
+      subjects: {for (final s in rows('subjects')) '${s['id']}': '${s['name'] ?? ''}'},
+    );
+  }
+}
+
 class PortalLoginResult {
   const PortalLoginResult({this.users = const [], this.error, this.offline = false});
 
@@ -1843,6 +1967,18 @@ class PortalService {
       for (final m in rows ?? const <Map<String, dynamic>>[])
         if ('${m['type']}' != 'cash') (id: '${m['id']}', name: '${m['name'] ?? ''}'),
     ];
+  }
+
+  // ── «صفي»: مربي الصف ─────────────────────────────────────────────────────
+
+  /// طلاب الشعب التي المعلم مربيها، ببياناتهم ورمزي دخولهم ودرجاتهم — `getHomeroomClass`.
+  ///
+  /// عبر دالة السيرفر `homeroom_class` وحدها: المعلم لا يقرأ جدول الطلاب، والدالة
+  /// تتحقق أنه مربي الشعبة فلا يصل إلى طلاب غيره. تحتاج اتصالاً.
+  Future<HomeroomClassData> homeroomClass() async {
+    final data = await supabaseRpc('homeroom_class', const {});
+    if (data is! Map) throw const PortalException('تعذّر جلب بيانات الصف');
+    return HomeroomClassData.fromJson(Map<String, dynamic>.from(data));
   }
 
   // ── المودل (المقابل لـ moodle.service.ts) ─────────────────────────────────
