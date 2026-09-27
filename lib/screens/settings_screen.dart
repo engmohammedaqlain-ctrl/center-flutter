@@ -2736,7 +2736,7 @@ class _FailedActions extends StatelessWidget {
 
 Future<void> _export(BuildContext context, AppStore store) async {
   try {
-    final path = await runBusyOp(
+    final result = await runBusyOp(
       context,
       () => const BackupService().export(store),
       message: 'جارٍ تجهيز النسخة الاحتياطية...',
@@ -2744,9 +2744,10 @@ Future<void> _export(BuildContext context, AppStore store) async {
     if (!context.mounted) return;
     final mobile = Theme.of(context).platform == TargetPlatform.android ||
         Theme.of(context).platform == TargetPlatform.iOS;
+    final note = result.note.isEmpty ? '' : '، ${result.note}';
     showAppSnack(
       context,
-      mobile ? 'افتح ورقة المشاركة واختر مكان الحفظ' : 'تم حفظ النسخة: $path',
+      mobile ? 'افتح ورقة المشاركة واختر مكان الحفظ$note' : 'تم حفظ النسخة: ${result.path}$note',
     );
   } catch (e) {
     if (!context.mounted) return;
@@ -2781,9 +2782,11 @@ Future<void> _restore(BuildContext context, AppStore store) async {
   }
 
   final total = summary.values.fold<int>(0, (a, b) => a + b);
-  final lines = summary.entries
-      .map((e) => '${tableLabelsAr[e.key] ?? e.key}: ${e.value}')
-      .join('\n');
+  final moodleRows = service.cloudOnlyRows(decoded);
+  final lines = [
+    for (final e in summary.entries) '${tableLabelsAr[e.key] ?? e.key}: ${e.value}',
+    if (moodleRows > 0) 'محتوى المودل: $moodleRows',
+  ].join('\n');
   final ok = await confirmSheet(
     context,
     title: 'استرجاع نسخة احتياطية',
@@ -2803,7 +2806,13 @@ Future<void> _restore(BuildContext context, AppStore store) async {
     );
     if (!context.mounted) return;
     final skipped = result.skipped > 0 ? '، وتُرك ${result.skipped} أحدث محلياً' : '';
-    showAppSnack(context, 'تم استرجاع ${result.restored} سجلاً$skipped');
+    final moodle = result.moodle > 0 ? ' و${result.moodle} عنصر مودل' : '';
+    final moodleNote = result.moodleNote.isEmpty ? '' : '، ${result.moodleNote}';
+    showAppSnack(
+      context,
+      'تم استرجاع ${result.restored} سجلاً$moodle$moodleNote$skipped',
+      error: result.moodleNote.startsWith('وتعذّر'),
+    );
   } catch (e) {
     if (!context.mounted) return;
     showAppSnack(context, userMessage(e, 'فشل الاسترجاع'), error: true);

@@ -8,6 +8,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'store.dart';
+import 'supabase.dart';
+import 'user_message.dart';
 
 /// النسخ الاحتياطي والاسترجاع — المقابل لـ `BackupSettings.tsx`.
 ///
@@ -18,6 +20,67 @@ class BackupService {
   const BackupService();
 
   static const schemaVersion = 1;
+
+  /// جداول المودل: محتوى تعليمي يعيش في السحابة وحدها بلا نسخة على الجهاز —
+  /// `CLOUD_ONLY_TABLES`. تُنسخ في `cloud_data` وإلا ضاعت وحدات المواد وواجباتها
+  /// عند استرجاع المنشأة. الأب قبل الابن: القسم قبل عناصره احتراماً للمفتاح الأجنبي.
+  /// الملفات نفسها تبقى في حاوية التخزين: العنصر يحمل رابطها.
+  static const cloudOnlyTables = ['course_sections', 'course_items'];
+
+  static const _cloudPage = 1000;
+  static const _cloudWriteChunk = 500;
+
+  /// كل صفوف المنشأة من جداول المودل، بلا ختم المنشأة (يُعاد ختمه عند الاسترجاع).
+  Future<Map<String, List<Map<String, dynamic>>>> fetchCloudOnlyTables(String tenantId) async {
+    final out = {for (final t in cloudOnlyTables) t: <Map<String, dynamic>>[]};
+    for (final table in cloudOnlyTables) {
+      for (var from = 0;; from += _cloudPage) {
+        final rows = await supabaseSelect(
+          table,
+          filters: {'tenant_id': 'eq.$tenantId'},
+          order: 'created_at.asc',
+          limit: _cloudPage,
+          offset: from,
+        );
+        if (rows == null) throw FormatException('تعذّر جلب محتوى المودل ($table)');
+        out[table]!.addAll([for (final r in rows) Map<String, dynamic>.from(r)..remove('tenant_id')]);
+        if (rows.length < _cloudPage) break;
+      }
+    }
+    return out;
+  }
+
+  /// إعادة صفوف المودل إلى السحابة — `restoreCloudOnlyTables`. تحتاج اتصالاً: لا
+  /// مكان لها على الجهاز تنتظر فيه. يعيد عدد الصفوف المكتوبة.
+  Future<int> restoreCloudOnlyTables(String tenantId, Map cloudData) async {
+    var written = 0;
+    for (final table in cloudOnlyTables) {
+      final raw = cloudData[table];
+      final list = [
+        if (raw is List)
+          for (final r in raw)
+            if (r is Map && '${r['id'] ?? ''}'.isNotEmpty) Map<String, dynamic>.from(r),
+      ];
+      for (var i = 0; i < list.length; i += _cloudWriteChunk) {
+        final end = i + _cloudWriteChunk > list.length ? list.length : i + _cloudWriteChunk;
+        final chunk = [for (final r in list.sublist(i, end)) {...r, 'tenant_id': tenantId}];
+        try {
+          await supabaseUpsert(table, chunk);
+        } catch (e) {
+          throw FormatException('تعذّر استرجاع محتوى المودل ($table): ${userMessage(e, 'رفضت السحابة الكتابة')}');
+        }
+        written += chunk.length;
+      }
+    }
+    return written;
+  }
+
+  /// عدد صفوف المودل في ملف النسخة.
+  int cloudOnlyRows(Map backup) {
+    final cloud = backup['cloud_data'];
+    if (cloud is! Map) return 0;
+    return cloudOnlyTables.fold<int>(0, (sum, t) => sum + (cloud[t] is List ? (cloud[t] as List).length : 0));
+  }
   static const appName = 'Center System';
 
   /// سحابة ← اسم Dexie في ملف الويب (والعكس عند التصدير).
@@ -55,7 +118,7 @@ class BackupService {
   }
 
   /// بناء محتوى النسخة بصيغة الويب.
-  String encode(AppStore store) {
+  String encode(AppStore store, {Map<String, List<Map<String, dynamic>>> cloudData = const {}}) {
     final data = <String, dynamic>{};
     for (final e in cloudToDexie.entries) {
       final rows = store.allOf(e.key);
@@ -76,6 +139,7 @@ class BackupService {
       'tenant_name': store.institutionName.isEmpty ? store.currentTenant?.name : store.institutionName,
       'exported_at': DateTime.now().toUtc().toIso8601String(),
       'data': data,
+      'cloud_data': cloudData,
     });
   }
 
@@ -86,9 +150,22 @@ class BackupService {
     return 'school_backup_$stamp.json';
   }
 
-  Future<String> export(AppStore store) async {
+  /// يعيد مسار الملف، وملاحظة إن تعذّر جلب محتوى المودل (يُحفظ الملف بدونه).
+  Future<({String path, String note})> export(AppStore store) async {
     await store.flush();
-    final json = encode(store);
+    // محتوى المودل سحابي بلا نسخة على الجهاز: يُجلب مع النسخة وإلا ضاع كله
+    var cloudData = <String, List<Map<String, dynamic>>>{};
+    var note = '';
+    final tid = store.tenantId;
+    if (tid != null && tid.isNotEmpty) {
+      try {
+        if (!store.networkEnabled) throw const FormatException('بلا اتصال');
+        cloudData = await fetchCloudOnlyTables(tid);
+      } catch (_) {
+        note = 'بلا محتوى المودل (تعذّر الاتصال)';
+      }
+    }
+    final json = encode(store, cloudData: cloudData);
     final name = fileNameFor(store);
     final bytes = Uint8List.fromList(utf8.encode(json));
     const mime = 'application/json';
@@ -104,7 +181,7 @@ class BackupService {
         throw const FormatException('أُلغي الحفظ');
       }
       await XFile.fromData(bytes, mimeType: mime, name: name).saveTo(location.path);
-      return location.path;
+      return (path: location.path, note: note);
     }
 
     // الجوال: ورقة مشاركة النظام لاختيار الملفات / Drive / البريد…
@@ -118,7 +195,7 @@ class BackupService {
         text: 'نسخة احتياطية من النظام المدرسي',
       ),
     );
-    return path;
+    return (path: path, note: note);
   }
 
   Map<String, int> summarize(String json) {
@@ -156,8 +233,8 @@ class BackupService {
   }
 
   /// دمج: السجل الأحدث محلياً لا يُستبدل، وكل مسترجَع يُسجَّل للرفع.
-  /// يعيد (مسترجَع، متخطّى لأنه أحدث محلياً).
-  Future<({int restored, int skipped})> restore(AppStore store, String json) async {
+  /// يعيد (مسترجَع، متخطّى لأنه أحدث محلياً، عناصر مودل كُتبت في السحابة، ملاحظة المودل).
+  Future<({int restored, int skipped, int moodle, String moodleNote})> restore(AppStore store, String json) async {
     final decoded = jsonDecode(json);
     if (decoded is! Map || decoded['data'] is! Map) {
       throw const FormatException('الملف ليس نسخة احتياطية صالحة');
@@ -218,7 +295,29 @@ class BackupService {
     store.recalculateAllBalances();
     await store.flush();
     store.notifySync();
-    return (restored: restored, skipped: skipped);
+
+    // ── محتوى المودل: سحابي بحت، ولا يُقبل قبل رفع مجموعاته ────────────
+    var moodle = 0;
+    var moodleNote = '';
+    final cloud = decoded['cloud_data'];
+    if (cloud is Map && cloudOnlyRows(decoded) > 0) {
+      final tid = store.tenantId;
+      if (tid == null || tid.isEmpty) {
+        moodleNote = 'وتُرك محتوى المودل (بلا منشأة نشطة)';
+      } else if (!store.networkEnabled) {
+        moodleNote = 'وتُرك محتوى المودل (بلا إنترنت)';
+      } else {
+        try {
+          await store.sync.push();
+          moodle = await restoreCloudOnlyTables(tid, cloud);
+          // المودل يُكتب في السحابة مباشرة: بلا إشارة لا تعرف البوابات المفتوحة به
+          if (moodle > 0) store.announceChange(const ['course_sections', 'course_items']);
+        } catch (e) {
+          moodleNote = 'وتعذّر محتوى المودل: ${userMessage(e, 'رفضت السحابة الكتابة')}';
+        }
+      }
+    }
+    return (restored: restored, skipped: skipped, moodle: moodle, moodleNote: moodleNote);
   }
 }
 
