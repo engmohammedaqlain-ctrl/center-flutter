@@ -106,6 +106,7 @@ class BackupService {
     'audit_log': 'auditLog',
     'finance_requests': 'financeRequests',
     'payment_requests': 'paymentRequests',
+    'payment_methods': 'paymentMethods',
     'student_evaluations': 'evaluations',
   };
 

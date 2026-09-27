@@ -1227,11 +1227,21 @@ class PortalService {
     final row = rows.first;
     final colors = row['colors'];
     final colorMap = colors is Map ? Map<String, dynamic>.from(colors) : const <String, dynamic>{};
+    // وسائل الدفع من جدولها كالويب، والنسخة القديمة في الألوان احتياطاً
+    final methodRows = await supabaseSelect(
+      'payment_methods',
+      filters: {'tenant_id': 'eq.$tenantId'},
+      order: 'order_index.asc',
+    );
+    final tableMethods = [
+      for (final m in methodRows ?? const <Map<String, dynamic>>[])
+        if (PaymentMethodItem.fromMap(m) case final item?) item,
+    ];
     return PortalBranding(
       name: '${row['institution_name'] ?? ''}'.trim().isEmpty ? appName : '${row['institution_name']}',
       logo: '${row['logo'] ?? ''}',
       colors: colors is Map ? InstitutionColors.fromMap(colorMap) : InstitutionColors.defaults,
-      paymentMethods: decodePaymentMethods(colorMap[customPaymentMethodsColorKey]),
+      paymentMethods: tableMethods.isNotEmpty ? tableMethods : decodePaymentMethods(colorMap[customPaymentMethodsColorKey]),
       gradingScheme: GradingScheme.fromMap(
         colorMap['__grading_scheme'] is Map
             ? Map<String, dynamic>.from(colorMap['__grading_scheme'] as Map)

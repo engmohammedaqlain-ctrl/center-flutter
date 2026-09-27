@@ -2,9 +2,9 @@ import 'dart:convert';
 
 /// وسائل الدفع وقواعد الخصم — المقابل لـ `features/finance/paymentMethods.ts`.
 ///
-/// المفاتيح وأسماء الحقول مطابقة حرفياً لما تكتبه النسخة المكتبية في
-/// `localStorage` وفي عمود `colors` من `institution_settings`، فما تضبطه إحدى
-/// النسختين يقرأه الطرف الآخر كما هو.
+/// المصدر جدول `payment_methods` المتزامن (مفتاحه المنشأة والمعرّف، فـ«cash» لكل
+/// مدرسة). المفاتيح القديمة في الإعدادات وعمود `colors` تُقرأ احتياطاً لمنشأة لم
+/// يصل جدولها بعد، وتُكتب كي تقرأها نسخ الجوال غير المحدَّثة.
 
 const customPaymentMethodsKey = 'custom_payment_methods';
 const discountRulesKey = 'school_discount_rules';
@@ -27,6 +27,7 @@ class PaymentMethodItem {
     this.type = 'other',
     this.isDefault = false,
     this.enabled = true,
+    this.orderIndex = 0,
   });
 
   final String id;
@@ -39,6 +40,9 @@ class PaymentMethodItem {
   final bool isDefault;
   final bool enabled;
 
+  /// الترتيب في القوائم — `order_index`.
+  final int orderIndex;
+
   String get typeLabel => paymentMethodTypes[type] ?? 'أخرى';
 
   PaymentMethodItem copyWith({String? name, String? type, bool? enabled}) => PaymentMethodItem(
@@ -47,6 +51,7 @@ class PaymentMethodItem {
         type: type ?? this.type,
         isDefault: isDefault,
         enabled: enabled ?? this.enabled,
+        orderIndex: orderIndex,
       );
 
   Map<String, dynamic> toMap() => {
@@ -55,6 +60,7 @@ class PaymentMethodItem {
         'type': type,
         'is_default': isDefault,
         'enabled': enabled,
+        'order_index': orderIndex,
       };
 
   static PaymentMethodItem? fromMap(Object? raw) {
@@ -70,19 +76,16 @@ class PaymentMethodItem {
       isDefault: raw['is_default'] == true,
       // الحقل الغائب يعني مفعّلة، كما في `m.enabled !== false`
       enabled: raw['enabled'] != false,
+      orderIndex: (raw['order_index'] as num?)?.toInt() ?? 0,
     );
   }
 }
 
-/// الوسائل الأساسية — مطابقة لـ `DEFAULT_PAYMENT_METHODS` معرّفاً واسماً وترتيباً.
-// وسائل محددة الاسم وحدها: «تحويل بنكي» و«أخرى» كانتا بلا جهة معروفة، فتُسجَّل
-// السندات بوسيلة لا تقول من أي بنك أو محفظة ورد المبلغ. أسماؤهما تبقى معروفة في
-// `paymentMethodNames` لسندات قديمة سُجّلت بهما.
+/// الوسيلة الافتراضية الوحيدة عند بدء أي مدرسة جديدة — `DEFAULT_PAYMENT_METHODS`.
+/// البنوك والمحافظ تضيفها المدرسة بأسمائها؛ أسماء الوسائل القديمة («بنك فلسطين»،
+/// «تحويل بنكي»...) تبقى معروفة في `paymentMethodNames` لسندات سُجّلت بها.
 const defaultPaymentMethods = <PaymentMethodItem>[
   PaymentMethodItem(id: 'cash', name: 'نقداً', type: 'cash', isDefault: true),
-  PaymentMethodItem(id: 'bop', name: 'بنك فلسطين', type: 'bank', isDefault: true),
-  PaymentMethodItem(id: 'palpay', name: 'محفظة بال بي', type: 'wallet', isDefault: true),
-  PaymentMethodItem(id: 'jawwal_pay', name: 'محفظة جوال بي', type: 'wallet', isDefault: true),
 ];
 
 List<PaymentMethodItem> decodePaymentMethods(Object? raw) {

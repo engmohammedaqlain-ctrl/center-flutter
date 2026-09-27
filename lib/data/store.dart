@@ -239,6 +239,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     'class_announcements': [],
     'finance_attachments': [],
     'payment_requests': [],
+    'payment_methods': [],
   };
   final attachmentsByStudent = <String, StudentAttachments>{};
 
@@ -2724,11 +2725,18 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   // ── وسائل الدفع وقواعد الخصم (المقابل لـ finance/paymentMethods.ts) ───────
 
-  /// وسائل الدفع كما ضبطتها المنشأة، أو الأساسية إن لم تُضبط.
+  List<Map<String, dynamic>> get _paymentMethodRows => extraCloud.putIfAbsent('payment_methods', () => []);
+
+  /// وسائل الدفع كما ضبطتها المنشأة — `getCustomPaymentMethods`.
   ///
-  /// تُقرأ من إعداد الجهاز أولاً، فإن لم يوجد فمن كائن ألوان المنشأة المتزامن —
-  /// وهو الطريق الذي تصل به ضبطات سطح المكتب إلى الجوال.
+  /// من جدول `payment_methods` المتزامن بترتيبها، كما في الويب. منشأة لم يصل جدولها
+  /// بعد: النسخة القديمة من إعداد الجهاز أو من ألوان المنشأة، وإلا «نقداً» وحدها.
   List<PaymentMethodItem> get paymentMethods {
+    final rows = [
+      for (final r in _paymentMethodRows)
+        if (PaymentMethodItem.fromMap(r) case final m?) m,
+    ]..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
+    if (rows.isNotEmpty) return rows;
     final local = db.settings[customPaymentMethodsKey];
     if (local != null && local.trim().isNotEmpty) return decodePaymentMethods(local);
     return decodePaymentMethods(_storedColorsMap[customPaymentMethodsColorKey]);
@@ -2746,8 +2754,39 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return found?.name ?? paymentMethodNames[id] ?? id;
   }
 
+  /// حفظ قائمة الوسائل: كل وسيلة صفّ في `payment_methods` بترتيبها، وما خرج من
+  /// القائمة يُحذف — `addPaymentMethod` / `updatePaymentMethod` / `deletePaymentMethod`.
   Future<void> savePaymentMethods(List<PaymentMethodItem> methods) async {
     requireSection('settings');
+    final now = _nowIso();
+    final bucket = _paymentMethodRows;
+    final byId = {for (final r in bucket) '${r['id']}': r};
+    final keep = <String>{};
+    for (var i = 0; i < methods.length; i++) {
+      final m = methods[i];
+      keep.add(m.id);
+      final existing = byId[m.id];
+      final row = {
+        ...m.toMap(),
+        'order_index': i,
+        'created_at': existing?['created_at'] ?? now,
+        'updated_at': now,
+      };
+      final unchanged = existing != null &&
+          const ['name', 'type', 'is_default', 'enabled', 'order_index'].every((k) => '${existing[k]}' == '${row[k]}');
+      if (unchanged) continue;
+      bucket
+        ..removeWhere((r) => '${r['id']}' == m.id)
+        ..add({...row, 'sync_status': 'pending'});
+      _queue('payment_methods', m.id, existing == null ? 'INSERT' : 'UPDATE', row);
+    }
+    for (final id in [for (final r in bucket) '${r['id']}']) {
+      if (keep.contains(id)) continue;
+      bucket.removeWhere((r) => '${r['id']}' == id);
+      _queue('payment_methods', id, 'DELETE', null);
+    }
+    markDirty('payment_methods');
+
     final encoded = encodePaymentMethods(methods);
     await db.setSetting(customPaymentMethodsKey, encoded);
     // ومعها نسخة في ألوان المنشأة كي تصل بقية الأجهزة، كما تفعل النسخة المكتبية

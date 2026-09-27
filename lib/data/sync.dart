@@ -216,6 +216,17 @@ const tableAllowedColumns = <String, List<String>>{
     'created_at',
     'updated_at',
   ],
+  'payment_methods': [
+    'id',
+    'name',
+    'type',
+    'is_default',
+    'enabled',
+    'order_index',
+    'tenant_id',
+    'created_at',
+    'updated_at',
+  ],
   'payment_requests': [
     'id',
     'student_id',
@@ -461,6 +472,14 @@ const nonTextColumns = <String, List<String>>{
     'tenant_id',
     'updated_at',
   ],
+  'payment_methods': [
+    'created_at',
+    'enabled',
+    'is_default',
+    'order_index',
+    'tenant_id',
+    'updated_at',
+  ],
   'payment_requests': [
     'amount',
     'created_at',
@@ -636,6 +655,7 @@ const tableLabelsAr = <String, String>{
   'student_evaluations': 'التقييمات والدرجات',
   'finance_requests': 'طلبات الموافقة',
   'payment_requests': 'طلبات الدفع من أولياء الأمور',
+  'payment_methods': 'وسائل الدفع',
   'audit_log': 'سجل الحركات المالية',
 };
 
@@ -658,6 +678,7 @@ const syncedTables = [
   'student_years',
   'student_attachments',
   'institution_settings',
+  'payment_methods',
   'enrollments',
   'installments',
   'payments',
@@ -740,6 +761,8 @@ bool tableHasUpdatedAt(String table) =>
 /// كبقية الجداول — التصالح على المفتاح الطبيعي كان يكتب فوق `id` القائم.
 const tableConflictTarget = <String, String>{
   'attendance': 'tenant_id,session_id,student_id',
+  // معرّفها فريد داخل المنشأة لا على مستوى المنصة: «cash» لكل مدرسة
+  'payment_methods': 'tenant_id,id',
 };
 
 const maxSyncRetries = 5;

@@ -20,11 +20,8 @@ void main() {
       expect(customPaymentMethodsKey, 'custom_payment_methods');
       expect(discountRulesKey, 'school_discount_rules');
       expect(customPaymentMethodsColorKey, '__custom_payment_methods');
-      // «تحويل بنكي» و«أخرى» أُزيلتا: وسيلة بلا جهة معروفة لا تقول من أين ورد المبلغ
-      expect(
-        defaultPaymentMethods.map((m) => m.id).toList(),
-        ['cash', 'bop', 'palpay', 'jawwal_pay'],
-      );
+      // كالويب: «نقداً» وحدها عند بدء المدرسة، والبنوك والمحافظ تضيفها بأسمائها
+      expect(defaultPaymentMethods.map((m) => m.id).toList(), ['cash']);
       expect(defaultPaymentMethods.every((m) => m.isDefault && m.enabled), isTrue);
       // وأسماؤهما تبقى معروفة لسندات قديمة سُجّلت بهما
       expect(paymentMethodNames['bank_transfer'], 'تحويل بنكي');
@@ -56,7 +53,8 @@ void main() {
     test('الوسيلة المعطَّلة تختفي من القبض ويبقى اسمها في السندات القديمة', () async {
       final s = await _store();
       await s.savePaymentMethods([
-        for (final m in defaultPaymentMethods) m.id == 'bop' ? m.copyWith(enabled: false) : m,
+        ...defaultPaymentMethods,
+        const PaymentMethodItem(id: 'bop', name: 'بنك فلسطين', type: 'bank', enabled: false),
       ]);
 
       expect(s.activePaymentMethods.any((m) => m.id == 'bop'), isFalse);
@@ -69,6 +67,35 @@ void main() {
       await s.savePaymentMethods(defaultPaymentMethods.where((m) => m.id != 'jawwal_pay').toList());
       expect(s.paymentMethodLabel('jawwal_pay'), 'محفظة جوال بي');
       expect(s.paymentMethodLabel(''), '-');
+    });
+
+    test('الوسائل صفوف في جدول payment_methods بترتيبها، والمحذوفة تُحذف منه', () async {
+      final s = await _store();
+      await s.savePaymentMethods([
+        ...defaultPaymentMethods,
+        const PaymentMethodItem(id: 'b1', name: 'بنك القدس', type: 'bank'),
+      ]);
+      final rows = s.allOf('payment_methods');
+      expect(rows.map((r) => r['id']), ['cash', 'b1']);
+      expect(rows.last['order_index'], 1);
+      expect(s.pendingSyncs.where((p) => p.tableName == 'payment_methods').map((p) => p.action), ['INSERT', 'INSERT']);
+
+      // حذف وسيلة لم تُرفع بعد يلغي إضافتها من الطابور بدل رفعها ثم حذفها
+      await s.savePaymentMethods([...defaultPaymentMethods]);
+      final ops = s.pendingSyncs.where((p) => p.tableName == 'payment_methods').toList();
+      expect(ops.any((p) => p.recordId == 'b1'), isFalse);
+      expect(s.allOf('payment_methods').map((r) => r['id']), ['cash']);
+    });
+
+    test('ما يصل من جدول السحابة يغلب النسخة القديمة في الإعدادات', () async {
+      final s = await _store();
+      await s.db.setSetting(customPaymentMethodsKey, '[{"id":"old","name":"قديمة"}]');
+      expect(s.paymentMethods.single.id, 'old');
+      s.putRows('payment_methods', [
+        {'id': 'cash', 'name': 'نقداً', 'type': 'cash', 'is_default': true, 'enabled': true, 'order_index': 0},
+        {'id': 'w1', 'name': 'محفظة', 'type': 'wallet', 'enabled': true, 'order_index': 1},
+      ]);
+      expect(s.paymentMethods.map((m) => m.id), ['cash', 'w1']);
     });
 
     test('الضبط يُنسخ في ألوان المنشأة كي يصل بقية الأجهزة', () async {
