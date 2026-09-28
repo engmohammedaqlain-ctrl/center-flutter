@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../data/academic_matching.dart';
 import '../data/permissions.dart';
@@ -143,7 +144,13 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
         ..reset()
         ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المدرس')
         ..check('phone', number.isEmpty, 'يرجى إدخال رقم هاتف المدرس')
-        ..check('nationalId', idDigits.isNotEmpty && idDigits.length != 9, 'رقم الهوية يجب أن يتكون من 9 أرقام');
+        ..check('nationalId', idDigits.isNotEmpty && idDigits.length != 9, 'رقم الهوية يجب أن يتكون من 9 أرقام')
+        // البوابة تقبل 6 أرقام وحدها: كلمة بغير ذلك تُنشئ حساباً لا يدخل
+        ..check(
+          'portalCode',
+          store.isFeatureOn('portal.teacher') && digitsOnly(portalCode.text).isNotEmpty && digitsOnly(portalCode.text).length != 6,
+          'كلمة المرور 6 أرقام',
+        );
     });
     if (errors.report(context)) return;
 
@@ -159,7 +166,7 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
           email: widget.teacher?.email ?? '',
           notes: widget.teacher?.notes ?? '',
           nationalId: idDigits,
-          portalCode: portalCode.text.trim(),
+          portalCode: digitsOnly(portalCode.text),
           subjectIds: [...subjectIds],
         ),
       );
@@ -267,7 +274,8 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
                 TextField(
                   controller: portalCode,
                   keyboardType: TextInputType.number,
-                  maxLength: 10,
+                  maxLength: 6,
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩۰-۹]'))],
                   style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
                   decoration: InputDecoration(
                     hintText: '6 أرقام',

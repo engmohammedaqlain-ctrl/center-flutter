@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../data/academic_matching.dart';
@@ -485,8 +486,21 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           parentPhoneNumber.trim().isNotEmpty && !isPhoneComplete(parentPhoneNumber, parentPhonePrefix),
           'الرقم غير مكتمل: يجب إدخال ${phoneTargetLength(parentPhonePrefix)} أرقام بعد المقدمة ($parentPhonePrefix)',
         );
-      final parentCode = parentPortalCode.text.trim();
-      final studentCode = portalCode.text.trim();
+      final parentCode = digitsOnly(parentPortalCode.text);
+      final studentCode = digitsOnly(portalCode.text);
+      final features = StoreScope.of(context);
+      // البوابة تقبل 6 أرقام وحدها: كلمة بغير ذلك تُنشئ حساباً لا يدخل
+      errors
+        ..check(
+          'studentCode',
+          features.isFeatureOn('portal.student') && studentCode.isNotEmpty && studentCode.length != 6,
+          'كلمة مرور الطالب 6 أرقام',
+        )
+        ..check(
+          'parentCode',
+          features.isFeatureOn('portal.parent') && parentCode.isNotEmpty && parentCode.length != 6,
+          'كلمة مرور ولي الأمر 6 أرقام',
+        );
       errors.check(
         'parentCode',
         parentCode.isNotEmpty && parentCode == studentCode,
@@ -569,8 +583,8 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
         parentPhone: combinePhoneAndPrefix(parentPhoneNumber, parentPhonePrefix),
         parentPhonePrefix: parentPhonePrefix,
         nationalId: cleanNatId,
-        portalCode: portalCode.text.trim(),
-        parentPortalCode: parentPortalCode.text.trim(),
+        portalCode: digitsOnly(portalCode.text),
+        parentPortalCode: digitsOnly(parentPortalCode.text),
         parentNationalId: parentNationalId.text.trim(),
         neighborhood: selectedNeighborhood,
         relation: relation,
@@ -1264,7 +1278,8 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           TextField(
             controller: portalCode,
             keyboardType: TextInputType.number,
-            maxLength: 10,
+            maxLength: 6,
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩۰-۹]'))],
             style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
             decoration: InputDecoration(
               hintText: '6 أرقام',
@@ -1287,7 +1302,8 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           TextField(
             controller: parentPortalCode,
             keyboardType: TextInputType.number,
-            maxLength: 10,
+            maxLength: 6,
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩۰-۹]'))],
             style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
             onChanged: (_) {
               _parentCodeTouched = true;
