@@ -107,7 +107,7 @@ abstract final class SupabaseAuth {
   /// أحرف إنجليزية صغيرة وأرقام و`. _ -`، والبادئات المحجوزة لحسابات البوابات.
   static bool isValidUsername(String username) {
     final u = username.trim().toLowerCase();
-    return RegExp(r'^[a-z0-9._-]{3,32}$').hasMatch(u) && !RegExp(r'^(student|teacher|parent)-').hasMatch(u);
+    return RegExp(r'^[a-z0-9._-]{3,32}$').hasMatch(u) && !RegExp(r'^(student|teacher|parent|staff)-').hasMatch(u);
   }
 
   static void clear() {
