@@ -348,6 +348,23 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   int _listStamp(String table, List<Object?> list) =>
       Object.hash(tableRev(table), identityHashCode(list), list.length);
 
+  /// ختم مدخلات المستحقات لشاشة المالية: يتغيّر فقط بتغيّر الأقساط أو الطلاب أو السنة.
+  int get duesInputStamp => Object.hash(
+        _listStamp('installments', installments),
+        _listStamp('students', students),
+        tableRev('academic_years'),
+        viewedAcademicYearId,
+      );
+
+  /// ختم مدخلات صافي الفترة: السندات والمصروفات والرواتب والسنة.
+  int get netInputStamp => Object.hash(
+        _listStamp('payments', payments),
+        _listStamp('expenses', extraCloud['expenses'] ?? const []),
+        _listStamp('teacher_payouts', extraCloud['teacher_payouts'] ?? const []),
+        tableRev('academic_years'),
+        viewedAcademicYearId,
+      );
+
   /// ختم فهارس الحضور: جدولا الحضور والجلسات وحدهما.
   ///
   /// كان الختم العام يُسقطها مع أي تعديل — تعديل اسم وليّ أمر، أو دفعة — فيُعاد
@@ -2198,20 +2215,35 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   ///
   /// الجدولان يعيشان في `extraCloud` لا في قائمة مستقلة: مخزّنان ومزامَنان
   /// أصلاً بذلك المسار، وتكرارهما في قائمة ثانية كان يفتح باب تعارض بين نسختين.
+  ///
+  /// تُبنى مرة لكل تغيّر في الجدول: كانت تُحوَّل وتُرتَّب من جديد مع كل قراءة، والمالية
+  /// تقرؤها مرات في كل رسم.
   List<Expense> get expenses {
     final rows = extraCloud['expenses'] ?? const [];
+    final stamp = _listStamp('expenses', rows);
+    if (stamp == _expensesStamp && _expensesCache != null) return _expensesCache!;
     final out = rows.map(Expense.fromCloud).toList();
     out.sort((a, b) => b.expenseDate.compareTo(a.expenseDate));
-    return out;
+    _expensesStamp = stamp;
+    return _expensesCache = List.unmodifiable(out);
   }
 
-  /// دفعات أجور المعلمين، الأحدث أولاً.
+  int _expensesStamp = 0;
+  List<Expense>? _expensesCache;
+
+  /// دفعات أجور المعلمين، الأحدث أولاً — محفوظة كالمصروفات.
   List<TeacherPayout> get teacherPayouts {
     final rows = extraCloud['teacher_payouts'] ?? const [];
+    final stamp = _listStamp('teacher_payouts', rows);
+    if (stamp == _payoutsStamp && _payoutsCache != null) return _payoutsCache!;
     final out = rows.map(TeacherPayout.fromCloud).toList();
     out.sort((a, b) => b.paymentDate.compareTo(a.paymentDate));
-    return out;
+    _payoutsStamp = stamp;
+    return _payoutsCache = List.unmodifiable(out);
   }
+
+  int _payoutsStamp = 0;
+  List<TeacherPayout>? _payoutsCache;
 
   double get totalExpenses => expenses.fold<double>(0, (a, e) => a + e.amount);
   double get totalPayouts => teacherPayouts.fold<double>(0, (a, p) => a + p.amount);

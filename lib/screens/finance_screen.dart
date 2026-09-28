@@ -155,6 +155,18 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   /// صافي الفترة: المقبوض فعلاً (بتاريخ قبضه) ناقص المصروفات والرواتب.
   ({double received, double spent, double net}) _periodNet(AppStore store) {
+    // يُحسب مرة لكل تغيّر في السندات أو المصروفات أو الرواتب أو الفلتر، لا مع كل رسم
+    final stamp = Object.hash(store.netInputStamp, financeYearFilter, termFilter);
+    final cached = _netCache;
+    if (cached != null && stamp == _netStamp) return cached;
+    _netStamp = stamp;
+    return _netCache = _computePeriodNet(store);
+  }
+
+  int _netStamp = 0;
+  ({double received, double spent, double net})? _netCache;
+
+  ({double received, double spent, double net}) _computePeriodNet(AppStore store) {
     final received = _periodPayments(store).where((p) => !p.cancelled).fold<double>(0, (a, p) => a + p.amount);
     final spent = _periodExpenses(store).fold<double>(0, (a, e) => a + e.amount) +
         _periodPayouts(store).fold<double>(0, (a, p) => a + p.amount);
@@ -208,14 +220,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   /// يحسب المستحقات بعد إفساح الواجهة — لا داخل `build`.
   void _scheduleDues(AppStore store) {
-    final stamp = Object.hash(
-      store.tableRev('installments'),
-      store.tableRev('students'),
-      store.tableRev('academic_years'),
-      store.viewedAcademicYearId,
-      financeYearFilter,
-      termFilter,
-    );
+    // ختم القوائم نفسها لا عدّاد التعديل وحده: التحميل من القرص يستبدل القائمة بلا
+    // عدّاد، فكانت المستحقات تبقى على نسخة قديمة
+    final stamp = Object.hash(store.duesInputStamp, financeYearFilter, termFilter);
     if (stamp == _duesStamp || _duesBusy) return;
     _duesBusy = true;
     unawaited(() async {

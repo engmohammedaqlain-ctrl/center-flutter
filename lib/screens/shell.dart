@@ -72,6 +72,13 @@ class _AppShellState extends State<AppShell> {
         'expenses',
         'teacher_payouts',
       ]);
+      if (!mounted) return;
+      // المستحقات تُحسب هنا بالخلفية، فتفتح المالية جاهزة بلا انتظار
+      await yieldUi(2);
+      if (!mounted) return;
+      store.dueItems();
+      store.expenses;
+      store.teacherPayouts;
     }());
   }
 
