@@ -108,6 +108,14 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
   );
   late final rate = TextEditingController(text: trimNum(widget.teacher?.rate ?? 70));
   late final List<String> subjectIds = [...?widget.teacher?.subjectIds];
+  // البيانات الوظيفية — `profileOf`
+  late final jobTitle = TextEditingController(text: widget.teacher?.jobTitle ?? '');
+  late final specialization = TextEditingController(text: widget.teacher?.specialization ?? '');
+  late final graduationYear = TextEditingController(text: widget.teacher?.graduationYear?.toString() ?? '');
+  late final List<String> gradeLevels = [...?widget.teacher?.gradeLevels];
+  late String contractType = widget.teacher?.contractType ?? '';
+  late String contractStart = widget.teacher?.contractStart ?? '';
+  late String birthDate = widget.teacher?.birthDate ?? '';
   final errors = FieldErrors();
   bool _seeded = false;
 
@@ -130,8 +138,37 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
     nationalId.dispose();
     portalCode.dispose();
     rate.dispose();
+    jobTitle.dispose();
+    specialization.dispose();
+    graduationYear.dispose();
     super.dispose();
   }
+
+  Future<void> _pickDate(String current, ValueChanged<String> onPicked) async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: parseIsoDate(current) ?? now,
+      firstDate: DateTime(1940),
+      lastDate: DateTime(now.year + 5),
+    );
+    if (picked != null) setState(() => onPicked(isoDate(picked)));
+  }
+
+  Widget _dateField(String value, ValueChanged<String> onPicked) => InkWell(
+        onTap: () => _pickDate(value, onPicked),
+        child: InputDecorator(
+          decoration: InputDecoration(
+            suffixIcon: value.isEmpty
+                ? const Icon(Icons.event_outlined, size: 18)
+                : IconButton(
+                    icon: const Icon(Icons.close, size: 16),
+                    onPressed: () => setState(() => onPicked('')),
+                  ),
+          ),
+          child: Text(value.isEmpty ? '—' : value, style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
+        ),
+      );
 
   void _save() {
     final store = StoreScope.of(context);
@@ -139,6 +176,7 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
     final rateValue = widget.teacher?.rate ?? 0.0;
     final idDigits = digitsOnly(nationalId.text);
     final number = digitsOnly(phone.text);
+    final gradYear = int.tryParse(digitsOnly(graduationYear.text));
     setState(() {
       errors
         ..reset()
@@ -150,6 +188,11 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
           'portalCode',
           store.isFeatureOn('portal.teacher') && digitsOnly(portalCode.text).isNotEmpty && digitsOnly(portalCode.text).length != 6,
           'كلمة المرور 6 أرقام',
+        )
+        ..check(
+          'graduationYear',
+          gradYear != null && !(gradYear >= 1950 && gradYear <= DateTime.now().year + 1),
+          'سنة التخرج غير صحيحة',
         );
     });
     if (errors.report(context)) return;
@@ -168,6 +211,13 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
           nationalId: idDigits,
           portalCode: digitsOnly(portalCode.text),
           subjectIds: [...subjectIds],
+          jobTitle: jobTitle.text.trim(),
+          specialization: specialization.text.trim(),
+          graduationYear: gradYear,
+          gradeLevels: [...gradeLevels],
+          contractType: contractType,
+          contractStart: contractStart,
+          birthDate: birthDate,
         ),
       );
       showAppSnack(context, widget.teacher == null ? 'تمت إضافة المدرس' : 'تم حفظ بيانات المدرس');
@@ -293,7 +343,83 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
               ],
             ),
 
-            // ── ٣. المواد ───────────────────────────────────────────────────
+            // ── ٣. البيانات الوظيفية ─────────────────────────────────────────
+            const FormSection(icon: Icons.work_outline, title: 'البيانات الوظيفية'),
+            FieldPair(
+              start: [
+                const FieldLabel('الوظيفة'),
+                TextField(controller: jobTitle, decoration: const InputDecoration(hintText: 'معلم')),
+              ],
+              end: [
+                const FieldLabel('التخصص'),
+                TextField(controller: specialization),
+              ],
+            ),
+            _gap,
+            FieldPair(
+              start: [
+                FieldLabel('سنة التخرج', key: errors.key('graduationYear')),
+                TextField(
+                  controller: graduationYear,
+                  keyboardType: TextInputType.number,
+                  maxLength: 4,
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩۰-۹]'))],
+                  onChanged: (_) {
+                    if (errors.clear('graduationYear')) setState(() {});
+                  },
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                  decoration: InputDecoration(hintText: '2015', counterText: '', errorText: errors['graduationYear']),
+                ),
+              ],
+              end: [
+                const FieldLabel('نظام العقد'),
+                AppDropdown<String>(
+                  value: contractType,
+                  items: [
+                    const DropdownMenuItem(value: '', child: Text('—')),
+                    for (final e in teacherContractLabels.entries) DropdownMenuItem(value: e.key, child: Text(e.value)),
+                  ],
+                  onChanged: (v) => setState(() => contractType = v ?? ''),
+                ),
+              ],
+            ),
+            _gap,
+            FieldPair(
+              start: [
+                const FieldLabel('بداية العقد'),
+                _dateField(contractStart, (v) => contractStart = v),
+              ],
+              end: [
+                const FieldLabel('تاريخ الميلاد'),
+                _dateField(birthDate, (v) => birthDate = v),
+              ],
+            ),
+            _gap,
+            const FieldLabel('المراحل'),
+            Builder(builder: (context) {
+              // مراحل المدرسة بترتيبها، ثم مراحل الشعب غير المسجلة في الرسوم
+              final grades = <String>[];
+              for (final g in [
+                ...store.gradeFeesInViewedYear.map((g) => g.gradeName),
+                ...store.roomsInViewedYear.map((r) => r.gradeLevel),
+                ...gradeLevels,
+              ]) {
+                final t = g.trim();
+                if (t.isNotEmpty && !grades.contains(t)) grades.add(t);
+              }
+              return Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final g in grades)
+                    _choiceChip(g, gradeLevels.contains(g), () {
+                      setState(() => gradeLevels.contains(g) ? gradeLevels.remove(g) : gradeLevels.add(g));
+                    }),
+                ],
+              );
+            }),
+
+            // ── ٤. المواد ───────────────────────────────────────────────────
             const FormSection(icon: Icons.menu_book_outlined, title: 'المواد التي يدرّسها'),
             if (store.subjectsInViewedYear.isEmpty)
               const Text(

@@ -1819,20 +1819,23 @@ class _TeacherCard extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(t.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: _titleStyle),
+                if (t.roleLine.isNotEmpty)
+                  Text(t.roleLine, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
                 const SizedBox(height: 3),
                 Text(
                   [
                     phone.isEmpty ? 'بلا رقم هاتف' : formatPhoneDisplay(phone),
+                    if (teacherContractLabels[t.contractType] != null) teacherContractLabels[t.contractType]!,
                     if (groups > 0) '$groups شعبة',
                   ].join('  ·  '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: _metaStyle,
                 ),
-                if (subjects.isNotEmpty) ...[
+                if (subjects.isNotEmpty || t.gradeLevels.isNotEmpty) ...[
                   const SizedBox(height: 3),
                   Text(
-                    subjects.join('  ·  '),
+                    [...subjects, if (t.gradeLevels.isNotEmpty) t.gradeLevels.join('، ')].join('  ·  '),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: AppColors.faint, fontSize: 11),

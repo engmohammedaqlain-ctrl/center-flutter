@@ -971,12 +971,37 @@ class Teacher {
     this.syncStatus = 'synced',
     this.createdAt,
     this.updatedAt,
+    this.jobTitle = '',
+    this.specialization = '',
+    this.graduationYear,
+    this.gradeLevels = const [],
+    this.contractType = '',
+    this.contractStart = '',
+    this.birthDate = '',
   });
 
   final String id;
   String name;
   String phone;
   String subject;
+
+  /// وظيفة غير التدريس (مرشد، مقصف...)؛ فارغة للمعلم.
+  String jobTitle;
+
+  /// التخصص الجامعي.
+  String specialization;
+  int? graduationYear;
+
+  /// المراحل التي يدرّسها.
+  List<String> gradeLevels;
+
+  /// نظام العقد: `sessions` بالحصص أو `fixed` براتب ثابت — `TEACHER_CONTRACT_LABELS`.
+  String contractType;
+  String contractStart;
+  String birthDate;
+
+  /// سطر تحت الاسم: الوظيفة إن وُجدت ثم التخصص — `roleLine`.
+  String get roleLine => [jobTitle, specialization].where((s) => s.trim().isNotEmpty).join(' · ');
 
   /// الراتب الشهري المعتاد. رقمٌ يُقترح به سند الصرف ويُعدَّل أو يُتجاهل، لا
   /// مطالبة: المدرسة عمل خاص — شهر بلا راتب، وشهر بأكثر منه، وشهر إجازة.
@@ -1006,6 +1031,14 @@ class Teacher {
     'national_id': nationalId.isEmpty ? null : nationalId,
     'portal_code': portalCode.isEmpty ? null : portalCode,
     'notes': notes,
+    // الفارغ null: التعديل يمسح القيمة المحذوفة في السحابة أيضاً
+    'job_title': jobTitle.trim().isEmpty ? null : jobTitle.trim(),
+    'specialization': specialization.trim().isEmpty ? null : specialization.trim(),
+    'graduation_year': graduationYear,
+    'grade_levels': gradeLevels,
+    'contract_type': contractType.isEmpty ? null : contractType,
+    'contract_start': contractStart.isEmpty ? null : contractStart,
+    'birth_date': birthDate.isEmpty ? null : birthDate,
     'academic_year_id': academicYearId.isEmpty ? null : academicYearId,
     'created_at': createdAt,
     'updated_at': updatedAt,
@@ -1034,9 +1067,23 @@ class Teacher {
       syncStatus: '${m['sync_status'] ?? 'synced'}',
       createdAt: m['created_at']?.toString(),
       updatedAt: m['updated_at']?.toString(),
+      jobTitle: '${m['job_title'] ?? ''}',
+      specialization: '${m['specialization'] ?? ''}',
+      graduationYear: m['graduation_year'] is num ? (m['graduation_year'] as num).toInt() : int.tryParse('${m['graduation_year'] ?? ''}'),
+      gradeLevels: [
+        if (m['grade_levels'] is List)
+          for (final g in m['grade_levels'] as List)
+            if ('$g'.trim().isNotEmpty) '$g'.trim(),
+      ],
+      contractType: '${m['contract_type'] ?? ''}',
+      contractStart: '${m['contract_start'] ?? ''}',
+      birthDate: '${m['birth_date'] ?? ''}',
     );
   }
 }
+
+/// نظام العقد: بالحصص أو براتب ثابت — `TEACHER_CONTRACT_LABELS`.
+const teacherContractLabels = {'sessions': 'نظام الحصص', 'fixed': 'راتب ثابت'};
 
 class SubjectItem {
   SubjectItem({
