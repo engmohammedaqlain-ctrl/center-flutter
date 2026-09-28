@@ -861,6 +861,25 @@ int toTimestamp(dynamic value) {
   return parsed.millisecondsSinceEpoch;
 }
 
+/// عدّل جهاز آخر السجل في السحابة بعد آخر نسخة وصلتنا منه — `editedElsewhere`.
+bool editedElsewhere(String? cloudStamp, String? localStamp) =>
+    (cloudStamp ?? '').isNotEmpty && (localStamp ?? '').isNotEmpty && toTimestamp(cloudStamp) > toTimestamp(localStamp);
+
+/// الحقول التي عدّلناها وحدها، جاهزة للرفع: بلا مفاتيح ولا قيم افتراضية أضافها
+/// التنظيف — `changedFieldsPatch`.
+Map<String, dynamic> changedFieldsPatch(String tableName, Map<String, dynamic>? payload, String tenantId) {
+  final source = {...?payload};
+  final clean = sanitizePayload(tableName, source, tenantId);
+  clean.removeWhere((key, _) {
+    final mapped = tableName == 'enrollments' && key == 'enrollment_date' && source.containsKey('enrolled_at');
+    return !source.containsKey(key) && !mapped;
+  });
+  for (final key in const ['id', 'tenant_id', 'created_at', 'server_updated_at']) {
+    clean.remove(key);
+  }
+  return clean;
+}
+
 Map<String, dynamic> sanitizePayload(
   String tableName,
   Map<String, dynamic>? payload,
@@ -1695,11 +1714,22 @@ class SyncService {
         final chunk = list.sublist(i, (i + pushChunk).clamp(0, list.length));
         final rows = <Map<String, dynamic>>[];
         final kept = <PendingSync>[];
+        final cloudStamps = await _cloudStampsOf(tableName, tenantId, chunk);
         for (final action in chunk) {
           final recordId = action.recordId.isNotEmpty
               ? action.recordId
               : '${action.payload?['id'] ?? ''}';
           if (recordId.isEmpty) continue;
+          // عدّل جهاز آخر السجل بعد آخر نسخة وصلتنا: رفعه كاملاً يعيد حقوله القديمة
+          // فيمحو تعديل ذلك الجهاز. يُرفع ما عدّلناه وحده، ويُسحب الناتج المدمج
+          if (action.action == 'UPDATE' && editedElsewhere(cloudStamps[recordId], local.serverStamp(tableName, recordId))) {
+            if (await _pushChangedFields(tableName, tenantId, action)) {
+              pushed++;
+            } else {
+              failed++;
+            }
+            continue;
+          }
           var fullRecord = {...?action.payload};
           final localRec = local.recordOf(tableName, recordId);
           if (localRec != null) {
@@ -1779,6 +1809,56 @@ class SyncService {
     }
 
     return (pushed: pushed, failed: failed + (all.length - actions.length));
+  }
+
+  /// أختام السحابة لسجلات التعديل في دفعة، لكشف ما عدّله جهاز آخر منذ آخر سحب.
+  /// تعذّر الفحص: يُرفع كما كان، فلا يعلق الطابور بسببه.
+  Future<Map<String, String>> _cloudStampsOf(String tableName, String tenantId, List<PendingSync> chunk) async {
+    final ids = [for (final a in chunk) if (a.action == 'UPDATE' && a.recordId.isNotEmpty) a.recordId];
+    if (ids.isEmpty) return const {};
+    try {
+      await SupabaseAuth.ensureFresh();
+      final uri = Uri.parse('$supabaseUrl/rest/v1/$tableName').replace(
+        queryParameters: {
+          'select': 'id,server_updated_at',
+          'tenant_id': 'eq.$tenantId',
+          'id': 'in.(${ids.join(',')})',
+        },
+      );
+      final res = await http.get(uri, headers: _headers);
+      if (res.statusCode >= 400) return const {};
+      final decoded = jsonDecode(res.body);
+      return {
+        if (decoded is List)
+          for (final r in decoded)
+            if (r is Map && r['server_updated_at'] != null) '${r['id']}': '${r['server_updated_at']}',
+      };
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// رفع الحقول المعدَّلة وحدها على سجل تغيّر في السحابة. لا يُحفظ ختم السيرفر
+  /// محلياً، فيجلب السحب التالي السجل المدمج بتعديل الجهازين.
+  Future<bool> _pushChangedFields(String tableName, String tenantId, PendingSync action) async {
+    final clean = changedFieldsPatch(tableName, action.payload, tenantId);
+    if (clean.isEmpty) {
+      _completeActions([action], markSynced: true);
+      return true;
+    }
+    try {
+      await SupabaseAuth.ensureFresh();
+      final uri = Uri.parse('$supabaseUrl/rest/v1/$tableName').replace(
+        queryParameters: {'id': 'eq.${action.recordId}', 'tenant_id': 'eq.$tenantId'},
+      );
+      final res = await http.patch(uri, headers: _headers, body: jsonEncode(clean));
+      if (res.statusCode >= 400) throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
+      _completeActions([action], markSynced: true);
+      return true;
+    } catch (err) {
+      _markFailed([action], describeSupabaseError(err, tableName), transient: isTransientSyncError(err));
+      return false;
+    }
   }
 
   /// إعادة رفع سند برقم جديد بعد تعارض رقمه. يعيد `true` إن نجح الرفع.

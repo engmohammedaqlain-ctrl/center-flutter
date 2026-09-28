@@ -1512,7 +1512,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     );
     financeRequests.add(row);
     _queue('finance_requests', row.id, 'INSERT', row.toCloud());
-    _recordFinanceAudit(action: 'request_submitted', summary: 'طلب مالي: $summary', studentId: studentId, entityId: row.id, amount: amount, reason: reason);
+    _recordFinanceAudit(action: 'request_submitted', summary: '${financeRequestLabel(kind)}: $summary', studentId: studentId, entityId: row.id, amount: amount, reason: reason);
     return row;
   }
 
@@ -1541,7 +1541,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _queue('finance_requests', request.id, 'UPDATE', request.toCloud());
     _recordFinanceAudit(
       action: 'request_approved',
-      summary: 'موافقة على طلب ${request.requestedByName}: ${request.summary}',
+      summary: request.summary,
       studentId: request.studentId,
       entityId: request.id,
       amount: request.amount,
@@ -1569,7 +1569,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _queue('finance_requests', request.id, 'UPDATE', request.toCloud());
     _recordFinanceAudit(
       action: 'request_rejected',
-      summary: 'رفض طلب ${request.requestedByName}: ${request.summary}',
+      summary: request.summary,
       studentId: request.studentId,
       entityId: request.id,
       amount: request.amount,
@@ -1677,7 +1677,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final changed = (value - request.amount).abs() > cent ? ' (الطلب ${money(request.amount)})' : '';
     _recordFinanceAudit(
       action: 'payment_request_approved',
-      summary: 'قبول دفعة ولي أمر ${money(value)}$changed — سند ${payment.receiptNumber}',
+      summary: 'سند ${payment.receiptNumber}$changed',
       studentId: request.studentId,
       entityId: request.id,
       amount: value,
@@ -1705,7 +1705,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _writePaymentRequestDecision(request);
     _recordFinanceAudit(
       action: 'payment_request_rejected',
-      summary: 'رفض دفعة ولي أمر ${money(request.amount)}',
+      summary: '',
       studentId: request.studentId,
       entityId: request.id,
       amount: request.amount,
@@ -5620,7 +5620,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (disc > cent) {
       _recordFinanceAudit(
         action: 'payment_discount',
-        summary: 'خصم ${money(disc)} عند القبض — سند ${p.receiptNumber}',
+        summary: 'سند ${p.receiptNumber}',
         studentId: studentId,
         entityId: p.id,
         amount: disc,
@@ -5675,7 +5675,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _queue('payments', p.id, 'UPDATE', p.toCloud());
     _recordFinanceAudit(
       action: 'payment_cancel',
-      summary: 'إلغاء السند ${p.receiptNumber} (${money(p.amount)})',
+      summary: 'سند ${p.receiptNumber}',
       studentId: p.studentId,
       studentName: p.studentName,
       entityId: p.id,
@@ -5730,7 +5730,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (student != null) _persistStudentLedger(student);
     _recordFinanceAudit(
       action: 'payment_reverse',
-      summary: 'عكس السند ${original.receiptNumber} بالسند ${reversal.receiptNumber}',
+      summary: 'سند ${original.receiptNumber} ← ${reversal.receiptNumber}',
       studentId: original.studentId,
       studentName: original.studentName,
       entityId: original.id,
@@ -5786,7 +5786,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _recordFinanceAudit(
       action: 'refund',
       summary:
-          'رد ${money(value)} لولي الأمر — سند ${refund.receiptNumber}${value > credit + cent ? ' (أعاد ${money(value - credit)} مطلوباً على أقساطه)' : ''}',
+          'سند ${refund.receiptNumber}${value > credit + cent ? ' (${money(value - credit)} على أقساطه)' : ''}',
       studentId: studentId,
       entityId: refund.id,
       amount: value,
@@ -5821,7 +5821,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _persistStudentLedger(student);
     _recordFinanceAudit(
       action: 'credit_forfeit',
-      summary: 'إسقاط رصيد ${money(credit)} غير مسترد',
+      summary: '',
       studentId: studentId,
       entityId: installment.id,
       amount: credit,

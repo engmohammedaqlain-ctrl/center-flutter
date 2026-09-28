@@ -114,7 +114,7 @@ void main() {
   group('مالية الطالب — مطابقة لـ getStudentPortalData', () {
     final today = DateTime(2026, 9, 12);
 
-    test('الإجمالي من الأقساط الحالّة، والمسدَّد يستبعد الملغى', () {
+    test('الإجمالي من الأقساط الحالّة، والمسدَّد من السندات يستبعد الملغى', () {
       final f = PortalFinance.compute(
         studentBalance: 0,
         installments: [
@@ -128,8 +128,10 @@ void main() {
       );
       expect(f.totalDue, 230, reason: 'قسط آب وحده حالّ في 12/9');
       expect(f.totalPaid, 477);
-      expect(f.currentDue, 230);
-      expect(f.scheduledRemaining, 690);
+      // كالويب: المسدَّد يُشتق من السندات لا من المخزَّن — 477 تسدّد آب وأيلول و17 من تشرين
+      expect(f.currentDue, 0);
+      expect(f.installments.first.paidAmount, 230);
+      expect(f.scheduledRemaining, 443);
       expect(f.remainingBalance, f.scheduledRemaining);
       expect(f.payments.any((p) => p.cancelled), isFalse);
     });
@@ -177,14 +179,14 @@ void main() {
       expect(f.remainingBalance, 0);
     });
 
-    test('الأقساط مرتّبة بالاستحقاق وحالتها المجهولة «غير مسددة»', () {
+    test('الأقساط مرتّبة بالاستحقاق وحالتها من السندات لا من المخزَّن', () {
       final f = PortalFinance.compute(
         studentBalance: 0,
         installments: [
-          _inst('late', 100, DateTime(2026, 11, 1), status: 'pending'),
-          _inst('early', 100, DateTime(2026, 8, 1), status: 'paid'),
+          _inst('late', 100, DateTime(2026, 11, 1), status: 'paid'),
+          _inst('early', 100, DateTime(2026, 8, 1), status: 'pending'),
         ],
-        payments: const [],
+        payments: [_pay('a', 100)],
         today: today,
       );
       expect(f.installments.map((i) => i.id), ['early', 'late']);

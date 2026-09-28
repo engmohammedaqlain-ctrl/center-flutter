@@ -477,6 +477,19 @@ class PortalFinance {
     DateTime? today,
   }) {
     final day = today ?? startOfToday();
+    // المسدَّد والرصيد من السندات نفسها، لكل سجل طالب على حدة (`deriveLedger`): المخزَّن
+    // قد يكون كتبه جهاز لم تصله كل السندات، فيرى ولي الأمر مبلغاً أقل مما دفع
+    double? derivedBalance;
+    for (final sid in {for (final i in installments) i.studentId}) {
+      final own = [for (final i in installments) if (i.studentId == sid) i];
+      final ownPayments = [for (final p in payments) if (p.studentId == sid) p];
+      final paid = allocatePaymentsToInstallments(own, ownPayments);
+      for (final i in own) {
+        i.paidAmount = paid[i.id] ?? 0;
+        i.status = installmentStatusFor(chargeableAmount(i), i.paidAmount);
+      }
+      derivedBalance ??= balanceFrom(installments: own, payments: ownPayments);
+    }
     final sorted = [...installments]..sort((a, b) => a.dueDate.compareTo(b.dueDate));
     final active = payments.where((p) => !p.cancelled).toList();
     sortPayments(active);
@@ -484,7 +497,7 @@ class PortalFinance {
     final dueOnly = sorted.where((i) => isInstallmentDue(i, day));
     final totalDue = dueOnly.fold<double>(0, (a, i) => a + chargeableAmount(i));
     final totalPaid = active.fold<double>(0, (a, p) => a + p.amount);
-    final buckets = dueAndScheduled(sorted, fallbackBalance: studentBalance, today: day);
+    final buckets = dueAndScheduled(sorted, fallbackBalance: derivedBalance ?? studentBalance, today: day);
 
     return PortalFinance(
       totalDue: totalDue,

@@ -1100,12 +1100,6 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   /// تبويب الطلبات والرقابة — المقابل لـ `FinanceControlPanel.tsx`.
   List<Widget> _controls(BuildContext context, AppStore store) {
-    final pending = store.pendingFinanceRequests;
-    final done = store.financeRequests
-        .where((r) => r.status != 'pending')
-        .toList()
-      ..sort((a, b) => (b.updatedAt ?? b.createdAt ?? '')
-          .compareTo(a.updatedAt ?? a.createdAt ?? ''));
     final auditUsers = {
       for (final a in store.financeAudit)
         if (a.userName.trim().isNotEmpty) a.userName,
@@ -1122,6 +1116,27 @@ class _FinanceScreenState extends State<FinanceScreen> {
     }).toList()
       ..sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
     final auditPage = listPage(audit, auditVisible);
+
+    /// السند الذي تخصه الحركة، إن وُجد: مباشرة، أو عبر الطلب الذي أصدره — `paymentIdOf`.
+    String? paymentIdOf(FinanceAuditEntry a) {
+      if (a.entityId.isEmpty) return null;
+      if (const ['payment_discount', 'payment_reverse', 'refund', 'payment_cancel'].contains(a.action)) return a.entityId;
+      if (a.action.startsWith('payment_request_')) {
+        final id = store.paymentRequests.where((r) => r.id == a.entityId).firstOrNull?.paymentId ?? '';
+        return id.isEmpty ? null : id;
+      }
+      final req = store.financeRequests.where((r) => r.id == a.entityId).firstOrNull;
+      return req?.kind == 'payment_cancel' && req!.targetId.isNotEmpty ? req.targetId : null;
+    }
+
+    Future<void> openReceipt(String paymentId) async {
+      final p = store.payments.where((x) => x.id == paymentId).firstOrNull;
+      if (p == null) {
+        showAppSnack(context, 'السند غير موجود', error: true);
+        return;
+      }
+      await ReceiptScreen.open(context, p);
+    }
 
     Widget requestCard(FinanceRequest request) {
       final pendingRow = request.status == 'pending';
@@ -1171,10 +1186,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 const SizedBox(height: 4),
                 Text(
                   [
-                    request.status == 'approved' ? 'وافق' : 'رفض',
-                    if (request.decidedByName.isNotEmpty) request.decidedByName,
-                    if ((request.decidedAt ?? '').isNotEmpty)
-                      (request.decidedAt ?? '').split('T').first,
+                    request.status == 'approved' ? 'مقبول' : 'مرفوض',
                     if (request.decisionNote.isNotEmpty)
                       '— ${request.decisionNote}',
                   ].join(' '),
@@ -1194,7 +1206,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                     primaryFlex: 1,
                     gap: 8,
                     primary: PrimaryButton(
-                      label: 'موافقة وتنفيذ',
+                      label: 'قبول',
                       color: AppColors.success,
                       onPressed: () {
                         try {
@@ -1227,10 +1239,21 @@ class _FinanceScreenState extends State<FinanceScreen> {
       );
     }
 
+    // طلبات الموظفين ودفعات أولياء الأمور في قائمة واحدة، الأحدث أولاً
+    final items = <({String at, bool pending, Widget node})>[
+      for (final r in store.financeRequests)
+        (at: r.createdAt ?? '', pending: r.status == 'pending', node: requestCard(r)),
+      for (final r in store.paymentRequests)
+        (at: r.createdAt ?? '', pending: r.status == 'pending', node: ParentRequestCard(key: ValueKey(r.id), store: store, request: r)),
+    ]..sort((a, b) => b.at.compareTo(a.at));
+    final pending = [for (final i in items) if (i.pending) i.node];
+    // المدير يرى القرارات في السجل؛ الموظف لا سجل له فتبقى له قائمة السابقة
+    final done = store.isFinanceAdmin ? const <Widget>[] : [for (final i in items) if (!i.pending) i.node];
+
     return [
-        PaymentRequestsPanel(store: store),
+        if (pending.isNotEmpty || done.isNotEmpty) ...[
         Text(
-          'طلبات بانتظار الموافقة (${pending.length})',
+          'بانتظار الموافقة (${pending.length})',
           style: TextStyle(
             color: AppColors.heading,
             fontWeight: FontWeight.w700,
@@ -1238,17 +1261,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        if (pending.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 18),
-            child: Text(
-              'لا طلبات معلّقة',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.muted, fontSize: 12),
-            ),
-          )
-        else
-          for (final r in pending) requestCard(r),
+        ...pending,
+        ],
         if (done.isNotEmpty) ...[
           const SizedBox(height: 4),
           TextButton(
@@ -1265,12 +1279,11 @@ class _FinanceScreenState extends State<FinanceScreen> {
             ),
             child: Text(
               showProcessedRequests
-                  ? 'إخفاء الطلبات المُعالجة (${done.length})'
-                  : 'عرض الطلبات المُعالجة (${done.length})',
+                  ? 'إخفاء السابقة (${done.length})'
+                  : 'عرض السابقة (${done.length})',
             ),
           ),
-          if (showProcessedRequests)
-            for (final r in done) requestCard(r),
+          if (showProcessedRequests) ...done,
         ],
         if (store.isFinanceAdmin) ...[
           const SizedBox(height: 16),
@@ -1376,24 +1389,38 @@ class _FinanceScreenState extends State<FinanceScreen> {
                       ),
                       if (a.studentName.isNotEmpty) ...[
                         const SizedBox(height: 2),
-                        Text(
-                          a.studentName,
-                          style: const TextStyle(
-                            color: AppColors.text,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
+                        // اسم الطالب يفتح ملفه
+                        GestureDetector(
+                          onTap: a.studentId.isEmpty
+                              ? null
+                              : () => Navigator.of(context).push(
+                                    MaterialPageRoute(builder: (_) => StudentDetailScreen(studentId: a.studentId)),
+                                  ),
+                          child: Text(
+                            a.studentName,
+                            style: TextStyle(
+                              color: a.studentId.isEmpty ? AppColors.text : AppColors.navy,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ],
-                      const SizedBox(height: 3),
-                      Text(
-                        a.summary,
-                        style: const TextStyle(
-                          color: AppColors.text,
-                          fontSize: 11.5,
-                          height: 1.35,
+                      // البيان يفتح السند الذي تخصه الحركة
+                      if (a.summary.isNotEmpty || paymentIdOf(a) != null) ...[
+                        const SizedBox(height: 3),
+                        GestureDetector(
+                          onTap: paymentIdOf(a) == null ? null : () => openReceipt(paymentIdOf(a)!),
+                          child: Text(
+                            a.summary.isNotEmpty ? a.summary : 'السند',
+                            style: TextStyle(
+                              color: paymentIdOf(a) == null ? AppColors.text : AppColors.navy,
+                              fontSize: 11.5,
+                              height: 1.35,
+                            ),
+                          ),
                         ),
-                      ),
+                      ],
                       if (a.reason.isNotEmpty) ...[
                         const SizedBox(height: 2),
                         Text(

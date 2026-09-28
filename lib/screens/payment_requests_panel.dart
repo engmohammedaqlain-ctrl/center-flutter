@@ -9,22 +9,23 @@ import '../theme/app_theme.dart';
 import '../widgets/widgets.dart';
 import 'receipt_screen.dart';
 
-/// دفعات أولياء الأمور بانتظار المراجعة — المقابل لـ `PaymentRequestsPanel.tsx`.
+/// دفعة ولي أمر في قائمة الموافقات — صفوف `useParentPayments` في الويب.
 ///
 /// ولي الأمر حوّل ثم أرسل صورة الإشعار من بوابته. القبول يصدر سند قبض عادياً،
-/// والرفض يتطلب سبباً مكتوباً يراه ولي الأمر.
-class PaymentRequestsPanel extends StatefulWidget {
-  const PaymentRequestsPanel({super.key, required this.store});
+/// والرفض يتطلب سبباً مكتوباً يراه ولي الأمر. تعرضها لوحة الموافقات مع طلبات
+/// الموظفين في قائمة واحدة.
+class ParentRequestCard extends StatefulWidget {
+  const ParentRequestCard({super.key, required this.store, required this.request});
 
   final AppStore store;
+  final PaymentRequest request;
 
   @override
-  State<PaymentRequestsPanel> createState() => _PaymentRequestsPanelState();
+  State<ParentRequestCard> createState() => _ParentRequestCardState();
 }
 
-class _PaymentRequestsPanelState extends State<PaymentRequestsPanel> {
-  String? openId;
-  bool showDone = false;
+class _ParentRequestCardState extends State<ParentRequestCard> {
+  bool open = false;
 
   AppStore get store => widget.store;
 
@@ -53,48 +54,9 @@ class _PaymentRequestsPanelState extends State<PaymentRequestsPanel> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final all = store.paymentRequests;
-    final pending = [for (final r in all) if (r.status == 'pending') r];
-    final decided = [for (final r in all) if (r.status != 'pending') r];
-    final canDecide = store.can('finance.collect');
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'دفعات أولياء الأمور (${pending.length})',
-          style: TextStyle(color: AppColors.heading, fontWeight: FontWeight.w700, fontSize: 13),
-        ),
-        const SizedBox(height: 8),
-        if (pending.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 14),
-            child: Text('لا دفعات معلّقة', textAlign: TextAlign.center, style: TextStyle(color: AppColors.muted, fontSize: 12)),
-          )
-        else
-          for (final r in pending) _card(r, canDecide),
-        if (decided.isNotEmpty) ...[
-          TextButton(
-            onPressed: () => setState(() => showDone = !showDone),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.navy,
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              alignment: AlignmentDirectional.centerStart,
-              textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5),
-            ),
-            child: Text(showDone ? 'إخفاء المحسومة (${decided.length})' : 'عرض المحسومة (${decided.length})'),
-          ),
-          if (showDone)
-            for (final r in decided) _card(r, canDecide),
-        ],
-        const SizedBox(height: 12),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => _card(widget.request, store.can('finance.collect'));
 
   Widget _card(PaymentRequest r, bool canDecide) {
-    final open = openId == r.id;
     final approved = r.status == 'approved';
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -157,7 +119,7 @@ class _PaymentRequestsPanelState extends State<PaymentRequestsPanel> {
                 GhostButton(
                   label: '${open ? 'إخفاء' : 'الإشعار'} (${r.imagePaths.length})',
                   icon: Icons.image_outlined,
-                  onPressed: () => setState(() => openId = open ? null : r.id),
+                  onPressed: () => setState(() => open = !open),
                 ),
                 const Spacer(),
                 if (r.status == 'pending' && canDecide) ...[
