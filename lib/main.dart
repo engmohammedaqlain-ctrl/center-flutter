@@ -368,6 +368,9 @@ class _LoginScreenState extends State<LoginScreen> {
   static const _codeLength = 6;
   static final _digitsOnly = FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩۰-۹]'));
 
+  /// اكتمل رقم الهوية: المؤشر ينتقل لكلمة المرور، كالويب.
+  final _codeFocus = FocusNode();
+
   bool get _portalReady =>
       digitsOnly(portalId.text).length == _idLength && digitsOnly(portalCode.text).length == _codeLength;
 
@@ -386,6 +389,7 @@ class _LoginScreenState extends State<LoginScreen> {
     pass.dispose();
     portalId.dispose();
     portalCode.dispose();
+    _codeFocus.dispose();
     super.dispose();
   }
 
@@ -688,6 +692,7 @@ class _LoginScreenState extends State<LoginScreen> {
               (previous, next) => next.copyWith(text: next.text.toLowerCase()),
             ),
           ],
+          textAlign: TextAlign.center,
           style: _fieldText,
           decoration: authFieldDecoration('أدخل اسم المستخدم...', Icons.person_outline),
         ),
@@ -700,6 +705,7 @@ class _LoginScreenState extends State<LoginScreen> {
           autocorrect: false,
           enableSuggestions: false,
           onSubmitted: (_) => _submit(),
+          textAlign: TextAlign.center,
           style: _fieldText.copyWith(fontFamily: 'monospace'),
           decoration: authFieldDecoration(
             'أدخل كلمة المرور...',
@@ -712,7 +718,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const SizedBox(height: 16),
         AuthSubmitButton(
           busy: busy,
-          label: busy ? 'جارِ التحقق...' : 'تسجيل الدخول',
+          label: busy ? 'جارِ التحقق...' : 'دخول',
           icon: Icons.login,
           onTap: busy ? null : _submit,
         ),
@@ -734,7 +740,10 @@ class _LoginScreenState extends State<LoginScreen> {
           textInputAction: TextInputAction.next,
           maxLength: _idLength,
           inputFormatters: [_digitsOnly],
-          onChanged: (_) => setState(() {}),
+          onChanged: (v) {
+            setState(() => error = null);
+            if (digitsOnly(v).length == _idLength) _codeFocus.requestFocus();
+          },
           textAlign: TextAlign.center,
           style: _fieldText.copyWith(fontFamily: 'monospace', letterSpacing: 1),
           decoration: authFieldDecoration('9 أرقام', Icons.badge_outlined).copyWith(counterText: ''),
@@ -744,11 +753,12 @@ class _LoginScreenState extends State<LoginScreen> {
         const SizedBox(height: 6),
         TextField(
           controller: portalCode,
+          focusNode: _codeFocus,
           keyboardType: TextInputType.number,
           obscureText: !showCode,
           maxLength: _codeLength,
           inputFormatters: [_digitsOnly],
-          onChanged: (_) => setState(() {}),
+          onChanged: (_) => setState(() => error = null),
           onSubmitted: (_) => _portalSubmit(),
           textAlign: TextAlign.center,
           style: _fieldText.copyWith(fontFamily: 'monospace', letterSpacing: 2),

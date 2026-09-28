@@ -8,6 +8,16 @@ import 'dart:ui' as ui;
 /// `institution_settings` المشترك: أي اختلاف في التسمية يجعل الهوية التي
 /// يحفظها الجوال غير مقروءة على سطح المكتب والعكس.
 const institutionNameKey = 'institution_name';
+
+/// أسماء النظام السابقة: سجلات قديمة حفظتها مكان اسم المدرسة — `OLD_SYSTEM_NAMES`.
+const oldSystemNames = ['نون - نظام الإدارة المدرسي', 'نظام الإدارة المدرسي', 'النظام المدرسي'];
+
+/// اسم المدرسة المخصَّص، أو فارغ إن كان اسم النظام نفسه — `customName` في institution.ts.
+String customInstitutionName(String? raw) {
+  final trimmed = (raw ?? '').trim();
+  if (trimmed.isEmpty || trimmed == 'نون - النظام المدرسي' || oldSystemNames.contains(trimmed)) return '';
+  return trimmed;
+}
 const institutionLogoKey = 'institution_logo';
 const institutionColorsKey = 'institution_colors';
 

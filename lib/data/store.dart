@@ -1959,7 +1959,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     staffUserId = (s[_kStaffUser] ?? '').isEmpty ? null : s[_kStaffUser];
     staffRole = s[_kStaffRole] ?? '';
     identityFromLogin = s[_kIdentityFromLogin] == 'true';
-    institutionName = s[institutionNameKey] ?? '';
+    institutionName = customInstitutionName(s[institutionNameKey]);
 
     if (s[_kLoggedIn] != 'true') return;
     if (s[_kMasterAdmin] == 'true') {
@@ -3352,7 +3352,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   Future<void> hydrateInstitution() async {
     final row = _institutionSettingsRow();
     if (row == null) return;
-    final name = '${row['institution_name'] ?? ''}'.trim();
+    final name = customInstitutionName('${row['institution_name'] ?? ''}');
     final logo = _usableImageData(row['logo']);
     final colors = row['colors'];
     if (name.isNotEmpty) {

@@ -1260,7 +1260,7 @@ class PortalService {
         if (PaymentMethodItem.fromMap(m) case final item?) item,
     ];
     return PortalBranding(
-      name: '${row['institution_name'] ?? ''}'.trim().isEmpty ? appName : '${row['institution_name']}',
+      name: customInstitutionName('${row['institution_name'] ?? ''}').isEmpty ? appName : customInstitutionName('${row['institution_name']}'),
       logo: '${row['logo'] ?? ''}',
       colors: colors is Map ? InstitutionColors.fromMap(colorMap) : InstitutionColors.defaults,
       paymentMethods: tableMethods.isNotEmpty ? tableMethods : decodePaymentMethods(colorMap[customPaymentMethodsColorKey]),
