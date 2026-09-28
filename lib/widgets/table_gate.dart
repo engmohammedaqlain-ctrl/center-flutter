@@ -15,7 +15,11 @@ class TableGate extends StatefulWidget {
     required this.tables,
     required this.child,
     this.message = 'جارٍ تحميل البيانات...',
+    this.spinner = true,
   });
+
+  /// `false`: نص التحميل وحده بلا حلقة.
+  final bool spinner;
 
   final List<String> tables;
   final Widget child;
@@ -131,7 +135,7 @@ class _TableGateState extends State<TableGate> {
     }
 
     if (!_ready) {
-      return AppLoader(message: widget.message);
+      return AppLoader(message: widget.message, spinner: widget.spinner);
     }
 
     return widget.child;

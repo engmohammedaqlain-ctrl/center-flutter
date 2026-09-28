@@ -838,9 +838,13 @@ class AppLoader extends StatelessWidget {
     this.compact = false,
     this.value,
     this.color,
+    this.spinner = true,
   });
 
   final String? message;
+
+  /// `false`: النص وحده بلا حلقة دوّارة — المالية مثلاً.
+  final bool spinner;
 
   /// قطر الحلقة.
   final double size;
@@ -860,7 +864,7 @@ class AppLoader extends StatelessWidget {
     final column = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(
+        if (spinner) SizedBox(
           width: size,
           height: size,
           child: CircularProgressIndicator(
@@ -872,7 +876,7 @@ class AppLoader extends StatelessWidget {
           ),
         ),
         if (label != null && label.isNotEmpty) ...[
-          SizedBox(height: compact ? 12 : 14),
+          if (spinner) SizedBox(height: compact ? 12 : 14),
           Text(
             label,
             textAlign: TextAlign.center,

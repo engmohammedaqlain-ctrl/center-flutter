@@ -247,7 +247,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
     final store = StoreScope.of(context);
     return TableGate(
       tables: const ['payments', 'installments', 'expenses', 'teacher_payouts'],
-      message: 'جارٍ تحميل المالية...',
+      message: 'جارٍ التحميل...',
+      spinner: false,
       child: ListenableBuilder(
       listenable: store,
       builder: (context, _) {
@@ -264,7 +265,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
         if (tab == _Tab.dues) {
           _scheduleDues(store);
           if (!_duesReady) {
-            return const AppLoader(message: 'جارٍ تجهيز المستحقات...');
+            return const AppLoader(message: 'جارٍ التحميل...', spinner: false);
           }
           allDues = _duesSnapshot;
         } else {
