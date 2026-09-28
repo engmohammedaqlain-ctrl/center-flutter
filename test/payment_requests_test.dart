@@ -11,6 +11,8 @@ import 'package:flutter_test/flutter_test.dart';
 AppStore _seeded() {
   final store = AppStore.forTesting();
   injectDemoData(store);
+  // الحسم السحابي بديله في الاختبار: الطلب متاح دائماً
+  store.claimOverride = (_, _, _) async => () async {};
   return store;
 }
 
@@ -81,21 +83,42 @@ void main() {
     expect(audit.summary, contains('الطلب'));
   });
 
-  test('الرفض يتطلب سبباً واضحاً ولا يصدر سنداً', () {
+  test('الرفض يتطلب سبباً واضحاً ولا يصدر سنداً', () async {
     final store = _seeded();
     final student = store.students.first;
     store.putRows('payment_requests', [_pending(student)]);
     final paymentsBefore = store.payments.length;
 
-    expect(() => store.rejectPaymentRequest('req-1', 'خطأ'), throwsA(isA<StoreException>()));
+    await expectLater(store.rejectPaymentRequest('req-1', 'خطأ'), throwsA(isA<StoreException>()));
     expect(store.pendingPaymentRequests, hasLength(1));
 
-    store.rejectPaymentRequest('req-1', rejectionReasonPresets.first);
+    await store.rejectPaymentRequest('req-1', rejectionReasonPresets.first);
     final r = store.paymentRequests.single;
     expect(r.status, 'rejected');
     expect(r.rejectionReason, rejectionReasonPresets.first);
     expect(store.payments.length, paymentsBefore);
     expect(store.financeAudit.map((a) => a.action), contains('payment_request_rejected'));
+  });
+
+  test('طلب حسمه جهاز آخر: لا سند ولا حسم مزدوج', () async {
+    final store = _seeded();
+    final student = store.students.first;
+    store.putRows('payment_requests', [_pending(student)]);
+    final before = store.payments.length;
+    store.claimOverride = (_, _, _) async => throw StoreException(AppStore.claimTakenMessage);
+
+    await expectLater(store.approvePaymentRequest('req-1'), throwsA(isA<StoreException>()));
+    expect(store.payments.length, before);
+  });
+
+  test('بلا اتصال لا يُحسم طلب', () async {
+    final store = AppStore.forTesting();
+    injectDemoData(store);
+    store.putRows('payment_requests', [_pending(store.students.first)]);
+    await expectLater(
+      store.rejectPaymentRequest('req-1', rejectionReasonPresets.first),
+      throwsA(predicate((e) => e is StoreException && e.message == AppStore.claimOfflineMessage)),
+    );
   });
 
   test('الجدول يُزامَن ويُنسخ احتياطياً بأعمدته', () {

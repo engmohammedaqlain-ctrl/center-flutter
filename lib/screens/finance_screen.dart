@@ -1093,7 +1093,11 @@ class _FinanceScreenState extends State<FinanceScreen> {
       ),
     );
     if (ok == true) {
-      store.rejectFinanceRequest(request.id, note.text);
+      try {
+        await runBusyOp(context, () => store.rejectFinanceRequest(request.id, note.text), message: 'جارٍ الحسم...');
+      } on StoreException catch (e) {
+        if (context.mounted) showAppSnack(context, e.message, error: true);
+      }
     }
     note.dispose();
   }
@@ -1208,11 +1212,11 @@ class _FinanceScreenState extends State<FinanceScreen> {
                     primary: PrimaryButton(
                       label: 'قبول',
                       color: AppColors.success,
-                      onPressed: () {
+                      onPressed: () async {
                         try {
-                          store.approveFinanceRequest(request.id);
+                          await runBusyOp(context, () => store.approveFinanceRequest(request.id), message: 'جارٍ الحسم...');
                         } on StoreException catch (e) {
-                          showAppSnack(context, e.message, error: true);
+                          if (context.mounted) showAppSnack(context, e.message, error: true);
                         }
                       },
                     ),

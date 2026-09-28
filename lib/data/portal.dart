@@ -1263,8 +1263,15 @@ class PortalService {
     );
   }
 
-  /// ميزات المنشأة للبوابات — قراءة عمود `tenants.features` إن سمحت السياسات.
+  /// ميزات المنشأة للبوابات — `fetchPortalTenant`.
+  ///
+  /// البوابات لا تقرأ صف المنشأة (فيه اسم دخول الإدارة وملاحظات المطور)، بل ما تحتاجه
+  /// عبر `portal_tenant()`. قاعدة لم تُنفَّذ عليها هجرة الحماية بعد: يُقرأ العمود كما كان.
   Future<Map<String, dynamic>?> tenantFeatures(String tenantId) async {
+    final viaRpc = await supabaseRpc('portal_tenant', const {});
+    if (viaRpc is Map && viaRpc['features'] is Map) {
+      return Map<String, dynamic>.from(viaRpc['features'] as Map);
+    }
     final rows = await supabaseSelect(
       'tenants',
       filters: {'id': 'eq.$tenantId'},
@@ -1884,6 +1891,13 @@ class PortalService {
 
   /// كشف درجات الشعبة دفعة واحدة — `saveBatchEvaluations`.
   Future<void> saveEvaluations(List<StudentEvaluation> batch, String tenantId) {
+    for (final e in batch) {
+      try {
+        checkScoreBounds([e.score], e.maxScore);
+      } on StoreException catch (err) {
+        throw PortalException(err.message);
+      }
+    }
     final now = _nowIso();
     return supabaseUpsert('student_evaluations', [
       for (final e in batch) {...e.toCloud(), 'tenant_id': tenantId, 'created_at': now, 'updated_at': now},

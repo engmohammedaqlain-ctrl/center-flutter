@@ -1487,7 +1487,20 @@ const financeAuditActionLabels = <String, String>{
   'request_rejected': 'رفض طلب',
   'payment_request_approved': 'قبول دفعة ولي أمر',
   'payment_request_rejected': 'رفض دفعة ولي أمر',
+  'student_deleted': 'حذف طالب عليه رسوم',
 };
+
+/// الكشف كله يُرفض إن كانت فيه علامة خارج حدودها: سالبة أو فوق العلامة الكاملة كانت
+/// تُحفظ فتُفسد المعدلات والشهادات — `EvaluationService.save`. العلامة الكاملة
+/// الفارغة (0) تُعدّ 100.
+void checkScoreBounds(Iterable<double?> scores, double maxScore) {
+  final max = maxScore == 0 ? 100.0 : maxScore;
+  if (!(max > 0)) throw StoreException('العلامة الكاملة يجب أن تكون أكبر من صفر');
+  for (final s in scores) {
+    final score = s ?? 0;
+    if (!(score >= 0) || score > max) throw StoreException('العلامة بين 0 و ${trimNum(max)}');
+  }
+}
 
 String financeRequestLabel(String kind) => financeRequestLabels[kind] ?? kind;
 

@@ -34,7 +34,8 @@ void main() {
 
     final admin = store.users.firstWhere((u) => u.role == 'admin');
     await store.setDeviceIdentity(admin, '');
-    store.approveFinanceRequest(request.id);
+    store.claimOverride = (_, _, _) async => () async {};
+    await store.approveFinanceRequest(request.id);
 
     expect(payment.cancelled, isTrue);
     expect(request.status, 'approved');

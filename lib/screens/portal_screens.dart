@@ -12,6 +12,8 @@ import '../data/image_shrink.dart';
 import '../data/portal_offline.dart';
 import '../data/realtime.dart';
 import '../data/store.dart';
+import '../data/sync.dart' show isTransientSyncError;
+import '../data/user_message.dart';
 import '../data/academic_matching.dart';
 import '../data/teacher_resources.dart';
 import '../theme/app_colors.dart';
@@ -2789,7 +2791,14 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
       await widget.service.saveEvaluations(batch, widget.user.tenantId);
       if (!mounted) return;
       Navigator.pop(context, true);
-    } catch (_) {
+    } catch (e) {
+      // رفض السيرفر (علامة خارج حدودها، مادة ليست للمعلم) لا يُصفّ: إعادته لن تنجح
+      if (e is PortalException || !isTransientSyncError(e)) {
+        if (!mounted) return;
+        setState(() => saving = false);
+        showAppSnack(context, userMessage(e, 'حدث خطأ أثناء حفظ الدرجات'), error: true);
+        return;
+      }
       // بلا شبكة: الدرجات تُحفظ على الجهاز وتُرفع أول ما يعود الاتصال
       await widget.offline.queueEvaluations(batch, widget.user.tenantId, widget.user.id);
       if (!mounted) return;

@@ -1516,7 +1516,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return row;
   }
 
-  void approveFinanceRequest(String id, {String note = ''}) {
+  Future<void> approveFinanceRequest(String id, {String note = ''}) async {
     if (!isFinanceAdmin) {
       throw StoreException('الموافقة على الطلبات للمدير وحده');
     }
@@ -1526,10 +1526,24 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       throw StoreException('الطلب مُعالج مسبقاً');
     }
 
-    // التنفيذ أولاً: إن فشل يبقى الطلب معلّقاً كما في الويب.
-    _executeFinanceRequest(request);
-
+    // يُحسم في السحابة أولاً: مديران يوافقان على الطلب نفسه كانا ينفّذانه مرتين
+    // (رد مبلغ مرتين). إن فشل التنفيذ بعد الحسم يعود الطلب معلقاً
     final now = _nowIso();
+    final release = await claimPendingRequest('finance_requests', id, {
+      'status': 'approved',
+      'decided_by_id': currentUserId,
+      'decided_by_name': deviceUser?.name ?? receiptReceiver,
+      'decided_at': now,
+      'updated_at': now,
+    });
+    if (request.status != 'pending') throw StoreException('الطلب مُعالج مسبقاً');
+    try {
+      _executeFinanceRequest(request);
+    } catch (_) {
+      await release().catchError((_) {});
+      rethrow;
+    }
+
     request
       ..status = 'approved'
       ..decidedById = currentUserId
@@ -1549,7 +1563,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     );
   }
 
-  void rejectFinanceRequest(String id, String note) {
+  Future<void> rejectFinanceRequest(String id, String note) async {
     if (!isFinanceAdmin) throw StoreException('رفض الطلبات للمدير وحده');
     if (note.trim().isEmpty) throw StoreException('اكتب سبب الرفض');
     final request = financeRequests.where((r) => r.id == id).firstOrNull;
@@ -1558,6 +1572,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       throw StoreException('الطلب مُعالج مسبقاً');
     }
     final now = _nowIso();
+    await claimPendingRequest('finance_requests', id, {
+      'status': 'rejected',
+      'decided_by_id': currentUserId,
+      'decided_by_name': deviceUser?.name ?? receiptReceiver,
+      'decided_at': now,
+      'updated_at': now,
+    });
     request
       ..status = 'rejected'
       ..decidedById = currentUserId
@@ -1575,6 +1596,65 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       amount: request.amount,
       reason: note,
     );
+  }
+
+  // ── حسم الطلبات في السحابة (المقابل لـ lib/requestClaim.ts) ──────────────
+
+  static const claimOfflineMessage = 'حسم الطلبات يحتاج اتصالاً بالإنترنت: قد يحسم جهاز آخر الطلب نفسه في الوقت نفسه';
+  static const claimTakenMessage = 'حُسم هذا الطلب من جهاز آخر';
+
+  /// بديل الحسم السحابي في الاختبارات.
+  @visibleForTesting
+  Future<Future<void> Function()> Function(String table, String id, Map<String, dynamic> decision)? claimOverride;
+
+  /// حسم طلب في السحابة قبل تنفيذه — `claimPendingRequest`.
+  ///
+  /// الطلب يصل كل أجهزة الإدارة، وكانت الموافقة تُحسم على الجهاز وحده ثم تُرفع: جهازان
+  /// يوافقان قبل أن يتزامنا فيصدر سندان لدفعة واحدة، أو يُرد المبلغ مرتين. الحسم تحديث
+  /// مشروط في السحابة (`status = pending`): جهاز واحد يأخذ الطلب، والآخر يُبلَّغ أنه حُسم.
+  /// طلب لم يصل السحابة بعد يُحسم محلياً. يعيد ما يُرجع الطلب معلقاً إن فشل التنفيذ.
+  Future<Future<void> Function()> claimPendingRequest(String table, String id, Map<String, dynamic> decision) async {
+    final override = claimOverride;
+    if (override != null) return override(table, id, decision);
+    if (!networkEnabled) throw StoreException(claimOfflineMessage);
+    final tid = tenantId;
+    if (tid == null || tid.isEmpty) throw StoreException('لا توجد منشأة محددة');
+
+    int touched;
+    try {
+      touched = await supabaseUpdateTouched(table, {'id': 'eq.$id', 'tenant_id': 'eq.$tid', 'status': 'eq.pending'}, decision);
+    } catch (e) {
+      throw StoreException(userMessage(e, 'تعذّر حسم الطلب، أعد المحاولة'));
+    }
+    if (touched > 0) {
+      return () => supabaseUpdate(
+            table,
+            {
+              'id': 'eq.$id',
+              'tenant_id': 'eq.$tid',
+              'status': 'eq.${decision['status']}',
+              'decided_by_id': 'eq.${decision['decided_by_id']}',
+            },
+            {
+              'status': 'pending',
+              'decided_by_id': null,
+              'decided_by_name': null,
+              'decided_at': null,
+              'updated_at': _nowIso(),
+              // عمود في طلبات الدفع وحدها
+              if (table == 'payment_requests') 'rejection_reason': null,
+            },
+          );
+    }
+
+    // لم يُحدَّث صف: إما حسمه جهاز آخر، وإما لم يصل السحابة بعد
+    final rows = await supabaseSelect(table, filters: {'id': 'eq.$id', 'tenant_id': 'eq.$tid'}, limit: 1);
+    if (rows == null) throw StoreException('تعذّر حسم الطلب، أعد المحاولة');
+    if (rows.isEmpty) return () async {};
+    // نسخة السحابة المحسومة تحلّ محل المعلقة على هذا الجهاز، فيختفي زر الحسم
+    putRows(table, [rows.first]);
+    notifyListeners();
+    throw StoreException(claimTakenMessage);
   }
 
   // ── طلبات الدفع من ولي الأمر (المقابل لـ paymentRequests.service.ts) ──────
@@ -1644,27 +1724,43 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         ? method!
         : (request.paymentMethod.isNotEmpty ? request.paymentMethod : 'bank_transfer');
 
-    final images = await paymentRequestImages(request);
-    final firstImage = images.whereType<String>().firstOrNull;
-    // قد يكون حسمه جهاز آخر أثناء تنزيل الصورة
-    request = _pendingPaymentRequest(id);
-
-    final payment = addPayment(
-      studentId: request.studentId,
-      amount: value,
-      method: payMethod,
-      date: DateTime.now(),
-      purpose: 'دفعة عامة',
-      notes: ['طلب من بوابة ولي الأمر', if (request.notes.isNotEmpty) request.notes].join(' — '),
-      reference: request.referenceNumber,
-      senderName: request.senderName,
-      channel: request.transferChannel.isNotEmpty ? request.transferChannel : paymentMethodLabel(payMethod),
-      transferDate: request.transferDate,
-      allowAdvance: true,
-    );
-    if (firstImage != null) unawaited(saveFinanceAttachment(payment.id, 'payment', firstImage));
-
+    // يُحسم في السحابة أولاً: جهازان يقبلان الطلب نفسه كانا يصدران سندين لدفعة واحدة
     final now = _nowIso();
+    final release = await claimPendingRequest('payment_requests', id, {
+      'status': 'approved',
+      'decided_by_id': currentUserId,
+      'decided_by_name': deviceUser?.name ?? receiptReceiver,
+      'decided_at': now,
+      'updated_at': now,
+    });
+
+    Payment payment;
+    try {
+      // أول صورة تصير إشعار السند، فتفتح من الوصل كأي تحويل
+      final images = await paymentRequestImages(request);
+      final firstImage = images.whereType<String>().firstOrNull;
+      request = _pendingPaymentRequest(id);
+
+      payment = addPayment(
+        studentId: request.studentId,
+        amount: value,
+        method: payMethod,
+        date: DateTime.now(),
+        purpose: 'دفعة عامة',
+        notes: ['طلب من بوابة ولي الأمر', if (request.notes.isNotEmpty) request.notes].join(' — '),
+        reference: request.referenceNumber,
+        senderName: request.senderName,
+        channel: request.transferChannel.isNotEmpty ? request.transferChannel : paymentMethodLabel(payMethod),
+        transferDate: request.transferDate,
+        allowAdvance: true,
+      );
+      if (firstImage != null) unawaited(saveFinanceAttachment(payment.id, 'payment', firstImage));
+    } catch (_) {
+      // لم يصدر سند: يعود الطلب معلقاً ليُحسم لاحقاً
+      await release().catchError((_) {});
+      rethrow;
+    }
+
     request
       ..status = 'approved'
       ..paymentId = payment.id
@@ -1687,7 +1783,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   /// الرفض بسبب مكتوب يخبر ولي الأمر ماذا يصلح؛ القاعدة ترفض الأقصر أيضاً.
-  void rejectPaymentRequest(String id, String reason) {
+  Future<void> rejectPaymentRequest(String id, String reason) async {
     requireFinanceAction('finance.collect');
     final clean = reason.trim();
     if (clean.length < minRejectionReason) {
@@ -1695,6 +1791,14 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
     final request = _pendingPaymentRequest(id);
     final now = _nowIso();
+    await claimPendingRequest('payment_requests', id, {
+      'status': 'rejected',
+      'rejection_reason': clean,
+      'decided_by_id': currentUserId,
+      'decided_by_name': deviceUser?.name ?? receiptReceiver,
+      'decided_at': now,
+      'updated_at': now,
+    });
     request
       ..status = 'rejected'
       ..rejectionReason = clean
@@ -2026,6 +2130,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
     final group = groups.where((g) => g.id == groupId).firstOrNull;
     if (group == null) throw StoreException('الشعبة المختارة غير موجودة');
+    checkScoreBounds(scores.values, maxScore);
 
     final now = _nowIso();
     final bucket = extraCloud.putIfAbsent('student_evaluations', () => []);
@@ -2038,7 +2143,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         teacherId: group.teacherId,
         title: cleanTitle,
         score: entry.value,
-        maxScore: maxScore <= 0 ? 100 : maxScore,
+        maxScore: maxScore == 0 ? 100 : maxScore,
         evaluationDate: evaluationDate,
         type: type,
         notes: (notes[entry.key] ?? '').trim(),
@@ -5023,6 +5128,25 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         'غيّر حالته إلى «منسحب» أو «مؤرشف» للاحتفاظ بالسجل المالي.',
       );
     }
+    // الحذف يُسقط رسومه غير المدفوعة معه، وكان يتم بصمت ولأي موظف: يحتاج صلاحية
+    // الإعفاء، ويُكتب في سجل الحركات. من لا يملكها يؤرشف الطالب بدل حذفه
+    final owed = (installments.where((i) => i.studentId == id).fold<double>(0, (a, i) => a + unpaidOf(i)) * 100).round() / 100;
+    final deletedName = studentById(id)?.fullName ?? '';
+    if (owed > 0 && !can('finance.discount')) {
+      throw StoreException(
+        'حذف الطالب يُسقط رسومه غير المدفوعة: يحتاج صلاحية «الخصم والإعفاء». غيّر حالته إلى «مؤرشف» بدلاً من ذلك.',
+      );
+    }
+    if (owed > 0) {
+      _recordFinanceAudit(
+        action: 'student_deleted',
+        summary: 'حُذفت رسومه غير المدفوعة معه',
+        studentId: id,
+        studentName: deletedName,
+        entityId: id,
+        amount: owed,
+      );
+    }
 
     for (final inst in installments.where((i) => i.studentId == id)) {
       queuePendingSync(pendingSyncs, tableName: 'installments', recordId: inst.id, action: 'DELETE', payload: null);
@@ -7749,11 +7873,31 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _queue('grade_fees', f.id, 'DELETE', null);
   }
 
+  /// إدارة المستخدمين تُفحص هنا لا في الشاشة وحدها — `assertUserManager`.
+  ///
+  /// كان من يملك «المستخدمون والصلاحيات» يجعل نفسه مديراً أو يمنح نفسه الرد والإلغاء:
+  /// غير المدير لا يمسّ حسابات المدير، ولا يرفع أحداً إلى مدير، ولا يمنح تبويباً لا يملكه.
+  void _assertUserManager(AppUser? target, [AppUser? next]) {
+    if (isFinanceAdmin) return;
+    if (!can('settings.users')) throw StoreException('لا تملك صلاحية «المستخدمون والصلاحيات»');
+    final becomesAdmin = next != null && normalizeRole(next.role) == 'admin';
+    if ((target != null && normalizeRole(target.role) == 'admin') || becomesAdmin) {
+      throw StoreException('حسابات المدير يديرها مدير');
+    }
+    if (next != null) {
+      final before = target == null ? const <String>{} : effectiveSections(target.capabilities, target.role).toSet();
+      final own = mySections.toSet();
+      final granted = effectiveSections(next.capabilities, next.role).where((s) => !before.contains(s));
+      if (granted.any((s) => !own.contains(s))) throw StoreException('لا تمنح تبويباً لا تملكه أنت');
+    }
+  }
+
   void updateUser(AppUser u) {
     requireSection('settings.users');
     final i = users.indexWhere((e) => e.id == u.id);
     if (i < 0) return;
     final before = users[i];
+    _assertUserManager(before, u);
     final hadUsersAccess = _userCanManageUsers(before);
     final keepsUsersAccess = _userCanManageUsers(u);
     if (hadUsersAccess && !keepsUsersAccess) {
@@ -7775,6 +7919,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   void deleteUser(String id) {
     requireSection('settings.users');
     final target = users.where((u) => u.id == id).firstOrNull;
+    _assertUserManager(target);
     if (target != null &&
         normalizeRole(target.role) == 'admin' &&
         target.isActive) {
@@ -8177,6 +8322,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   void addUser(AppUser u) {
     requireSection('settings.users');
+    _assertUserManager(null, u);
     if (u.name.trim().isEmpty) throw StoreException('يرجى إدخال اسم المستخدم');
     u.createdAt = _nowIso();
     u.updatedAt = _nowIso();

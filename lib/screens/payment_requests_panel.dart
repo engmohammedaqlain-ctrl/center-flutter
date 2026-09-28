@@ -338,12 +338,17 @@ class _RejectSheetState extends State<_RejectSheet> {
     super.dispose();
   }
 
-  void _submit() {
+  bool busy = false;
+
+  Future<void> _submit() async {
+    setState(() => busy = true);
     try {
-      widget.store.rejectPaymentRequest(widget.request.id, reason.text);
-      Navigator.pop(context, true);
+      await widget.store.rejectPaymentRequest(widget.request.id, reason.text);
+      if (mounted) Navigator.pop(context, true);
     } on StoreException catch (e) {
-      setState(() => error = e.message);
+      if (mounted) setState(() => error = e.message);
+    } finally {
+      if (mounted) setState(() => busy = false);
     }
   }
 
@@ -393,7 +398,7 @@ class _RejectSheetState extends State<_RejectSheet> {
             ],
             const SizedBox(height: 14),
             ActionButtons(
-              primary: PrimaryButton(label: 'رفض الطلب', color: AppColors.danger, onPressed: enough ? _submit : null),
+              primary: PrimaryButton(label: 'رفض الطلب', color: AppColors.danger, onPressed: enough && !busy ? _submit : null),
               secondary: GhostButton(label: 'تراجع', onPressed: () => Navigator.pop(context)),
             ),
           ],
