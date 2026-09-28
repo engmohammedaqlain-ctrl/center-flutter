@@ -5807,26 +5807,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final stu = studentById(studentId);
     if (stu == null) throw StoreException('يرجى اختيار الطالب أولاً');
 
-    // لا دفعة مقدمة من نموذج القبض: المبلغ ≤ المستحق + المجدول (أو ذمة بلا أقساط)
-    final ownForCap = installments.where((i) => i.studentId == studentId).toList();
-    if (allowAdvance) {
-      // لا سقف
-    } else if (ownForCap.isNotEmpty) {
-      final buckets = dueAndScheduled(ownForCap, fallbackBalance: stu.balance, today: DateTime(date.year, date.month, date.day));
-      final maxPayable = ((buckets.due + buckets.scheduled) * 100).round() / 100;
-      if (totalSettled > maxPayable + cent) {
-        throw StoreException('المبلغ أكبر من المستحق والمجدول (${money(maxPayable)})');
-      }
-    } else {
-      final debt = stu.balance < 0 ? -stu.balance : 0.0;
-      if (totalSettled > debt + cent) {
-        throw StoreException(
-          debt > cent
-              ? 'المبلغ أكبر من ذمة الطالب (${money(debt)})'
-              : 'لا مستحقات على الطالب — لا يمكن تسجيل دفعة مقدمة',
-        );
-      }
-    }
+    // الزائد عن المستحق رصيد مقدَّم للطالب، كالويب (`createPayment` بلا سقف): يظهر
+    // في بيان السند «دفعة مقدمة» ويُخصم من أقساطه القادمة
 
     // المستحق وقت الدفع = ما حلّ موعده حتى تاريخ السند — مطابق لـ finance.service
     final dueNow =

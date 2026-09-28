@@ -251,8 +251,14 @@ List<PlanItem> generatePlanItems({
 }) {
   final total = count < 0 ? 0 : count;
   final step = everyMonths < 1 ? 1 : everyMonths;
+  // اسم الشهر عنواناً كالويب، إلا بادئة خاصة يكتبها المدير
+  final customPrefix = titlePrefix.isNotEmpty && titlePrefix != 'رسوم' && titlePrefix != 'القسط';
   return [
-    for (var i = 0; i < total; i++) PlanItem(id: newId(), title: '$titlePrefix ${i + 1}', amount: _round2(amount), dueDate: addMonths(firstDueDate, i * step)),
+    for (var i = 0; i < total; i++)
+      () {
+        final due = addMonths(firstDueDate, i * step);
+        return PlanItem(id: newId(), title: customPrefix ? '$titlePrefix ${i + 1}' : feeMonthTitle(due, i + 1), amount: _round2(amount), dueDate: due);
+      }(),
   ];
 }
 
