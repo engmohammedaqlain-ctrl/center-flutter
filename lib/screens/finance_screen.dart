@@ -80,10 +80,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   String _resolvedFinanceYearId(AppStore store) {
     if (financeYearFilter == 'all') return '';
-    if (financeYearFilter == 'current') {
-      return store.operationalAcademicYear?.id ?? store.viewedAcademicYearId;
-    }
-    return financeYearFilter;
+    // سنة المالية هي العام المعروض في النظام كله، و«كل الأعوام» خيار إضافي — كالويب
+    // (`useFinanceYearFilter`). فلتر مستقل كان يعرض مستحقات عام بطلاب عام آخر
+    return store.viewedAcademicYearId;
   }
 
   AcademicYear? _filterYear(AppStore store) {
@@ -471,11 +470,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
   }
 
   String _periodLabel(AppStore store) {
-    final year = switch (financeYearFilter) {
-      'current' => 'عام التشغيل',
-      'all' => 'كل الأعوام',
-      _ => store.academicYears.where((y) => y.id == financeYearFilter).firstOrNull?.label ?? 'عام',
-    };
+    final year = financeYearFilter == 'all' ? 'كل الأعوام' : (store.viewedAcademicYear?.label ?? 'عام');
     final term = switch (termFilter) {
       'term_1' => 'الفصل الأول',
       'term_2' => 'الفصل الثاني',
@@ -614,12 +609,19 @@ class _FinanceScreenState extends State<FinanceScreen> {
                         group(
                           'العام الدراسي',
                           {
-                            'current': 'عام التشغيل',
-                            'all': 'كل الأعوام',
                             for (final y in store.academicYears) y.id: y.label,
+                            'all': 'كل الأعوام',
                           },
-                          financeYearFilter,
-                          (v) => financeYearFilter = v,
+                          financeYearFilter == 'all' ? 'all' : store.viewedAcademicYearId,
+                          (v) {
+                            // اختيار عام يبدّل العام المعروض في النظام كله، كالويب
+                            if (v == 'all') {
+                              financeYearFilter = 'all';
+                            } else {
+                              financeYearFilter = 'current';
+                              store.viewedAcademicYearId = v;
+                            }
+                          },
                         ),
                         group(
                           'الفصل',

@@ -2249,6 +2249,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   double get totalPayouts => teacherPayouts.fold<double>(0, (a, p) => a + p.amount);
 
   /// تسجيل سند صرف — مطابق لـ `FinanceService.createExpense`.
+  /// مبلغ صرف صالح: رقم موجب بقرشين على الأكثر — `validPayoutAmount`.
+  static double validPayoutAmount(double value) {
+    final amount = (value * 100).round() / 100;
+    if (!amount.isFinite || amount <= 0) throw StoreException('أدخل مبلغاً أكبر من صفر');
+    return amount;
+  }
+
   Expense addExpense({
     required String category,
     required String description,
@@ -2260,7 +2267,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     requireSection('finance.expenses');
     final desc = description.trim();
     if (desc.isEmpty) throw StoreException('البيان مطلوب لتسجيل سند الصرف');
-    if (amount <= 0) throw StoreException('مبلغ سند الصرف يجب أن يكون أكبر من صفر');
+    amount = validPayoutAmount(amount);
 
     final now = _nowIso();
     final e = Expense(
@@ -2302,7 +2309,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }) {
     requireSection('finance.expenses');
     if (teacherId.trim().isEmpty) throw StoreException('اختر المعلم المستفيد');
-    if (amount <= 0) throw StoreException('مبلغ الأجر يجب أن يكون أكبر من صفر');
+    amount = validPayoutAmount(amount);
 
     final now = _nowIso();
     final p = TeacherPayout(
