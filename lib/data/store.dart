@@ -5514,12 +5514,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       unawaited(db.setSetting(_kReceiptCounter, '$_receipt'));
       return '$year/$_receipt';
     }
+    // كالويب (`generateReceiptNumber`): أعلى تسلسل لرمز الجهاز في سنته + 1، بأربع خانات
+    // على الأقل: K-2026/0001. العدّاد القديم لا يدخل: يبدأ من 1000 فكان أول سند 1001
     var max = maxSerialFor(year, payments.map((p) => p.receiptNumber), code);
-    if (_receipt > max) max = _receipt;
     if (_cloudSerialHint > max) max = _cloudSerialHint;
-    _receipt = max + 1 < 1001 ? 1001 : max + 1;
-    unawaited(db.setSetting(_kReceiptCounter, '$_receipt'));
-    return '$code-$year/$_receipt';
+    return '$code-$year/${(max + 1).toString().padLeft(4, '0')}';
   }
 
   /// توحيد صيغة أرقام السندات القديمة إلى `YYYY/NNNN`.
