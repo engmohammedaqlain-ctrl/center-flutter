@@ -14,9 +14,9 @@ import '../widgets/widgets.dart';
 
 /// تهيئة الجهاز الجديد — المقابل لـ `NewDeviceSetupModal` في النسخة المكتبية.
 ///
-/// تسبق أي شاشة عمل: تسحب بيانات المنشأة من السحابة، ثم تُلزم بتحديد
-/// المستخدم المثبَّت على الجهاز — وهو ما يحدد الصلاحيات واسم المستلم على
-/// سندات القبض. بدونها كان أي جهاز يعمل بصلاحية مدير كاملة بلا هوية.
+/// تسبق أي شاشة عمل وتنزّل بيانات المنشأة وحدها: لا اختيار مستخدم ولا كلمة مدير.
+/// لكل موظف حسابه يدخل به، وحساب المنشأة يعمل باسم مديرها تلقائياً
+/// (`adoptOwnerIdentity`)؛ تعيين «سكرتير» على جهاز المالك كان حماية زائفة.
 ///
 /// بإطار شاشة الدخول نفسه: هي خطوتها الثانية لا نافذة منفصلة.
 class DeviceSetupScreen extends StatefulWidget {
@@ -43,8 +43,6 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
   /// بيانات المدرسة نفسها كانت على الجهاز، فلم يُنتظر تنزيل جديد.
   bool reusedLocal = false;
 
-  String? selectedUserId;
-  final password = TextEditingController();
   final _notifier = defaultDownloadNotifier();
   static const _noticeTitle = 'تهيئة الجهاز';
 
@@ -54,11 +52,6 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _performInitialSync());
   }
 
-  @override
-  void dispose() {
-    password.dispose();
-    super.dispose();
-  }
 
   void _onPullProgress(PullProgress p) {
     if (mounted) {
@@ -90,9 +83,9 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
         reusedLocal = true;
         loading = false;
         syncError = null;
-        selectedUserId = store.setupCandidates.first.id;
       });
       unawaited(_refreshInBackground(store));
+      await _complete(store);
       return;
     }
 
@@ -108,20 +101,17 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
     try {
       final pulled = await store.initialPull(onProgress: _onPullProgress);
       await _notifier.finish(
-        pulled > 0
-            ? 'اكتمل التنزيل — $pulled سجلاً. افتح التطبيق لاختيار الهوية.'
-            : 'اكتمل التنزيل. افتح التطبيق لاختيار الهوية.',
+        pulled > 0 ? 'اكتمل التنزيل — $pulled سجلاً.' : 'اكتمل التنزيل.',
         title: _noticeTitle,
       );
       if (!mounted) return;
-      final candidates = store.setupCandidates;
       setState(() {
         pulledCount = pulled;
         progressPercent = 100;
         offline = false;
-        selectedUserId = candidates.first.id;
         loading = false;
       });
+      await _complete(store);
     } catch (e) {
       await _notifier.hide();
       if (!mounted) return;
@@ -133,9 +123,9 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
         setState(() {
           offline = true;
           pulledCount = 0;
-          selectedUserId = store.setupCandidates.first.id;
           loading = false;
         });
+        await _complete(store);
         return;
       }
       setState(() {
@@ -157,27 +147,19 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
     }
   }
 
-  Future<void> _finish(AppStore store, AppUser user) async {
-    setState(() => passwordError = null);
-
-    // كلمة مرور المدير مطلوبة لكل الأدوار — تمنع تعيين جهاز بلا تصريح.
-    // مطابق لـ `handleFinishSetup` في NewDeviceSetupModal.tsx
-    setState(() => submitting = true);
-    if (!await store.verifyAdminSetupPassword(password.text)) {
-      if (!mounted) return;
-      setState(() {
-        submitting = false;
-        passwordError = 'كلمة مرور المدير غير صحيحة';
-      });
-      return;
-    }
-
+  /// بعد التنزيل: هوية الجهاز من الحساب نفسه — موظف دخل بحسابه، أو المالك باسم مديره.
+  Future<void> _complete(AppStore store) async {
+    if (!mounted) return;
+    setState(() {
+      passwordError = null;
+      submitting = true;
+    });
     try {
-      await store.completeInitialSetup(user);
+      await store.adoptOwnerIdentity();
+      await store.completeInitialSetup();
     } catch (e) {
-      // بلا هذا يبقى الزر «جاري التثبيت…» إلى الأبد ولا يدخل المستخدم أبداً
       if (mounted) {
-        setState(() => passwordError = e is StoreException ? e.message : 'تعذّر تثبيت هوية الجهاز.');
+        setState(() => passwordError = e is StoreException ? e.message : 'تعذّر إكمال تهيئة الجهاز.');
       }
     } finally {
       if (mounted) setState(() => submitting = false);
@@ -329,98 +311,25 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
     );
   }
 
+  /// بعد التنزيل: حالة ما نُزّل، والإكمال تلقائي. زر لإعادة المحاولة إن تعذّر.
   Widget _form(AppStore store) {
-    final candidates = store.setupCandidates;
-    final selected = candidates.where((u) => u.id == selectedUserId).firstOrNull ?? candidates.first;
-    final isAdmin = selected.role == 'admin';
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
         _status(),
-        const SizedBox(height: 16),
-        authLabel('المستخدم على هذا الجهاز:'),
-        const SizedBox(height: 6),
-        // قائمة منسدلة كقائمة الويب: مدرسة بعشرين موظفاً كانت تملأ الشاشة
-        // ببطاقاتهم فيضيع الحقل والزر تحتها
-        Container(
-          height: 46,
-          padding: const EdgeInsetsDirectional.fromSTEB(10, 0, 8, 0),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(Corner.field),
-            border: Border.all(color: AppColors.line),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.person_outline, size: 17, color: AppColors.muted),
-              const SizedBox(width: 8),
-              Expanded(
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: selected.id,
-                    isExpanded: true,
-                    icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.faint),
-                    style: const TextStyle(color: AppColors.text, fontSize: 13),
-                    items: [
-                      for (final u in candidates)
-                        DropdownMenuItem(
-                          value: u.id,
-                          child: Text(
-                            '${u.name} (${u.role == 'admin' ? 'مدير' : 'سكرتير'})',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                    ],
-                    onChanged: (id) {
-                      if (id == null) return;
-                      setState(() {
-                        selectedUserId = id;
-                        passwordError = null;
-                        password.clear();
-                      });
-                    },
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        authLabel('كلمة مرور المدير الرئيسية:'),
-        const SizedBox(height: 6),
-        TextField(
-          controller: password,
-          obscureText: true,
-          autofocus: true,
-          onChanged: (_) {
-            if (passwordError != null) setState(() => passwordError = null);
-          },
-          onSubmitted: (_) => _finish(store, selected),
-          style: const TextStyle(color: AppColors.text, fontSize: 13.5, fontFamily: 'monospace'),
-          decoration: authFieldDecoration('أدخل كلمة مرور المدير...', Icons.vpn_key_outlined),
-        ),
         AuthErrorBox(message: passwordError),
-        const SizedBox(height: 8),
-        Text(
-          'يتطلب تثبيت دور هذا الجهاز (${isAdmin ? 'مدير' : 'سكرتير'}) إدخال كلمة مرور المدير لمنع التعيين غير المصرح به.',
-          style: const TextStyle(color: AppColors.muted, fontSize: 11, height: 1.5),
-        ),
         const SizedBox(height: 16),
         AuthSubmitButton(
-          label: submitting ? 'جاري التثبيت...' : 'تأكيد وبدء العمل على الجهاز',
+          label: submitting ? 'جاري الإكمال...' : 'بدء العمل على الجهاز',
           icon: Icons.check_circle_outline,
           busy: submitting,
-          onTap: submitting ? null : () => _finish(store, selected),
+          onTap: submitting ? null : () => _complete(store),
         ),
       ],
     );
   }
 
-  /// نتيجة السحب في سطر هادئ فوق النموذج.
   Widget _status() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),

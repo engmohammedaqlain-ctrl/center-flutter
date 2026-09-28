@@ -1096,6 +1096,15 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   static const _kMasterAdmin = 'is_master_admin';
   static const _kTenantId = 'last_active_tenant_id';
   static const _kDeviceUser = 'device_user_id';
+
+  /// معرّف الموظف صاحب جلسة هذا الجهاز؛ غيابه = حساب المنشأة (المالك) — `STAFF_USER_KEY`.
+  static const _kStaffUser = 'staff_user_id';
+
+  /// دور الموظف في توكنه: احتياط إلى أن يصل صفه في users.
+  static const _kStaffRole = 'staff_role';
+
+  /// الهوية عُيّنت بدخول الموظف بحسابه، لا من حساب المالك — `fromLogin`.
+  static const _kIdentityFromLogin = 'identity_from_login';
   static const _kReceiptLabel = 'device_receipt_label';
   static const _kLastUsername = 'last_entered_username';
   static const _kLastPortalId = 'last_entered_portal_id';
@@ -1443,6 +1452,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   bool get isFinanceAdmin {
     final me = deviceUser;
+    if (me == null && isStaffSession) return normalizeRole(staffRole) == 'admin';
     return me == null || (me.isActive && normalizeRole(me.role) == 'admin');
   }
 
@@ -1946,6 +1956,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _receipt = int.tryParse(s[_kReceiptCounter] ?? '') ?? 1000;
     deviceUserId = s[_kDeviceUser];
     receiptReceiverLabel = s[_kReceiptLabel] ?? '';
+    staffUserId = (s[_kStaffUser] ?? '').isEmpty ? null : s[_kStaffUser];
+    staffRole = s[_kStaffRole] ?? '';
+    identityFromLogin = s[_kIdentityFromLogin] == 'true';
     institutionName = s[institutionNameKey] ?? '';
 
     if (s[_kLoggedIn] != 'true') return;
@@ -3569,7 +3582,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       return null;
     }
 
-    if (SupabaseAuth.role != 'tenant_admin') {
+    // حساب المنشأة (المالك)، أو موظف ما زال بحساب اسم المستخدم القديم
+    final staffId = '${SupabaseAuth.claims['user_id'] ?? ''}';
+    final isStaff = SupabaseAuth.role == 'staff' && staffId.isNotEmpty;
+    if (SupabaseAuth.role != 'tenant_admin' && !isStaff) {
       await supabaseSignOut();
       return 'هذا الحساب لا يملك صلاحية الدخول إلى التطبيق';
     }
@@ -3580,14 +3596,103 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       return 'هذا الحساب غير مرتبط بمنشأة';
     }
 
+    if (isStaff) {
+      return startStaffSession(tenant, userId: staffId, role: '${SupabaseAuth.claims['staff_role'] ?? ''}', name: username);
+    }
+
     final problem = subscriptionProblem(tenant);
     if (problem != null) {
       await supabaseSignOut();
       return problem;
     }
 
+    await _clearStaffSession();
     await _enterTenant(tenant);
     return null;
+  }
+
+  // ── حساب لكل موظف (المقابل لـ startTenantSession({staff}) في session.ts) ──
+
+  /// الموظف صاحب جلسة الجهاز؛ `null` = حساب المنشأة (المالك).
+  String? staffUserId;
+
+  /// دور الموظف في توكنه، احتياط إلى أن يصل صفه.
+  String staffRole = '';
+
+  /// الهوية عُيّنت بدخول موظف بحسابه — لا يرثها حساب المالك بعده.
+  bool identityFromLogin = false;
+
+  bool get isStaffSession => staffUserId != null;
+
+  /// فتح النظام لموظف دخل برقم هويته — `startTenantSession(tenant, {staff})`.
+  ///
+  /// حساب الموظف يحدد هوية الجهاز بنفسه: لا اختيار ولا كلمة مدير. دور التوكن احتياط
+  /// إلى أن يصل صف الموظف، والصلاحية الفعلية من صفه في users. اشتراك المنشأة يُفحص
+  /// كدخول المالك.
+  Future<String?> startStaffSession(Tenant tenant, {required String userId, String role = '', String name = ''}) async {
+    final problem = subscriptionProblem(tenant);
+    if (problem != null) {
+      await supabaseSignOut();
+      return problem;
+    }
+    staffUserId = userId;
+    staffRole = role;
+    await db.setSetting(_kStaffUser, userId);
+    await db.setSetting(_kStaffRole, role);
+    await _enterTenant(tenant);
+    identityFromLogin = true;
+    deviceUserId = userId;
+    final row = users.where((u) => u.id == userId).firstOrNull;
+    receiptReceiverLabel = row?.name ?? name;
+    roleName = roleLabel(row?.role ?? role);
+    await db.setSetting(_kDeviceUser, userId);
+    await db.setSetting(_kReceiptLabel, receiptReceiverLabel);
+    await db.setSetting(_kIdentityFromLogin, 'true');
+    notifyListeners();
+    return null;
+  }
+
+  /// دخول المالك بعد موظف على الجهاز نفسه: لا يرث هوية الموظف، فيُعيَّن من جديد.
+  Future<void> _clearStaffSession() async {
+    staffUserId = null;
+    staffRole = '';
+    await db.setSetting(_kStaffUser, null);
+    await db.setSetting(_kStaffRole, null);
+    if (identityFromLogin) {
+      identityFromLogin = false;
+      deviceUserId = null;
+      receiptReceiverLabel = '';
+      await db.setSetting(_kIdentityFromLogin, null);
+      await db.setSetting(_kDeviceUser, null);
+      await db.setSetting(_kReceiptLabel, null);
+    }
+  }
+
+  /// حساب المنشأة يعمل باسم مديرها تلقائياً — `adoptOwnerIdentity`.
+  ///
+  /// لكل موظف حسابه، وحساب المنشأة صلاحيته كاملة في السحابة مهما كان المستخدم المختار
+  /// عليه، فتعيين «سكرتير» على جهازه كان حماية زائفة. المدير المختار سابقاً يبقى،
+  /// وإلا `owner_<منشأة>`، وإلا أول مدير فعّال، وإلا يُنشأ.
+  Future<bool> adoptOwnerIdentity({bool create = true}) async {
+    if (isStaffSession) return true;
+    bool activeAdmin(AppUser? u) => u != null && u.isActive && normalizeRole(u.role) == 'admin';
+    AppUser? admin;
+    if (deviceUserId != null && !identityFromLogin) {
+      final chosen = users.where((u) => u.id == deviceUserId).firstOrNull;
+      if (activeAdmin(chosen)) admin = chosen;
+    }
+    if (admin == null) {
+      final owner = users.where((u) => u.id == 'owner_${tenantId ?? ''}').firstOrNull;
+      admin = activeAdmin(owner) ? owner : users.where(activeAdmin).firstOrNull;
+    }
+    if (admin == null && create) admin = ensureOwnerAdmin();
+    if (admin == null) return false;
+    if (deviceUserId != admin.id || identityFromLogin) {
+      identityFromLogin = false;
+      await db.setSetting(_kIdentityFromLogin, null);
+      await setDeviceIdentity(admin, admin.name);
+    }
+    return true;
   }
 
   /// المسار المحلي: جهاز بلا شبكة أو بيئة اختبار.
@@ -3607,6 +3712,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (match != null) {
       final problem = subscriptionProblem(match);
       if (problem != null) return problem;
+      await _clearStaffSession();
       await _enterTenant(match);
       return null;
     }
@@ -3617,6 +3723,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       if (saved != null) {
         final problem = subscriptionProblem(saved);
         if (problem != null) return problem;
+        await _clearStaffSession();
         await _enterTenant(saved);
         return null;
       }
@@ -3719,6 +3826,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       if (SupabaseAuth.isDeveloper) return true;
       final tid = tenantId;
       if (tid == null || tid.isEmpty) return false;
+      // حساب موظف: الجلسة لصاحبها وحده، فجهاز دخل عليه غيره يعود لشاشة الدخول
+      if (staffUserId != null || SupabaseAuth.role == 'staff') {
+        return SupabaseAuth.role == 'staff' && SupabaseAuth.tenantId == tid && '${SupabaseAuth.claims['user_id'] ?? ''}' == staffUserId;
+      }
       return SupabaseAuth.role == 'tenant_admin' && SupabaseAuth.tenantId == tid;
     } catch (_) {
       return null;
@@ -4179,6 +4290,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// اشتراك منتهٍ أو موقوف لا يمنع الدخول — الشريط يُنبِّه كالويب.
   Future<String?> enterTenantAsDeveloper(Tenant tenant) async {
     if (!isMasterAdmin) return 'الدخول للمنشآت من بوابة المطور';
+    await _clearStaffSession();
     await _enterTenant(tenant);
     return null;
   }
@@ -4205,6 +4317,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     isMasterAdmin = false;
     currentTenant = null;
     _setupPending = false;
+    staffUserId = null;
+    staffRole = '';
+    await db.setSetting(_kStaffUser, null);
+    await db.setSetting(_kStaffRole, null);
     await _saveSession();
     notifyListeners();
   }
@@ -7929,8 +8045,44 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       }
     }
     if (users.length <= 1) throw StoreException('لا يمكن حذف المستخدم الوحيد في النظام');
+    // حسابه يُوقف أولاً في السحابة: موظف محذوف لا يبقى قادراً على الدخول
+    if (target != null && target.hasLogin) unawaited(removeStaffLogin(id).catchError((_) {}));
     users.removeWhere((u) => u.id == id);
     _queue('users', id, 'DELETE', null);
+    notifyListeners();
+  }
+
+  /// دخول الموظف برقم هويته — `SettingsService.setStaffLogin`: يولّد الخادم كلمة من
+  /// 6 أرقام تُعاد هنا مرة واحدة ولا يُحفظ إلا بصمتها، والكلمة الجديدة تُنهي جلساته
+  /// السابقة. صف الموظف يجب أن يكون في السحابة، فيُرفع ما لم يُرفع أولاً.
+  Future<String> setStaffLogin(String userId, String nationalId) async {
+    final target = users.where((u) => u.id == userId).firstOrNull;
+    _assertUserManager(target);
+    final clean = digitsOnly(nationalId.trim());
+    if (!RegExp(r'^\d{9}$').hasMatch(clean)) throw StoreException('رقم الهوية 9 أرقام');
+    await flush();
+    await sync.push(refreshRemote: false);
+    final res = await supabaseInvoke('staff-accounts', {'action': 'set_login', 'user_id': userId, 'national_id': clean});
+    if (res['error'] != null) throw StoreException('${res['error']}');
+    final code = '${res['code'] ?? ''}';
+    if (code.isEmpty) throw StoreException('تعذّر توليد كلمة المرور');
+    // يصل الربط الكامل بالسحب؛ الرقم يُعرض فوراً
+    target?.nationalId = clean;
+    target?.username = null;
+    notifyListeners();
+    scheduleAutoPull(Duration.zero);
+    return code;
+  }
+
+  /// إيقاف الدخول: لا يدخل الموظف بعدها، وسجله وسنداته تبقى.
+  Future<void> removeStaffLogin(String userId) async {
+    final target = users.where((u) => u.id == userId).firstOrNull;
+    _assertUserManager(target);
+    final res = await supabaseInvoke('staff-accounts', {'action': 'remove_login', 'user_id': userId});
+    if (res['error'] != null) throw StoreException('${res['error']}');
+    target?.nationalId = null;
+    target?.username = null;
+    target?.authUserId = null;
     notifyListeners();
   }
 
@@ -8211,8 +8363,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   /// تثبيت هوية الجهاز وإنهاء التهيئة.
-  Future<void> completeInitialSetup(AppUser user) async {
-    await setDeviceIdentity(user, user.name);
+  /// إكمال التهيئة. [user] هوية تُثبَّت صراحةً؛ بدونها تبقى هوية الحساب نفسه
+  /// (الموظف بحسابه، أو المالك باسم مديره من `adoptOwnerIdentity`).
+  Future<void> completeInitialSetup([AppUser? user]) async {
+    if (user != null) await setDeviceIdentity(user, user.name);
     final tid = tenantId;
     if (tid != null) await db.setSetting(initialSetupKey(tid), 'true');
     await db.setSetting(_kSetupPending, null);
@@ -8288,6 +8442,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// التبويبات الفعلية لمستخدم هذا الجهاز. الحساب الموقوف لا يرى شيئاً.
   List<String> get mySections {
     final me = deviceUser;
+    // موظف لم يصل صفه بعد: صلاحيات دوره في توكنه، لا صلاحية كاملة
+    if (me == null && isStaffSession) return effectiveSections(null, staffRole);
     if (me == null) return [...allSections];
     if (!me.isActive) return const [];
     return effectiveSections(me.capabilities, me.role);

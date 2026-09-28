@@ -2245,6 +2245,9 @@ class AppUser {
     this.syncStatus = 'synced',
     this.createdAt,
     this.updatedAt,
+    this.nationalId,
+    this.username,
+    this.authUserId,
   });
 
   final String id;
@@ -2252,6 +2255,14 @@ class AppUser {
   String role;
   String email;
   bool isActive;
+
+  /// رقم هوية دخول الموظف واسم دخوله القديم وحسابه: يكتبها الخادم وحده (دالة
+  /// staff-accounts) وتصل بالسحب؛ لا تُرفع من جهاز، وكلمته لا تصل الجهاز.
+  String? nationalId;
+  String? username;
+  String? authUserId;
+
+  bool get hasLogin => (nationalId ?? '').isNotEmpty || (username ?? '').isNotEmpty || (authUserId ?? '').isNotEmpty;
 
   /// التبويبات الظاهرة للحساب. `null` تعني قالب دوره، والقائمة الفارغة لا شيء.
   List<String>? capabilities;
@@ -2268,6 +2279,9 @@ class AppUser {
     'capabilities': capabilities,
     'created_at': createdAt,
     'updated_at': updatedAt,
+    'national_id': nationalId,
+    'username': username,
+    'auth_user_id': authUserId,
   };
 
   factory AppUser.fromCloud(Map<String, dynamic> m) {
@@ -2283,8 +2297,16 @@ class AppUser {
       syncStatus: '${m['sync_status'] ?? 'synced'}',
       createdAt: m['created_at']?.toString(),
       updatedAt: m['updated_at']?.toString(),
+      nationalId: _optText(m['national_id']),
+      username: _optText(m['username']),
+      authUserId: _optText(m['auth_user_id']),
     );
   }
+}
+
+String? _optText(Object? v) {
+  final t = v?.toString().trim() ?? '';
+  return t.isEmpty ? null : t;
 }
 
 /// مطابق لـ `types/tenant.ts` في النسخة المكتبية.

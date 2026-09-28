@@ -2054,7 +2054,7 @@ class _DeviceCard extends StatelessWidget {
 }
 
 /// مستخدم: الاسم وشارة «هذا الجهاز» مقابل حالته، ودوره وعدد صلاحياته، ثم خط رفيع
-/// وأزرار التثبيت والصلاحيات والحذف.
+/// وأزرار الدخول والصلاحيات والحذف.
 class _UserCard extends StatelessWidget {
   const _UserCard({
     required this.user,
@@ -2120,15 +2120,14 @@ class _UserCard extends StatelessWidget {
               runSpacing: 6,
               alignment: WrapAlignment.end,
               children: [
-                if (!isThisDevice)
-                  TileButton(
-                    label: 'تثبيت على الجهاز',
-                    icon: const Icon(Icons.phonelink_lock_outlined, size: 13),
-                    color: AppColors.amber,
-                    background: AppColors.amberSoft,
-                    border: AppColors.amberBorder,
-                    onTap: () => _pinUser(context, u),
-                  ),
+                TileButton(
+                  label: u.hasLogin ? 'الدخول' : 'إنشاء دخول',
+                  icon: const Icon(Icons.key_outlined, size: 13),
+                  color: AppColors.amber,
+                  background: AppColors.amberSoft,
+                  border: AppColors.amberBorder,
+                  onTap: () => _staffLogin(context, u),
+                ),
                 TileButton(
                   label: 'الصلاحيات',
                   icon: const Icon(Icons.tune, size: 13),
@@ -2155,13 +2154,16 @@ class _UserCard extends StatelessWidget {
   }
 }
 
-/// تثبيت مستخدم على الجهاز — بكلمة مرور المدير لكل الأدوار، كما في تهيئة الجهاز:
-/// تثبيت سكرتير بلا كلمة مرور كان يغيّر صلاحيات الجهاز لأي حامل له.
-Future<void> _pinUser(BuildContext context, AppUser u) async {
+/// دخول الموظف برقم هويته — `StaffLoginModal`: كلمة من 6 أرقام يولّدها الخادم
+/// وتظهر هنا مرة واحدة؛ من نسيها تُولَّد له كلمة جديدة.
+Future<void> _staffLogin(BuildContext context, AppUser u) async {
   final store = StoreScope.of(context);
-  final label = TextEditingController(text: u.name);
-  final pass = TextEditingController();
-  String? passError;
+  final hasLogin = (u.nationalId ?? '').isNotEmpty || (u.username ?? '').isNotEmpty;
+  final id = TextEditingController(text: u.nationalId ?? '');
+  ({String nationalId, String code})? issued;
+  String? error;
+  var busy = false;
+  var copied = false;
 
   await showModalBottomSheet<void>(
     context: context,
@@ -2169,30 +2171,81 @@ Future<void> _pinUser(BuildContext context, AppUser u) async {
     backgroundColor: Colors.white,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setSt) {
-        Future<void> submit() async {
-          final entered = pass.text.trim();
-          if (entered.isEmpty) {
-            setSt(() => passError = 'يرجى إدخال كلمة مرور المدير');
+        Future<void> generate() async {
+          if (busy || digitsOnly(id.text).length != 9) return;
+          if (hasLogin &&
+              !await confirmSheet(
+                ctx,
+                title: 'كلمة مرور جديدة',
+                message: 'كلمة مرور جديدة لـ ${u.name}؟ الكلمة الحالية تتوقف.',
+                confirmLabel: 'توليد',
+                confirmColor: AppColors.amber,
+              )) {
             return;
           }
-          // القاعدة هي التي تتحقق من كلمة مرور المدير الآن
-          if (!await store.verifyAdminSetupPassword(entered)) {
-            if (ctx.mounted) setSt(() => passError = 'كلمة المرور غير صحيحة');
-            return;
+          setSt(() {
+            busy = true;
+            error = null;
+          });
+          try {
+            final nid = digitsOnly(id.text);
+            final code = await store.setStaffLogin(u.id, nid);
+            issued = (nationalId: nid, code: code);
+          } catch (e) {
+            error = e is StoreException ? e.message : userMessage(e, 'تعذّر التوليد');
           }
-          store.setDeviceIdentity(u, label.text);
-          if (!ctx.mounted) return;
-          Navigator.pop(ctx);
-          showAppSnack(context, 'تم تثبيت «${u.name}» على هذا الجهاز');
+          if (ctx.mounted) setSt(() => busy = false);
         }
 
+        Future<void> remove() async {
+          if (!await confirmSheet(ctx, title: 'إيقاف الدخول', message: 'إيقاف دخول ${u.name}؟', confirmLabel: 'إيقاف الدخول')) {
+            return;
+          }
+          setSt(() {
+            busy = true;
+            error = null;
+          });
+          try {
+            await store.removeStaffLogin(u.id);
+            if (ctx.mounted) Navigator.pop(ctx);
+            return;
+          } catch (e) {
+            error = e is StoreException ? e.message : userMessage(e, 'تعذّر الإيقاف');
+          }
+          if (ctx.mounted) setSt(() => busy = false);
+        }
+
+        Widget box(String label, String value, {bool code = false}) => Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: code ? AppColors.successSoft : Colors.white,
+                  borderRadius: BorderRadius.circular(Corner.box),
+                  border: Border.all(color: code ? AppColors.successBorder : AppColors.lineStrong),
+                ),
+                child: Column(
+                  children: [
+                    Text(label, style: TextStyle(fontSize: 10.5, color: code ? AppColors.success : AppColors.muted)),
+                    const SizedBox(height: 4),
+                    Text(
+                      value,
+                      textDirection: TextDirection.ltr,
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.w700,
+                        fontSize: code ? 18 : 14,
+                        letterSpacing: code ? 4 : 1.5,
+                        color: code ? AppColors.success : AppColors.heading,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+
+        final done = issued;
         return Padding(
-          padding: EdgeInsets.fromLTRB(
-            16,
-            16,
-            16,
-            12 + MediaQuery.viewInsetsOf(ctx).bottom,
-          ),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 12 + MediaQuery.viewInsetsOf(ctx).bottom),
           child: SafeArea(
             top: false,
             child: Column(
@@ -2201,68 +2254,72 @@ Future<void> _pinUser(BuildContext context, AppUser u) async {
               children: [
                 Row(
                   children: [
-                    Icon(
-                      Icons.phonelink_lock_outlined,
-                      size: 18,
-                      color: AppColors.amber,
-                    ),
+                    Icon(Icons.key_outlined, size: 18, color: AppColors.amber),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'تثبيت «${u.name}» على هذا الجهاز',
+                        'دخول: ${u.name}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                          color: AppColors.heading,
-                        ),
+                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.heading),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                const Text(
-                  'اسمه يظهر مستلماً على السندات.',
-                  style: TextStyle(
-                    color: AppColors.muted,
-                    fontSize: 11.5,
-                    height: 1.5,
-                  ),
-                ),
                 const SizedBox(height: 14),
-                const FieldLabel('اسم المستلم على سند القبض'),
-                TextField(controller: label),
-                const SizedBox(height: 12),
-                const FieldLabel(
-                  'كلمة مرور المدير الرئيسية',
-                  requiredField: true,
-                ),
-                TextField(
-                  controller: pass,
-                  obscureText: true,
-                  onChanged: (_) {
-                    if (passError != null) setSt(() => passError = null);
-                  },
-                  onSubmitted: (_) => submit(),
-                  decoration: InputDecoration(
-                    hintText: 'مطلوبة لتثبيت أي مستخدم',
-                    errorText: passError,
+                if (done != null) ...[
+                  Row(children: [box('رقم الهوية', done.nationalId), const SizedBox(width: 8), box('كلمة المرور', done.code, code: true)]),
+                  const SizedBox(height: 8),
+                  Text(
+                    'تظهر مرة واحدة',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.amber, fontSize: 11.5, fontWeight: FontWeight.w700),
                   ),
-                ),
-                const SizedBox(height: 16),
-                ActionButtons(
-                  primary: PrimaryButton(
-                    label: 'تثبيت على الجهاز',
-                    icon: Icons.check,
-                    height: 40,
-                    onPressed: submit,
+                  const SizedBox(height: 16),
+                  ActionButtons(
+                    primary: PrimaryButton(label: 'تم', icon: Icons.check, height: 40, onPressed: () => Navigator.pop(ctx)),
+                    secondary: GhostButton(
+                      label: copied ? 'نُسخت' : 'نسخ',
+                      onPressed: () async {
+                        await Clipboard.setData(ClipboardData(text: 'رقم الهوية: ${done.nationalId}\nكلمة المرور: ${done.code}'));
+                        if (ctx.mounted) setSt(() => copied = true);
+                      },
+                    ),
                   ),
-                  secondary: GhostButton(
-                    label: 'إلغاء',
-                    onPressed: () => Navigator.pop(ctx),
+                ] else ...[
+                  const FieldLabel('رقم الهوية', requiredField: true),
+                  TextField(
+                    controller: id,
+                    autofocus: true,
+                    keyboardType: TextInputType.number,
+                    maxLength: 9,
+                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩۰-۹]'))],
+                    textAlign: TextAlign.center,
+                    textDirection: TextDirection.ltr,
+                    style: const TextStyle(fontFamily: 'monospace', letterSpacing: 2),
+                    onChanged: (_) => setSt(() => error = null),
+                    onSubmitted: (_) => generate(),
+                    decoration: InputDecoration(hintText: '9 أرقام', counterText: '', errorText: error),
                   ),
-                ),
+                  const SizedBox(height: 16),
+                  ActionButtons(
+                    primary: PrimaryButton(
+                      label: busy ? 'جارٍ التوليد...' : (hasLogin ? 'كلمة مرور جديدة' : 'توليد كلمة المرور'),
+                      icon: Icons.key_outlined,
+                      height: 40,
+                      onPressed: busy || digitsOnly(id.text).length != 9 ? null : generate,
+                    ),
+                    secondary: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx)),
+                  ),
+                  if (hasLogin) ...[
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: busy ? null : remove,
+                      style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+                      child: const Text('إيقاف الدخول'),
+                    ),
+                  ],
+                ],
               ],
             ),
           ),

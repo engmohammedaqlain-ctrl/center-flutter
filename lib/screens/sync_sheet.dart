@@ -177,24 +177,13 @@ Future<void> showActionSheet(BuildContext context, AppStore store) {
                 const SizedBox(height: 8),
               ],
               _menuTile(
-                icon: Icons.badge_outlined,
-                iconColor: AppColors.amber,
-                label: 'تغيير المستخدم على هذا الجهاز',
-                trailing: 'تبديل',
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  await store.resetInitialSetup();
-                },
-              ),
-              const SizedBox(height: 8),
-              _menuTile(
                 icon: Icons.logout,
                 iconColor: AppColors.danger,
                 label: 'تسجيل الخروج من النظام',
                 danger: true,
                 onTap: () async {
                   Navigator.pop(ctx);
-                  if (await confirmLogout(context)) await store.logout();
+                  await adminLogout(context, store);
                 },
               ),
             ],
@@ -821,4 +810,33 @@ class _SyncConfirmState extends State<_SyncConfirm> {
     final m = at.minute.toString().padLeft(2, '0');
     return '${formatDate(at)} · $h:$m';
   }
+}
+
+/// خروج الإدارة — `logoutFlow.confirmLogout`: يُرفع ما لم يُرفع قبل الخروج.
+///
+/// لكل موظف حسابه، والطابور على الجهاز لا على الحساب: ما يبقى فيه يُرفع مع دخول من
+/// يليه على الجهاز، فيُرفض إن لم يملك صلاحيته. يُحاول الرفع أولاً، ويُنبَّه بما تعذّر.
+Future<void> adminLogout(BuildContext context, AppStore store) async {
+  if (!await confirmLogout(context)) return;
+  var pending = store.pendingPush;
+  if (pending > 0) {
+    try {
+      await runBusyOp(context, () async {
+        await store.flush();
+        await store.sync.push(refreshRemote: false);
+      });
+    } catch (_) {}
+    pending = store.pendingPush;
+  }
+  if (pending > 0) {
+    if (!context.mounted) return;
+    final ok = await confirmSheet(
+      context,
+      title: 'تسجيل الخروج',
+      message: '$pending تعديلاً لم يُرفع بعد. يُرفع عند الدخول التالي على هذا الجهاز.',
+      confirmLabel: 'خروج',
+    );
+    if (!ok) return;
+  }
+  await store.logout();
 }

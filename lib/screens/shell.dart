@@ -190,7 +190,7 @@ class _AppShellState extends State<AppShell> {
             onLogout: () async {
               Navigator.of(context).pop();
               if (!context.mounted) return;
-              if (await confirmLogout(context)) await store.logout();
+              await adminLogout(context, store);
             },
           ),
           body: Column(
@@ -201,7 +201,7 @@ class _AppShellState extends State<AppShell> {
                 onLogout: hasMenu
                     ? null
                     : () async {
-                        if (await confirmLogout(context)) await store.logout();
+                        await adminLogout(context, store);
                       },
               ),
               Expanded(

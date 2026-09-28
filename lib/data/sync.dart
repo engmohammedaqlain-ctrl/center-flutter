@@ -632,6 +632,7 @@ const nonTextColumns = <String, List<String>>{
   ],
   'tenants': ['created_at', 'expires_at', 'id', 'updated_at'],
   'users': [
+    'auth_user_id',
     'capabilities',
     'created_at',
     'is_active',

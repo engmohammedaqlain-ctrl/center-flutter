@@ -7,6 +7,7 @@ import 'data/app_update.dart';
 import 'data/db_platform.dart';
 import 'data/local_db.dart';
 import 'data/portal.dart';
+import 'data/phone.dart';
 import 'data/portal_offline.dart';
 import 'data/store.dart';
 import 'data/supabase.dart';
@@ -358,8 +359,17 @@ class _LoginScreenState extends State<LoginScreen> {
   final portalId = TextEditingController();
   final portalCode = TextEditingController();
 
-  /// `true` = بوابة الطلاب والمعلمين، `false` = دخول الإدارة.
+  /// `true` = الدخول برقم الهوية للجميع (طلاب وأولياء أمور ومعلمون وموظفو الإدارة)،
+  /// `false` = دخول الإدارة بحساب المنشأة — خلف رابط صغير كما في الويب.
   bool portalTab = true;
+
+  /// رقم الهوية 9 خانات وكلمة المرور 6: أرقام فقط، والعربية تُحوَّل.
+  static const _idLength = 9;
+  static const _codeLength = 6;
+  static final _digitsOnly = FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩۰-۹]'));
+
+  bool get _portalReady =>
+      digitsOnly(portalId.text).length == _idLength && digitsOnly(portalCode.text).length == _codeLength;
 
   /// إظهار كلمة المرور ورمز البوابة — الكتابة العمياء تُفشل المحاولة بلا سبب ظاهر.
   bool showPass = false;
@@ -474,14 +484,14 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _portalSubmit() async {
-    if (busy) return;
+    if (busy || !_portalReady) return;
     setState(() {
       error = null;
       choices = const [];
       busy = true;
     });
 
-    final result = await const PortalService().login(portalId.text, portalCode.text);
+    final result = await const PortalService().login(digitsOnly(portalId.text), digitsOnly(portalCode.text));
     if (!mounted) return;
 
     if (!result.ok) {
@@ -514,7 +524,7 @@ class _LoginScreenState extends State<LoginScreen> {
       busy = true;
       error = null;
     });
-    final result = await const PortalService().login(portalId.text, portalCode.text, choice: account);
+    final result = await const PortalService().login(digitsOnly(portalId.text), digitsOnly(portalCode.text), choice: account);
     if (!mounted) return;
     setState(() => busy = false);
     if (!result.ok || result.users.length != 1) {
@@ -529,6 +539,11 @@ class _LoginScreenState extends State<LoginScreen> {
   /// تبقى تحتها حتى يخرج المستخدم. بغير ذلك تنزلق البوابة فوق نموذج الدخول
   /// فيراه المستخدم ثانيةً كاملة بعد الشعار وكأنه مطالَب بالدخول من جديد.
   void _openPortal(PortalUser account, {String? code, bool restored = false}) {
+    // موظف إدارة: يفتح النظام بصلاحياته لا البوابة
+    if (account.isStaff) {
+      unawaited(_openStaff(account));
+      return;
+    }
     // الجلسة تبقى بعد إغلاق التطبيق، كجلسة الإدارة
     unawaited(_appStore.savePortalSession(
       nationalId: account.nationalId.isEmpty ? portalId.text : account.nationalId,
@@ -572,6 +587,31 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  /// موظف دخل برقم هويته — `openLoginResult` بـ `res.staff`: صف المنشأة كاملاً بجلسة
+  /// الموظف، واشتراكها يُفحص كدخول المالك.
+  Future<void> _openStaff(PortalUser account) async {
+    setState(() {
+      busy = true;
+      error = null;
+    });
+    final tenant = await _appStore.tenantApi.findById(account.tenantId);
+    if (!mounted) return;
+    if (tenant == null) {
+      await supabaseSignOut();
+      setState(() {
+        busy = false;
+        error = 'هذا الحساب غير مرتبط بمنشأة';
+      });
+      return;
+    }
+    final err = await _appStore.startStaffSession(tenant, userId: account.id, role: account.staffRole, name: account.name);
+    if (!mounted) return;
+    setState(() {
+      busy = false;
+      error = err;
+    });
+  }
+
   Future<void> _submit() async {
     if (busy) return;
     setState(() {
@@ -597,7 +637,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     return AuthFrame(
       title: store.institutionName.isEmpty ? appName : store.institutionName,
-      subtitle: 'بوابة تسجيل الدخول الرسمية',
+      subtitle: portalTab ? 'تسجيل الدخول' : 'دخول الإدارة',
       logo: store.institutionLogo,
       // الرقم المثبَّت فعلاً مع تحديثه الصامت (1.2.7.3)، والثابت حيث لا يُعرف
       footer: Text(
@@ -605,86 +645,24 @@ class _LoginScreenState extends State<LoginScreen> {
         style: const TextStyle(color: AppColors.faint, fontSize: 10.5),
       ),
       children: [
-        _tabs(),
-        const SizedBox(height: 12),
         AuthCard(child: portalTab ? _portalForm() : _adminForm()),
-      ],
-    );
-  }
-
-  /// شريط اختيار البوابة — مطابق لـ LandingPage: بوابة الطلاب والمعلمين إلى جانب
-  /// دخول الإدارة، بشكل مفتاح مقسوم يمتلئ خياره المختار بلون الهوية.
-  Widget _tabs() {
-    Widget tab(String label, IconData icon, bool selected, VoidCallback onTap) {
-      return Expanded(
-        child: PressableScale(
-          onTap: onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            height: 44,
-            alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(
-              // المختار بلون الإجراءات في الثيم، فيُعرف من بعيد
-              color: selected ? AppColors.amber : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
-              boxShadow: selected
-                  ? [BoxShadow(color: AppColors.amber.withValues(alpha: 0.30), blurRadius: 10, offset: const Offset(0, 3))]
-                  : null,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 16, color: selected ? Colors.white : AppColors.muted),
-                const SizedBox(width: 5),
-                // «بوابة الطلاب والمعلمين» أطول من نصف الشاشة على الأجهزة الضيقة،
-                // فيلزم أن ينكمش بدل أن يفيض
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontFamily: AppText.family,
-                      color: selected ? Colors.white : AppColors.muted,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+        const SizedBox(height: 10),
+        // حساب المنشأة خلف رابط: الدخول اليومي للجميع برقم الهوية
+        Center(
+          child: TextButton.icon(
+            onPressed: busy
+                ? null
+                : () => setState(() {
+                      portalTab = !portalTab;
+                      error = null;
+                      choices = const [];
+                    }),
+            icon: Icon(portalTab ? Icons.lock_outline : Icons.arrow_forward, size: 15),
+            label: Text(portalTab ? 'دخول الإدارة' : 'رجوع'),
+            style: TextButton.styleFrom(foregroundColor: AppColors.muted, textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
           ),
         ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppColors.hover,
-        borderRadius: BorderRadius.circular(13),
-      ),
-      child: Row(
-        children: [
-          tab('الطلاب والمعلمون', Icons.school_outlined, portalTab, () {
-            setState(() {
-              portalTab = true;
-              error = null;
-              choices = const [];
-            });
-          }),
-          const SizedBox(width: 4),
-          tab('الإدارة', Icons.lock_outline, !portalTab, () {
-            setState(() {
-              portalTab = false;
-              error = null;
-              choices = const [];
-            });
-          }),
-        ],
-      ),
+      ],
     );
   }
 
@@ -754,23 +732,31 @@ class _LoginScreenState extends State<LoginScreen> {
           controller: portalId,
           keyboardType: TextInputType.number,
           textInputAction: TextInputAction.next,
-          style: _fieldText,
-          decoration: authFieldDecoration('أدخل رقم الهوية...', Icons.badge_outlined),
+          maxLength: _idLength,
+          inputFormatters: [_digitsOnly],
+          onChanged: (_) => setState(() {}),
+          textAlign: TextAlign.center,
+          style: _fieldText.copyWith(fontFamily: 'monospace', letterSpacing: 1),
+          decoration: authFieldDecoration('9 أرقام', Icons.badge_outlined).copyWith(counterText: ''),
         ),
         const SizedBox(height: 14),
-        authLabel('رمز الدخول (الكود):'),
+        authLabel('كلمة المرور:'),
         const SizedBox(height: 6),
         TextField(
           controller: portalCode,
           keyboardType: TextInputType.number,
           obscureText: !showCode,
+          maxLength: _codeLength,
+          inputFormatters: [_digitsOnly],
+          onChanged: (_) => setState(() {}),
           onSubmitted: (_) => _portalSubmit(),
-          style: _fieldText.copyWith(fontFamily: 'monospace'),
+          textAlign: TextAlign.center,
+          style: _fieldText.copyWith(fontFamily: 'monospace', letterSpacing: 2),
           decoration: authFieldDecoration(
-            'أدخل رمز الدخول...',
+            '6 أرقام',
             Icons.vpn_key_outlined,
             suffix: AuthRevealButton(visible: showCode, onTap: () => setState(() => showCode = !showCode)),
-          ),
+          ).copyWith(counterText: ''),
         ),
         AuthErrorBox(message: error),
         // أكثر من حساب لنفس الرقم: يختار المستخدم منشأته أو دوره
@@ -793,11 +779,13 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Row(
                     children: [
                       Icon(
-                        account.isTeacher
-                            ? Icons.school
-                            : account.isParent
-                                ? Icons.family_restroom
-                                : Icons.person,
+                        account.isStaff
+                            ? Icons.badge_outlined
+                            : account.isTeacher
+                                ? Icons.school
+                                : account.isParent
+                                    ? Icons.family_restroom
+                                    : Icons.person,
                         size: 16,
                         color: AppColors.amber,
                       ),
@@ -836,9 +824,9 @@ class _LoginScreenState extends State<LoginScreen> {
         const SizedBox(height: 16),
         AuthSubmitButton(
           busy: busy,
-          label: busy ? 'جارِ التحقق...' : 'دخول البوابة',
+          label: busy ? 'جارِ التحقق...' : 'تسجيل الدخول',
           icon: Icons.login,
-          onTap: busy ? null : _portalSubmit,
+          onTap: busy || !_portalReady ? null : _portalSubmit,
         ),
       ],
     );

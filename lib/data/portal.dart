@@ -121,12 +121,16 @@ class PortalUser {
     this.studentName = '',
     this.parentNationalId = '',
     this.children = const [],
+    this.staffRole = '',
   });
 
   final String id;
   final String name;
   final String nationalId;
   final String portalCode;
+
+  /// موظف الإدارة: دوره في `users` (admin/accountant/secretary) لحظة الدخول.
+  final String staffRole;
 
   /// `student` أو `teacher` أو `parent`.
   final String role;
@@ -151,9 +155,13 @@ class PortalUser {
 
   bool get isParent => role == 'parent';
 
+  /// موظف إدارة دخل برقم هويته: يفتح النظام بصلاحياته لا البوابة.
+  bool get isStaff => role == 'staff';
+
   String get roleLabel => switch (role) {
         'teacher' => 'معلم',
         'parent' => 'ولي أمر',
+        'staff' => 'موظف',
         _ => 'طالب',
       };
 
@@ -1226,6 +1234,7 @@ class PortalService {
         for (final ch in (user['children'] as List? ?? const []))
           if (ch is Map) PortalChild.fromJson(Map<String, dynamic>.from(ch)),
       ],
+      staffRole: '${user['staff_role'] ?? ''}',
     );
   }
 
