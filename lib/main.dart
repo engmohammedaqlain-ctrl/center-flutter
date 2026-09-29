@@ -9,6 +9,7 @@ import 'data/local_db.dart';
 import 'data/portal.dart';
 import 'data/phone.dart';
 import 'data/portal_offline.dart';
+import 'data/school_brand.dart';
 import 'data/store.dart';
 import 'data/supabase.dart';
 import 'models/models.dart';
@@ -38,6 +39,8 @@ void main() {
   runApp(StoreScope(store: AppStore.instance, child: const CenterApp()));
 
   unawaited(_bootstrap());
+  // كود المدرسة من داخل النسخة: شاشة الدخول تعرض مدرستها قبل أي حساب
+  unawaited(SchoolBrand.instance.load());
 }
 
 Future<void> _bootstrap() async {
@@ -166,6 +169,14 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
     AppStore.instance.addListener(_maybePrompt);
     // قبل تثبيت بناء جديد: ارفع المعلّق حتى لا تضيع البيانات بعد المسح
     updater.beforeInstall = AppStore.instance.prepareForBuildUpdate;
+    // التحديث من نسخة المدرسة كي تبقى أيقونتها: مدرسة الحساب الداخل أولاً،
+    // ثم المكتوبة في هذه النسخة
+    updater.schoolCode = () async {
+      final tenant = AppStore.instance.currentTenant?.code.trim() ?? '';
+      if (AppStore.instance.loggedIn && tenant.isNotEmpty) return tenant;
+      await SchoolBrand.instance.load();
+      return SchoolBrand.instance.code;
+    };
     unawaited(updater.start());
   }
 
@@ -574,7 +585,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final route = restored
         ? PageRouteBuilder<void>(
-            pageBuilder: (context, _, _) => page(context),
+            pageBuilder: (context, _, __) => page(context),
             transitionDuration: Duration.zero,
             reverseTransitionDuration: Duration.zero,
           )
@@ -639,10 +650,21 @@ class _LoginScreenState extends State<LoginScreen> {
     if (restoring) {
       return const ColoredBox(color: Colors.white, child: SizedBox.expand());
     }
+    return ListenableBuilder(
+      listenable: SchoolBrand.instance,
+      builder: (context, _) => _frame(store),
+    );
+  }
+
+  /// هوية الجهاز إن عُرفت من دخولٍ سابق، وإلا مدرسة هذه النسخة.
+  Widget _frame(AppStore store) {
+    final brand = SchoolBrand.instance;
+    final name = store.institutionName.isNotEmpty ? store.institutionName : brand.name;
+    final logo = store.institutionLogo.isNotEmpty ? store.institutionLogo : brand.logo;
     return AuthFrame(
-      title: store.institutionName.isEmpty ? appName : store.institutionName,
+      title: name.isEmpty ? appName : name,
       subtitle: portalTab ? 'تسجيل الدخول' : 'دخول الإدارة',
-      logo: store.institutionLogo,
+      logo: logo,
       // الرقم المثبَّت فعلاً مع تحديثه الصامت (1.2.7.3)، والثابت حيث لا يُعرف
       footer: Text(
         'الإصدار ${AppUpdater.instance.installedName.isEmpty ? appVersion : AppUpdater.instance.installedName}',

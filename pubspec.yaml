@@ -80,6 +80,8 @@ flutter:
     # خطوط PDF العربية (Noto) — لا تستخدم Thmanyah هنا
     - assets/fonts/pdf/
     - shorebird.yaml
+    # كود المدرسة: فارغ هنا، ويُكتب في نسخة كل مدرسة عند النشر (tool/school_apk.dart)
+    - assets/school.json
 
   fonts:
     - family: ThmanyahSans

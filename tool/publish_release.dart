@@ -15,12 +15,18 @@
 ///
 /// مع `shorebird.yaml` يُبنى الإصدار بـ `shorebird release`، فتستقبل أجهزته بعد
 /// ذلك تصليحات كود Dart بصمت: `shorebird patch android --release-version=<الإصدار>`.
+///
+/// ومع كل بناء تُرفع نسخة لكل مدرسة نشطة (`center-2.18-ABC.apk`): أيقونتها
+/// شعار المدرسة وكودها داخلها — `tool/school_apk.dart`. صفحة `/d/ABC` تنزّلها،
+/// وأجهزة المدرسة تتحدّث منها. مدرسة أُضيفت بعد النشر: `--add-schools ABC`.
 library;
 
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart' as crypto;
+
+import 'school_apk.dart';
 
 const releasesRepo = 'engmohammedaqlain-ctrl/center-mobile-releases';
 const manifestName = 'mobile-latest.json';
@@ -57,6 +63,15 @@ Publish a new mobile release
                               Builds are mandatory unless you write this
   --dry-run                   build and stage files in build/release without uploading
   --allow-dirty               publish with uncommitted changes
+
+School copies (a build uploads one APK per active school: its logo as the
+app icon, its code inside). Listing schools reads DEV_USERNAME / DEV_PASSWORD
+from the environment - the developer account.
+  --schools ABC,DEF           only these schools, no developer account needed
+  --no-schools                upload the generic APK alone
+  --add-schools ABC,DEF|all   add copies to the published build without a new
+                              version - for a school added after it. "all" adds
+                              every active school that has no copy yet
 ''';
 
 /// رقم إصدار بصيغة pubspec: `الاسم+رقم البناء`.
@@ -135,6 +150,26 @@ String apkNameFor(PubVersion v) => 'center-${v.name}.apk';
 
 String apkUrlFor(PubVersion v) => 'https://github.com/$releasesRepo/releases/download/${tagFor(v)}/${apkNameFor(v)}';
 
+/// نسخة المدرسة: `center-2.18-ABC.apk`.
+String schoolApkNameFor(PubVersion v, String code) => 'center-${v.name}-${normalizeSchoolCode(code)}.apk';
+
+String schoolApkUrlFor(PubVersion v, String code) =>
+    'https://github.com/$releasesRepo/releases/download/${tagFor(v)}/${schoolApkNameFor(v, code)}';
+
+/// أكواد مفصولة بفواصل كما تُكتب في سطر الأوامر.
+List<String> parseSchoolCodes(String raw) {
+  final codes = <String>[];
+  for (final part in raw.split(RegExp(r'[,\s]+'))) {
+    final code = part.trim();
+    if (code.isEmpty) continue;
+    if (!schoolCodePattern.hasMatch(code)) throw ArgumentError('Not a school code: "$code"');
+    final normal = normalizeSchoolCode(code);
+    if (!codes.contains(normal)) codes.add(normal);
+  }
+  if (codes.isEmpty) throw ArgumentError('No school codes given');
+  return codes;
+}
+
 /// حزمة للتوزيع اليدوي مع التحديث الصامت — ليست ما تقرؤه الأجهزة من `latest`.
 String silentApkNameFor(String label) => 'center-$label.apk';
 
@@ -163,6 +198,7 @@ Map<String, dynamic> buildManifest({
   required int minSupported,
   required bool mandatory,
   required DateTime publishedAt,
+  Map<String, Map<String, dynamic>> schools = const {},
 }) =>
     {
       'version': version.name,
@@ -174,6 +210,15 @@ Map<String, dynamic> buildManifest({
       'sha256': sha256.toLowerCase(),
       'sizeBytes': sizeBytes,
       'publishedAt': publishedAt.toUtc().toIso8601String(),
+      // نسخ المدارس: التطبيق يختار نسخة مدرسته بكودها، وصفحة التحميل كذلك
+      if (schools.isNotEmpty) 'schools': schools,
+    };
+
+/// وصف نسخة مدرسة داخل `schools`.
+Map<String, dynamic> schoolManifestEntry(PubVersion v, String code, {required String sha256, required int sizeBytes}) => {
+      'apkUrl': schoolApkUrlFor(v, code),
+      'sha256': sha256.toLowerCase(),
+      'sizeBytes': sizeBytes,
     };
 
 /// وصف التحديث الصامت كما يُرفع بجانب البناء على GitHub.
@@ -374,7 +419,8 @@ Future<void> main(List<String> arguments) async {
     _fail('Run this from inside the center-mobile-app folder');
   }
 
-  if (!args.allowDirty) {
+  // نسخ المدارس للبناء المنشور تُبنى من حزمته لا من المصدر: حالة المصدر لا تعنيها
+  if (!args.allowDirty && args.addSchools == null) {
     final status = await _capture('git', ['status', '--porcelain', '--untracked-files=no']);
     if (status.trim().isNotEmpty) {
       _fail('Uncommitted changes - a published release must match a known commit.\n'
@@ -392,6 +438,11 @@ Future<void> main(List<String> arguments) async {
 
   final published = '${previous?['version'] ?? ''}'.trim();
   final requested = args.version == null ? null : _orFail(() => parseRequestedVersion(args.version!));
+
+  if (args.addSchools != null) {
+    await _addSchools(args.addSchools!, previous);
+    return;
+  }
 
   // تحديث صامت: رقم من أربعة أجزاء، أو --patch
   if (args.patch || requested?.kind == PublishKind.patch) {
@@ -417,6 +468,10 @@ Future<void> main(List<String> arguments) async {
   _info(args.mandatory
       ? 'Mandatory: devices are held on the update screen until they install it'
       : 'Optional: devices are told on every open, and can keep working (--optional)');
+
+  // قبل البناء: حساب المطور الناقص يوقف النشر الآن لا بعد عشر دقائق من البناء
+  final schools = args.noSchools ? <SchoolSource>[] : await _loadSchools(args.schools);
+  if (args.noSchools) _warn('No school copies (--no-schools): school devices update to the generic icon');
 
   // Shorebird مُهيّأ: الإصدار يُبنى به كي تستقبل أجهزته الـ patches. التجربة بلا رفع
   // تبني بـ Flutter وحدها، فلا يُسجَّل عند Shorebird إصدارٌ لم يُنشر
@@ -466,6 +521,7 @@ Future<void> main(List<String> arguments) async {
   final apk = built.copySync('${outDir.path}/${apkNameFor(next)}');
   final size = apk.lengthSync();
   final sha = (await crypto.sha256.bind(apk.openRead()).first).toString();
+  final copies = await _buildSchoolCopies(apk, next, schools, outDir);
   final manifest = buildManifest(
     version: next,
     sha256: sha,
@@ -474,6 +530,7 @@ Future<void> main(List<String> arguments) async {
     minSupported: minSupported,
     mandatory: args.mandatory,
     publishedAt: DateTime.now(),
+    schools: {for (final c in copies) c.code: c.entry},
   );
   final manifestFile = File('${outDir.path}/$manifestName')
     ..writeAsStringSync('${const JsonEncoder.withIndent('  ').convert(manifest)}\n');
@@ -491,6 +548,7 @@ Future<void> main(List<String> arguments) async {
   await _ensureRepoHasCommit();
   await _run('gh', [
     'release', 'create', tagFor(next), apk.path, manifestFile.path, //
+    for (final c in copies) c.file.path,
     '--repo', releasesRepo, '--title', next.name, '--notes-file', notesFile.path, '--latest',
   ]);
 
@@ -536,6 +594,13 @@ class _Args {
   /// مع الصامت: ارفع أيضاً APK للتوزيع اليدوي بلا لمس latest.
   bool attachApk = false;
 
+  /// نسخ هذه المدارس وحدها، أو `null` لكل مدرسة نشطة.
+  List<String>? schools;
+  bool noSchools = false;
+
+  /// إضافة نسخ مدارس للبناء المنشور: أكواد، أو قائمة فارغة لكل من لا نسخة له.
+  List<String>? addSchools;
+
   static _Args parse(List<String> raw) {
     final args = _Args();
     final queue = List.of(raw);
@@ -565,6 +630,13 @@ class _Args {
           args.dryRun = true;
         case '--allow-dirty':
           args.allowDirty = true;
+        case '--schools':
+          args.schools = _orFail(() => parseSchoolCodes(value()));
+        case '--no-schools':
+          args.noSchools = true;
+        case '--add-schools':
+          final raw = value();
+          args.addSchools = raw.trim().toLowerCase() == 'all' ? const [] : _orFail(() => parseSchoolCodes(raw));
         case '-h' || '--help':
           stdout.write(_usage);
           exit(0);
@@ -573,6 +645,7 @@ class _Args {
           _fail('Unknown option: $flag');
       }
     }
+    if (args.noSchools && args.schools != null) _fail('--schools and --no-schools contradict each other');
     return args;
   }
 }
@@ -728,6 +801,218 @@ Future<File> _buildSilentShareApk({required String label, required int baseBuild
   _info('${apk.path} (${(size / (1024 * 1024)).toStringAsFixed(1)} MB)');
   _info('sha256 $sha');
   return apk;
+}
+
+// ── نسخ المدارس ────────────────────────────────────────────────────────────────
+
+/// نفس قيم `lib/data/supabase.dart`: المفتاح منشور، والحماية في القاعدة.
+const _supabaseUrl = 'https://tmybbunguiurisdcvrqo.supabase.co';
+const _supabaseKey = 'sb_publishable_TowjoMRcd5BJtaUqmCs6Sw_IHhVd3Jj';
+
+/// مدرسة تُبنى لها نسخة: كودها، وشعارها كما في إعداداتها.
+typedef SchoolSource = ({String code, String? logo});
+
+/// نسخة مدرسة جاهزة للرفع.
+typedef SchoolCopy = ({String code, File file, Map<String, dynamic> entry});
+
+/// المدارس المطلوبة وشعاراتها. بلا [codes]: كل مدرسة نشطة، بحساب المطور.
+///
+/// الشعار من الدالة العامة التي تبني صفحة التحميل: ما يراه ولي الأمر في
+/// الصفحة هو أيقونة التطبيق الذي ينزّله منها.
+Future<List<SchoolSource>> _loadSchools(List<String>? codes) async {
+  _step('Reading schools');
+  final list = codes ?? await _activeSchoolCodes();
+  final schools = <SchoolSource>[];
+  for (final code in list) {
+    final page = await _postJson('$_supabaseUrl/rest/v1/rpc/get_school_download_page', {'p_code': code});
+    if (page is! Map || '${page['name'] ?? ''}'.trim().isEmpty) {
+      _warn('$code: no active school with this code - skipped');
+      continue;
+    }
+    final logo = page['logo'];
+    schools.add((code: normalizeSchoolCode(code), logo: logo is String && logo.trim().isNotEmpty ? logo : null));
+  }
+  _info(schools.isEmpty ? 'No schools - the generic APK alone' : '${schools.length} schools: ${schools.map((s) => s.code).join(', ')}');
+  return schools;
+}
+
+/// أكواد المدارس النشطة. جدول المنشآت لا يُقرأ إلا بحساب المطور.
+Future<List<String>> _activeSchoolCodes() async {
+  final env = Platform.environment;
+  final user = env['DEV_USERNAME']?.trim() ?? '';
+  final pass = env['DEV_PASSWORD'] ?? '';
+  if (user.isEmpty || pass.isEmpty) {
+    _fail('Listing schools needs the developer account: set DEV_USERNAME and DEV_PASSWORD.\n'
+        '  Or name the schools with --schools ABC,DEF, or skip them with --no-schools');
+  }
+  final session = await _postJson(
+    '$_supabaseUrl/auth/v1/token?grant_type=password',
+    {'email': '${user.toLowerCase()}@login.center-system.app', 'password': pass},
+  );
+  final token = session is Map ? '${session['access_token'] ?? ''}' : '';
+  if (token.isEmpty) _fail('Developer sign-in failed - check DEV_USERNAME and DEV_PASSWORD');
+  final rows = await _getJson(
+    '$_supabaseUrl/rest/v1/tenants?select=code&status=eq.active&order=code',
+    headers: {'Authorization': 'Bearer $token'},
+  );
+  if (rows is! List) _fail('Could not read the schools list');
+  return [
+    for (final row in rows)
+      if (row is Map && schoolCodePattern.hasMatch('${row['code'] ?? ''}'.trim())) normalizeSchoolCode('${row['code']}'),
+  ];
+}
+
+/// نسخة لكل مدرسة من [generic]، كلٌّ يُتحقق من توقيعه ورقمه قبل الرفع.
+Future<List<SchoolCopy>> _buildSchoolCopies(
+  File generic,
+  PubVersion version,
+  List<SchoolSource> schools,
+  Directory outDir,
+) async {
+  if (schools.isEmpty) return const [];
+  _step('Building school copies');
+  final aapt = _findBuildTool('aapt2', windowsExtension: '.exe') ?? _fail('aapt2 not found - install Android SDK Build-Tools');
+  final zipalign =
+      _findBuildTool('zipalign', windowsExtension: '.exe') ?? _fail('zipalign not found - install Android SDK Build-Tools');
+  final apksigner = _findApksigner() ?? _fail('apksigner not found - install Android SDK Build-Tools');
+  final tools = (aapt2: aapt, zipalign: zipalign, apksigner: apksigner);
+  final key = _schoolOrFail(() => readSigningKey(File('android${Platform.pathSeparator}key.properties')));
+
+  final base = generic.readAsBytesSync();
+  final icons = launcherIcons(await _capture(aapt, ['dump', 'resources', generic.path]));
+  if (icons.isEmpty) _fail('No launcher icon (mipmap/ic_launcher) found in the APK resources');
+  if (!readZipEntries(base).any((e) => e.name == schoolAssetEntry)) {
+    _fail('$schoolAssetKey is not in the APK - it must be listed under assets in pubspec.yaml');
+  }
+  final baseBadging = apkBadging(await _capture(aapt, ['dump', 'badging', generic.path]));
+
+  final copies = <SchoolCopy>[];
+  for (final school in schools) {
+    final logo = decodeLogo(school.logo);
+    final file = File('${outDir.path}${Platform.pathSeparator}${schoolApkNameFor(version, school.code)}');
+    try {
+      await buildSchoolApk(base: base, icons: icons, code: school.code, logo: logo, out: file, tools: tools, key: key);
+    } on SchoolApkException catch (e) {
+      _fail('${school.code}: ${e.message}');
+    }
+
+    final digest = signerDigest(await _capture(apksigner, ['verify', '--print-certs', file.path], shell: true));
+    if (digest != expectedCertSha256) _fail('${school.code}: copy is not signed with the app key (${digest ?? 'unsigned'})');
+    final badging = apkBadging(await _capture(aapt, ['dump', 'badging', file.path]));
+    if (badging == null || baseBadging == null || badging.code != baseBadging.code || badging.name != baseBadging.name) {
+      _fail('${school.code}: copy does not carry the version of the generic APK');
+    }
+
+    final size = file.lengthSync();
+    final sha = (await crypto.sha256.bind(file.openRead()).first).toString();
+    copies.add((code: school.code, file: file, entry: schoolManifestEntry(version, school.code, sha256: sha, sizeBytes: size)));
+    _info('${school.code}: ${logo == null ? 'generic icon (no drawable logo - PNG/JPEG/WebP needed)' : 'school icon'}'
+        ' - ${(size / (1024 * 1024)).toStringAsFixed(1)} MB');
+  }
+  return copies;
+}
+
+/// نسخ مدارسٍ للبناء المنشور بلا إصدار جديد: تُرفع بجانبه ويُضاف وصفها لـ
+/// `mobile-latest.json`. [codes] فارغة = كل مدرسة نشطة ليست لها نسخة.
+Future<void> _addSchools(List<String> codes, Map<String, dynamic>? published) async {
+  final name = '${published?['version'] ?? ''}'.trim();
+  final code = (published?['versionCode'] as num?)?.toInt() ?? 0;
+  final url = '${published?['apkUrl'] ?? ''}'.trim();
+  if (published == null || name.isEmpty || code <= 0 || url.isEmpty) _fail('Nothing published yet - publish a build first');
+  final version = versionFromName(name, build: code);
+  final existing = published['schools'] is Map ? Map<String, dynamic>.from(published['schools'] as Map) : <String, dynamic>{};
+
+  var schools = await _loadSchools(codes.isEmpty ? null : codes);
+  if (codes.isEmpty) schools = schools.where((s) => !existing.containsKey(s.code)).toList();
+  if (schools.isEmpty) {
+    _step('Every school already has a copy of ${version.name}');
+    return;
+  }
+
+  final outDir = Directory('build${Platform.pathSeparator}release')..createSync(recursive: true);
+  final generic = await _publishedApk(version, url, '${published['sha256'] ?? ''}'.trim().toLowerCase(), outDir);
+  final copies = await _buildSchoolCopies(generic, version, schools, outDir);
+
+  final manifest = Map<String, dynamic>.from(published)
+    ..['schools'] = {...existing, for (final c in copies) c.code: c.entry};
+  final manifestFile = File('${outDir.path}${Platform.pathSeparator}$manifestName')
+    ..writeAsStringSync('${const JsonEncoder.withIndent('  ').convert(manifest)}\n');
+
+  // الملفات قبل الوصف: جهازٌ يقرأ الوصف الجديد يجد نسخته مرفوعة
+  _step('Uploading to ${tagFor(version)}');
+  await _run('gh', [
+    'release', 'upload', tagFor(version), for (final c in copies) c.file.path, //
+    '--repo', releasesRepo, '--clobber',
+  ]);
+  await _run('gh', ['release', 'upload', tagFor(version), manifestFile.path, '--repo', releasesRepo, '--clobber']);
+
+  _step('Added ${copies.map((c) => c.code).join(', ')} to ${version.name}');
+  for (final c in copies) {
+    _info('${c.code}: ${c.entry['apkUrl']}');
+  }
+}
+
+/// حزمة البناء المنشور: من build/release إن كانت هي، وإلا تُنزَّل.
+Future<File> _publishedApk(PubVersion version, String url, String sha, Directory outDir) async {
+  final file = File('${outDir.path}${Platform.pathSeparator}${apkNameFor(version)}');
+  Future<bool> matches() async =>
+      file.existsSync() && (sha.isEmpty || (await crypto.sha256.bind(file.openRead()).first).toString() == sha);
+  if (await matches()) return file;
+  _step('Downloading the published APK');
+  final client = HttpClient();
+  try {
+    final response = await (await client.getUrl(Uri.parse(url))).close();
+    if (response.statusCode != 200) _fail('Could not download $url (${response.statusCode})');
+    await response.pipe(file.openWrite());
+  } finally {
+    client.close();
+  }
+  if (!await matches()) _fail('The downloaded APK does not match the published sha256');
+  return file;
+}
+
+Future<Object?> _postJson(String url, Map<String, dynamic> body) async {
+  final client = HttpClient();
+  try {
+    final request = await client.postUrl(Uri.parse(url));
+    request.headers
+      ..set('apikey', _supabaseKey)
+      ..contentType = ContentType.json;
+    request.add(utf8.encode(jsonEncode(body)));
+    final response = await request.close();
+    final text = await response.transform(utf8.decoder).join();
+    if (response.statusCode >= 400 || text.isEmpty) return null;
+    return jsonDecode(text);
+  } catch (_) {
+    return null;
+  } finally {
+    client.close();
+  }
+}
+
+Future<Object?> _getJson(String url, {Map<String, String> headers = const {}}) async {
+  final client = HttpClient();
+  try {
+    final request = await client.getUrl(Uri.parse(url));
+    request.headers.set('apikey', _supabaseKey);
+    headers.forEach(request.headers.set);
+    final response = await request.close();
+    final text = await response.transform(utf8.decoder).join();
+    if (response.statusCode >= 400) return null;
+    return jsonDecode(text);
+  } catch (_) {
+    return null;
+  } finally {
+    client.close();
+  }
+}
+
+T _schoolOrFail<T>(T Function() body) {
+  try {
+    return body();
+  } on SchoolApkException catch (e) {
+    _fail(e.message);
+  }
 }
 
 /// GitHub لا ينشئ إصداراً في مستودع بلا كوميت: الوسم يحتاج كوميتاً يشير إليه.

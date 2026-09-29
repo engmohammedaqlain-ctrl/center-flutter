@@ -74,23 +74,36 @@ class AppRelease {
   /// حجم الحزمة بالميجابايت لعرضه، أو فارغ إن لم يُنشر.
   String get sizeLabel => sizeBytes <= 0 ? '' : megabytes(sizeBytes);
 
-  static AppRelease? fromJson(Object? data) {
+  /// [school] كود مدرسة الجهاز: إن كان لها نسخةٌ في الإصدار (`schools`) تُنزَّل
+  /// هي — أيقونتها شعار المدرسة — وإلا فالنسخة العامة.
+  static AppRelease? fromJson(Object? data, {String? school}) {
     if (data is! Map) return null;
     final map = Map<String, dynamic>.from(data);
-    final url = '${map['apkUrl'] ?? ''}'.trim();
+    final own = _schoolCopy(map['schools'], school);
+    final url = '${own?['apkUrl'] ?? map['apkUrl'] ?? ''}'.trim();
     final code = (map['versionCode'] as num?)?.toInt() ?? 0;
     // وصفٌ بلا رابط أو بلا رقم لا يصلح لقرار: يُتجاهل بدل أن يُعرض تحديثٌ معطوب
     if (url.isEmpty || code <= 0) return null;
+    // البصمة والحجم من النسخة نفسها: بصمة العامة كانت سترفض ملف المدرسة
+    final source = own ?? map;
     return AppRelease(
       versionName: '${map['version'] ?? ''}'.trim(),
       versionCode: code,
       apkUrl: url,
       minSupported: (map['minSupported'] as num?)?.toInt() ?? 0,
       notes: '${map['notes'] ?? ''}'.trim(),
-      sha256: '${map['sha256'] ?? ''}'.trim().toLowerCase(),
-      sizeBytes: (map['sizeBytes'] as num?)?.toInt() ?? 0,
+      sha256: '${source['sha256'] ?? ''}'.trim().toLowerCase(),
+      sizeBytes: (source['sizeBytes'] as num?)?.toInt() ?? 0,
       mandatory: map['mandatory'] == true,
     );
+  }
+
+  static Map<String, dynamic>? _schoolCopy(Object? schools, String? school) {
+    final key = school?.trim().toUpperCase() ?? '';
+    if (key.isEmpty || schools is! Map) return null;
+    final copy = schools[key];
+    if (copy is! Map || '${copy['apkUrl'] ?? ''}'.trim().isEmpty) return null;
+    return Map<String, dynamic>.from(copy);
   }
 
   Map<String, dynamic> toJson() => {
@@ -130,7 +143,7 @@ UpdateAction decideUpdate({required int installed, required AppRelease? release}
 ///
 /// يعيد `null` عند أي تعذّر — انقطاع أو ملف تالف: التحديث ميزةٌ إضافية لا
 /// تُعطّل تطبيقاً يعمل بلا إنترنت أصلاً. مهلة قصيرة كي لا يُحبس الإقلاع.
-Future<AppRelease?> fetchLatestRelease(String manifestUrl, {http.Client? client}) async {
+Future<AppRelease?> fetchLatestRelease(String manifestUrl, {http.Client? client, String? school}) async {
   final url = manifestUrl.trim();
   if (url.isEmpty) return null;
   final http = client ?? _defaultClient();
@@ -139,7 +152,7 @@ Future<AppRelease?> fetchLatestRelease(String manifestUrl, {http.Client? client}
         .get(Uri.parse(url), headers: {'Cache-Control': 'no-cache'})
         .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 400) return null;
-    return AppRelease.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    return AppRelease.fromJson(jsonDecode(utf8.decode(res.bodyBytes)), school: school);
   } catch (_) {
     return null;
   } finally {
@@ -546,6 +559,9 @@ class AppUpdater extends ChangeNotifier {
   /// يعيد رسالة خطأ أو `null` عند النجاح.
   Future<String?> Function()? beforeInstall;
 
+  /// كود مدرسة الجهاز، لتنزيل نسختها من الإصدار — يضبطه الإقلاع.
+  Future<String?> Function()? schoolCode;
+
   /// رفع بيانات جارٍ قبل فتح المثبِّت — يمنع التثبيت حتى يكتمل أو يفشل.
   bool preparingInstall = false;
 
@@ -770,7 +786,11 @@ class AppUpdater extends ChangeNotifier {
       notifyListeners();
     }
 
-    final fetched = await fetchLatestRelease(manifestUrl, client: _client());
+    String? school;
+    try {
+      school = await schoolCode?.call();
+    } catch (_) {}
+    final fetched = await fetchLatestRelease(manifestUrl, client: _client(), school: school);
     // الفشل لا يُثبِّت الوقت: وإلا صار انقطاعٌ لحظة الإقلاع يحجب التحديث ست ساعات
     if (fetched != null) {
       lastChecked = _clock();
@@ -780,9 +800,14 @@ class AppUpdater extends ChangeNotifier {
         await prefs.setString(_kRelease, jsonEncode(fetched.toJson()));
       } catch (_) {}
 
-      // إصدار أحدث نُشر بعد تنزيلٍ سابق: الحزمة الجاهزة أو الناقصة لم تعد المطلوبة
-      final replaced = release != null && release!.versionCode != fetched.versionCode;
+      // إصدار أحدث نُشر بعد تنزيلٍ سابق، أو تبدّلت المدرسة فتبدّلت نسختها:
+      // الحزمة الجاهزة أو الناقصة لم تعد المطلوبة
+      final previous = release;
+      final replaced =
+          previous != null && (previous.versionCode != fetched.versionCode || previous.apkUrl != fetched.apkUrl);
       if (replaced && !busy) {
+        // الرقم نفسه باسم الملف نفسه: ما نزل من نسخةٍ أخرى كان سيُلصق بهذه
+        if (previous.versionCode == fetched.versionCode) await _discardDownload(previous);
         _readyPath = null;
         received = 0;
         progress = null;
@@ -1012,6 +1037,19 @@ class AppUpdater extends ChangeNotifier {
       _patchCheckedAt ??= _clock();
     }
     notifyListeners();
+  }
+
+  /// حذف ما نزل من حزمة إصدار، كاملاً أو ناقصاً.
+  Future<void> _discardDownload(AppRelease target) async {
+    try {
+      final dir = await _downloadDir();
+      final path = _packagePath(dir, target);
+      final part = '$path.part';
+      for (final p in [path, part, for (var i = 0; i < _segments; i++) _segmentPath(part, i)]) {
+        final file = File(p);
+        if (await file.exists()) await file.delete();
+      }
+    } catch (_) {}
   }
 
   /// حزمٌ نُزّلت لإصدارات صارت مثبّتة: ٢٥ م.ب لكلٍّ منها لا داعي لبقائها.
