@@ -69,10 +69,15 @@ Future<void> _newBuild() async {
   final optional = _yes('Let users skip this update? (mandatory if you say no)', fallback: false);
   if (!_yes('\nStart the build and publish it to everyone?', fallback: false)) return;
   if (!await _ensureCommitted(notes)) return;
-  await _publish([
+  final ok = await _publish([
     '--notes', notes, //
     if (optional) '--optional',
   ], account: account);
+  // سكربت النشر يحفظ رقم الإصدار الجديد كوميتاً محلياً: يُرفع كي يبني منه الفريق
+  // و GitHub Actions الإصدار التالي
+  if (ok) {
+    stdout.writeln(await _git(['push']) == null ? 'Run "git push" later to share the new version number.' : 'Version number pushed.');
+  }
 }
 
 Future<void> _silentUpdate() async {

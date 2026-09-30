@@ -1,0 +1,128 @@
+# نشر تطبيق الجوال من GitHub بدل جهاز المطوّر: Actions ← Release ← Run workflow.
+# يشغّل tool/publish_release.dart نفسه الذي تشغّله القائمة المحلية (tool/release.dart)،
+# فالطريقتان تنشران الشيء نفسه وتبقى المحلية احتياطاً.
+#
+# الأسرار (Settings ← Secrets and variables ← Actions):
+#   ANDROID_KEYSTORE_BASE64   ملف center-release.jks بصيغة base64
+#   ANDROID_KEY_PROPERTIES    محتوى android/key.properties كما هو
+#   SHOREBIRD_TOKEN           مفتاح API من console.shorebird.dev
+#   DEV_USERNAME/DEV_PASSWORD حساب المطوّر - لقائمة المدارس
+#   RELEASES_TOKEN            توكن يكتب على center-mobile-releases
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: What to do
+        type: choice
+        options:
+          - build        # New build for all schools
+          - patch        # Silent update (Dart code only)
+          - add-schools  # Add school copies to the published build
+          - test         # Test copy for one school - download it from the run page
+        default: build
+      notes:
+        description: What changed (users see this) - needed for build and patch
+        type: string
+        required: false
+      optional:
+        description: Let users skip this build (build only)
+        type: boolean
+        default: false
+      schools:
+        description: School codes - add-schools (ABC,DEF or all) / test (one code)
+        type: string
+        required: false
+
+# نشران معاً يتسابقان على رقم الإصدار نفسه
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write # رفع كوميت رقم الإصدار بعد البناء
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      # نفس إصدار Flutter المحلي: سكربت النشر يُلزم Shorebird به
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.6'
+          channel: stable
+          cache: true
+
+      - uses: shorebirdtech/setup-shorebird@v1
+        with:
+          cache: true
+
+      - name: Signing key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
+        run: |
+          if [ -z "$KEYSTORE" ] || [ -z "$KEY_PROPERTIES" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 / ANDROID_KEY_PROPERTIES secrets are missing"
+            exit 1
+          fi
+          # الأسرار المرفوعة من ويندوز تحمل \r: تُفسد فكّ base64 وتلتصق بكلمات السر
+          printf '%s' "$KEYSTORE" | tr -d '\r\n ' | base64 --decode > android/center-release.jks
+          # storeFile نسبةً إلى مجلد android: الملف كُتب بجانبه
+          printf '%s\n' "$KEY_PROPERTIES" | tr -d '\r' | sed 's/^storeFile=.*/storeFile=center-release.jks/' > android/key.properties
+
+      - run: flutter pub get
+
+      - name: Publish
+        env:
+          ACTION: ${{ inputs.action }}
+          NOTES: ${{ inputs.notes }}
+          OPTIONAL: ${{ inputs.optional }}
+          SCHOOLS: ${{ inputs.schools }}
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
+          DEV_USERNAME: ${{ secrets.DEV_USERNAME }}
+          DEV_PASSWORD: ${{ secrets.DEV_PASSWORD }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          case "$ACTION" in
+            build)
+              args=(--notes "$NOTES")
+              [ "$OPTIONAL" = "true" ] && args+=(--optional)
+              ;;
+            patch)
+              args=(--patch --notes "$NOTES")
+              ;;
+            add-schools)
+              args=(--add-schools "${SCHOOLS:-all}")
+              ;;
+            test)
+              if [ -z "$SCHOOLS" ]; then echo "::error::Write one school code in 'schools'"; exit 1; fi
+              args=(--dry-run --schools "$SCHOOLS" --notes "${NOTES:-Test build}")
+              ;;
+          esac
+          dart run tool/publish_release.dart "${args[@]}"
+
+      # السكربت يكتب رقم الإصدار الجديد في pubspec ويحفظه كوميتاً محلياً
+      - name: Push the version commit
+        if: inputs.action == 'build'
+        run: git push origin HEAD
+
+      - name: Test copy
+        if: inputs.action == 'test'
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-copy-${{ inputs.schools }}
+          path: build/release/*.apk
+          retention-days: 7
