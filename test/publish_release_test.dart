@@ -259,6 +259,16 @@ void main() {
     expect(publish.signerDigest(v37), publish.expectedCertSha256);
   });
 
+  test('بصمة المفتاح تُقرأ من keytool قبل البناء', () {
+    const output = 'Alias name: center\n'
+        'Certificate fingerprints:\n'
+        '\t SHA1: 14:0A:40:BF\n'
+        '\t SHA256: D7:A0:B1:D7:C5:BC:FE:A9:34:6A:B6:1D:B3:5C:8E:96:FD:2D:04:2C:27:0A:06:DC:8E:23:E3:A1:E5:30:2A:C8\n';
+
+    expect(publish.keystoreDigest(output), publish.expectedCertSha256);
+    expect(publish.keystoreDigest('keytool error: java.io.IOException: keystore password was incorrect'), isNull);
+  });
+
   test('ثابت الإصدار في الكود يُكتب مع النشر', () {
     const source = "/// ترويسة\nconst appVersion = '1.2.7';\nconst other = 'x';\n";
 

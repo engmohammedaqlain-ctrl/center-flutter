@@ -324,6 +324,49 @@ Future<Set<String>> _shorebirdReleases() async {
   return shorebirdReleaseVersions('${result.stdout}');
 }
 
+/// بصمة SHA-256 من مخرجات `keytool -list -v` (`SHA256: D7:A0:...`).
+String? keystoreDigest(String keytoolOutput) =>
+    RegExp(r'SHA-?256:\s*([0-9A-Fa-f:]+)').firstMatch(keytoolOutput)?.group(1)?.replaceAll(':', '').toLowerCase();
+
+/// فحص ما قبل البناء: المفتاح، والأدوات، وصلاحية الرفع، ومسودةٌ متروكة.
+Future<void> _preflight(String tag) async {
+  _step('Checking before the build');
+
+  final key = _schoolOrFail(() => readSigningKey(File('android${Platform.pathSeparator}key.properties')));
+  final javaHome = Platform.environment['JAVA_HOME'];
+  final bundled = javaHome == null ? null : File('$javaHome${Platform.pathSeparator}bin${Platform.pathSeparator}keytool${Platform.isWindows ? '.exe' : ''}');
+  final keytool = bundled != null && bundled.existsSync() ? bundled.path : 'keytool';
+  final listed = await Process.run(
+    keytool,
+    ['-list', '-v', '-keystore', key.storeFile, '-alias', key.alias, '-storepass:env', 'PREFLIGHT_STORE_PASS'],
+    environment: {'PREFLIGHT_STORE_PASS': key.storePassword},
+    stdoutEncoding: utf8,
+    stderrEncoding: utf8,
+  );
+  final digest = listed.exitCode == 0 ? keystoreDigest('${listed.stdout}') : null;
+  if (digest == null) _fail('Could not open the signing key - check android/key.properties\n${listed.stderr}${listed.stdout}');
+  if (digest != expectedCertSha256) _fail('android/key.properties points at a different key ($digest) - devices would refuse the update');
+  _info('Signing key is the app key');
+
+  if (_findApksigner() == null) _fail('apksigner not found - install Android SDK Build-Tools');
+  if (_findBuildTool('aapt2', windowsExtension: '.exe') == null) _fail('aapt2 not found - install Android SDK Build-Tools');
+  if (_findBuildTool('zipalign', windowsExtension: '.exe') == null) _fail('zipalign not found - install Android SDK Build-Tools');
+
+  final access = await Process.run('gh', ['api', 'repos/$releasesRepo', '--jq', '.permissions.push'], stdoutEncoding: utf8);
+  if ('${access.stdout}'.trim() != 'true') {
+    _fail('GitHub cannot upload to $releasesRepo - check "gh auth status" (or RELEASES_TOKEN on Actions)');
+  }
+  _info('Upload access to $releasesRepo');
+
+  // مسودةٌ من نشرٍ انقطع تحمل وسم هذا الإصدار: لا تراها الأجهزة، وبقاؤها يوقع
+  // إصداراً ثانياً بالوسم نفسه
+  final draft = await Process.run('gh', ['release', 'view', tag, '--repo', releasesRepo, '--json', 'isDraft', '--jq', '.isDraft'], stdoutEncoding: utf8);
+  if ('${draft.stdout}'.trim() == 'true') {
+    await _run('gh', ['release', 'delete', tag, '--repo', releasesRepo, '--yes']);
+    _info('Removed the leftover draft $tag from an earlier publish');
+  }
+}
+
 /// إصدار Flutter من مخرجات `flutter --version`.
 String? flutterVersionOf(String output) => RegExp(r'Flutter (\d+\.\d+\.\d+)').firstMatch(output)?.group(1);
 
@@ -486,14 +529,14 @@ Future<void> main(List<String> arguments) async {
   // pubspec متأخر عن المنشور — نُشر من نسخة أخرى من المشروع: رقم البناء يتجاوزه
   if (next.build <= previousCode) next = PubVersion(next.major, next.minor, next.patch, previousCode + 1);
   // نشرٌ انقطع بعد تسجيله عند Shorebird وقبل رفعه يحجز رقمه هناك، ويرفض
-  // Shorebird تسجيله ثانيةً: يُتخطّى إلى الرقم التالي بدل الفشل بعد البناء
+  // Shorebird تسجيله ثانيةً. يزيد رقم البناء وحده: الاسم الذي يراه الناس (2.3)
+  // يبقى كما هو، فالفشل لا يستهلك إصداراً
   if (File('shorebird.yaml').existsSync() && !args.dryRun) {
     final taken = await _shorebirdReleases();
     if (taken.contains('$next')) {
-      if (requested != null) _fail('Version $next is already registered with Shorebird - choose a newer --version');
       final skipped = next;
       while (taken.contains('$next')) {
-        next = _orFail(() => bumpVersion(next, args.bump));
+        next = PubVersion(next.major, next.minor, next.patch, next.build + 1);
       }
       _warn('$skipped is already registered with Shorebird (an earlier publish that stopped) - using $next');
     }
@@ -509,6 +552,10 @@ Future<void> main(List<String> arguments) async {
   // قبل البناء: حساب المطور الناقص يوقف النشر الآن لا بعد عشر دقائق من البناء
   final schools = args.noSchools ? <SchoolSource>[] : await _loadSchools(args.schools);
   if (args.noSchools) _warn('No school copies (--no-schools): school devices update to the generic icon');
+
+  // ما يمكن أن يفشل بعد البناء يُفحص قبله: Shorebird يسجّل رقم الإصدار أثناء
+  // البناء، وفشلٌ بعده يحجز الرقم بلا حزمة منشورة
+  if (!args.dryRun) await _preflight(tagFor(next));
 
   // Shorebird مُهيّأ: الإصدار يُبنى به كي تستقبل أجهزته الـ patches. التجربة بلا رفع
   // تبني بـ Flutter وحدها، فلا يُسجَّل عند Shorebird إصدارٌ لم يُنشر
