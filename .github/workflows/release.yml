@@ -19,8 +19,7 @@ on:
         options:
           - build        # New build for all schools
           - patch        # Silent update (Dart code only)
-          - add-schools  # Add school copies to the published build
-          - test         # Test copy for one school - download it from the run page
+          - add-schools  # Copies for every school that has none yet
         default: build
       notes:
         description: What changed (users see this) - needed for build and patch
@@ -30,10 +29,6 @@ on:
         description: Let users skip this build (build only)
         type: boolean
         default: false
-      schools:
-        description: School codes - add-schools (ABC,DEF or all) / test (one code)
-        type: string
-        required: false
 
 # نشران معاً يتسابقان على رقم الإصدار نفسه
 concurrency:
@@ -88,7 +83,6 @@ jobs:
           ACTION: ${{ inputs.action }}
           NOTES: ${{ inputs.notes }}
           OPTIONAL: ${{ inputs.optional }}
-          SCHOOLS: ${{ inputs.schools }}
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
           DEV_USERNAME: ${{ secrets.DEV_USERNAME }}
@@ -105,11 +99,8 @@ jobs:
               args=(--patch --notes "$NOTES")
               ;;
             add-schools)
-              args=(--add-schools "${SCHOOLS:-all}")
-              ;;
-            test)
-              if [ -z "$SCHOOLS" ]; then echo "::error::Write one school code in 'schools'"; exit 1; fi
-              args=(--dry-run --schools "$SCHOOLS" --notes "${NOTES:-Test build}")
+              # كل مدرسة نشطة ليست لها نسخة في البناء المنشور
+              args=(--add-schools all)
               ;;
           esac
           dart run tool/publish_release.dart "${args[@]}"
@@ -118,11 +109,3 @@ jobs:
       - name: Push the version commit
         if: inputs.action == 'build'
         run: git push origin HEAD
-
-      - name: Test copy
-        if: inputs.action == 'test'
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-copy-${{ inputs.schools }}
-          path: build/release/*.apk
-          retention-days: 7
