@@ -68,6 +68,7 @@ Future<void> _newBuild() async {
   final notes = _askNotes();
   final optional = _yes('Let users skip this update? (mandatory if you say no)', fallback: false);
   if (!_yes('\nStart the build and publish it to everyone?', fallback: false)) return;
+  if (!await _ensureCommitted(notes)) return;
   await _publish([
     '--notes', notes, //
     if (optional) '--optional',
@@ -78,6 +79,7 @@ Future<void> _silentUpdate() async {
   stdout.writeln('\nOnly for Dart code changes. A new package, Android setting, icon or permission needs option 1.');
   final notes = _askNotes();
   if (!_yes('\nPublish the silent update to everyone?', fallback: false)) return;
+  if (!await _ensureCommitted(notes)) return;
   await _publish(['--patch', '--notes', notes]);
 }
 
@@ -128,6 +130,53 @@ Future<void> _testCopy() async {
         .toList();
     if (apk.isNotEmpty) stdout.writeln('\nInstall this on a phone to check it:\n  ${apk.first.absolute.path}');
   }
+}
+
+// ── حفظ التعديلات ────────────────────────────────────────────────────────────────
+
+/// المنشور يجب أن يطابق كوميتاً: التحديث الصامت يُبنى لاحقاً فوقه. تعديلاتٌ غير
+/// محفوظة تُعرض ويُعرض حفظها ورفعها بدل أن يتوقف النشر بخطأ.
+Future<bool> _ensureCommitted(String notes) async {
+  final status = await _git(['status', '--porcelain']);
+  if (status == null) {
+    stdout.writeln('Could not read git status.');
+    return false;
+  }
+  if (status.trim().isEmpty) return true;
+
+  stdout.writeln('\nThese changes are not committed yet:');
+  for (final line in const LineSplitter().convert(status)) {
+    if (line.trim().isNotEmpty) stdout.writeln('  $line');
+  }
+  stdout.writeln('The release must match a saved commit, so later silent updates build on the same code.');
+  if (!_yes('Commit and push them now?', fallback: true)) {
+    stdout.writeln('Stopped - nothing was published.');
+    return false;
+  }
+
+  final message = 'Release: $notes';
+  if (await _git(['add', '-A']) == null || await _git(['commit', '-m', message]) == null) {
+    stdout.writeln('The commit failed - nothing was published.');
+    return false;
+  }
+  stdout.writeln('Committed: $message');
+  // الرفع لا يوقف النشر: الكوميت محليٌّ على الأقل، ويُرفع لاحقاً بـ git push
+  if (await _git(['push']) == null) {
+    stdout.writeln('Push failed - the commit is saved here; run "git push" later so the team has this code.');
+  } else {
+    stdout.writeln('Pushed.');
+  }
+  return true;
+}
+
+/// مخرجات أمر git، أو `null` إن فشل (ويُطبع سببه).
+Future<String?> _git(List<String> args) async {
+  final result = await Process.run('git', args, stdoutEncoding: utf8, stderrEncoding: utf8);
+  if (result.exitCode != 0) {
+    stdout.write('${result.stderr}${result.stdout}');
+    return null;
+  }
+  return '${result.stdout}';
 }
 
 // ── تشغيل النشر ──────────────────────────────────────────────────────────────────

@@ -313,6 +313,17 @@ String? shorebirdPowerShellScript() {
   return null;
 }
 
+/// نسخ Shorebird المسجّلة (`2.3.0+35`) من مخرجات `shorebird releases list`.
+Set<String> shorebirdReleaseVersions(String listOutput) =>
+    RegExp(r'(?<![\d.])(\d+\.\d+\.\d+\+\d+)(?![\d.])').allMatches(listOutput).map((m) => m[1]!).toSet();
+
+Future<Set<String>> _shorebirdReleases() async {
+  final list = shorebirdCommand(['releases', 'list', '--platform', 'android'], powerShellScript: shorebirdPowerShellScript());
+  final result = await Process.run(list.exe, list.args, runInShell: list.shell, stdoutEncoding: utf8, stderrEncoding: utf8);
+  if (result.exitCode != 0) _fail('Could not read the Shorebird releases - are you logged in? (shorebird login)');
+  return shorebirdReleaseVersions('${result.stdout}');
+}
+
 /// إصدار Flutter من مخرجات `flutter --version`.
 String? flutterVersionOf(String output) => RegExp(r'Flutter (\d+\.\d+\.\d+)').firstMatch(output)?.group(1);
 
@@ -469,6 +480,19 @@ Future<void> main(List<String> arguments) async {
       : versionFromName(requested.base, build: current.build + 1);
   // pubspec متأخر عن المنشور — نُشر من نسخة أخرى من المشروع: رقم البناء يتجاوزه
   if (next.build <= previousCode) next = PubVersion(next.major, next.minor, next.patch, previousCode + 1);
+  // نشرٌ انقطع بعد تسجيله عند Shorebird وقبل رفعه يحجز رقمه هناك، ويرفض
+  // Shorebird تسجيله ثانيةً: يُتخطّى إلى الرقم التالي بدل الفشل بعد البناء
+  if (File('shorebird.yaml').existsSync() && !args.dryRun) {
+    final taken = await _shorebirdReleases();
+    if (taken.contains('$next')) {
+      if (requested != null) _fail('Version $next is already registered with Shorebird - choose a newer --version');
+      final skipped = next;
+      while (taken.contains('$next')) {
+        next = _orFail(() => bumpVersion(next, args.bump));
+      }
+      _warn('$skipped is already registered with Shorebird (an earlier publish that stopped) - using $next');
+    }
+  }
   final minSupported = _orFail(
     () => resolveMinSupported(args.minSupported, previous: previousMin, current: next.build),
   );
