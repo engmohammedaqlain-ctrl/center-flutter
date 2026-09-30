@@ -296,13 +296,21 @@ bool patchIsPublished(String listOutput, int number) {
   );
 }
 
-/// مشغّل shorebird لـ PowerShell في مكانه المعتاد — `null` على غير ويندوز.
+/// مشغّل shorebird لـ PowerShell: في مكانه المعتاد، وإلا بجانب `shorebird.bat`
+/// في PATH — تثبيتٌ في مجلدٍ آخر كان يرجع إلى الـ bat فيقصّ المعاملات.
+/// `null` على غير ويندوز.
 String? shorebirdPowerShellScript() {
   if (!Platform.isWindows) return null;
-  final home = Platform.environment['USERPROFILE'];
-  if (home == null) return null;
-  final script = File('$home\\.shorebird\\bin\\shorebird.ps1');
-  return script.existsSync() ? script.path : null;
+  final env = Platform.environment;
+  final dirs = [
+    if (env['USERPROFILE'] != null) '${env['USERPROFILE']}\\.shorebird\\bin',
+    ...(env['PATH'] ?? env['Path'] ?? '').split(';').map((d) => d.trim()).where((d) => d.isNotEmpty),
+  ];
+  for (final dir in dirs) {
+    final script = File('$dir\\shorebird.ps1');
+    if (script.existsSync()) return script.path;
+  }
+  return null;
 }
 
 /// إصدار Flutter من مخرجات `flutter --version`.
