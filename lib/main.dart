@@ -24,8 +24,9 @@ import 'theme/app_theme.dart';
 import 'widgets/auth_frame.dart';
 import 'widgets/animated_count.dart';
 import 'widgets/subscription_banner.dart';
+import 'widgets/widgets.dart' show decodeLogo;
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   configureDatabaseFactory();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
@@ -36,10 +37,17 @@ void main() {
   // الرسم يبدأ فوراً بشاشة إقلاع، والتحميل يجري خلفها.
   // انتظار فتح قاعدة البيانات قبل `runApp` كان يترك الشاشة بيضاء تماماً حتى
   // تنتهي تهيئة SQLite — وهي بطيئة على الويب — فيبدو التطبيق معطّلاً.
+  // هوية المدرسة من ملفٍ داخل النسخة نفسها (ميلي ثوانٍ، بلا قرص ولا شبكة): شاشة
+  // الإقلاع تُرسم من أول إطار بشعار المدرسة وألوانها بدل شعار النظام ثم التبدّل
+  await SchoolBrand.instance.readBundled();
+  AppStore.instance.applyBrandColors();
+  // ألوان أحدث من السحابة تُطبع فور وصولها — ما لم تكن للجهاز ألوان محفوظة من دخول
+  SchoolBrand.instance.addListener(AppStore.instance.applyBrandColors);
+
   runApp(StoreScope(store: AppStore.instance, child: const CenterApp()));
 
   unawaited(_bootstrap());
-  // كود المدرسة من داخل النسخة: شاشة الدخول تعرض مدرستها قبل أي حساب
+  // الهوية المحفوظة ثم تحديثها من السحابة: شاشة الدخول تعرض مدرستها قبل أي حساب
   unawaited(SchoolBrand.instance.load());
 }
 
@@ -316,31 +324,48 @@ class SplashScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // تظهر قبل أن تُقرأ ألوان المنشأة من القرص، فتبقى محايدة: خلفية بيضاء بلا لون
-    // هوية كان سيومض بالافتراضي ثم يتبدّل حين تُحمَّل ألوان المنشأة
+    // هوية كان سيومض بالافتراضي ثم يتبدّل حين تُحمَّل ألوان المنشأة.
+    // نسخة المدرسة تحمل شعارها واسمها في داخلها، فتظهر هنا من أول فتح
+    final brand = SchoolBrand.instance;
+    final schoolLogo = decodeLogo(brand.logo);
+    final dpr = MediaQuery.devicePixelRatioOf(context);
     return Scaffold(
       backgroundColor: Colors.white,
       body: LayoutBuilder(
         builder: (context, box) => Stack(
           children: [
             Center(
-              child: Image.asset(
-                'assets/logo.png',
-                width: logoSize,
-                height: logoSize,
-                fit: BoxFit.contain,
-                // الأصل 1254px: فكّه بمقاس العرض يُظهره من أول إطار بدل انتظار
-                // فكّ صورة بحجم أكبر بعشر مرات
-                cacheWidth: (logoSize * MediaQuery.devicePixelRatioOf(context)).round(),
-              ),
+              child: schoolLogo != null
+                  ? Image.memory(
+                      schoolLogo,
+                      width: logoSize,
+                      height: logoSize,
+                      fit: BoxFit.contain,
+                      gaplessPlayback: true,
+                      cacheWidth: (logoSize * dpr).round(),
+                    )
+                  : Image.asset(
+                      'assets/logo.png',
+                      width: logoSize,
+                      height: logoSize,
+                      fit: BoxFit.contain,
+                      // الأصل 1254px: فكّه بمقاس العرض يُظهره من أول إطار بدل انتظار
+                      // فكّ صورة بحجم أكبر بعشر مرات
+                      cacheWidth: (logoSize * dpr).round(),
+                    ),
             ),
             Positioned(
               left: 0,
               right: 0,
               top: box.maxHeight / 2 + logoSize / 2 + 18,
-              child: const Column(
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(appName, style: TextStyle(color: AppColors.text, fontSize: 16, fontWeight: FontWeight.w600)),
+                  Text(
+                    brand.name.isNotEmpty ? brand.name : appName,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: AppColors.text, fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
                   SizedBox(height: 16),
                   SizedBox(
                     width: 20,
@@ -685,7 +710,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     }),
             icon: Icon(portalTab ? Icons.lock_outline : Icons.arrow_forward, size: 15),
             label: Text(portalTab ? 'دخول الإدارة' : 'رجوع'),
-            style: TextButton.styleFrom(foregroundColor: AppColors.muted, textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+            style: TextButton.styleFrom(foregroundColor: AppColors.navy, textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
           ),
         ),
       ],

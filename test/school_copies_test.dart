@@ -84,6 +84,7 @@ void main() {
     resource 0x7f080000 drawable/splash_logo_png
       (mdpi) (file) res/zz.png type=PNG
 ''';
+      expect(splashImages(dump), ['res/zz.png']);
       expect(launcherIcons(dump), [
         (path: 'res/9w.png', round: false),
         (path: 'res/o-.png', round: false),
@@ -171,6 +172,34 @@ void main() {
       }
     });
 
+    test('هوية المدرسة تُكتب في ملف النسخة وتُقرأ منه', () {
+      final raw = utf8.decode(schoolAssetBytes(
+        'mister',
+        name: 'مدرسة المستر',
+        logo: 'data:image/png;base64,AA==',
+        colors: schoolColors({'sidebarBg': '#1C3124', 'actionButton': '#15803D', '__discount_rules': {'x': 1}, 'appBg': 'bad'}),
+      ));
+      expect(parseSchoolAsset(raw), 'MISTER');
+      final identity = parseSchoolAssetIdentity(raw)!;
+      expect((identity.name, identity.logo), ('مدرسة المستر', 'data:image/png;base64,AA=='));
+      expect(identity.colors!.sidebarBg, '#1C3124');
+      expect(identity.colors!.actionButton, '#15803D');
+      expect(raw.contains('__discount_rules'), isFalse);
+      // نسخةٌ أقدم فيها الكود وحده
+      expect(parseSchoolAssetIdentity('{"code":"ABC"}'), isNull);
+      expect(utf8.decode(schoolAssetBytes('abc')), '{"code":"ABC"}');
+    });
+
+    test('ملف النسخة يكفي بلا إنترنت: الاسم والشعار والألوان من أول فتح', () async {
+      final brand = SchoolBrand(
+        readAsset: () async => '{"code":"ABC","name":"مدرسة النور","logo":"data:image/png;base64,AA==",'
+            '"colors":{"sidebarBg":"#052E2B","actionButton":"#059669"}}',
+        fetch: (code) async => null,
+      );
+      await brand.readBundled();
+      expect((brand.code, brand.name, brand.colors?.sidebarBg), ('ABC', 'مدرسة النور', '#052E2B'));
+    });
+
     test('كود المدرسة من ملف النسخة', () {
       expect(parseSchoolAsset('{"code":"abc"}'), 'ABC');
       expect(parseSchoolAsset('{}'), isNull);
@@ -184,7 +213,7 @@ void main() {
         readAsset: () async => '{"code":"ABC"}',
         fetch: (code) async {
           asked.add(code);
-          return (name: 'مدرسة النور', logo: 'data:image/png;base64,AA==');
+          return (name: 'مدرسة النور', logo: 'data:image/png;base64,AA==', colors: null);
         },
       );
       await brand.load();

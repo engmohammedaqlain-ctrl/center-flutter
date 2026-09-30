@@ -27,8 +27,27 @@ final schoolCodePattern = RegExp(r'^[A-Za-z0-9_-]{1,50}$');
 /// الكود بصيغته الموحّدة: السحابة تقارنه بلا حالة أحرف، والملف والمفتاح بحروف كبيرة.
 String normalizeSchoolCode(String code) => code.trim().toUpperCase();
 
-/// محتوى ملف الكود لمدرسة.
-Uint8List schoolAssetBytes(String code) => Uint8List.fromList(utf8.encode(jsonEncode({'code': normalizeSchoolCode(code)})));
+/// محتوى ملف الكود لمدرسة: الكود، ومع الهوية اسمها وشعارها وألوانها — فتعرضها
+/// شاشة الإقلاع وشاشة الدخول من أول فتح بلا إنترنت (`lib/data/school_brand.dart`).
+Uint8List schoolAssetBytes(String code, {String name = '', String logo = '', Map<String, dynamic>? colors}) =>
+    Uint8List.fromList(utf8.encode(jsonEncode({
+      'code': normalizeSchoolCode(code),
+      if (name.trim().isNotEmpty) 'name': name.trim(),
+      if (logo.isNotEmpty) 'logo': logo,
+      if (colors != null && colors.isNotEmpty) 'colors': colors,
+    })));
+
+/// ألوان الهوية الخمسة وحدها من إعدادات المدرسة — تحمل الإعدادات مفاتيح أخرى
+/// (`__discount_rules`…) لا شأن للنسخة بها.
+Map<String, dynamic>? schoolColors(Object? raw) {
+  if (raw is! Map) return null;
+  const keys = ['sidebarBg', 'activeItem', 'primaryButton', 'actionButton', 'appBg'];
+  final picked = {
+    for (final k in keys)
+      if (raw[k] is String && RegExp(r'^#[0-9A-Fa-f]{6}$').hasMatch(raw[k] as String)) k: raw[k],
+  };
+  return picked.isEmpty ? null : picked;
+}
 
 class SchoolApkException implements Exception {
   const SchoolApkException(this.message);
@@ -267,6 +286,24 @@ List<LauncherIcon> launcherIcons(String dump) {
   return icons;
 }
 
+/// صور شعار شاشة الإقلاع الأصلية (`drawable/splash_logo_png` في
+/// `launch_background.xml`) — تظهر قبل أول إطار Flutter. تُقرأ كالأيقونة.
+List<String> splashImages(String dump) {
+  final paths = <String>[];
+  var inside = false;
+  for (final line in const LineSplitter().convert(dump)) {
+    final resource = RegExp(r'^\s*resource 0x[0-9a-fA-F]+ (\S+)').firstMatch(line);
+    if (resource != null) {
+      inside = resource[1] == 'drawable/splash_logo_png';
+      continue;
+    }
+    if (!inside) continue;
+    final file = RegExp(r'\(file\) (\S+\.png)\b').firstMatch(line);
+    if (file != null) paths.add(file[1]!);
+  }
+  return paths;
+}
+
 /// عرض صورة PNG وارتفاعها من ترويستها، بلا فكّها.
 ({int width, int height}) pngSize(Uint8List png) {
   const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -315,21 +352,60 @@ Uint8List renderLauncherIcon(img.Image logo, int size, {bool round = false}) {
   return img.encodePng(canvas);
 }
 
-/// ما يُستبدل داخل الحزمة لمدرسة: ملف الكود، وصور الأيقونة إن كان للمدرسة شعار يُرسم.
+/// شعار شاشة الإقلاع بمقاس الأصل: الشعار كاملاً على خلفية شفافة — الخلفية
+/// البيضاء من `launch_background.xml`، ومقاسه على الشاشة 120dp كما في Flutter.
+Uint8List renderSplashLogo(img.Image logo, int width, int height) {
+  final canvas = img.Image(width: width, height: height, numChannels: 4);
+  final scale = math.min(width / logo.width, height / logo.height);
+  final w = math.max(1, (logo.width * scale).round());
+  final h = math.max(1, (logo.height * scale).round());
+  final resized = img.copyResize(logo, width: w, height: h, interpolation: img.Interpolation.cubic);
+  img.compositeImage(canvas, resized, dstX: (width - w) ~/ 2, dstY: (height - h) ~/ 2);
+  return img.encodePng(canvas);
+}
+
+/// الشعار كما يُكتب في ملف النسخة: PNG لا يتجاوز [maxSide] — شعارٌ محفوظ
+/// بدقة عالية كان سيضخّم الملف ويبطئ أول إطار بلا فرق يُرى.
+String logoDataUrl(img.Image logo, {int maxSide = 512}) {
+  final scale = math.min(1.0, maxSide / math.max(logo.width, logo.height));
+  final sized = scale < 1
+      ? img.copyResize(
+          logo,
+          width: math.max(1, (logo.width * scale).round()),
+          height: math.max(1, (logo.height * scale).round()),
+          interpolation: img.Interpolation.cubic,
+        )
+      : logo;
+  return 'data:image/png;base64,${base64Encode(img.encodePng(sized))}';
+}
+
+/// ما يُستبدل داخل الحزمة لمدرسة: ملف الكود بهويتها، وإن كان لها شعارٌ يُرسم
+/// فصور الأيقونة وشعار شاشة الإقلاع الأصلية.
 Map<String, Uint8List> schoolReplacements(
   Uint8List apk,
   List<LauncherIcon> icons, {
   required String code,
   required img.Image? logo,
+  String name = '',
+  Map<String, dynamic>? colors,
+  List<String> splash = const [],
 }) {
   final entries = {for (final e in readZipEntries(apk)) e.name: e};
-  final replace = <String, Uint8List>{schoolAssetEntry: schoolAssetBytes(code)};
+  final replace = <String, Uint8List>{
+    schoolAssetEntry: schoolAssetBytes(code, name: name, logo: logo == null ? '' : logoDataUrl(logo), colors: colors),
+  };
   if (logo == null) return replace;
   for (final icon in icons) {
     final entry = entries[icon.path];
     if (entry == null) throw SchoolApkException('Launcher icon ${icon.path} is not in the APK');
     final size = pngSize(entryContent(apk, entry));
     replace[icon.path] = renderLauncherIcon(logo, size.width, round: icon.round);
+  }
+  for (final path in splash) {
+    final entry = entries[path];
+    if (entry == null) throw SchoolApkException('Splash logo $path is not in the APK');
+    final size = pngSize(entryContent(apk, entry));
+    replace[path] = renderSplashLogo(logo, size.width, size.height);
   }
   return replace;
 }
@@ -384,11 +460,14 @@ Future<void> buildSchoolApk({
   required File out,
   required BuildTools tools,
   required SigningKey key,
+  String name = '',
+  Map<String, dynamic>? colors,
+  List<String> splash = const [],
 }) async {
   final work = Directory.systemTemp.createTempSync('school_apk_');
   try {
-    final unsigned = File('${work.path}${Platform.pathSeparator}unsigned.apk')
-      ..writeAsBytesSync(rewriteZip(base, schoolReplacements(base, icons, code: code, logo: logo)));
+    final replace = schoolReplacements(base, icons, code: code, logo: logo, name: name, colors: colors, splash: splash);
+    final unsigned = File('${work.path}${Platform.pathSeparator}unsigned.apk')..writeAsBytesSync(rewriteZip(base, replace));
     final aligned = '${work.path}${Platform.pathSeparator}aligned.apk';
     await _tool(tools.zipalign, ['-f', '-P', '16', '4', unsigned.path, aligned]);
     if (out.existsSync()) out.deleteSync();

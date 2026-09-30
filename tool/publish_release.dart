@@ -894,7 +894,7 @@ const supabaseUrl = 'https://tmybbunguiurisdcvrqo.supabase.co';
 const supabaseKey = 'sb_publishable_TowjoMRcd5BJtaUqmCs6Sw_IHhVd3Jj';
 
 /// مدرسة تُبنى لها نسخة: كودها، وشعارها كما في إعداداتها.
-typedef SchoolSource = ({String code, String? logo});
+typedef SchoolSource = ({String code, String? logo, String name, Map<String, dynamic>? colors});
 
 /// نسخة مدرسة جاهزة للرفع.
 typedef SchoolCopy = ({String code, File file, Map<String, dynamic> entry});
@@ -914,7 +914,12 @@ Future<List<SchoolSource>> _loadSchools(List<String>? codes) async {
       continue;
     }
     final logo = page['logo'];
-    schools.add((code: normalizeSchoolCode(code), logo: logo is String && logo.trim().isNotEmpty ? logo : null));
+    schools.add((
+      code: normalizeSchoolCode(code),
+      logo: logo is String && logo.trim().isNotEmpty ? logo : null,
+      name: '${page['name']}'.trim(),
+      colors: schoolColors(page['colors']),
+    ));
   }
   _info(schools.isEmpty ? 'No schools - the generic APK alone' : '${schools.length} schools: ${schools.map((s) => s.code).join(', ')}');
   return schools;
@@ -963,7 +968,9 @@ Future<List<SchoolCopy>> _buildSchoolCopies(
   final key = _schoolOrFail(() => readSigningKey(File('android${Platform.pathSeparator}key.properties')));
 
   final base = generic.readAsBytesSync();
-  final icons = launcherIcons(await _capture(aapt, ['dump', 'resources', generic.path]));
+  final resources = await _capture(aapt, ['dump', 'resources', generic.path]);
+  final icons = launcherIcons(resources);
+  final splash = splashImages(resources);
   if (icons.isEmpty) _fail('No launcher icon (mipmap/ic_launcher) found in the APK resources');
   if (!readZipEntries(base).any((e) => e.name == schoolAssetEntry)) {
     _fail('$schoolAssetKey is not in the APK - it must be listed under assets in pubspec.yaml');
@@ -975,7 +982,18 @@ Future<List<SchoolCopy>> _buildSchoolCopies(
     final logo = decodeLogo(school.logo);
     final file = File('${outDir.path}${Platform.pathSeparator}${schoolApkNameFor(version, school.code)}');
     try {
-      await buildSchoolApk(base: base, icons: icons, code: school.code, logo: logo, out: file, tools: tools, key: key);
+      await buildSchoolApk(
+        base: base,
+        icons: icons,
+        code: school.code,
+        logo: logo,
+        name: school.name,
+        colors: school.colors,
+        splash: splash,
+        out: file,
+        tools: tools,
+        key: key,
+      );
     } on SchoolApkException catch (e) {
       _fail('${school.code}: ${e.message}');
     }

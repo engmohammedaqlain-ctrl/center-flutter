@@ -34,22 +34,23 @@ class AuthFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     final image = decodeLogo(logo);
     final keyboard = MediaQuery.viewInsetsOf(context).bottom > 0;
-    final logoSize = keyboard ? 60.0 : 88.0;
+    final logoSize = keyboard ? 60.0 : 100.0;
 
     return Scaffold(
-      // خلفية فاتحة، وهويّة المنشأة حاضرة في دائرتين ناعمتين خلف المحتوى
-      backgroundColor: Colors.white,
+      // خلفية بمسحةٍ خفيفة من لون المنشأة: البطاقة البيضاء تنفصل عنها، وأبيضٌ على
+      // أبيض كان يذيب حدودها. والهوية حاضرة في دائرتين ناعمتين خلف المحتوى
+      backgroundColor: Color.lerp(Colors.white, AppColors.navy, 0.035),
       body: Stack(
         children: [
           PositionedDirectional(
-            top: -110,
-            end: -80,
-            child: _Blob(size: 260, color: AppColors.amber.withValues(alpha: 0.10)),
+            top: -120,
+            end: -90,
+            child: _Blob(size: 280, color: AppColors.navy.withValues(alpha: 0.09)),
           ),
           PositionedDirectional(
-            bottom: -130,
-            start: -90,
-            child: _Blob(size: 300, color: AppColors.navy.withValues(alpha: 0.05)),
+            bottom: -140,
+            start: -100,
+            child: _Blob(size: 320, color: AppColors.amber.withValues(alpha: 0.08)),
           ),
           SafeArea(
             child: LayoutBuilder(
@@ -79,8 +80,8 @@ class AuthFrame extends StatelessWidget {
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
                               color: Colors.white,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: AppColors.line),
+                              borderRadius: BorderRadius.circular(22),
+                              border: Border.all(color: AppColors.navy.withValues(alpha: 0.12)),
                               boxShadow: [
                                 BoxShadow(
                                   color: AppColors.navy.withValues(alpha: 0.10),
@@ -302,8 +303,9 @@ class AuthSubmitButton extends StatelessWidget {
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
-          // لون الإجراءات في الثيم نفسه الذي يمتلئ به التبويب المختار
-          color: onTap == null && !busy ? AppColors.lineStrong : AppColors.amber,
+          // لون الإجراءات في الثيم نفسه الذي يمتلئ به التبويب المختار. معطّلاً يبقى
+          // بلون المنشأة باهتاً — الرمادي كان يُطفئ هوية الشاشة كلها قبل الكتابة
+          color: onTap == null && !busy ? AppColors.amber.withValues(alpha: 0.4) : AppColors.amber,
           borderRadius: BorderRadius.circular(Corner.field),
           boxShadow: onTap == null && !busy
               ? null

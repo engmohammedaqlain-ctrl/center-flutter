@@ -25,6 +25,7 @@ import 'portal_offline.dart';
 import 'system_features.dart';
 import 'phone.dart';
 import 'realtime.dart';
+import 'school_brand.dart';
 import 'supabase.dart';
 import 'sync.dart';
 import 'tenant_service.dart';
@@ -2107,7 +2108,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   InstitutionColors get institutionColors {
     final raw = db.settings[institutionColorsKey];
-    if (raw == null || raw.isEmpty) return InstitutionColors.defaults;
+    // بلا ألوان محفوظة (جهاز جديد قبل أول دخول): ألوان المدرسة المكتوبة في
+    // نسختها إن وُجدت. لا تُرفع للسحابة — الرفع يقرأ المحفوظ وحده (hasLocalPalette)
+    if (raw == null || raw.isEmpty) return SchoolBrand.instance.colors ?? InstitutionColors.defaults;
     try {
       return InstitutionColors.fromMap(jsonDecode(raw) as Map<String, dynamic>);
     } catch (_) {
