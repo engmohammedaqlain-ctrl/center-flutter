@@ -806,8 +806,8 @@ Future<File> _buildSilentShareApk({required String label, required int baseBuild
 // ── نسخ المدارس ────────────────────────────────────────────────────────────────
 
 /// نفس قيم `lib/data/supabase.dart`: المفتاح منشور، والحماية في القاعدة.
-const _supabaseUrl = 'https://tmybbunguiurisdcvrqo.supabase.co';
-const _supabaseKey = 'sb_publishable_TowjoMRcd5BJtaUqmCs6Sw_IHhVd3Jj';
+const supabaseUrl = 'https://tmybbunguiurisdcvrqo.supabase.co';
+const supabaseKey = 'sb_publishable_TowjoMRcd5BJtaUqmCs6Sw_IHhVd3Jj';
 
 /// مدرسة تُبنى لها نسخة: كودها، وشعارها كما في إعداداتها.
 typedef SchoolSource = ({String code, String? logo});
@@ -824,7 +824,7 @@ Future<List<SchoolSource>> _loadSchools(List<String>? codes) async {
   final list = codes ?? await _activeSchoolCodes();
   final schools = <SchoolSource>[];
   for (final code in list) {
-    final page = await _postJson('$_supabaseUrl/rest/v1/rpc/get_school_download_page', {'p_code': code});
+    final page = await _postJson('$supabaseUrl/rest/v1/rpc/get_school_download_page', {'p_code': code});
     if (page is! Map || '${page['name'] ?? ''}'.trim().isEmpty) {
       _warn('$code: no active school with this code - skipped');
       continue;
@@ -846,13 +846,13 @@ Future<List<String>> _activeSchoolCodes() async {
         '  Or name the schools with --schools ABC,DEF, or skip them with --no-schools');
   }
   final session = await _postJson(
-    '$_supabaseUrl/auth/v1/token?grant_type=password',
+    '$supabaseUrl/auth/v1/token?grant_type=password',
     {'email': '${user.toLowerCase()}@login.center-system.app', 'password': pass},
   );
   final token = session is Map ? '${session['access_token'] ?? ''}' : '';
   if (token.isEmpty) _fail('Developer sign-in failed - check DEV_USERNAME and DEV_PASSWORD');
   final rows = await _getJson(
-    '$_supabaseUrl/rest/v1/tenants?select=code&status=eq.active&order=code',
+    '$supabaseUrl/rest/v1/tenants?select=code&status=eq.active&order=code',
     headers: {'Authorization': 'Bearer $token'},
   );
   if (rows is! List) _fail('Could not read the schools list');
@@ -976,7 +976,7 @@ Future<Object?> _postJson(String url, Map<String, dynamic> body) async {
   try {
     final request = await client.postUrl(Uri.parse(url));
     request.headers
-      ..set('apikey', _supabaseKey)
+      ..set('apikey', supabaseKey)
       ..contentType = ContentType.json;
     request.add(utf8.encode(jsonEncode(body)));
     final response = await request.close();
@@ -994,7 +994,7 @@ Future<Object?> _getJson(String url, {Map<String, String> headers = const {}}) a
   final client = HttpClient();
   try {
     final request = await client.getUrl(Uri.parse(url));
-    request.headers.set('apikey', _supabaseKey);
+    request.headers.set('apikey', supabaseKey);
     headers.forEach(request.headers.set);
     final response = await request.close();
     final text = await response.transform(utf8.decoder).join();
