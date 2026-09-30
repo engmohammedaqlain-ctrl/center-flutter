@@ -251,6 +251,12 @@ void main() {
 
     expect(publish.signerDigest(output), publish.expectedCertSha256);
     expect(publish.signerDigest('DOES NOT VERIFY'), isNull);
+
+    // Build-Tools 37 (خوادم GitHub Actions)
+    const v37 = 'V2 Signer: certificate DN: CN=mohammed abu aqlain, OU=noon, O=noon, L=gaza, ST=gaza, C=97\n'
+        'V2 Signer: certificate SHA-256 digest: d7a0b1d7c5bcfea9346ab61db35c8e96fd2d042c270a06dc8e23e3a1e5302ac8\n'
+        'V2 Signer: certificate SHA-1 digest: 140a40bfcc7a47dd4141a87adfdaafa484f77464\n';
+    expect(publish.signerDigest(v37), publish.expectedCertSha256);
   });
 
   test('ثابت الإصدار في الكود يُكتب مع النشر', () {

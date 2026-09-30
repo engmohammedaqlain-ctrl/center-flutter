@@ -424,7 +424,12 @@ String? patchProblem({required String base, required int number, required String
 }
 
 /// بصمة شهادة الموقِّع الأول من مخرجات `apksigner verify --print-certs`.
-String? signerDigest(String apksignerOutput) => RegExp(r'Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F]+)')
+///
+/// Build-Tools 37 غيّرت الصيغة من `Signer #1 certificate` إلى `V2 Signer: certificate`،
+/// وخوادم GitHub عليها: بلا الصيغتين تُرفض حزمةٌ موقّعة صحيحاً بأنها «غير موقّعة».
+String? signerDigest(String apksignerOutput) => RegExp(
+      r'(?:Signer #1|V[\d.]+ Signer:) certificate SHA-256 digest:\s*([0-9a-fA-F]+)',
+    )
     .firstMatch(apksignerOutput)
     ?.group(1)
     ?.toLowerCase();
