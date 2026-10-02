@@ -57,6 +57,20 @@ class RealtimeListener {
   int _ref = 0;
   bool _stopped = false;
 
+  /// نبضٌ أُرسل ولم يُرد عليه بعد — يكشف الاتصال الذي مات بصمت.
+  String? _pendingHeartbeat;
+
+  /// آخر رسالة وصلت من الخادم (والردود على النبض منها كل 25 ثانية).
+  DateTime? _lastMessageAt;
+
+  /// المواضيع المنضمّ إليها — يُرسل إليها التوكن المجدَّد.
+  final _topics = <String>[];
+
+  static const heartbeatEvery = Duration(seconds: 25);
+
+  /// صمتٌ أطول من نبضة وهامش: الاتصال لم يعد حياً وإن لم يُغلق.
+  static const silenceLimit = Duration(seconds: 35);
+
   bool get isConnected => _channel != null;
 
   /// فتح الاتصال لمنشأة محددة. استدعاؤه مرة أخرى يعيد الاتصال.
@@ -81,6 +95,9 @@ class RealtimeListener {
     try {
       final channel = _connector(uri);
       _channel = channel;
+      _pendingHeartbeat = null;
+      _lastMessageAt = DateTime.now();
+      _topics.clear();
 
       _sub = channel.stream.listen(
         _onMessage,
@@ -91,6 +108,7 @@ class RealtimeListener {
 
       // اشتراك واحد لكل جدول، مقيّد بمعرّف المنشأة حتى لا تصل تغييرات غيرها
       for (final table in tables) {
+        _topics.add('realtime:public:$table:tenant_id=eq.$tenantId');
         _send({
           'topic': 'realtime:public:$table:tenant_id=eq.$tenantId',
           'event': 'phx_join',
@@ -110,6 +128,7 @@ class RealtimeListener {
 
       // قناة الإشارة: الويب يُعلن فيها بعد كل رفع ويستمع لها وحدها، فبلا
       // الانضمام إليها لا يصل الجهازَ رفعُ الويب ولا يصل الويبَ رفعُ الجهاز
+      _topics.add(broadcastTopic(tenantId));
       _send({
         'topic': broadcastTopic(tenantId),
         'event': 'phx_join',
@@ -125,12 +144,25 @@ class RealtimeListener {
       });
 
       _heartbeat?.cancel();
-      _heartbeat = Timer.periodic(const Duration(seconds: 25), (_) {
-        _send({'topic': 'phoenix', 'event': 'heartbeat', 'payload': {}, 'ref': '${_ref++}'});
-      });
+      _heartbeat = Timer.periodic(heartbeatEvery, (_) => heartbeatTick());
     } catch (_) {
       _scheduleReconnect();
     }
+  }
+
+  /// نبضة: النبضة السابقة بلا رد تعني أن الاتصال مات بصمت — خلفيةٌ أو تبديل شبكة
+  /// لا يُغلقان المقبس، فلا يأتي onDone ويبقى الجهاز «متصلاً» لا يصله تعديل.
+  /// يُعاد فوراً، وإعادة الانضمام تسحب ما فات.
+  @visibleForTesting
+  void heartbeatTick() {
+    if (_channel == null) return;
+    if (_pendingHeartbeat != null) {
+      _restart();
+      return;
+    }
+    final ref = '${_ref++}';
+    _pendingHeartbeat = ref;
+    _send({'topic': 'phoenix', 'event': 'heartbeat', 'payload': {}, 'ref': ref});
   }
 
   void _send(Map<String, dynamic> message) {
@@ -141,17 +173,60 @@ class RealtimeListener {
     }
   }
 
+  /// العودة إلى التطبيق: اتصالٌ صامت أطول من نبضة يُعاد فوراً بدل انتظار نبضتين.
+  /// إعادة الانضمام تسحب ما فات (`onJoined`).
+  void ensureAlive([DateTime? now]) {
+    if (_stopped || _tenantId == null) return;
+    final last = _lastMessageAt;
+    if (_channel == null || last == null || (now ?? DateTime.now()).difference(last) > silenceLimit) {
+      _restart(delay: Duration.zero);
+    }
+  }
+
+  /// توكن جلسة مجدَّد يُرسل للقنوات المفتوحة — كـ `setAuth` في عميل Supabase.
+  /// بلاه ينتهي توكن الانضمام بعد ساعة، فتتوقف تغييرات الجداول عن الوصول بصمت.
+  void updateAccessToken(String? token) {
+    if (token == null || token.isEmpty || _channel == null) return;
+    for (final topic in _topics) {
+      _send({'topic': topic, 'event': 'access_token', 'payload': {'access_token': token}, 'ref': '${_ref++}'});
+    }
+  }
+
+  /// إغلاق المقبس الحالي وفتح غيره — الاشتراك باقٍ (لا `_stopped`).
+  void _restart({Duration delay = const Duration(seconds: 1)}) {
+    if (_stopped) return;
+    final sub = _sub;
+    final channel = _channel;
+    _sub = null;
+    unawaited(sub?.cancel());
+    try {
+      unawaited(channel?.sink.close());
+    } catch (_) {}
+    _scheduleReconnect(delay: delay);
+  }
+
   void _onMessage(dynamic raw) {
+    _lastMessageAt = DateTime.now();
     try {
       final decoded = jsonDecode('$raw');
       if (decoded is! Map) return;
 
       // قبول الاشتراك. ردود نبض القلب تحمل الموضوع `phoenix` فتُستثنى.
       if (decoded['event'] == 'phx_reply') {
+        if (decoded['topic'] == 'phoenix' && decoded['ref'] == _pendingHeartbeat) _pendingHeartbeat = null;
         final payload = decoded['payload'];
         if (payload is Map && payload['status'] == 'ok' && '${decoded['topic']}'.startsWith('realtime:')) {
           onJoined?.call();
         }
+        return;
+      }
+
+      // الخادم أغلق قناة (توكن انتهى، خطأ اشتراك): المقبس قد يبقى مفتوحاً بلا
+      // تغييرات — يُعاد الاتصال كاملاً بتوكن مجدَّد
+      final kind = decoded['event'];
+      final status = decoded['payload'] is Map ? (decoded['payload'] as Map)['status'] : null;
+      if (kind == 'phx_close' || kind == 'phx_error' || (kind == 'system' && status == 'error')) {
+        _restart();
         return;
       }
 
@@ -203,14 +278,14 @@ class RealtimeListener {
     return RealtimeEvent(table: table, type: type, record: Map<String, dynamic>.from(source));
   }
 
-  void _scheduleReconnect() {
+  void _scheduleReconnect({Duration delay = const Duration(seconds: 8)}) {
     if (_stopped) return;
     _channel = null;
     _heartbeat?.cancel();
     _reconnect?.cancel();
     // الخادم يُغلق القناة حين ينتهي توكن الجلسة: يُجدَّد قبل إعادة الانضمام،
     // وإلا عادت القناة بالتوكن المنتهي نفسه فأُغلقت فوراً في حلقة لا تنتهي
-    _reconnect = Timer(const Duration(seconds: 8), () async {
+    _reconnect = Timer(delay, () async {
       await SupabaseAuth.ensureFresh();
       _open();
     });
@@ -274,6 +349,9 @@ class PortalRealtime {
   bool _stopped = false;
   final _rand = math.Random();
 
+  /// نبضٌ بلا رد — كما في [RealtimeListener]: الاتصال الميت بصمت يُعاد.
+  String? _pendingHeartbeat;
+
   Future<void> connect(String tenantId) async {
     if (_tenantId == tenantId && _channel != null && !_stopped) return;
     await disconnect();
@@ -309,9 +387,22 @@ class PortalRealtime {
         },
         'ref': '${_ref++}',
       });
+      _pendingHeartbeat = null;
       _heartbeat?.cancel();
-      _heartbeat = Timer.periodic(const Duration(seconds: 25), (_) {
-        _send({'topic': 'phoenix', 'event': 'heartbeat', 'payload': {}, 'ref': '${_ref++}'});
+      _heartbeat = Timer.periodic(RealtimeListener.heartbeatEvery, (_) {
+        if (_pendingHeartbeat != null) {
+          final sub = _sub;
+          _sub = null;
+          unawaited(sub?.cancel());
+          try {
+            unawaited(_channel?.sink.close());
+          } catch (_) {}
+          _scheduleReconnect();
+          return;
+        }
+        final ref = '${_ref++}';
+        _pendingHeartbeat = ref;
+        _send({'topic': 'phoenix', 'event': 'heartbeat', 'payload': {}, 'ref': ref});
       });
     } catch (_) {
       _scheduleReconnect();
@@ -330,6 +421,10 @@ class PortalRealtime {
     try {
       final decoded = jsonDecode('$raw');
       if (decoded is! Map) return;
+      if (decoded['event'] == 'phx_reply' && decoded['topic'] == 'phoenix' && decoded['ref'] == _pendingHeartbeat) {
+        _pendingHeartbeat = null;
+        return;
+      }
       if (decoded['event'] != 'broadcast') return;
       final payload = decoded['payload'];
       if (payload is! Map || payload['event'] != 'changed') return;

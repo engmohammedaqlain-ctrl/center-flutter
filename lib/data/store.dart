@@ -2024,6 +2024,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   String? sessionExpiredNotice;
 
   Future<void> _saveSession() async {
+    // التوكن المجدَّد للقناة المفتوحة أيضاً: انتهاؤه عليها يوقف التعديلات اللحظية بصمت
+    _realtime?.updateAccessToken(SupabaseAuth.accessToken);
     await db.setSetting(_kLoggedIn, loggedIn ? 'true' : null);
     await db.setSetting(_kMasterAdmin, isMasterAdmin ? 'true' : null);
     await db.setSetting(_kTenantId, currentTenant?.id);
@@ -3938,6 +3940,21 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// محاولات الرفع المتتالية التي تعثّرت بانقطاع — تحدد مهلة المحاولة التالية.
   int _pushFailures = 0;
 
+  /// محاولات السحب المتتالية التي فشلت — السحب الفاشل يُعاد بمهلة متباعدة.
+  int _pullFailures = 0;
+
+  /// آخر سحب نجح — السحب الاحتياطي لا يتكرر قبل [safetyPullEvery].
+  DateTime? lastPullAt;
+
+  /// التطبيق ظاهر للمستخدم — يضبطه دورة حياة التطبيق في main.
+  bool inForeground = true;
+
+  /// سحب احتياطي دوري والتطبيق مفتوح: إشارةٌ ضاعت (قناةٌ ماتت بصمت، جهازٌ رفع
+  /// بلا إعلان) كانت تُبقي التعديلات غائبة حتى يغلق المستخدم التطبيق ويفتحه.
+  /// السحب تزايدي بمؤشر آخر سحب، فهو خفيف حين لا جديد.
+  static const safetyPullEvery = Duration(minutes: 3);
+  Timer? _safetyPull;
+
   /// مهل إعادة الرفع بعد انقطاع: تتباعد ولا تتجاوز الدقيقة، وعودة الاتصال تختصرها.
   static const pushRetryDelays = [Duration(seconds: 5), Duration(seconds: 15), Duration(seconds: 30), Duration(seconds: 60)];
 
@@ -3986,6 +4003,18 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     // مهلة بعد الرسم الأول — سحب فوري كان يجمّد الواجهة فور الدخول
     scheduleAutoPull(const Duration(milliseconds: 800));
     scheduleAutoPush(const Duration(seconds: 2));
+    _safetyPull?.cancel();
+    _safetyPull = Timer.periodic(const Duration(minutes: 1), (_) => safetyPullTick());
+  }
+
+  /// فحص السحب الاحتياطي — كل دقيقة، ويسحب إن مضى [safetyPullEvery] على آخر سحب.
+  @visibleForTesting
+  void safetyPullTick([DateTime? now]) {
+    if (!autoSync || !inForeground || offline || needsInitialSetup) return;
+    if (autoPullScheduled || sync.isSyncing) return;
+    final last = lastPullAt;
+    if (last != null && (now ?? DateTime.now()).difference(last) < safetyPullEvery) return;
+    scheduleAutoPull(Duration.zero);
   }
 
   /// لا اتصال بالسحابة: المزامنة التلقائية متوقفة حتى يعود، والواجهة تعرض ذلك
@@ -4023,7 +4052,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     autoSync = false;
     _onlineWatch?.cancel();
     _onlineWatch = null;
+    _safetyPull?.cancel();
+    _safetyPull = null;
     _pushFailures = 0;
+    _pullFailures = 0;
     _autoPushTimer?.cancel();
     _autoPullTimer?.cancel();
     _autoPushTimer = null;
@@ -4132,6 +4164,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// العودة إلى التطبيق ترفع وتسحب، لكن لا أكثر من مرة في الدقيقة.
   void pullOnResume([DateTime? now]) {
     final at = now ?? DateTime.now();
+    // المقبس قد يكون مات في الخلفية دون أن يُغلق: يُعاد فوراً، وإعادة الانضمام تسحب ما فات
+    _realtime?.ensureAlive(at);
     final last = _lastResumePull;
     if (last != null && at.difference(last) < _resumePullGap) return;
     _lastResumePull = at;
@@ -4177,13 +4211,25 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
           scheduleAutoPull(reconnectPullDelay);
           return;
         }
-        await sync.pull();
+        // السحب يعيد فشله نتيجةً لا استثناءً: يُعاد بمهلة متباعدة بدل أن يُترك
+        final result = await sync.pull();
+        if (result.success) {
+          lastPullAt = DateTime.now();
+          _pullFailures = 0;
+        } else {
+          _pullFailures++;
+          scheduleAutoPull(pushRetryDelay(_pullFailures));
+        }
       }
     } catch (_) {
-      // الانقطاع لا يُظهر خطأ: الرفع يُعاد بمهلة متباعدة، والسحب عند إشارة أو عودة
+      // الانقطاع لا يُظهر خطأ: الرفع والسحب يُعادان بمهلة متباعدة. السحب الفاشل
+      // كان يُترك حتى إشارةٍ تالية، فتبقى تعديلات الأجهزة الأخرى غائبة
       if (push) {
         _pushFailures++;
         scheduleAutoPush(pushRetryDelay(_pushFailures));
+      } else {
+        _pullFailures++;
+        scheduleAutoPull(pushRetryDelay(_pullFailures));
       }
     }
   }
@@ -5816,8 +5862,26 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final stu = studentById(studentId);
     if (stu == null) throw StoreException('يرجى اختيار الطالب أولاً');
 
-    // الزائد عن المستحق رصيد مقدَّم للطالب، كالويب (`createPayment` بلا سقف): يظهر
-    // في بيان السند «دفعة مقدمة» ويُخصم من أقساطه القادمة
+    // سقف القبض: المستحق + المجدول. ما زاد عنه لا يقابله قسط يُسدَّد، فيُرفض
+    // (طالب عليه 500 مستحق ومجدول لا يُقبل منه 600). دفعة ولي أمرٍ حُوّلت فعلاً
+    // (allowAdvance) تُقبل كلها، والزائد رصيد مقدَّم له
+    if (!allowAdvance) {
+      final own = installments.where((i) => i.studentId == studentId).toList();
+      if (own.isNotEmpty) {
+        final buckets = dueAndScheduled(own, fallbackBalance: stu.balance, today: DateTime(date.year, date.month, date.day));
+        final maxPayable = ((buckets.due + buckets.scheduled) * 100).round() / 100;
+        if (totalSettled > maxPayable + cent) {
+          throw StoreException('المبلغ أكبر من المستحق والمجدول (${money(maxPayable)})');
+        }
+      } else {
+        final debt = stu.balance < 0 ? -stu.balance : 0.0;
+        if (totalSettled > debt + cent) {
+          throw StoreException(
+            debt > cent ? 'المبلغ أكبر من ذمة الطالب (${money(debt)})' : 'لا مستحقات على الطالب لتسديدها',
+          );
+        }
+      }
+    }
 
     // المستحق وقت الدفع = ما حلّ موعده حتى تاريخ السند — مطابق لـ finance.service
     final dueNow =
