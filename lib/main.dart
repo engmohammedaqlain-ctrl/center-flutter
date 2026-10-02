@@ -240,6 +240,7 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     updater.inForeground = state == AppLifecycleState.resumed;
+    AppStore.instance.inForeground = state == AppLifecycleState.resumed;
     if (state != AppLifecycleState.resumed) return;
     // فحص بناء APK وتحديث صامت عند العودة — كلٌّ يحترم فاصلة، ويكشف ما نُشر أثناء الغياب
     unawaited(updater.check(silent: true).then((_) {
@@ -407,6 +408,9 @@ class _LoginScreenState extends State<LoginScreen> {
   /// اكتمل رقم الهوية: المؤشر ينتقل لكلمة المرور، كالويب.
   final _codeFocus = FocusNode();
 
+  /// اسم المستخدم في دخول الإدارة — يُركَّز بعد إغلاق لوحة الأرقام (`_switchTab`).
+  final _userFocus = FocusNode();
+
   bool get _portalReady =>
       digitsOnly(portalId.text).length == _idLength && digitsOnly(portalCode.text).length == _codeLength;
 
@@ -426,6 +430,7 @@ class _LoginScreenState extends State<LoginScreen> {
     portalId.dispose();
     portalCode.dispose();
     _codeFocus.dispose();
+    _userFocus.dispose();
     super.dispose();
   }
 
@@ -701,20 +706,33 @@ class _LoginScreenState extends State<LoginScreen> {
         // حساب المنشأة خلف رابط: الدخول اليومي للجميع برقم الهوية
         Center(
           child: TextButton.icon(
-            onPressed: busy
-                ? null
-                : () => setState(() {
-                      portalTab = !portalTab;
-                      error = null;
-                      choices = const [];
-                    }),
-            icon: Icon(portalTab ? Icons.lock_outline : Icons.arrow_forward, size: 15),
+            onPressed: busy ? null : _switchTab,
+            // arrow_back يُعكس مع الاتجاه: في العربية يشير يميناً، اتجاه الرجوع
+            icon: Icon(portalTab ? Icons.lock_outline : Icons.arrow_back, size: 15),
             label: Text(portalTab ? 'دخول الإدارة' : 'رجوع'),
             style: TextButton.styleFrom(foregroundColor: AppColors.navy, textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
           ),
         ),
       ],
     );
+  }
+
+  /// التبديل بين دخول البوابة ودخول الإدارة.
+  ///
+  /// لوحة المفاتيح تُغلق أولاً ثم يُركَّز اسم المستخدم: نقل التركيز مباشرةً من
+  /// حقل رقم الهوية كان يُبقي لوحة الأرقام مفتوحة على حقل الاسم (شاومي وغيرها لا
+  /// تبدّل نوعها)، فيُضطر المستخدم لإغلاقها وفتحها ليكتب حروفاً.
+  void _switchTab() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      portalTab = !portalTab;
+      error = null;
+      choices = const [];
+    });
+    if (portalTab) return;
+    Future<void>.delayed(const Duration(milliseconds: 180), () {
+      if (mounted && !portalTab) _userFocus.requestFocus();
+    });
   }
 
   /// نموذج دخول الإدارة: اسم المستخدم وكلمة المرور.
@@ -727,7 +745,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const SizedBox(height: 6),
         TextField(
           controller: user,
-          autofocus: true,
+          focusNode: _userFocus,
           textInputAction: TextInputAction.next,
           autocorrect: false,
           enableSuggestions: false,
@@ -739,7 +757,7 @@ class _LoginScreenState extends State<LoginScreen> {
               (previous, next) => next.copyWith(text: next.text.toLowerCase()),
             ),
           ],
-          textAlign: TextAlign.center,
+          textAlign: TextAlign.start,
           style: _fieldText,
           decoration: authFieldDecoration('أدخل اسم المستخدم...', Icons.person_outline),
         ),
@@ -752,7 +770,7 @@ class _LoginScreenState extends State<LoginScreen> {
           autocorrect: false,
           enableSuggestions: false,
           onSubmitted: (_) => _submit(),
-          textAlign: TextAlign.center,
+          textAlign: TextAlign.start,
           style: _fieldText.copyWith(fontFamily: 'monospace'),
           decoration: authFieldDecoration(
             'أدخل كلمة المرور...',
@@ -791,7 +809,7 @@ class _LoginScreenState extends State<LoginScreen> {
             setState(() => error = null);
             if (digitsOnly(v).length == _idLength) _codeFocus.requestFocus();
           },
-          textAlign: TextAlign.center,
+          textAlign: TextAlign.start,
           style: _fieldText.copyWith(fontFamily: 'monospace', letterSpacing: 1),
           decoration: authFieldDecoration('9 أرقام', Icons.badge_outlined).copyWith(counterText: ''),
         ),
@@ -807,7 +825,7 @@ class _LoginScreenState extends State<LoginScreen> {
           inputFormatters: [_digitsOnly],
           onChanged: (_) => setState(() => error = null),
           onSubmitted: (_) => _portalSubmit(),
-          textAlign: TextAlign.center,
+          textAlign: TextAlign.start,
           style: _fieldText.copyWith(fontFamily: 'monospace', letterSpacing: 2),
           decoration: authFieldDecoration(
             '6 أرقام',

@@ -237,7 +237,25 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
     // يغطي بما سُدِّد من الذمة (قبل اقتطاع الخصم من النقد)
     final covered = _covers(open, settled);
     final due = _dueNow(selected, open);
-    // الزائد عن المستحق دفعة مقدمة تُقبل كالويب، وبيان السند يقولها
+    // سقف القبض: المستحق + المجدول — طالب عليه 500 لا يُقبل منه 600. يُقال على
+    // حقل المبلغ قبل الحفظ، والمتجر يرفضه أيضاً (`addPayment`)
+    final scheduled = open.where((i) => !isInstallmentDue(i)).fold<double>(0, (s, i) => s + i.remaining);
+    final debt = selected.balance < 0 ? -selected.balance : 0.0;
+    final maxPayable = open.isNotEmpty ? ((due + scheduled) * 100).round() / 100 : debt;
+    if (settled > maxPayable + cent) {
+      setState(() {
+        busy = false;
+        errors
+          ..reset()
+          ..check(
+            'amount',
+            true,
+            maxPayable > cent ? 'المبلغ أكبر من المستحق والمجدول (${money(maxPayable)})' : 'لا مستحقات على الطالب لتسديدها',
+          );
+      });
+      if (mounted) errors.report(context);
+      return;
+    }
     final cash = settled - disc;
     final discountNote = disc > 0
         ? '(خصم: -${trimNum(disc)} شيكل${discountReason.text.trim().isEmpty ? '' : ' [${discountReason.text.trim()}]'})'

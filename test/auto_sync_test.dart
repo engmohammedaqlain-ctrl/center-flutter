@@ -36,7 +36,7 @@ void main() {
   group('كل تعديل يُجدول رفعاً تلقائياً مهما كان مساره', () {
     test('إضافة دفعة', () {
       final s = _auto();
-      s.addPayment(studentId: s.students.first.id, amount: 10, method: 'cash', date: DateTime(2026, 9, 10));
+      s.addPayment(studentId: s.students.first.id, amount: 10, method: 'cash', date: DateTime(2026, 9, 10), allowAdvance: true);
 
       expect(s.pendingSyncs.where((p) => p.tableName == 'payments'), isNotEmpty);
       expect(s.autoPushScheduled, isTrue);
@@ -76,7 +76,7 @@ void main() {
     test('بلا مزامنة تلقائية لا يُجدول شيء', () {
       final s = _auto();
       s.stopAutoSync();
-      s.addPayment(studentId: s.students.first.id, amount: 10, method: 'cash', date: DateTime(2026, 9, 10));
+      s.addPayment(studentId: s.students.first.id, amount: 10, method: 'cash', date: DateTime(2026, 9, 10), allowAdvance: true);
 
       expect(s.autoPushScheduled, isFalse);
     });

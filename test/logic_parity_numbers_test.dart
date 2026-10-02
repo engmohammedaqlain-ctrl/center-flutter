@@ -156,8 +156,8 @@ void main() {
     });
   });
 
-  group('الدفعة المقدمة كالويب', () {
-    test('الزائد عن المستحق والمجدول يُقبل رصيداً للطالب', () {
+  group('رفض الدفعة المقدمة', () {
+    test('يرفض مبلغاً أكبر من المستحق والمجدول', () {
       final s = AppStore.forTesting();
       injectDemoData(s);
       final student = s.students.firstWhere((stu) => stu.status == 'active');
@@ -184,13 +184,22 @@ void main() {
       ]);
       student.balance = s.computeStudentBalance(student.id);
 
+      expect(
+        () => s.addPayment(
+          studentId: student.id,
+          amount: 600,
+          method: 'cash',
+          date: DateTime.now(),
+        ),
+        throwsA(isA<StoreException>().having((e) => e.message, 'msg', contains('المستحق والمجدول'))),
+      );
       final ok = s.addPayment(
         studentId: student.id,
-        amount: 600,
+        amount: 500,
         method: 'cash',
         date: DateTime.now(),
       );
-      expect(ok.amount, 600);
+      expect(ok.amount, 500);
     });
   });
 }
