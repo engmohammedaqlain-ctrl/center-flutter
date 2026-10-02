@@ -6,6 +6,7 @@ import '../data/arabic_search.dart';
 import '../data/grading.dart';
 import '../data/institution.dart';
 import '../data/portal.dart';
+import '../data/doc_export.dart';
 import '../data/printing.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -99,7 +100,8 @@ class _HomeroomClassViewState extends State<HomeroomClassView> {
         return;
       }
       try {
-        await PdfKit.preview(bytes, PdfKit.fileName(title));
+        // بلا انتظار: مؤشر التجهيز يُغلق ويُختار الإجراء فوقه
+      DocExport.showActions(context, bytes, PdfKit.fileName(title));
       } catch (_) {
         if (mounted) showAppSnack(context, 'تعذّر تنزيل البطاقات', error: true);
       }

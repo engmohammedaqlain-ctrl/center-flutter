@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ما يُسلَّم لواتساب وعارض الملفات: مجلد السندات المؤقت، والتنزيلات العامة
+     (أندرويد 9 فما دون) -->
+<paths>
+    <cache-path name="documents" path="documents/"/>
+    <external-path name="downloads" path="Download/"/>
+</paths>

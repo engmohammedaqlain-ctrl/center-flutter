@@ -1,0 +1,57 @@
+# فحص بناء مع كل رفع على main — لا ينشر شيئاً لأحد.
+#
+# يبني الحزمة الموقّعة كما يبنيها النشر، فخطأٌ في كود أندرويد (Kotlin) أو في
+# الإعدادات يظهر هنا قبل أن يفشل نشرٌ حقيقي. والحزمة تُحفظ ثلاثة أيام في صفحة
+# التشغيل (Artifacts) لتجربتها على جوال قبل النشر.
+name: Check build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'Docs/**'
+  workflow_dispatch:
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # كوميت رقم الإصدار الذي يرفعه النشر نفسه لا يحتاج فحصاً
+    if: "!startsWith(github.event.head_commit.message, 'Release ')"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.6'
+          channel: stable
+          cache: true
+
+      - name: Signing key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
+        run: |
+          printf '%s' "$KEYSTORE" | tr -d '\r\n ' | base64 --decode > android/center-release.jks
+          printf '%s\n' "$KEY_PROPERTIES" | tr -d '\r' | sed 's/^storeFile=.*/storeFile=center-release.jks/' > android/key.properties
+
+      - run: flutter pub get
+
+      - run: flutter build apk --release --target-platform android-arm64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: center-check-${{ github.sha }}
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 3

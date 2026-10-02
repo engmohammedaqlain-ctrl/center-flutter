@@ -7,6 +7,17 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- حفظ السندات والكشوف في مجلد التنزيلات على أندرويد 9 فما دون؛ ما بعده
+         يحفظ عبر MediaStore بلا إذن -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28"/>
+    <!-- أندرويد 11+ يخفي التطبيقات الأخرى: بلا هذا لا يُعرف أن واتساب مثبّت
+         فلا يُرسل إليه السند -->
+    <queries>
+        <package android:name="com.whatsapp"/>
+        <package android:name="com.whatsapp.w4b"/>
+    </queries>
     <application
         android:label="النظام المدرسي"
         android:name="${applicationName}"
@@ -33,6 +44,16 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- ملفات السندات المؤقتة تُسلَّم لواتساب وعارض الملفات عبر هذا المزوّد -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.documents"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/document_paths"/>
+        </provider>
         <service
             android:name=".DownloadService"
             android:exported="false"

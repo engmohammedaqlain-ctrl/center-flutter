@@ -3,6 +3,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../data/phone.dart';
+import '../data/doc_export.dart';
 import '../data/printing.dart';
 import '../data/store.dart';
 import '../models/models.dart';
@@ -143,7 +144,8 @@ Future<void> printWeeklyAttendance(
       return;
     }
     try {
-      await PdfKit.preview(bytes, PdfKit.fileName('كشف تفقد وحضور الطلاب $title'));
+      // بلا انتظار: مؤشر التجهيز يُغلق ويُختار الإجراء فوقه
+      DocExport.showActions(context, bytes, PdfKit.fileName('كشف تفقد وحضور الطلاب $title'));
     } catch (_) {
       if (context.mounted) showAppSnack(context, 'تعذّر تنزيل كشف الحضور', error: true);
     }
@@ -229,7 +231,8 @@ Future<void> printClassRoster(
       return;
     }
     try {
-      await PdfKit.preview(bytes, PdfKit.fileName('كشف طلاب ${room.name}'));
+      // بلا انتظار: مؤشر التجهيز يُغلق ويُختار الإجراء فوقه
+      DocExport.showActions(context, bytes, PdfKit.fileName('كشف طلاب ${room.name}'));
     } catch (_) {
       if (context.mounted) showAppSnack(context, 'تعذّر تنزيل كشف الصف', error: true);
     }

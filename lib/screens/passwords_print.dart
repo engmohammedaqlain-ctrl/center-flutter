@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../data/doc_export.dart';
 import '../data/printing.dart';
 import '../data/store.dart';
 import '../models/models.dart';
@@ -119,7 +120,8 @@ Future<void> printPortalPasswords(
       return;
     }
     try {
-      await PdfKit.preview(bytes, PdfKit.fileName('$title ${room.name}'));
+      // بلا انتظار: مؤشر التجهيز يُغلق ويُختار الإجراء فوقه
+      DocExport.showActions(context, bytes, PdfKit.fileName('$title ${room.name}'));
     } catch (_) {
       if (context.mounted) showAppSnack(context, 'تعذّر تنزيل الكشف', error: true);
     }

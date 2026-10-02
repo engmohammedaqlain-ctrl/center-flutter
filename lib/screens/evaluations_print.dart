@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../data/doc_export.dart';
 import '../data/printing.dart';
 import '../data/store.dart';
 import '../models/models.dart';
@@ -159,7 +160,8 @@ Future<void> printEvaluations(
     }
     final suffix = groupName.trim().isEmpty ? '' : ' ${groupName.trim()}';
     try {
-      await PdfKit.preview(bytes, PdfKit.fileName('كشف العلامات$suffix'));
+      // بلا انتظار: مؤشر التجهيز يُغلق ويُختار الإجراء فوقه
+      DocExport.showActions(context, bytes, PdfKit.fileName('كشف العلامات$suffix'));
     } catch (_) {
       if (context.mounted) showAppSnack(context, 'تعذّر تنزيل كشف العلامات', error: true);
     }
