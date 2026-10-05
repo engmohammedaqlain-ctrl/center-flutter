@@ -28,6 +28,8 @@ class PaymentMethodItem {
     this.isDefault = false,
     this.enabled = true,
     this.orderIndex = 0,
+    this.accountNumber = '',
+    this.showInPortal = true,
   });
 
   final String id;
@@ -43,15 +45,24 @@ class PaymentMethodItem {
   /// الترتيب في القوائم — `order_index`.
   final int orderIndex;
 
+  /// رقم الحساب أو المحفظة: يظهر لولي الأمر حين يسدّد من البوابة — `account_number`.
+  final String accountNumber;
+
+  /// false: الوسيلة مخفية عن ولي الأمر في البوابة، وتبقى مستعملة في السندات.
+  final bool showInPortal;
+
   String get typeLabel => paymentMethodTypes[type] ?? 'أخرى';
 
-  PaymentMethodItem copyWith({String? name, String? type, bool? enabled}) => PaymentMethodItem(
+  PaymentMethodItem copyWith({String? name, String? type, bool? enabled, String? accountNumber, bool? showInPortal}) =>
+      PaymentMethodItem(
         id: id,
         name: name ?? this.name,
         type: type ?? this.type,
         isDefault: isDefault,
         enabled: enabled ?? this.enabled,
         orderIndex: orderIndex,
+        accountNumber: accountNumber ?? this.accountNumber,
+        showInPortal: showInPortal ?? this.showInPortal,
       );
 
   Map<String, dynamic> toMap() => {
@@ -61,6 +72,9 @@ class PaymentMethodItem {
         'is_default': isDefault,
         'enabled': enabled,
         'order_index': orderIndex,
+        // فارغٌ يُرفع null لا يُحذف المفتاح: وإلا بقي الرقم القديم في السحابة
+        'account_number': accountNumber.trim().isEmpty ? null : accountNumber.trim(),
+        'show_in_portal': showInPortal,
       };
 
   static PaymentMethodItem? fromMap(Object? raw) {
@@ -77,6 +91,9 @@ class PaymentMethodItem {
       // الحقل الغائب يعني مفعّلة، كما في `m.enabled !== false`
       enabled: raw['enabled'] != false,
       orderIndex: (raw['order_index'] as num?)?.toInt() ?? 0,
+      accountNumber: '${raw['account_number'] ?? ''}'.trim(),
+      // الغائب يعني ظاهرة، كما في `show_in_portal !== false`
+      showInPortal: raw['show_in_portal'] != false,
     );
   }
 }

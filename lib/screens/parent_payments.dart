@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../data/portal.dart';
@@ -239,7 +240,7 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
   final channel = TextEditingController();
   final reference = TextEditingController();
   final notes = TextEditingController();
-  List<({String id, String name})> methods = const [];
+  List<({String id, String name, String accountNumber})> methods = const [];
 
   /// الوسيلة المختارة؛ الفارغ = جهة أخرى تُكتب باليد.
   String methodId = '';
@@ -247,6 +248,24 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
   final images = <String>[];
   bool busy = false;
   String error = '';
+
+  /// رقم الوسيلة نُسخ للتو — يتبدّل الزر إلى «نُسخ» لحظة.
+  bool copied = false;
+
+  /// الوسيلة المختارة برقمها، إن كانت من القائمة.
+  ({String id, String name, String accountNumber})? get _method =>
+      methods.where((m) => m.id == methodId).firstOrNull;
+
+  Future<void> _copyNumber() async {
+    final number = _method?.accountNumber ?? '';
+    if (number.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: number));
+    if (!mounted) return;
+    setState(() => copied = true);
+    Future<void>.delayed(const Duration(seconds: 2), () {
+      if (mounted) setState(() => copied = false);
+    });
+  }
 
   @override
   void initState() {
@@ -361,8 +380,59 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
                   for (final m in methods) DropdownMenuItem(value: m.id, child: Text(m.name)),
                   const DropdownMenuItem(value: '', child: Text('جهة أخرى')),
                 ],
-                onChanged: (v) => setState(() => methodId = v ?? ''),
+                onChanged: (v) => setState(() {
+                  methodId = v ?? '';
+                  copied = false;
+                }),
               ),
+            // رقم الحساب أو المحفظة: يحوّل إليه ولي الأمر دون أن يسأل المدرسة عنه
+            if ((_method?.accountNumber ?? '').isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 8, 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.line),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(_method!.name,
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.muted)),
+                          const SizedBox(height: 2),
+                          SelectableText(
+                            _method!.accountNumber,
+                            textDirection: TextDirection.ltr,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              fontFamily: 'monospace',
+                              color: AppColors.navy,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: _copyNumber,
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        foregroundColor: AppColors.muted,
+                        side: const BorderSide(color: AppColors.line),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      icon: Icon(copied ? Icons.check : Icons.copy, size: 15, color: copied ? AppColors.success : null),
+                      label: Text(copied ? 'نُسخ' : 'نسخ', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             if (methodId.isEmpty) ...[
               if (methods.isNotEmpty) const SizedBox(height: 8),
               TextField(

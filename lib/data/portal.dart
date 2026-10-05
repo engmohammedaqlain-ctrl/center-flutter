@@ -2002,16 +2002,18 @@ class PortalService {
   }
 
   /// وسائل الدفع الإلكترونية للمدرسة: إليها يُحوَّل، والنقد لا يمرّ بالبوابة.
-  Future<List<({String id, String name})>> transferMethods(String tenantId) async {
+  /// المخفية عن البوابة (`show_in_portal = false`) لا تظهر لولي الأمر، ومع كلٍّ رقمها.
+  Future<List<({String id, String name, String accountNumber})>> transferMethods(String tenantId) async {
     final rows = await supabaseSelect(
       'payment_methods',
-      columns: 'id,name,type,enabled,order_index',
+      columns: 'id,name,type,account_number,show_in_portal,enabled,order_index',
       filters: {'tenant_id': 'eq.$tenantId', 'enabled': 'eq.true'},
       order: 'order_index.asc',
     );
     return [
       for (final m in rows ?? const <Map<String, dynamic>>[])
-        if ('${m['type']}' != 'cash') (id: '${m['id']}', name: '${m['name'] ?? ''}'),
+        if ('${m['type']}' != 'cash' && m['show_in_portal'] != false)
+          (id: '${m['id']}', name: '${m['name'] ?? ''}', accountNumber: '${m['account_number'] ?? ''}'.trim()),
     ];
   }
 

@@ -2937,7 +2937,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         'updated_at': now,
       };
       final unchanged = existing != null &&
-          const ['name', 'type', 'is_default', 'enabled', 'order_index'].every((k) => '${existing[k]}' == '${row[k]}');
+          const ['name', 'type', 'account_number', 'show_in_portal', 'is_default', 'enabled', 'order_index']
+              .every((k) => '${existing[k]}' == '${row[k]}');
       if (unchanged) continue;
       bucket
         ..removeWhere((r) => '${r['id']}' == m.id)
