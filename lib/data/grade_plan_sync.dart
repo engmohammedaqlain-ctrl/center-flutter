@@ -251,6 +251,7 @@ class GradePlanSync {
                 item.amount,
                 item.dueDate,
                 discount,
+                monthFraction: item.monthFraction,
               ),
               dueDate: item.dueDate,
             ),
@@ -377,6 +378,7 @@ class GradePlanSync {
             discount,
             seatDeduction: inst.seatDeduction,
             discountAmount: inst.discountAmount,
+            monthFraction: item.monthFraction,
           );
           if ((expected - inst.amount).abs() < cent) continue;
 
@@ -386,7 +388,7 @@ class GradePlanSync {
             // كالويب: حقل nullable — إن غاب نُعيد حساب حصة خصم الطالب وقتها.
             // الصفر المحفوظ قيمة صحيحة (بُني بلا خصم)، فلا يُستبدل.
             final appliedShare = inst.planDiscountShare ??
-                studentDiscountShare(builtOn, isoDate(inst.dueDate), discount);
+                studentDiscountShare(builtOn, isoDate(inst.dueDate), discount, item.monthFraction ?? 1);
             final rebuilt = _round2(
               builtOn - appliedShare - inst.seatDeduction - inst.discountAmount,
             );
@@ -429,7 +431,7 @@ class GradePlanSync {
             inst: inst,
             amount: expected,
             original: planAmount,
-            share: studentDiscountShare(planAmount, due, discount),
+            share: studentDiscountShare(planAmount, due, discount, item.monthFraction ?? 1),
           ));
         }
         if (repriced) {
@@ -475,6 +477,7 @@ class GradePlanSync {
                     item.amount,
                     item.dueDate,
                     discount,
+                    monthFraction: item.monthFraction,
                   ),
                   dueDate: item.dueDate,
                 ),

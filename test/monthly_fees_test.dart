@@ -130,6 +130,21 @@ void main() {
       expect(feeTermsFor(null, bare), const [FeeTerm('year', '2026-08-01', '2027-07-31')]);
     });
 
+    test('الخصم الثابت في الشهر الناقص بقدر أيامه: رسمه 30 من 50 ونصف شهر ← 15 لا 5', () {
+      final items = monthlyPlanItems(
+        amount: 50,
+        enrollmentDate: '2027-03-15',
+        terms: const [FeeTerm('term_2', '2027-02-01', '2027-04-30')],
+      );
+      expect(items[1].amount, 25);
+      expect(items[1].monthFraction, 0.5);
+      expect(items[0].monthFraction, isNull);
+      const fixed20 = PlanDiscount.fixed(20);
+      expect(planInstallmentAmount(items[1].amount, items[1].dueDate, fixed20, monthFraction: items[1].monthFraction), 15);
+      final rows = buildStudentPlan(items, 's1', discount: fixed20);
+      expect(rows.map((r) => r.amount), [30, 15]);
+    });
+
     test('بلا مبلغ لا بنود، والمرحلة بالأقساط تبقى على خطتها', () {
       expect(monthlyPlanItems(amount: 0, enrollmentDate: '2026-09-10', terms: const [_t1]), isEmpty);
       const fixed = [PlanItem(id: 'a', title: 'قسط', amount: 300, dueDate: '2026-10-01')];

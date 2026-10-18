@@ -6640,7 +6640,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
             StudentPlanRow(
               id: planInstallmentId(item.id, student.id),
               title: item.title,
-              amount: planInstallmentAmount(item.amount, item.dueDate, discount),
+              amount: planInstallmentAmount(item.amount, item.dueDate, discount, monthFraction: item.monthFraction),
               dueDate: item.dueDate,
               originalAmount: item.amount,
             ),

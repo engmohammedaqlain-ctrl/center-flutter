@@ -60,7 +60,10 @@ PlanDiscount? studentDiscountOf(Student? student) {
 }
 
 /// قيمة خصم الطالب من سعر قسط — بنفس تقريب `applyPlanDiscount` للنسبة.
-double studentDiscountShare(double planAmount, String dueDate, PlanDiscount? discount) {
+///
+/// الخصم الثابت في الشهر الناقص بقدر أيامه ([monthFraction]): كان يُطرح كاملاً من نصف
+/// شهر، فيدفع صاحب الخصم أقل من نصف رسمه المتفق عليه.
+double studentDiscountShare(double planAmount, String dueDate, PlanDiscount? discount, [double monthFraction = 1]) {
   if (discount == null || discount.value <= 0) return 0;
   final from = discount.from;
   if (from != null && from.isNotEmpty) {
@@ -71,13 +74,21 @@ double studentDiscountShare(double planAmount, String dueDate, PlanDiscount? dis
   if (discount.percentage) {
     return _round2(planAmount * ((discount.value < 100 ? discount.value : 100) / 100));
   }
-  return _round2(planAmount < discount.value ? planAmount : discount.value);
+  final fixed = discount.value * monthFraction;
+  return _round2(planAmount < fixed ? planAmount : fixed);
 }
 
 /// مبلغ قسط الخطة كما يجب أن يكون: سعر الخطة − خصم الطالب − خصم القسط − المقتطع للحجز.
-double planInstallmentAmount(double planAmount, String dueDate, PlanDiscount? discount, {double seatDeduction = 0, double discountAmount = 0}) {
+double planInstallmentAmount(
+  double planAmount,
+  String dueDate,
+  PlanDiscount? discount, {
+  double seatDeduction = 0,
+  double discountAmount = 0,
+  double? monthFraction,
+}) {
   final base = planAmount;
-  final expected = _round2(base - studentDiscountShare(base, dueDate, discount) - seatDeduction - discountAmount);
+  final expected = _round2(base - studentDiscountShare(base, dueDate, discount, monthFraction ?? 1) - seatDeduction - discountAmount);
   return expected < 0 ? 0.0 : expected;
 }
 
@@ -218,6 +229,7 @@ List<PlanItem> monthlyPlanItems({required double amount, required String enrollm
         title: full ? title : '$title ($days يوم)',
         amount: full ? fee : _round2(fee / daysPerFeeMonth * days),
         dueDate: due,
+        monthFraction: full ? null : days / daysPerFeeMonth,
       ));
     }
   }
@@ -280,7 +292,15 @@ class PlanDiscount {
 
 /// صفٌّ في نسخة الطالب من الخطة، قبل أن يصير قسطاً محفوظاً.
 class StudentPlanRow {
-  const StudentPlanRow({required this.id, required this.title, required this.amount, required this.dueDate, this.originalAmount, this.seatDeduction = 0});
+  const StudentPlanRow({
+    required this.id,
+    required this.title,
+    required this.amount,
+    required this.dueDate,
+    this.originalAmount,
+    this.seatDeduction = 0,
+    this.monthFraction,
+  });
 
   final String id;
   final String title;
@@ -289,6 +309,9 @@ class StudentPlanRow {
   final double? originalAmount;
   final double seatDeduction;
 
+  /// الشهر الناقص: أيامه ÷ 30 — [PlanItem.monthFraction].
+  final double? monthFraction;
+
   StudentPlanRow copyWith({double? amount, double? originalAmount, double? seatDeduction}) => StudentPlanRow(
     id: id,
     title: title,
@@ -296,12 +319,13 @@ class StudentPlanRow {
     dueDate: dueDate,
     originalAmount: originalAmount ?? this.originalAmount,
     seatDeduction: seatDeduction ?? this.seatDeduction,
+    monthFraction: monthFraction,
   );
 }
 
 /// تطبيق خصم على الأقساط — مطابق حرفياً لـ `applyPlanDiscount` في الويب:
 /// - نسبة مئوية: تُخصم نفس النسبة من كل قسط.
-/// - مبلغ مقطوع: يُخصم نفس المبلغ من كل قسط (لا يتجاوز قيمة القسط).
+/// - مبلغ مقطوع: يُخصم نفس المبلغ من كل قسط (لا يتجاوز قيمة القسط)، ومن الشهر الناقص بقدر أيامه.
 List<StudentPlanRow> applyPlanDiscount(List<StudentPlanRow> items, PlanDiscount? discount) {
   if (discount == null || discount.value <= 0 || items.isEmpty) return items;
 
@@ -318,12 +342,12 @@ List<StudentPlanRow> applyPlanDiscount(List<StudentPlanRow> items, PlanDiscount?
     ];
   }
 
-  // مبلغ مقطوع: نفس القيمة من كل قسط — لا يُوزَّع على المجموع
-  final perInstallment = discount.value;
+  // مبلغ مقطوع: نفس القيمة من كل قسط — لا يُوزَّع على المجموع — ومن الشهر الناقص بقدر أيامه
   return [
     for (final item in items)
       () {
         final amount = item.amount;
+        final perInstallment = discount.value * (item.monthFraction ?? 1);
         final share = _round2(amount < perInstallment ? amount : perInstallment);
         return item.copyWith(amount: _round2(amount - share), originalAmount: amount);
       }(),
@@ -391,6 +415,7 @@ List<StudentPlanRow> buildStudentPlan(
         title: i.title,
         amount: i.amount,
         dueDate: i.dueDate,
+        monthFraction: i.monthFraction,
       ),
   ], discount);
 

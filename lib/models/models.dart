@@ -1174,6 +1174,7 @@ class PlanItem {
     required this.title,
     required this.amount,
     required this.dueDate,
+    this.monthFraction,
   });
 
   final String id;
@@ -1183,12 +1184,16 @@ class PlanItem {
   /// تاريخ الاستحقاق بصيغة `YYYY-MM-DD`.
   final String dueDate;
 
+  /// دفعة آخر الفصل الناقصة: أيامها ÷ 30. الخصم الثابت يُقسم بالنسبة نفسها كالمبلغ.
+  final double? monthFraction;
+
   PlanItem copyWith({String? title, double? amount, String? dueDate}) =>
       PlanItem(
         id: id,
         title: title ?? this.title,
         amount: amount ?? this.amount,
         dueDate: dueDate ?? this.dueDate,
+        monthFraction: monthFraction,
       );
 
   Map<String, dynamic> toMap() => {
