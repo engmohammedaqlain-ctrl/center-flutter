@@ -5,6 +5,7 @@ import '../data/academic_matching.dart';
 import '../data/grading.dart';
 import '../data/monthly_averages.dart';
 import '../data/store.dart';
+import '../data/arabic_search.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
@@ -560,7 +561,7 @@ class _MonthlyGradesPanelState extends State<_MonthlyGradesPanel> {
         final students = room == null
             ? <Student>[]
             : (store.studentsOf(room).where((s) => s.status == 'active').toList()
-              ..sort((a, b) => a.fullName.compareTo(b.fullName)));
+              ..sort((a, b) => compareArabicNames(a.fullName, b.fullName)));
 
         final saved = loadMonthlyAverages(store.evaluations, month);
         final rewarded = rewardedStudentIds(store.payments, month);
@@ -841,7 +842,7 @@ class _GroupSectionState extends State<_GroupSection> {
       byStudent.putIfAbsent(e.studentId, () => []).add(e);
     }
     final students = byStudent.keys.toList()
-      ..sort((a, b) => (store.studentById(a)?.fullName ?? '').compareTo(store.studentById(b)?.fullName ?? ''));
+      ..sort((a, b) => compareArabicNames(store.studentById(a)?.fullName, store.studentById(b)?.fullName));
     final visibleStudents = listPage(students, visibleCount);
 
     int averageOf(List<Evaluation> rows) =>

@@ -780,8 +780,11 @@ class _FinanceScreenState extends State<FinanceScreen> {
       return matchQ;
     }).toList();
 
-    // بتاريخ الاستحقاق كما في الويب، فتتجاور بنود الشهر الواحد
-    dues.sort((a, b) => a.dueDate.compareTo(b.dueDate));
+    // بتاريخ الاستحقاق كما في الويب، فتتجاور بنود الشهر الواحد، وطلابه أبجدياً
+    dues.sort((a, b) {
+      final byDate = a.dueDate.compareTo(b.dueDate);
+      return byDate != 0 ? byDate : compareArabicNames(a.student.fullName, b.student.fullName);
+    });
 
     final canCollect = store.can('finance.collect');
     final canOpenStudent = store.can('students');

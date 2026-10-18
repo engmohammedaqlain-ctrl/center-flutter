@@ -201,8 +201,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                   parentName: s.parentName,
                   parentNationalId: s.parentNationalId,
                 );
-              }).toList()
-              ..sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
+              }).toList();
 
         final page = listPage(list, visibleCount);
         final canSelect = (customPlanOnly || pendingMode) && list.isNotEmpty && store.can('students');

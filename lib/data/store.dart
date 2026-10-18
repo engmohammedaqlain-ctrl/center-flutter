@@ -10,6 +10,7 @@ import '../models/models.dart';
 import '../theme/app_colors.dart';
 import 'academic_matching.dart';
 import 'app_settings.dart';
+import 'arabic_search.dart';
 import 'balance.dart';
 import 'features.dart';
 import 'fee_plan.dart';
@@ -1389,6 +1390,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         'status': snap.status,
       }));
     }
+    // كل الكشوف تأخذ الطلاب من هنا، فترتيبهم الأبجدي هنا يصل لكلها
+    result.sort((a, b) => compareArabicNames(a.fullName, b.fullName));
     _studentsYearCache = result;
     _studentsYearRev = _studentsStamp;
     _studentsYearCacheId = yearId;

@@ -37,6 +37,21 @@ String normalizeArabic(String? text) {
   return out.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
 }
 
+/// مفتاح الترتيب الأبجدي: نفس توحيد البحث، مع وصل «عبد» و«أبو» بما بعدها حتى يتجاور
+/// «عبد الرحمن» و«عبدالرحمن» في الكشف — `arabicSortKey`.
+String _arabicSortKey(String name) =>
+    normalizeArabic(name).replaceAllMapped(RegExp(r'(^|\s)(عبد|ابو) (?=\S)'), (m) => '${m[1]}${m[2]}');
+
+/// مقارنة اسمين بالترتيب الأبجدي العربي — `compareArabicNames`. الاسم الخام يفصل بين
+/// المتطابقين بعد التوحيد، والفارغ آخر الكشف لا أوله.
+int compareArabicNames(String? a, String? b) {
+  final x = (a ?? '').trim();
+  final y = (b ?? '').trim();
+  if (x.isEmpty || y.isEmpty) return (x.isEmpty ? 1 : 0) - (y.isEmpty ? 1 : 0);
+  final byKey = _arabicSortKey(x).compareTo(_arabicSortKey(y));
+  return byKey != 0 ? byKey : x.compareTo(y);
+}
+
 /// كلمة بحث واحدة داخل اسم مُوحَّد، مع الأسماء المركّبة وأل التعريف.
 bool _tokenMatches(String target, String token) {
   if (target.contains(token)) return true;
