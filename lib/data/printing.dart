@@ -200,7 +200,8 @@ class PdfKit {
   /// [accentColumns]: أعمدة بيانات بلون برتقالي (كلمات مرور).
   static pw.Widget table({
     required List<dynamic> headers,
-    required List<List<String>> rows,
+    // خلية نص، أو عنصر جاهز (نتيجة بلونها مثلاً)
+    required List<List<dynamic>> rows,
     List<int>? flex,
     Set<int>? ltrColumns,
     Set<int>? accentColumns,

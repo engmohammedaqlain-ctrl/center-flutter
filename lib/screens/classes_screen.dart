@@ -16,6 +16,7 @@ import '../widgets/widgets.dart';
 import 'attendance_print.dart';
 import 'attendance_screen.dart';
 import 'passwords_print.dart';
+import 'report_cards_sheet.dart';
 import 'room_form_screen.dart';
 import 'student_detail_screen.dart';
 import 'section_students_sheet.dart';
@@ -899,6 +900,23 @@ Future<void> _showRoomActionsSheet(
             visualDensity: VisualDensity.compact,
             onTap: () => Navigator.pop(ctx, 'print'),
           ),
+          // الشهادات وكشف النتائج للنمط الموزون وحده: المعدل الشهري بلا فصول
+          if (store.features.enableEvaluations && store.gradingForViewedYear.mode != 'monthly') ...[
+            ListTile(
+              leading: Icon(Icons.workspace_premium_outlined, color: AppColors.heading),
+              title: const Text('شهادات الطلاب'),
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              onTap: () => Navigator.pop(ctx, 'report_cards'),
+            ),
+            ListTile(
+              leading: Icon(Icons.format_list_numbered, color: AppColors.heading),
+              title: const Text('كشف النتائج'),
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              onTap: () => Navigator.pop(ctx, 'results'),
+            ),
+          ],
           ListTile(
             leading: Icon(Icons.vpn_key_outlined, color: AppColors.amberDark),
             title: const Text('رموز دخول الطلاب'),
@@ -955,6 +973,10 @@ Future<void> _showRoomActionsSheet(
       printClassRoster(context, store: store, room: room, students: students);
     case 'codes':
       showClassPortalCodes(context, room: room, students: students);
+    case 'report_cards':
+      await openClassReportCards(context, store, roomId: room.id);
+    case 'results':
+      await openClassReportCards(context, store, roomId: room.id, summary: true);
     case 'add_students':
       await _addStudents(context, room);
     case 'edit':

@@ -10,6 +10,7 @@ import '../data/grade_plan_sync.dart';
 import '../data/grading.dart';
 import '../data/installment_adjustments.dart';
 import '../data/phone.dart';
+import '../data/report_cards.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -22,6 +23,7 @@ import '../widgets/widgets.dart';
 import 'payment_form_screen.dart';
 import 'receipt_screen.dart';
 import 'return_to_grade_plan_sheet.dart';
+import 'report_cards_sheet.dart';
 import 'student_credit_sheet.dart';
 import 'student_subjects_card.dart';
 import 'student_form_screen.dart';
@@ -2352,18 +2354,38 @@ class _EvaluationsCard extends StatelessWidget {
       ].join('  ·  ');
     }
 
+    final student = store.studentById(studentId);
+    final canReport = student != null && summaries.isNotEmpty;
     return _Card(
       title: 'التقييمات (${list.length})',
-      trailing: overall == null
+      trailing: overall == null && !canReport
           ? null
-          : Text(
-              '${overall.round()}%',
-              style: TextStyle(
-                fontFamily: AppText.family,
-                color: _tone(overall),
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // الشهادة المدرسية بالفصل الأول أو الفصلين — `ReportCardModal`
+                if (canReport)
+                  TextButton(
+                    onPressed: () => showReportCardsSheet(
+                      context,
+                      store,
+                      cards: [studentReportCard(store, student)],
+                      title: 'شهادة ${student.fullName}',
+                    ),
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                    child: const Text('الشهادة', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
+                if (overall != null)
+                  Text(
+                    '${overall.round()}%',
+                    style: TextStyle(
+                      fontFamily: AppText.family,
+                      color: _tone(overall),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+              ],
             ),
       children: [
         if (bySubject.isEmpty)

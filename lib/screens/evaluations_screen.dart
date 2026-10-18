@@ -7,6 +7,7 @@ import '../data/monthly_averages.dart';
 import '../data/store.dart';
 import '../data/arabic_search.dart';
 import '../models/models.dart';
+import 'report_cards_sheet.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
@@ -37,6 +38,12 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
   String type = 'all';
   /// فلتر الفصل الدراسي — مطابق لـ `selectedTerm` في الويب.
   String termFilter = 'all';
+
+  /// ترتيب طلاب المادة: أبجدي افتراضياً، أو بالنتيجة من الأعلى.
+  bool sortByResult = false;
+
+  /// يُفتح على شعبة واحدة (أول صف وأول شعبة) وعلى الفصل الحالي مرة واحدة، لا على كل الكشوف.
+  bool _scopeReady = false;
 
   @override
   void dispose() {
@@ -81,17 +88,38 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
   Widget _weightedBody(AppStore store) {
     final q = search.text.trim().toLowerCase();
     final rooms = store.roomsInViewedYear;
+    // الصفوف بترتيب الإعدادات، ثم ما في السجلات وليس فيها
+    final options = store.gradeOptions;
+    int gradeRank(String g) {
+      final i = options.indexWhere((x) => isSameGrade(x, g));
+      return i < 0 ? options.length : i;
+    }
+
     final grades = <String>{
       for (final r in rooms)
         if (r.gradeLevel.trim().isNotEmpty) r.gradeLevel.trim(),
       for (final s in store.studentsInViewedYear)
         if (s.gradeLevel.trim().isNotEmpty) s.gradeLevel.trim(),
     }.toList()
-      ..sort();
+      ..sort((a, b) {
+        final byRank = gradeRank(a).compareTo(gradeRank(b));
+        return byRank != 0 ? byRank : a.compareTo(b);
+      });
+    List<Classroom> roomsOf(String grade) => rooms.where((r) => isSameGrade(r.gradeLevel, grade)).toList();
 
-    final roomsForGrade = gradeFilter == 'all'
-        ? rooms
-        : rooms.where((r) => isSameGrade(r.gradeLevel, gradeFilter)).toList();
+    if (!_scopeReady && grades.isNotEmpty) {
+      _scopeReady = true;
+      gradeFilter = grades.first;
+      roomFilter = roomsOf(grades.first).firstOrNull?.id ?? 'all';
+      termFilter = termForDate(isoDate(DateTime.now()), term2Start: store.viewedAcademicYear?.term2Start);
+    }
+
+    // شعبة كل طالب: طالب معروفة شعبته يُحكم بها، فلا يظهر طلاب شعبة أخرى من مادة مشتركة
+    final roomOfStudent = <String, String>{
+      for (final s in store.studentsInViewedYear)
+        if (s.section.trim().isNotEmpty)
+          if (rooms.where((r) => studentBelongsToRoom(s, r)).firstOrNull case final r?) s.id: r.id,
+    };
 
     final groups = store.groupsInViewedYear.where((g) {
       if (gradeFilter != 'all' && g.gradeLevel.isNotEmpty && !isSameGrade(g.gradeLevel, gradeFilter)) {
@@ -116,14 +144,15 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
         if (!studentOk && !groupOk) return false;
       }
       if (roomFilter != 'all') {
-        final room = store.roomById(roomFilter);
-        final studentOk = student != null && room != null && studentBelongsToRoom(student, room);
-        final groupOk = group != null && group.includesRoom(roomFilter);
-        if (!studentOk && !groupOk) return false;
+        final studentRoom = roomOfStudent[e.studentId];
+        if (studentRoom != null ? studentRoom != roomFilter : !(group != null && group.includesRoom(roomFilter))) {
+          return false;
+        }
       }
       if (groupId != 'all' && e.groupId != groupId) return false;
       if (type != 'all' && e.type != type) return false;
-      if (termFilter != 'all' && e.term != termFilter) return false;
+      // تقييم بلا فصل يبقى ظاهراً في كل الفصول
+      if (termFilter != 'all' && e.term.isNotEmpty && e.term != termFilter) return false;
       if (q.isEmpty) return true;
       final name = (student?.fullName ?? '').toLowerCase();
       return name.contains(q) || e.title.toLowerCase().contains(q);
@@ -141,7 +170,13 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
       return subject.isNotEmpty && subject != 'غير محدد' ? subject : g.name;
     }
 
-    final groupIds = byGroup.keys.toList()..sort((a, b) => groupTitle(a).compareTo(groupTitle(b)));
+    // المواد بترتيب صفوفها كما في الإعدادات، ثم بأسمائها
+    final groupIds = byGroup.keys.toList()
+      ..sort((a, b) {
+        final byGrade = gradeRank(store.groupById(a)?.gradeLevel ?? '').compareTo(gradeRank(store.groupById(b)?.gradeLevel ?? ''));
+        return byGrade != 0 ? byGrade : compareArabicNames(groupTitle(a), groupTitle(b));
+      });
+    final classSelected = gradeFilter != 'all' || roomFilter != 'all';
 
     final activeFilters =
         [gradeFilter, roomFilter, groupId, termFilter, type].where((v) => v != 'all').length;
@@ -151,6 +186,23 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
       appBar: AppBar(
         title: const Text('الدرجات والتقييمات'),
         actions: [
+          // شهادات الصف أو الشعبة المختارة دفعة واحدة، أو كشف نتائجها بالترتيب
+          PopupMenuButton<bool>(
+            tooltip: classSelected ? 'الشهادات' : 'اختر الصف أو الشعبة أولاً',
+            enabled: classSelected,
+            icon: const Icon(Icons.workspace_premium_outlined),
+            onSelected: (summary) => openClassReportCards(
+              context,
+              store,
+              roomId: roomFilter == 'all' ? null : roomFilter,
+              grade: gradeFilter == 'all' ? '' : gradeFilter,
+              summary: summary,
+            ),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: false, child: Text('شهادات الصف')),
+              PopupMenuItem(value: true, child: Text('كشف النتائج')),
+            ],
+          ),
           IconButton(
             tooltip: 'تنزيل الكشف',
             icon: const Icon(Icons.print_outlined),
@@ -198,7 +250,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                           onTap: () => _openFilters(
                             store,
                             grades: grades,
-                            rooms: roomsForGrade,
+                            rooms: rooms,
                             groups: groups,
                           ),
                         ),
@@ -232,6 +284,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                               title: groupTitle(page[i]),
                               group: store.groupById(page[i]),
                               evaluations: byGroup[page[i]]!,
+                              sortByResult: sortByResult,
                               onDelete: store.canEditGrades ? (e) => _delete(context, store, e) : null,
                             ),
                           );
@@ -339,17 +392,25 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                       shrinkWrap: true,
                       padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
                       children: [
-                        group('المرحلة', {'all': 'الكل', for (final g in grades) g: g}, gradeFilter, (v) {
-                          gradeFilter = v;
-                          roomFilter = 'all';
-                          groupId = 'all';
-                        }),
+                        // الصف والشعبة بقائمة واحدة: الشعبة تحت صفها
                         group(
-                          'الشعبة',
-                          {'all': 'الكل', for (final r in rooms) r.id: r.name},
-                          roomFilter,
+                          'الصف',
+                          {
+                            'all': 'كل الصفوف',
+                            for (final g in grades) ...{
+                              if (rooms.where((r) => isSameGrade(r.gradeLevel, g)).length != 1)
+                                'grade:$g': rooms.any((r) => isSameGrade(r.gradeLevel, g)) ? '$g - كل الشعب' : g,
+                              for (final r in rooms.where((r) => isSameGrade(r.gradeLevel, g))) r.id: '$g - ${r.name}',
+                            },
+                            for (final r in rooms.where((r) => r.gradeLevel.trim().isEmpty)) r.id: r.name,
+                          },
+                          roomFilter != 'all' ? roomFilter : (gradeFilter != 'all' ? 'grade:$gradeFilter' : 'all'),
                           (v) {
-                            roomFilter = v;
+                            final room = rooms.where((r) => r.id == v).firstOrNull;
+                            gradeFilter = room != null
+                                ? (room.gradeLevel.trim().isEmpty ? 'all' : room.gradeLevel.trim())
+                                : (v.startsWith('grade:') ? v.substring(6) : 'all');
+                            roomFilter = room?.id ?? 'all';
                             groupId = 'all';
                           },
                         ),
@@ -373,6 +434,12 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                           {'all': 'الكل', for (final e in evaluationTypeNames.entries) e.key: e.value},
                           type,
                           (v) => type = v,
+                        ),
+                        group(
+                          'ترتيب الطلاب',
+                          const {'name': 'أبجدي', 'result': 'حسب النتيجة'},
+                          sortByResult ? 'result' : 'name',
+                          (v) => sortByResult = v == 'result',
                         ),
                       ],
                     ),
@@ -815,12 +882,16 @@ class _GroupSection extends StatefulWidget {
     required this.title,
     required this.group,
     required this.evaluations,
+    this.sortByResult = false,
     this.onDelete,
   });
 
   final String title;
   final Group? group;
   final List<Evaluation> evaluations;
+
+  /// الطلاب بالنتيجة من الأعلى بدل الأبجدي.
+  final bool sortByResult;
   final void Function(Evaluation)? onDelete;
 
   @override
@@ -841,12 +912,17 @@ class _GroupSectionState extends State<_GroupSection> {
     for (final e in widget.evaluations) {
       byStudent.putIfAbsent(e.studentId, () => []).add(e);
     }
-    final students = byStudent.keys.toList()
-      ..sort((a, b) => compareArabicNames(store.studentById(a)?.fullName, store.studentById(b)?.fullName));
-    final visibleStudents = listPage(students, visibleCount);
-
     int averageOf(List<Evaluation> rows) =>
         rows.isEmpty ? 0 : (rows.fold<int>(0, (a, e) => a + e.percent) / rows.length).round();
+    final students = byStudent.keys.toList()
+      ..sort((a, b) {
+        if (widget.sortByResult) {
+          final byResult = averageOf(byStudent[b]!).compareTo(averageOf(byStudent[a]!));
+          if (byResult != 0) return byResult;
+        }
+        return compareArabicNames(store.studentById(a)?.fullName, store.studentById(b)?.fullName);
+      });
+    final visibleStudents = listPage(students, visibleCount);
     final average = averageOf(widget.evaluations);
 
     final meta = [
