@@ -10,6 +10,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'play_store.dart';
+
 /// ما يحتاجه التحديث من نظام التشغيل، مجرَّداً كي يُختبر بلا جهاز.
 abstract class DownloadNotifier {
   /// إشعارٌ ثابت بشريط تقدّم، ومعه ما يُبقي التنزيل يعمل خارج التطبيق.
@@ -62,6 +64,7 @@ class AndroidDownloadNotifier implements DownloadNotifier {
   }
 }
 
-/// المتاح على هذا الجهاز.
+/// المتاح على هذا الجهاز. نسخة المتجر بلا خدمة في المقدمة: Google تطلب لها فيديو
+/// تبرير، فالتنزيل فيها يكمل والتطبيق على الشاشة.
 DownloadNotifier defaultDownloadNotifier() =>
-    !kIsWeb && Platform.isAndroid ? const AndroidDownloadNotifier() : const SilentDownloadNotifier();
+    !kIsWeb && Platform.isAndroid && !playStore ? const AndroidDownloadNotifier() : const SilentDownloadNotifier();
