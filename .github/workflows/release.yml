@@ -78,6 +78,15 @@ jobs:
 
       - run: flutter pub get
 
+      # اعتماد أُضيف لـ pubspec دون قفله: يُقفل هنا بإصدار Flutter نفسه، ويُرفع مع كوميت الإصدار
+      - name: Commit pubspec.lock
+        run: |
+          if ! git diff --quiet -- pubspec.lock; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "pubspec.lock" -- pubspec.lock
+          fi
+
       - name: Publish
         env:
           ACTION: ${{ inputs.action }}
