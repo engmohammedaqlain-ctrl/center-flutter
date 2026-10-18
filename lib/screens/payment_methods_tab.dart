@@ -335,7 +335,10 @@ class _MethodCard extends StatelessWidget {
                       method.accountNumber,
                       textDirection: TextDirection.ltr,
                       style: const TextStyle(color: AppColors.muted, fontSize: 11.5, fontFamily: 'monospace'),
-                    ),
+                    )
+                  // ولي الأمر يراها في البوابة ولا يعرف إلى أين يحوّل
+                  else if (method.type != 'cash' && method.showInPortal)
+                    const Text('بلا رقم', style: TextStyle(color: Color(0xFFB45309), fontSize: 11.5)),
                   const SizedBox(height: 2),
                   Text(
                     [

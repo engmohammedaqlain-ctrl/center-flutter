@@ -1948,6 +1948,9 @@ class PortalService {
     if (value <= 0) throw const PortalException('أدخل مبلغاً صحيحاً');
     if (senderName.trim().isEmpty) throw const PortalException('أدخل اسم صاحب الحساب المحوِّل');
     if (images.isEmpty) throw const PortalException('أرفق صورة الإشعار');
+    if (transferDate.isNotEmpty && transferDate.compareTo(isoDate(DateTime.now())) > 0) {
+      throw const PortalException('تاريخ التحويل بعد اليوم');
+    }
     if (images.length > maxRequestImages) throw const PortalException('$maxRequestImages صور على الأكثر');
 
     final id = _uuid.v4();

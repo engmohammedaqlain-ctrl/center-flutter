@@ -83,7 +83,11 @@ class _ParentRequestCardState extends State<ParentRequestCard> {
               [
                 'من ${r.senderName}',
                 if (r.transferChannel.isNotEmpty) 'إلى ${r.transferChannel}',
-                if (r.transferDate.isNotEmpty) r.transferDate,
+                // تاريخ التحويل حين يختلف عن يوم الإرسال وحده
+                if (r.transferDate.isNotEmpty &&
+                    r.transferDate.split('T').first !=
+                        isoDate((DateTime.tryParse(r.createdAt ?? '') ?? DateTime.now()).toLocal()))
+                  'تحويل ${r.transferDate.split('T').first}',
                 if (r.referenceNumber.isNotEmpty) 'مرجع ${r.referenceNumber}',
               ].join('  ·  '),
               style: const TextStyle(color: AppColors.text, fontSize: 11.5, height: 1.4),

@@ -238,11 +238,10 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
     text: widget.user.name.trim().isNotEmpty && widget.user.name != 'ولي الأمر' ? widget.user.name.trim() : '',
   );
   final channel = TextEditingController();
-  final reference = TextEditingController();
   final notes = TextEditingController();
   List<({String id, String name, String accountNumber})> methods = const [];
 
-  /// الوسيلة المختارة؛ الفارغ = جهة أخرى تُكتب باليد.
+  /// الوسيلة المختارة؛ الفارغ = لا وسائل للمدرسة، فالجهة تُكتب باليد.
   String methodId = '';
   String date = isoDate(DateTime.now());
   final images = <String>[];
@@ -284,7 +283,6 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
     amount.dispose();
     sender.dispose();
     channel.dispose();
-    reference.dispose();
     notes.dispose();
     super.dispose();
   }
@@ -338,7 +336,6 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
         paymentMethod: methodId,
         transferChannel: methodId.isNotEmpty ? (methodName ?? '') : channel.text,
         transferDate: date,
-        referenceNumber: reference.text,
         notes: notes.text,
         images: images,
       );
@@ -362,34 +359,29 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
         child: ListView(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + MediaQuery.viewInsetsOf(context).bottom),
           children: [
-            const FieldLabel('المبلغ المحوَّل (شيكل)'),
-            TextField(
-              controller: amount,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 12),
-            const FieldLabel('اسم صاحب الحساب المحوِّل'),
-            TextField(controller: sender, onChanged: (_) => setState(() {})),
-            const SizedBox(height: 12),
-            const FieldLabel('إلى أين حوّلت'),
+            const FieldLabel('حوّل إلى'),
             if (methods.isNotEmpty)
               AppDropdown<String>(
                 value: methodId,
                 items: [
                   for (final m in methods) DropdownMenuItem(value: m.id, child: Text(m.name)),
-                  const DropdownMenuItem(value: '', child: Text('جهة أخرى')),
                 ],
                 onChanged: (v) => setState(() {
                   methodId = v ?? '';
                   copied = false;
                 }),
+              )
+            else
+              TextField(
+                controller: channel,
+                decoration: const InputDecoration(hintText: 'اسم البنك أو المحفظة'),
+                onChanged: (_) => setState(() {}),
               ),
             // رقم الحساب أو المحفظة: يحوّل إليه ولي الأمر دون أن يسأل المدرسة عنه
             if ((_method?.accountNumber ?? '').isNotEmpty) ...[
               const SizedBox(height: 8),
               Container(
-                padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 8, 8),
+                padding: const EdgeInsetsDirectional.fromSTEB(12, 6, 8, 6),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
@@ -398,23 +390,16 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(_method!.name,
-                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.muted)),
-                          const SizedBox(height: 2),
-                          SelectableText(
-                            _method!.accountNumber,
-                            textDirection: TextDirection.ltr,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                              fontFamily: 'monospace',
-                              color: AppColors.navy,
-                            ),
-                          ),
-                        ],
+                      child: SelectableText(
+                        _method!.accountNumber,
+                        textDirection: TextDirection.ltr,
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          fontFamily: 'monospace',
+                          color: widget.accent,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -433,14 +418,6 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
                 ),
               ),
             ],
-            if (methodId.isEmpty) ...[
-              if (methods.isNotEmpty) const SizedBox(height: 8),
-              TextField(
-                controller: channel,
-                decoration: const InputDecoration(hintText: 'اسم البنك أو المحفظة'),
-                onChanged: (_) => setState(() {}),
-              ),
-            ],
             const SizedBox(height: 12),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -449,11 +426,11 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const FieldLabel('تاريخ التحويل'),
-                      OutlinedButton.icon(
-                        onPressed: _pickDate,
-                        icon: const Icon(Icons.calendar_today_outlined, size: 16),
-                        label: Text(date),
+                      const FieldLabel('المبلغ (شيكل)'),
+                      TextField(
+                        controller: amount,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        onChanged: (_) => setState(() {}),
                       ),
                     ],
                   ),
@@ -463,15 +440,15 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const FieldLabel('رقم الحركة'),
-                      TextField(controller: reference, textDirection: TextDirection.ltr),
+                      const FieldLabel('اسم المحوِّل'),
+                      TextField(controller: sender, onChanged: (_) => setState(() {})),
                     ],
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            FieldLabel('صور الإشعار (حتى $maxRequestImages)'),
+            const FieldLabel('صورة الإشعار'),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -515,7 +492,23 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
               ],
             ),
             const SizedBox(height: 12),
-            const FieldLabel('ملاحظة للمالية'),
+            Row(
+              children: [
+                const Expanded(child: Text('تاريخ التحويل', style: TextStyle(fontSize: 11.5, color: AppColors.muted))),
+                OutlinedButton(
+                  onPressed: _pickDate,
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: AppColors.muted,
+                    side: const BorderSide(color: AppColors.line),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: Text(date, textDirection: TextDirection.ltr, style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const FieldLabel('ملاحظة'),
             TextField(controller: notes, minLines: 1, maxLines: 3, decoration: const InputDecoration(hintText: 'مثال: عن قسط شهر 10')),
             if (error.isNotEmpty) ...[
               const SizedBox(height: 12),
