@@ -8,6 +8,7 @@ import 'data/db_platform.dart';
 import 'data/local_db.dart';
 import 'data/portal.dart';
 import 'data/phone.dart';
+import 'data/play_store.dart';
 import 'data/portal_offline.dart';
 import 'data/push.dart';
 import 'data/school_brand.dart';
@@ -25,7 +26,7 @@ import 'theme/app_theme.dart';
 import 'widgets/auth_frame.dart';
 import 'widgets/animated_count.dart';
 import 'widgets/subscription_banner.dart';
-import 'widgets/widgets.dart' show decodeLogo;
+import 'widgets/widgets.dart' show decodeLogo, launchWaWithText;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -717,6 +718,19 @@ class _LoginScreenState extends State<LoginScreen> {
             style: TextButton.styleFrom(foregroundColor: AppColors.navy, textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
           ),
         ),
+        // نسخة المتجر وحدها: صغير وباهت حتى لا يراسلنا الطلاب
+        if (playStore)
+          Center(
+            child: TextButton(
+              onPressed: () => launchWaWithText(salesWhatsApp, 'مرحبا، بدنا النظام المدرسي لمدرستنا'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.faint,
+                textStyle: const TextStyle(fontSize: 11),
+                visualDensity: VisualDensity.compact,
+              ),
+              child: const Text('لإدارات المدارس: اطلب النظام لمدرستك'),
+            ),
+          ),
       ],
     );
   }

@@ -1,0 +1,75 @@
+# نسخة Google Play: Actions ← Play Store ← Run workflow. يبني AAB موقَّعاً بمفتاح الرفع
+# ويحفظه في صفحة التشغيل (Artifacts). لا ينشر على المتجر ولا يلمس نسخ GitHub
+# (لا Release، ولا Shorebird، ولا كوميت رقم إصدار).
+#
+# الأسرار (Settings ← Secrets and variables ← Actions):
+#   PLAY_UPLOAD_KEYSTORE_BASE64   ملف play-upload.jks بصيغة base64
+#   PLAY_UPLOAD_KEY_PROPERTIES    محتوى play-key.properties (storePassword, keyPassword, keyAlias, storeFile)
+name: Play Store
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: versionCode - أكبر من آخر رقم رُفع للمتجر (فارغ = رقم pubspec)
+        type: string
+        required: false
+
+jobs:
+  aab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      # android/app/build.gradle.kts: com.noonschool.app بمفتاح الرفع
+      NOON_STORE: play
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.6'
+          channel: stable
+          cache: true
+
+      - name: Upload key
+        env:
+          KEYSTORE: ${{ secrets.PLAY_UPLOAD_KEYSTORE_BASE64 }}
+          KEY_PROPERTIES: ${{ secrets.PLAY_UPLOAD_KEY_PROPERTIES }}
+        run: |
+          if [ -z "$KEYSTORE" ] || [ -z "$KEY_PROPERTIES" ]; then
+            echo "::error::PLAY_UPLOAD_KEYSTORE_BASE64 / PLAY_UPLOAD_KEY_PROPERTIES secrets are missing"
+            exit 1
+          fi
+          # الأسرار المرفوعة من ويندوز تحمل \r: تُفسد فكّ base64 وتلتصق بكلمات السر
+          printf '%s' "$KEYSTORE" | tr -d '\r\n ' | base64 --decode > android/play-upload.jks
+          printf '%s\n' "$KEY_PROPERTIES" | tr -d '\r' | sed 's/^storeFile=.*/storeFile=play-upload.jks/' > android/play-key.properties
+          grep -q '^storeFile=' android/play-key.properties || echo 'storeFile=play-upload.jks' >> android/play-key.properties
+
+      - name: google-services.json has com.noonschool.app
+        run: |
+          grep -q '"com.noonschool.app"' android/app/google-services.json || {
+            echo "::error::android/app/google-services.json has no client for com.noonschool.app"
+            exit 1
+          }
+
+      - run: flutter pub get
+
+      - name: Build AAB
+        env:
+          BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          args=(--release --dart-define=STORE=play)
+          [ -n "$BUILD_NUMBER" ] && args+=(--build-number "$BUILD_NUMBER")
+          flutter build appbundle "${args[@]}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: noonschool-play-${{ github.run_number }}
+          path: build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30

@@ -6,6 +6,9 @@
 /// الإقلاع وشاشة الدخول هوية المدرسة من أول فتح — بلا إنترنت وقبل أي حساب —
 /// ويطلب التطبيق تحديثاته من نسخة مدرسته فتبقى أيقونتها.
 ///
+/// نسخة المتجر واحدة لكل المدارس: كودها من رابط التنزيل (`referrer=school%3DCODE`)،
+/// يُقرأ مرة بعد التثبيت ويُحفظ، ثم تُجلب الهوية من السحابة كما في نسخ المدارس.
+///
 /// الكود تسهيلٌ لا صلاحية: الدخول والبيانات تحكمها الحسابات كما قبل.
 library;
 
@@ -17,6 +20,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'institution.dart';
+import 'play_store.dart';
 import 'supabase.dart';
 
 /// اسم المدرسة وشعارها وألوانها كما في صفحة تحميلها.
@@ -59,8 +63,10 @@ class SchoolBrand extends ChangeNotifier {
   SchoolBrand({
     Future<String> Function()? readAsset,
     Future<SchoolIdentity?> Function(String code)? fetch,
+    Future<String?> Function()? readReferrer,
   })  : _readAsset = readAsset ?? (() => rootBundle.loadString('assets/school.json')),
-        _fetch = fetch ?? _fetchIdentity;
+        _fetch = fetch ?? _fetchIdentity,
+        _readReferrer = readReferrer ?? (playStore ? readInstallReferrer : null);
 
   static final instance = SchoolBrand();
 
@@ -69,8 +75,14 @@ class SchoolBrand extends ChangeNotifier {
   static const _kColors = 'school_brand_colors';
   static const _kCode = 'school_brand_code';
 
+  /// كود رابط التنزيل في نسخة المتجر؛ فارغ = قُرئ ولم يحمل مدرسة.
+  static const _kReferrer = 'school_referrer_code';
+
   final Future<String> Function() _readAsset;
   final Future<SchoolIdentity?> Function(String code) _fetch;
+
+  /// نص الإحالة من المتجر، أو `null` في نسخ GitHub.
+  final Future<String?> Function()? _readReferrer;
 
   /// كود المدرسة المكتوب في هذه النسخة.
   String? code;
@@ -97,7 +109,10 @@ class SchoolBrand extends ChangeNotifier {
       return;
     }
     code = parseSchoolAsset(raw);
-    if (code == null) return;
+    if (code == null) {
+      if (_readReferrer != null) await _savedReferrer();
+      return;
+    }
     final identity = parseSchoolAssetIdentity(raw);
     if (identity != null) _set(identity);
   }
@@ -107,6 +122,7 @@ class SchoolBrand extends ChangeNotifier {
 
   Future<void> _load() async {
     await readBundled();
+    if (code == null && _readReferrer != null) await _askReferrer();
     final c = code;
     if (c == null) return;
 
@@ -123,6 +139,27 @@ class SchoolBrand extends ChangeNotifier {
     } catch (_) {}
     notifyListeners();
     unawaited(_refresh(c));
+  }
+
+  /// كود رابط التنزيل المحفوظ من أول فتح — محلي وسريع.
+  Future<void> _savedReferrer() async {
+    try {
+      final saved = (await SharedPreferences.getInstance()).getString(_kReferrer);
+      if (saved != null && saved.isNotEmpty) code = saved;
+    } catch (_) {}
+  }
+
+  /// يُسأل المتجر مرة بعد التثبيت، ويُحفظ ما قاله ولو لم يحمل مدرسة.
+  Future<void> _askReferrer() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.containsKey(_kReferrer)) return;
+      final raw = await _readReferrer!();
+      // تعذّر الاتصال بالمتجر: يُعاد السؤال في الفتح التالي
+      if (raw == null) return;
+      code = parseReferrerSchool(raw);
+      await prefs.setString(_kReferrer, code ?? '');
+    } catch (_) {}
   }
 
   void _set(SchoolIdentity identity) {

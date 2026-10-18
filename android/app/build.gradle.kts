@@ -3,18 +3,25 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    // إشعارات الجوال: إعداد Firebase من google-services.json (فيه com.center.center_mobile)
+    // إشعارات الجوال: إعداد Firebase من google-services.json (فيه com.center.center_mobile وcom.noonschool.app)
     id("com.google.gms.google-services")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+// نسخة Google Play (com.noonschool.app) تُبنى بـ NOON_STORE=play
+// (.github/workflows/play-store.yml). بدونه يُبنى ما كان يُبنى قبلها حرفاً بحرف:
+// نسخ GitHub (com.center.center_mobile) بمفتاحها وتحديثها الذاتي.
+// لا productFlavors: إضافتها تغيّر مسارات المخرجات وإعداد Shorebird لنسخ GitHub.
+val playStore = System.getenv("NOON_STORE") == "play"
 
 // مفتاح التوقيع: أندرويد يرفض تثبيت تحديث موقّع بمفتاح غير مفتاح المثبَّت،
 // فالمفتاح نفسه يلازم التطبيق مدى عمره. بياناته في `android/key.properties`
 // خارج المستودع؛ وبغيابه يُوقَّع بمفتاح التصحيح ليبقى `flutter run --release`
 // عاملاً على أجهزة التطوير — لكن نسخةً كهذه لا تصلح للتوزيع.
 val keystoreProperties = Properties().apply {
-    val file = rootProject.file("key.properties")
+    // نسخة المتجر بمفتاح رفعٍ منفصل (Google يدير مفتاح توقيع التطبيق)
+    val file = rootProject.file(if (playStore) "play-key.properties" else "key.properties")
     // يُقرأ بـ UTF-8 صراحةً: `load(InputStream)` يفكّ الترميز بـ ISO-8859-1، فكلمة
     // سرٍّ غير لاتينية تصل إلى المُوقِّع محرَّفة، ويفشل التغليف بخطأٍ يقول
     // «كلمة السر خاطئة» ولا يقول لماذا.
@@ -27,16 +34,17 @@ val hasReleaseKey = keystoreProperties.getProperty("storeFile") != null
 if (hasReleaseKey) {
     val missing = listOf("storePassword", "keyAlias", "keyPassword")
         .filter { keystoreProperties.getProperty(it).isNullOrBlank() }
-    require(missing.isEmpty()) { "android/key.properties: حقول ناقصة: ${missing.joinToString()}" }
+    require(missing.isEmpty()) { "android/${if (playStore) "play-key" else "key"}.properties: حقول ناقصة: ${missing.joinToString()}" }
     require(rootProject.file(keystoreProperties.getProperty("storeFile")).exists()) {
-        "android/key.properties: لا يوجد مفتاح على المسار ${keystoreProperties.getProperty("storeFile")} " +
+        "android/${if (playStore) "play-key" else "key"}.properties: لا يوجد مفتاح على المسار ${keystoreProperties.getProperty("storeFile")} " +
             "(المسار نسبةً إلى مجلد android)"
     }
 }
 
 android {
     namespace = "com.center.center_mobile"
-    compileSdk = flutter.compileSdkVersion
+    // المتجر يطلب للتطبيقات الجديدة والتحديثات targetSdk 36 (Android 16) منذ 31 آب 2026
+    compileSdk = if (playStore) maxOf(flutter.compileSdkVersion, 36) else flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -50,11 +58,11 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.center.center_mobile"
+        applicationId = if (playStore) "com.noonschool.app" else "com.center.center_mobile"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = if (playStore) maxOf(flutter.targetSdkVersion, 36) else flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
@@ -89,6 +97,12 @@ android {
         }
     }
 
+    sourceSets {
+        // StoreReferrer: كود المدرسة من رابط المتجر، أو فارغ في نسخ GitHub
+        getByName("main").java.srcDir(if (playStore) "src/play/kotlin" else "src/github/kotlin")
+        if (playStore) getByName("release").manifest.srcFile("src/play/AndroidManifest.xml")
+    }
+
     packaging {
         resources {
             // ملفات ترخيص وبيانات وصفية لا يحتاجها التطبيق وقت التشغيل
@@ -112,4 +126,6 @@ flutter {
 dependencies {
     // FileProvider: تسليم السندات لواتساب وعارض الملفات (DocumentsBridge)
     implementation("androidx.core:core-ktx:1.13.1")
+    // نسخة المتجر: رابط التنزيل يحمل كود المدرسة (StoreReferrer)
+    if (playStore) implementation("com.android.installreferrer:installreferrer:2.2")
 }

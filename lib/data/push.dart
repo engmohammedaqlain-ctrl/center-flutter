@@ -19,10 +19,11 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 
+import 'play_store.dart';
 import 'supabase.dart';
 
-/// معرّف التطبيق الذي يُسجَّل به الجهاز: نسخ GitHub الحالية.
-const pushAppId = 'com.center.center_mobile';
+/// معرّف التطبيق الذي يُسجَّل به الجهاز: نسخة المتجر أو نسخ GitHub.
+const pushAppId = playStore ? 'com.noonschool.app' : 'com.center.center_mobile';
 
 /// إشعار لُمس أو وصل والتطبيق مفتوح.
 class PushNotice {

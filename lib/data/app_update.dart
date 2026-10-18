@@ -24,6 +24,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart' as shorebird;
 
 import 'download_notification.dart';
+import 'play_store.dart';
 
 /// ملف وصف أحدث إصدار — `latest` في GitHub يحيل دائماً إلى آخر إصدار منشور،
 /// فالرابط ثابت لا يتغيّر مع كل تحديث.
@@ -552,8 +553,8 @@ class AppUpdater extends ChangeNotifier {
         _notifier = notifier ?? defaultDownloadNotifier(),
         _wait = wait ?? Future<void>.delayed;
 
-  /// على أندرويد وحده: غيره لا يثبّت حزم APK.
-  static final instance = AppUpdater(supported: !kIsWeb && Platform.isAndroid);
+  /// على أندرويد وحده: غيره لا يثبّت حزم APK. ونسخة المتجر تتحدث من المتجر.
+  static final instance = AppUpdater(supported: !kIsWeb && Platform.isAndroid && !playStore);
 
   /// يُستدعى قبل فتح مثبِّت الـ APK: يرفع المعلّق ثم يسمح بالتثبيت.
   /// يعيد رسالة خطأ أو `null` عند النجاح.

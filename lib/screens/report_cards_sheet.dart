@@ -227,6 +227,8 @@ Future<Uint8List?> buildReportCardsPdf(
           yearLabel: yearLabel,
           logo: logo,
           stamp: stamp,
+          // صاحب الاشتراك تحت «المدير»؛ فارغ = يبقى السطر للتوقيع باليد
+          principal: store.currentTenant?.ownerName.trim() ?? '',
           pass: pass,
           rank: rank == null ? null : (place: rank, of: cards.length),
           term1End: term1End,
@@ -277,6 +279,7 @@ pw.Widget _cardPage(
   required String yearLabel,
   required pw.MemoryImage? logo,
   required pw.MemoryImage? stamp,
+  required String principal,
   required double pass,
   required ({int place, int of})? rank,
   required String term1End,
@@ -339,7 +342,7 @@ pw.Widget _cardPage(
         children: [
           _signature('مربي الصف', card.homeroomName),
           if (stamp != null) pw.Image(stamp, width: 70, height: 70),
-          _signature('المدير', ''),
+          _signature('المدير', principal),
         ],
       ),
     ],
