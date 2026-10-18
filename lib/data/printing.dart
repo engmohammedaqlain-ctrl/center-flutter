@@ -372,7 +372,8 @@ class PdfKit {
   /// اسم الملف الناتج بلا فراغات، وبلاحقة `.pdf`.
   static String fileName(String raw) {
     final base = raw.trim().replaceAll(RegExp(r'\s+'), '_');
-    if (base.toLowerCase().endsWith('.pdf')) return base;
+    // صورة الوصل تبقى بامتدادها
+    if (RegExp(r'\.(pdf|png)$', caseSensitive: false).hasMatch(base)) return base;
     return '$base.pdf';
   }
 

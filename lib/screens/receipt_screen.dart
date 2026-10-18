@@ -126,6 +126,19 @@ class _ReceiptSheetState extends State<_ReceiptSheet> {
 
   Future<Uint8List?> _pdf() => captureDocumentPdf(_document, widthMm: 140, title: _fileName);
 
+  String get _imageName => '$_fileName.png';
+
+  /// مشاركة الوصل كصورة: ورقة مشاركة النظام (واتساب أو غيره).
+  Future<void> _share() => runBusyOp(context, () async {
+        final png = await captureDocumentPng(_document);
+        if (!mounted) return;
+        if (png == null) {
+          showAppSnack(context, 'تعذّر إنشاء الصورة', error: true);
+          return;
+        }
+        await PdfKit.saveOrShare(png, _imageName, mimeType: 'image/png');
+      }, message: 'جارٍ تجهيز الصورة...');
+
   Future<void> _download() => runBusyOp(context, () async {
         final bytes = await _pdf();
         if (!mounted) return;
@@ -140,20 +153,22 @@ class _ReceiptSheetState extends State<_ReceiptSheet> {
         final store = AppStore.instance;
         final student = store.studentById(payment.studentId);
         final phone = student == null ? '' : (student.parentPhone.isNotEmpty ? student.parentPhone : student.phone);
-        final bytes = await _pdf();
+        // الوصل صورةً لولي الأمر، مع رسالة الويب نفسها
+        final png = await captureDocumentPng(_document);
         if (!mounted) return;
-        if (bytes == null) {
-          showAppSnack(context, 'تعذّر تجهيز السند', error: true);
+        if (png == null) {
+          showAppSnack(context, 'تعذّر إنشاء الصورة', error: true);
           return;
         }
         await DocExport.whatsapp(
           context,
-          bytes,
-          _fileName,
+          png,
+          _imageName,
           phone: phone,
-          caption: '${receiptViewOf(store, payment).title} رقم ${payment.receiptNumber} — ${webMoney(payment.amount.abs())}',
+          mime: 'image/png',
+          caption: receiptWhatsAppMessage(store, payment),
         );
-      }, message: 'جارٍ تجهيز السند...');
+      }, message: 'جارٍ تجهيز الصورة...');
 
   @override
   Widget build(BuildContext context) {
@@ -174,9 +189,17 @@ class _ReceiptSheetState extends State<_ReceiptSheet> {
               children: [
                 Expanded(
                   child: GhostButton(
-                    label: 'تنزيل السند (PDF)',
+                    label: 'PDF',
                     icon: Icons.download_outlined,
                     onPressed: _ready ? _download : null,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: GhostButton(
+                    label: 'مشاركة',
+                    icon: Icons.share_outlined,
+                    onPressed: _ready ? _share : null,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -203,6 +226,33 @@ class _ReceiptSheetState extends State<_ReceiptSheet> {
       ),
     );
   }
+}
+
+/// رسالة الوصل لولي الأمر — `buildReceiptMessage` في الويب.
+String receiptWhatsAppMessage(AppStore store, Payment p) {
+  final student = store.studentById(p.studentId);
+  final name = _payerName(p, student);
+  final advance = paymentAdvance(p);
+  final due = p.remainingAfter < 0 ? 0.0 : p.remainingAfter;
+  final dueText = advance > 0
+      ? '0 شيكل (يوجد رصيد مقدم: ${trimNum(advance)} شيكل)'
+      : due <= 0
+          ? '0 شيكل (مسدد حتى تاريخه)'
+          : '${trimNum(due)} شيكل';
+  return [
+    'السلام عليكم ورحمة الله وبركاته',
+    'حضرة ولي أمر الطالب/ة: *$name* المحترم',
+    '',
+    'إشعار استلام دفعة مالية:',
+    '- *رقم الوصل:* ${p.receiptNumber}',
+    '- *المبلغ:* ${trimNum(p.amount)} شيكل',
+    '- *طريقة الدفع:* ${_cleanMethod(store, p)}',
+    '- *البيان:* ${paymentPurposeLabel(p.purpose)}',
+    if (p.senderName.trim().isNotEmpty) '- *اسم المحول:* ${p.senderName.trim()}',
+    if (p.reference.trim().isNotEmpty) '- *الرقم المرجعي:* ${p.reference.trim()}',
+    '- *تاريخ الدفعة:* ${formatDate(p.date)}',
+    '- *المستحق حالياً:* $dueText',
+  ].join('\n');
 }
 
 /// طريقة السداد بلا تكرار — `cleanPaymentMethod` في ReceiptModal.

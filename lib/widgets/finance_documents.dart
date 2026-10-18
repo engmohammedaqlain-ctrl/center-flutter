@@ -762,16 +762,21 @@ class _Dashed extends StatelessWidget {
       );
 }
 
-/// المستند المعروض كما هو في ملف PDF: يُلتقط صورةً بدقة عالية ويُوضع في صفحة A4
-/// بعرض [widthMm] كطباعة الويب (140مم لسند القبض، 130مم لسند الصرف).
-Future<Uint8List?> captureDocumentPdf(GlobalKey key, {double widthMm = 140, String title = ''}) async {
+/// المستند المعروض صورةً PNG بدقة عالية — مشاركة الوصل كصورة (`captureReceiptImage`).
+Future<Uint8List?> captureDocumentPng(GlobalKey key) async {
   final boundary = key.currentContext?.findRenderObject();
   if (boundary is! RenderRepaintBoundary) return null;
   final image = await boundary.toImage(pixelRatio: 3);
   final data = await image.toByteData(format: ui.ImageByteFormat.png);
   image.dispose();
-  if (data == null) return null;
-  final png = data.buffer.asUint8List();
+  return data?.buffer.asUint8List();
+}
+
+/// المستند المعروض كما هو في ملف PDF: يُلتقط صورةً بدقة عالية ويُوضع في صفحة A4
+/// بعرض [widthMm] كطباعة الويب (140مم لسند القبض، 130مم لسند الصرف).
+Future<Uint8List?> captureDocumentPdf(GlobalKey key, {double widthMm = 140, String title = ''}) async {
+  final png = await captureDocumentPng(key);
+  if (png == null) return null;
 
   final doc = pw.Document(title: title);
   final width = widthMm * PdfPageFormat.mm;
