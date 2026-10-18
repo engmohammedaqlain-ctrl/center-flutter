@@ -1,13 +1,32 @@
 package com.center.center_mobile
 
 import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Bundle
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        createSchoolChannel()
+    }
+
+    /**
+     * قناة إشعارات ولي الأمر (الغياب والأقساط) التي يذكرها الخادم في كل رسالة
+     * (`channel_id` في push-notify). أهمية عالية: تظهر منبثقة بصوت.
+     * إنشاؤها مرة ثانية لا يغيّر ما عدّله المستخدم فيها.
+     */
+    private fun createSchoolChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val channel = NotificationChannel(SCHOOL_CHANNEL, "المدرسة", NotificationManager.IMPORTANCE_HIGH)
+        getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -56,6 +75,7 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val CHANNEL = "center/update_download"
+        private const val SCHOOL_CHANNEL = "school"
         private const val NOTIFY_REQUEST = 4711
     }
 }

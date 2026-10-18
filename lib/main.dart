@@ -9,6 +9,7 @@ import 'data/local_db.dart';
 import 'data/portal.dart';
 import 'data/phone.dart';
 import 'data/portal_offline.dart';
+import 'data/push.dart';
 import 'data/school_brand.dart';
 import 'data/store.dart';
 import 'data/supabase.dart';
@@ -509,6 +510,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!result.ok) {
       if (result.offline) return;
+      await ParentPush.instance.unregister();
       await _appStore.clearPortalSession();
       await PortalOffline(_appStore.db).clear();
       await supabaseSignOut();
@@ -599,6 +601,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
     // الخروج يُنهي جلسة البوابة: لا تبقى صلاحيات طالب أو ولي أمر على الجهاز
     Future<void> exit() async {
+      // قبل إنهاء الجلسة: لا تصل الجهاز إشعارات من كان عليه
+      if (account.isParent) await ParentPush.instance.unregister();
       await _appStore.clearPortalSession();
       // ولا تبقى كشوف صفوفه معروضة لمن يدخل بعده
       await PortalOffline(_appStore.db).clear();

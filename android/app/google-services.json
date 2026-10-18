@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "893320479043",
+    "project_id": "noon-school-app",
+    "storage_bucket": "noon-school-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:893320479043:android:36895a4196487ab4226ff6",
+        "android_client_info": {
+          "package_name": "com.center.center_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAYLgX3RElpwXS0jguDjW_wXMCl4Gapcgc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:893320479043:android:caec2b0aa1af2a5a226ff6",
+        "android_client_info": {
+          "package_name": "com.noon.school"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAYLgX3RElpwXS0jguDjW_wXMCl4Gapcgc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

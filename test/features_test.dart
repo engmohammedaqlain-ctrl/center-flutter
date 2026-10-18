@@ -29,6 +29,16 @@ void main() {
     expect(tabs, isNot(contains('attendance')));
   });
 
+  test('إشعارات الجوال مفعّلة افتراضاً وتنطفئ مع بوابة ولي الأمر', () {
+    final defaults = resolveFeatures(null);
+    final noParent = resolveFeatures({'portal.parent': false});
+    for (final key in pushFeatures) {
+      expect(defaults[key], isTrue, reason: key);
+      expect(noParent[key], isFalse, reason: key);
+    }
+    expect(resolveFeatures({'notify.absence': false})['notify.installments'], isTrue);
+  });
+
   test('normalizeLimits يحذف غير الموجب', () {
     final limits = normalizeLimits({'max_students': '250', 'max_storage_mb': 0});
     expect(limits.maxStudents, 250);

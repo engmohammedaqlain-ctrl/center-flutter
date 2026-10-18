@@ -6,6 +6,7 @@ import '../data/features.dart';
 import '../data/grading.dart';
 import '../data/institution.dart';
 import '../data/portal.dart';
+import '../data/push.dart';
 import '../data/realtime.dart';
 import '../data/store.dart';
 import '../models/models.dart';
@@ -92,6 +93,8 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       loading = true;
       sections = const [];
     });
+    // الجلسة الآن على هذا الابن: الجهاز يُسجَّل معه
+    unawaited(ParentPush.instance.register());
     await _load();
   }
 
@@ -139,6 +142,35 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     super.initState();
     _load();
     _startPortalRealtime();
+    if (isParent) {
+      _pushSubs = [
+        ParentPush.instance.opened.listen(_openNotice),
+        ParentPush.instance.received.listen(_showNotice),
+      ];
+      unawaited(ParentPush.instance.register());
+    }
+  }
+
+  List<StreamSubscription<PushNotice>> _pushSubs = const [];
+
+  /// إشعار لُمس: ملف الطالب الذي يخصه، على تبويبه.
+  Future<void> _openNotice(PushNotice notice) async {
+    if (!mounted) return;
+    if (notice.studentId.isNotEmpty && notice.studentId != user.id) {
+      final child = user.children.where((c) => c.id == notice.studentId).firstOrNull;
+      if (child == null) return;
+      await _switchChild(child);
+      if (!mounted || user.id != notice.studentId) return;
+    }
+    final tab = notice.tab;
+    if (tab != null && _navItems.any((n) => n.id == tab)) _selectTab(tab);
+  }
+
+  /// إشعار وصل والبوابة مفتوحة: أندرويد لا يعرضه، فيظهر هنا ويُحدَّث الملف.
+  void _showNotice(PushNotice notice) {
+    if (!mounted || notice.body.isEmpty) return;
+    showAppSnack(context, notice.body);
+    if (notice.studentId == user.id) unawaited(_load(silent: true));
   }
 
   PortalRealtime? _portalRt;
@@ -168,6 +200,9 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
 
   @override
   void dispose() {
+    for (final sub in _pushSubs) {
+      unawaited(sub.cancel());
+    }
     unawaited(_portalRt?.disconnect() ?? Future.value());
     super.dispose();
   }
