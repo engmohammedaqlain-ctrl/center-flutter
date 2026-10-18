@@ -22,6 +22,7 @@ import 'payment_methods.dart';
 import 'permissions.dart';
 import 'portal.dart';
 import 'portal_offline.dart';
+import 'push.dart';
 import 'system_features.dart';
 import 'phone.dart';
 import 'realtime.dart';
@@ -4399,6 +4400,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   Future<void> logout() async {
     await flush();
+    // قبل إنهاء الجلسة: لا تصل الجهاز طلبات المنشأة بعد الخروج
+    await ParentPush.instance.unregister();
     stopAutoSync();
     await stopRealtime();
     await supabaseSignOut();

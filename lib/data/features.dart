@@ -22,6 +22,7 @@ const featureKeys = <String>[
   'portal.finance',
   'notify.absence',
   'notify.installments',
+  'notify.payments',
 ];
 
 typedef FeatureState = Map<String, bool>;
@@ -169,11 +170,17 @@ const features = <String, FeatureDef>{
     group: FeatureGroup.familyPortal,
     defaultOn: true,
     requires: ['portal.parent'],
+  ),  'notify.payments': FeatureDef(
+    label: 'إشعار الدفعات',
+    description: 'إشعار جوال بكل دفعة وبقبول الحوالة أو رفضها',
+    group: FeatureGroup.familyPortal,
+    defaultOn: true,
+    requires: ['portal.parent'],
   ),
 };
 
 /// إشعارات الجوال لولي الأمر: يفحصها الخادم مع `portal.parent` قبل أن يبعث.
-const pushFeatures = ['notify.absence', 'notify.installments'];
+const pushFeatures = ['notify.absence', 'notify.installments', 'notify.payments'];
 
 /// أقسام الإدارة المرتبطة بميزة.
 const sectionFeature = <String, String>{

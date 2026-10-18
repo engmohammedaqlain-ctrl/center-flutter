@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../data/app_update.dart';
+import '../data/push.dart';
 import '../data/store.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
@@ -56,6 +57,34 @@ class _AppShellState extends State<AppShell> {
     // حمّل جداول المالية في الخلفية بعد استقرار الشاشة — حتى لا يبدأ التحميل
     // الثقيل لحظة الضغط على التبويب ويُجمَّد مؤشر التحميل.
     WidgetsBinding.instance.addPostFrameCallback((_) => _prefetchFinance());
+    // جهاز المدير تصله الحوالات وطلبات الموافقة؛ الخادم يرفض تسجيل بقية الأدوار
+    _pushSubs = [
+      ParentPush.instance.opened.listen(_openNotice),
+      ParentPush.instance.received.listen(_showNotice),
+    ];
+    unawaited(ParentPush.instance.register());
+  }
+
+  List<StreamSubscription<PushNotice>> _pushSubs = const [];
+
+  @override
+  void dispose() {
+    for (final sub in _pushSubs) {
+      unawaited(sub.cancel());
+    }
+    super.dispose();
+  }
+
+  /// طلب موافقة لُمس: المالية، وفيها الطلبات المعلقة.
+  void _openNotice(PushNotice notice) {
+    if (!mounted || notice.kind != 'approval') return;
+    if (StoreScope.of(context).canOpenSection('finance')) setState(() => current = 'finance');
+  }
+
+  /// وصل والتطبيق مفتوح: أندرويد لا يعرضه، فيظهر هنا.
+  void _showNotice(PushNotice notice) {
+    if (!mounted || notice.body.isEmpty) return;
+    showAppSnack(context, notice.body);
   }
 
   void _prefetchFinance() {

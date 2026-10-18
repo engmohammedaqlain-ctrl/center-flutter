@@ -1,4 +1,7 @@
-/// إشعارات الجوال لولي الأمر (Firebase Cloud Messaging) — أندرويد وحده.
+/// إشعارات الجوال لولي الأمر وللمدير (Firebase Cloud Messaging) — أندرويد وحده.
+///
+/// المدير (المالك أو موظف بدور مدير) يُسجَّل جهازه بعد دخوله، فتصله الحوالات وطلبات
+/// الموافقة (`kind: approval`). والخادم يرفض تسجيل بقية الأدوار.
 ///
 /// بعد دخول ولي الأمر، ومع كل ابن يبدّل إليه، يُسجَّل توكن الجهاز على الخادم
 /// (`register_push_device`) بجلسته؛ والخادم يأخذ المنشأة والطالب من الجلسة لا من
@@ -25,7 +28,7 @@ const pushAppId = 'com.center.center_mobile';
 class PushNotice {
   const PushNotice({required this.kind, required this.studentId, this.title = '', this.body = ''});
 
-  /// `absence` أو `installments` أو `test`.
+  /// `absence` أو `installments` أو `payment` لولي الأمر، `approval` للمدير، أو `test`.
   final String kind;
   final String studentId;
   final String title;
@@ -34,7 +37,7 @@ class PushNotice {
   /// التبويب الذي يُفتح عليه ملف الطالب.
   String? get tab => switch (kind) {
         'absence' => 'attendance',
-        'installments' => 'financial',
+        'installments' || 'payment' => 'financial',
         _ => null,
       };
 
