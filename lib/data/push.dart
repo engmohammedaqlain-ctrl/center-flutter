@@ -127,12 +127,16 @@ class ParentPush {
     if (!_ready) return;
     await _refresh?.cancel();
     _refresh = null;
+    // شبكة ضعيفة لا تعلّق الخروج: بعد المهلة يكمل، ويبقى الجهاز مسجلاً حتى يدخل عليه أحد فيُكتب فوقه
     try {
-      final token = _token ?? await FirebaseMessaging.instance.getToken();
-      _token = null;
-      if (token != null && token.isNotEmpty) {
-        await supabaseRpc('unregister_push_device', {'p_token': token});
-      }
+      await () async {
+        final token = _token ?? await FirebaseMessaging.instance.getToken();
+        _token = null;
+        if (token != null && token.isNotEmpty) {
+          await supabaseRpc('unregister_push_device', {'p_token': token});
+        }
+      }()
+          .timeout(const Duration(seconds: 4));
     } catch (e) {
       debugPrint('push unregister: $e');
     }
