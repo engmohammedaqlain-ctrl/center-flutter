@@ -2329,6 +2329,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     required String expenseDate,
     String method = 'cash',
     String notes = '',
+    String kind = 'expense',
   }) {
     requireSection('finance.expenses');
     final desc = description.trim();
@@ -2346,6 +2347,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       recordedByName: receiptReceiver,
       method: method,
       notes: notes.trim(),
+      kind: kind,
       syncStatus: 'pending',
       createdAt: now,
       updatedAt: now,

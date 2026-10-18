@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../data/arabic_search.dart';
+import '../data/profit_report.dart';
 import '../data/store.dart';
 import '../data/teacher_salary.dart';
 import '../models/models.dart';
@@ -18,6 +19,7 @@ import '../widgets/widgets.dart';
 import 'expense_form_sheet.dart';
 import 'payment_form_screen.dart';
 import 'payment_requests_panel.dart';
+import 'profit_report_panel.dart';
 import 'expense_voucher_screen.dart';
 import 'general_income_sheet.dart';
 import 'receipt_screen.dart';
@@ -37,7 +39,7 @@ class FinanceScreen extends StatefulWidget {
 }
 
 /// التبويبات بترتيب الويب.
-enum _Tab { dues, payments, expenses, controls }
+enum _Tab { dues, payments, expenses, profits, controls }
 
 class _FinanceScreenState extends State<FinanceScreen> {
   _Tab tab = _Tab.dues;
@@ -152,8 +154,18 @@ class _FinanceScreenState extends State<FinanceScreen> {
           ))
       .toList();
 
-  /// صافي الفترة: المقبوض فعلاً (بتاريخ قبضه) ناقص المصروفات والرواتب.
-  ({double received, double spent, double net}) _periodNet(AppStore store) {
+  /// مدى الفترة المختارة؛ «كل الأعوام» من أول عام إلى آخره — `periodRange`.
+  ({String from, String to}) _periodRange(AppStore store) {
+    final year = financeYearFilter == 'all' ? null : _filterYear(store);
+    if (year != null) return academicRange(year, termFilter);
+    final starts = [for (final y in store.academicYears) if (y.startsOn.isNotEmpty) y.startsOn]..sort();
+    final ends = [for (final y in store.academicYears) if (y.endsOn.isNotEmpty) y.endsOn]..sort();
+    final today = isoDate(DateTime.now());
+    return starts.isEmpty ? (from: today, to: today) : (from: starts.first, to: ends.last);
+  }
+
+  /// ربح الفترة بتاريخ القبض: المقبوض ناقص المصروفات والرواتب (المسحوبات والتحويل خارجه).
+  ({double received, double spent, double net, double draws}) _periodNet(AppStore store) {
     // يُحسب مرة لكل تغيّر في السندات أو المصروفات أو الرواتب أو الفلتر، لا مع كل رسم
     final stamp = Object.hash(store.netInputStamp, financeYearFilter, termFilter);
     final cached = _netCache;
@@ -163,13 +175,23 @@ class _FinanceScreenState extends State<FinanceScreen> {
   }
 
   int _netStamp = 0;
-  ({double received, double spent, double net})? _netCache;
+  ({double received, double spent, double net, double draws})? _netCache;
 
-  ({double received, double spent, double net}) _computePeriodNet(AppStore store) {
-    final received = _periodPayments(store).where((p) => !p.cancelled).fold<double>(0, (a, p) => a + p.amount);
-    final spent = _periodExpenses(store).fold<double>(0, (a, e) => a + e.amount) +
-        _periodPayouts(store).fold<double>(0, (a, p) => a + p.amount);
-    return (received: received, spent: spent, net: received - spent);
+  ({double received, double spent, double net, double draws}) _computePeriodNet(AppStore store) {
+    final total = computeProfitReport(
+      payments: store.payments,
+      installments: const [],
+      expenses: store.expenses,
+      payouts: store.teacherPayouts,
+      range: _periodRange(store),
+      basis: ProfitBasis.paid,
+    ).total;
+    return (
+      received: total.received,
+      spent: total.expenses + total.salaries,
+      net: total.net,
+      draws: total.draws,
+    );
   }
 
   @override
@@ -184,6 +206,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
         _Tab.dues,
         _Tab.payments,
         if (showExpenses) _Tab.expenses,
+        if (showExpenses) _Tab.profits,
         _Tab.controls,
       ];
 
@@ -208,6 +231,14 @@ class _FinanceScreenState extends State<FinanceScreen> {
       switch (which) {
         _Tab.payments => _payments(context, store, q),
         _Tab.expenses => _expenses(store, q),
+        _Tab.profits => (toolbar: null, slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+              sliver: SliverToBoxAdapter(
+                child: ProfitReportPanel(store: store, year: _filterYear(store) ?? store.viewedAcademicYear),
+              ),
+            ),
+          ]),
         _Tab.controls => (toolbar: null, slivers: [
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
@@ -264,7 +295,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
         // التبويب يتبع الميزة والصلاحية كما في Finance.tsx
         final showExpenses = store.features.enableExpenses && store.can('finance.expenses');
-        if (tab == _Tab.expenses && !showExpenses) tab = _Tab.dues;
+        if ((tab == _Tab.expenses || tab == _Tab.profits) && !showExpenses) tab = _Tab.dues;
 
         final q = search.text.trim().toLowerCase();
         final List<DueItem> allDues;
@@ -279,9 +310,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
         }
 
         // صافي الفترة للتبويبات التي تعرضه فقط
-        final net = (tab == _Tab.payments || tab == _Tab.expenses)
+        final net = (tab == _Tab.payments || tab == _Tab.expenses || tab == _Tab.profits)
             ? _periodNet(store)
-            : (received: 0.0, spent: 0.0, net: 0.0);
+            : (received: 0.0, spent: 0.0, net: 0.0, draws: 0.0);
 
         // زر «+» واحد يفتح ورقة تختار منها العملية، بدل أزرار ثانوية متفرقة
         final ThumbAction? action = switch (tab) {
@@ -322,7 +353,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                   ),
                 )
               : null,
-          _Tab.controls => null,
+          _Tab.controls || _Tab.profits => null,
           _ => store.can('finance.collect')
               ? ThumbAction(
                   label: 'قبض جديد',
@@ -415,6 +446,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
           (_Tab.dues, 'المستحقات', 0),
           (_Tab.payments, 'المقبوضات', 0),
           if (showExpenses) (_Tab.expenses, 'المصروفات', 0),
+          if (showExpenses) (_Tab.profits, 'الأرباح', 0),
           // طلبات الموظفين ودفعات أولياء الأمور معاً: كلاهما ينتظر قراراً
           (_Tab.controls, 'الرقابة', store.pendingFinanceRequests.length + store.pendingPaymentRequests.length),
         ],
@@ -427,7 +459,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
   Widget? _hero(
     AppStore store,
     List<DueItem> dues,
-    ({double received, double spent, double net}) net,
+    ({double received, double spent, double net, double draws}) net,
     bool showExpenses,
   ) {
     final period = _periodLabel(store);
@@ -457,6 +489,15 @@ class _FinanceScreenState extends State<FinanceScreen> {
         );
       case _Tab.controls:
         return null;
+      case _Tab.profits:
+        return _Hero(
+          tab: tab,
+          label: 'الربح في الفترة',
+          value: '${net.net < 0 ? '-' : ''}${money(net.net)}',
+          period: period,
+          onPeriod: () => _openFilters(store),
+          chips: ['المسحوب ${money(net.draws)}', 'الباقي ${net.net - net.draws < 0 ? '-' : ''}${money(net.net - net.draws)}'],
+        );
       case _Tab.expenses:
         return _Hero(
           tab: tab,
@@ -495,6 +536,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
       case _Tab.expenses:
         if (statementTeacherId.isNotEmpty) n++;
       case _Tab.controls:
+      case _Tab.profits:
         break;
     }
     return n;
@@ -912,7 +954,10 @@ class _FinanceScreenState extends State<FinanceScreen> {
         _SpendRow(
           date: e.expenseDate,
           isPayout: false,
-          category: expenseCategoryLabel(e.category),
+          // المسحوبات والتحويل تُعرف من بندها: لا تنقص الربح
+          category: expenseKindOf(e) == 'expense'
+              ? expenseCategoryLabel(e.category)
+              : '${expenseKindNames[expenseKindOf(e)]} · ${expenseCategoryLabel(e.category)}',
           description: e.description,
           amount: e.amount,
           method: e.method,
@@ -1583,7 +1628,7 @@ class _Segmented extends StatelessWidget {
           colors: const [Color(0xFF0F4A34), Color(0xFF1E7651)],
           icon: Icons.south_west_rounded,
         ),
-      _Tab.expenses || _Tab.controls => (
+      _Tab.expenses || _Tab.profits || _Tab.controls => (
           colors: const [Color(0xFF1E2A44), Color(0xFF3A4C72)],
           icon: Icons.north_east_rounded,
         ),

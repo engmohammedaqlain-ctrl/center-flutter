@@ -1987,6 +1987,7 @@ class Expense {
     this.recordedByName = '',
     this.method = 'cash',
     this.notes = '',
+    this.kind = 'expense',
     this.syncStatus = 'synced',
     this.createdAt,
     this.updatedAt,
@@ -1997,6 +1998,9 @@ class Expense {
   String description;
   double amount;
   String expenseDate;
+
+  /// مصروف ينقص الربح، أو مسحوبات من الربح، أو تحويل بين صناديق لا يمسّه — [expenseKindNames].
+  String kind;
   String recordedByUserId;
 
   /// اسم من سجّل السند لحظة تسجيله — لقطة محلية لا تتغير بأثر رجعي.
@@ -2017,6 +2021,7 @@ class Expense {
     'recorded_by_name': recordedByName.isEmpty ? null : recordedByName,
     'payment_method': method,
     'notes': notes.isEmpty ? null : notes,
+    'kind': kind,
     'created_at': createdAt,
     'updated_at': updatedAt,
     'sync_status': syncStatus,
@@ -2032,11 +2037,22 @@ class Expense {
     recordedByName: '${m['recorded_by_name'] ?? ''}',
     method: '${m['payment_method'] ?? 'cash'}',
     notes: '${m['notes'] ?? ''}',
+    kind: '${m['kind'] ?? 'expense'}',
     syncStatus: '${m['sync_status'] ?? 'synced'}',
     createdAt: m['created_at']?.toString(),
     updatedAt: m['updated_at']?.toString(),
   );
 }
+
+/// أنواع سند الصرف — `EXPENSE_KIND_NAMES`.
+const expenseKindNames = <String, String>{
+  'expense': 'مصروف',
+  'draw': 'مسحوبات',
+  'transfer': 'تحويل',
+};
+
+/// نوع السند، والغائب أو المجهول مصروف — `expenseKindOf`.
+String expenseKindOf(Expense e) => e.kind == 'draw' || e.kind == 'transfer' ? e.kind : 'expense';
 
 /// دفعة أجر معلم — المقابل لـ `TeacherPayout` في types/payment.ts
 class TeacherPayout {

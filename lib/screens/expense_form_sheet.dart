@@ -60,6 +60,9 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
   /// `expense` سند مصروف عام، و`payout` صرف أجر معلم.
   late String entryType = widget.payoutTeacherId.isEmpty ? 'expense' : 'payout';
   String category = expenseCategories.first;
+
+  /// مصروف ينقص الربح، أو مسحوبات من الربح. «تحويل» مخفي حتى ميزة رصيد الصندوق.
+  String kind = 'expense';
   late String teacherId = widget.payoutTeacherId;
   late String method = _defaultMethod();
   final description = TextEditingController();
@@ -170,6 +173,7 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
           expenseDate: date,
           method: method,
           notes: notes.text,
+          kind: kind,
         ).id;
       }
       // الإشعار يلحق بالسند: يُحفظ على الجهاز ويُرفع بأول اتصال
@@ -215,6 +219,18 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
 
             _TypeTabs(active: entryType, onSelect: _switchType),
             const SizedBox(height: 12),
+
+            if (!isPayout) ...[
+              _TypeTabs(
+                active: kind,
+                onSelect: (v) => setState(() => kind = v),
+                items: [
+                  ('expense', 'مصروف', AppColors.heading),
+                  ('draw', 'مسحوبات', AppColors.amberDark),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
 
             if (isPayout) ...[
               FieldLabel('المعلم المستفيد:', key: errors.key('teacher'), requiredField: true),
@@ -374,10 +390,13 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
 
 /// تبويبا نوع السند: مصروف عام أو أجر معلم.
 class _TypeTabs extends StatelessWidget {
-  const _TypeTabs({required this.active, required this.onSelect});
+  const _TypeTabs({required this.active, required this.onSelect, this.items});
 
   final String active;
   final ValueChanged<String> onSelect;
+
+  /// (المعرّف، التسمية، لون المختار)؛ الافتراضي نوع السند: مصروف عام أو أجر معلم.
+  final List<(String, String, Color)>? items;
 
   @override
   Widget build(BuildContext context) {
@@ -390,8 +409,12 @@ class _TypeTabs extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _tab('expense', 'مصروف عام', AppColors.heading),
-          _tab('payout', 'صرف أجر معلم', AppColors.amberDark),
+          for (final (id, label, color) in items ??
+              [
+                ('expense', 'مصروف عام', AppColors.heading),
+                ('payout', 'صرف أجر معلم', AppColors.amberDark),
+              ])
+            _tab(id, label, color),
         ],
       ),
     );

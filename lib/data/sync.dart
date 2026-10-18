@@ -434,6 +434,7 @@ const tableAllowedColumns = <String, List<String>>{
     'recorded_by_name',
     'payment_method',
     'notes',
+    'kind',
     'tenant_id',
     'created_at',
     'updated_at',
