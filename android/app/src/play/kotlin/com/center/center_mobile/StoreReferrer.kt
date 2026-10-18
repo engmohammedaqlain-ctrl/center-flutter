@@ -41,7 +41,9 @@ object StoreReferrer {
                         answer(value)
                     }
 
-                    override fun onInstallReferrerServiceDisconnected() = answer(null)
+                    override fun onInstallReferrerServiceDisconnected() {
+                        answer(null)
+                    }
                 })
             } catch (_: Exception) {
                 answer(null)
