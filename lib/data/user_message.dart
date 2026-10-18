@@ -102,6 +102,10 @@ String userMessage(Object? err, [String fallback = 'تعذّر إتمام الع
 
 /// خطأ مزامنة جدول: اسم عربي قصير + سبب مفهوم.
 String syncTableMessage(String tableLabel, Object error) {
+  // خلل في دالة أو محفّز بالسحابة لا في بيانات المدرسة: إعادة المحاولة لا تحلّه
+  if (RegExp(r'malformed array literal|PL/pgSQL', caseSensitive: false).hasMatch(error.toString())) {
+    return '$tableLabel: خلل في السحابة، تواصل مع الدعم';
+  }
   final reason = userMessage(error, 'تعذّر الرفع');
   return '$tableLabel: $reason';
 }
