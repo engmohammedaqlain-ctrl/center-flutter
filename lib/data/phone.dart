@@ -1,4 +1,10 @@
-const phonePrefixes = ['059', '056', '+970', '+972', '+20'];
+/// مقدمات القائمة. مصر (+20) خرجت منها: لا يستعملها أحد، وكانت أرقام تبدأ بـ 20 تُفهم مصرية.
+const phonePrefixes = ['059', '056', '+970', '+972'];
+
+/// خيارات المقدمة — `phonePrefixOptions`: رقم محفوظ سابقاً بمقدمة خارج القائمة تظهر
+/// مقدمته معها حتى لا تفرغ الخانة.
+List<String> phonePrefixOptions([String? current]) =>
+    current != null && current.isNotEmpty && !phonePrefixes.contains(current) ? [...phonePrefixes, current] : phonePrefixes;
 
 /// الطول المتوقع لأرقام الجوال بعد المقدمة — مطابق لـ StudentForm في Center.
 int phoneTargetLength(String prefix) {
@@ -16,37 +22,28 @@ String normalizeArabicDigits(String val) {
 
 String digitsOnly(String val) => normalizeArabicDigits(val).replaceAll(RegExp(r'\D'), '');
 
-/// دمج الرقم مع المقدمة كما في phoneUtils.ts
+/// دمج الرقم مع المقدمة كما في phoneUtils.ts.
+///
+/// الرقم يُعامل كاملاً بمقدمته فقط إن كان طوله طول رقم كامل. كان أي رقم يبدأ بـ 20 أو
+/// 970 يُعدّ دولياً، فيصير 056 + 2020766 هو +2020766 ويرفضه الحفظ.
 String combinePhoneAndPrefix(String? phone, [String? prefix]) {
   if (phone == null) return '';
   final trimmed = phone.trim();
   if (trimmed.isEmpty) return '';
+  final compact = trimmed.replaceAll(RegExp(r'[\s-]'), '');
 
-  if (trimmed.startsWith('+970') ||
-      trimmed.startsWith('+972') ||
-      trimmed.startsWith('+20') ||
-      trimmed.startsWith('059') ||
-      trimmed.startsWith('056')) {
-    return trimmed;
+  // رقم كامل بمقدمته
+  if (RegExp(r'^\+(97[02]|20)\d+$').hasMatch(compact) || RegExp(r'^05\d{8}$').hasMatch(compact)) return compact;
+  if (RegExp(r'^97[02]\d{9}$').hasMatch(compact)) return '+$compact';
+
+  // +20 خارج القائمة لكن أرقاماً قديمة محفوظة بها
+  final activePrefix = prefix != null && phonePrefixOptions('+20').contains(prefix) ? prefix : '059';
+
+  // محلي كامل بلا الصفر: 59xxxxxxx
+  if (RegExp(r'^5\d{8}$').hasMatch(compact)) {
+    return activePrefix == '059' || activePrefix == '056' ? '0$compact' : '$activePrefix$compact';
   }
-
-  if (trimmed.startsWith('970') || trimmed.startsWith('972') || trimmed.startsWith('20')) {
-    return '+$trimmed';
-  }
-
-  final activePrefix = prefix != null && phonePrefixes.contains(prefix) ? prefix : '059';
-
-  if (activePrefix == '059' || activePrefix == '056') {
-    if (trimmed.startsWith('05')) return trimmed;
-    if (trimmed.startsWith('59') || trimmed.startsWith('56')) return '0$trimmed';
-    return '$activePrefix$trimmed';
-  }
-
-  if (trimmed.startsWith('05')) {
-    return '$activePrefix${trimmed.substring(1)}';
-  }
-
-  return '$activePrefix$trimmed';
+  return '$activePrefix$compact';
 }
 
 class ParsedPhone {
@@ -65,10 +62,31 @@ ParsedPhone parsePhoneAndPrefix(String? fullPhone) {
   if (str.startsWith('+972')) return ParsedPhone('+972', str.substring(4).trim());
   if (str.startsWith('972')) return ParsedPhone('+972', str.substring(3).trim());
   if (str.startsWith('+20')) return ParsedPhone('+20', str.substring(3).trim());
-  if (str.startsWith('20') && str.length > 9) return ParsedPhone('+20', str.substring(2).trim());
   if (str.startsWith('059')) return ParsedPhone('059', str.substring(3).trim());
   if (str.startsWith('056')) return ParsedPhone('056', str.substring(3).trim());
   return ParsedPhone('059', str);
+}
+
+/// ما يُكتب أو يُلصق في خانة الجوال — `normalizePhoneInput`: أرقام فقط (والعربية
+/// تتحول)، ورقم جوال كامل بأي صيغة (0599123456، 599123456، +970599123456،
+/// 00970599123456) يضبط مقدمته ويبقى باقيه. الرقم بعد المقدمة قد يبدأ هو نفسه بـ 59
+/// أو 20، فلا يُفصل شيء قبل اكتمال الرقم.
+ParsedPhone normalizePhoneInput(String value, String prefix) {
+  final digits = digitsOnly(value);
+  final full = RegExp(r'^(?:00)?(?:97[02])?0?(5[96])(\d{7})$').firstMatch(digits);
+  if (full != null) return ParsedPhone('0${full[1]}', full[2]!);
+  // رقم كامل قيد الكتابة يُترك يكتمل حتى يُفصل
+  final max = digits.startsWith('00')
+      ? 14
+      : digits.startsWith('97')
+          ? 12
+          : digits.startsWith('0')
+              ? 10
+              : RegExp(r'^5[96]').hasMatch(digits)
+                  ? 9
+                  : phoneTargetLength(prefix);
+  final limit = max > phoneTargetLength(prefix) ? max : phoneTargetLength(prefix);
+  return ParsedPhone(prefix, digits.length > limit ? digits.substring(0, limit) : digits);
 }
 
 String formatPhoneDisplay(String? phone, [String? prefix]) {

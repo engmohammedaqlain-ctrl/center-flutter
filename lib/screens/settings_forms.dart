@@ -285,7 +285,7 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
                     width: 92,
                     child: AppDropdown<String>(
                       value: prefix,
-                      items: phonePrefixes.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
+                      items: phonePrefixOptions(prefix).map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
                       onChanged: (v) => setState(() => prefix = v ?? prefix),
                     ),
                   ),
@@ -294,8 +294,16 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
                     child: TextField(
                       controller: phone,
                       keyboardType: TextInputType.phone,
-                      onChanged: (_) {
-                        if (errors.clear('phone')) setState(() {});
+                      // نفس خانة جوال الطالب: أي صيغة تُلصق تضبط المقدمة
+                      onChanged: (raw) {
+                        final next = normalizePhoneInput(raw, prefix);
+                        if (phone.text != next.number) {
+                          phone.value = TextEditingValue(
+                            text: next.number,
+                            selection: TextSelection.collapsed(offset: next.number.length),
+                          );
+                        }
+                        if (errors.clear('phone') || next.prefix != prefix) setState(() => prefix = next.prefix);
                       },
                       style: const TextStyle(fontSize: 13.5, letterSpacing: 0.8),
                       decoration: InputDecoration(hintText: '$target أرقام', errorText: errors['phone']),

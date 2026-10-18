@@ -282,23 +282,12 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     }
   }
 
+  // أرقام فقط بطول المقدمة، ولصق الرقم كاملاً بأي صيغة يضبط مقدمته. الرقم بعد
+  // المقدمة قد يبدأ هو نفسه بـ 59 أو 56 فلا يُقص منه شيء — `normalizePhoneInput`
   void _applyStudentPhone(String raw) {
-    var clean = digitsOnly(raw);
-    var prefix = phonePrefix;
-    if (clean.startsWith('059')) {
-      prefix = '059';
-      clean = clean.substring(3);
-    } else if (clean.startsWith('056')) {
-      prefix = '056';
-      clean = clean.substring(3);
-    } else if (clean.startsWith('59')) {
-      prefix = '059';
-      clean = clean.substring(2);
-    } else if (clean.startsWith('56')) {
-      prefix = '056';
-      clean = clean.substring(2);
-    }
-    clean = clean.substring(0, clean.length.clamp(0, phoneTargetLength(prefix)));
+    final next = normalizePhoneInput(raw, phonePrefix);
+    final prefix = next.prefix;
+    final clean = next.number;
     if (phoneCtl.text != clean) {
       phoneCtl.value = TextEditingValue(text: clean, selection: TextSelection.collapsed(offset: clean.length));
     }
@@ -311,22 +300,9 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   }
 
   void _applyParentPhone(String raw) {
-    var clean = digitsOnly(raw);
-    var prefix = parentPhonePrefix;
-    if (clean.startsWith('059')) {
-      prefix = '059';
-      clean = clean.substring(3);
-    } else if (clean.startsWith('056')) {
-      prefix = '056';
-      clean = clean.substring(3);
-    } else if (clean.startsWith('59')) {
-      prefix = '059';
-      clean = clean.substring(2);
-    } else if (clean.startsWith('56')) {
-      prefix = '056';
-      clean = clean.substring(2);
-    }
-    clean = clean.substring(0, clean.length.clamp(0, phoneTargetLength(prefix)));
+    final next = normalizePhoneInput(raw, parentPhonePrefix);
+    final prefix = next.prefix;
+    final clean = next.number;
     if (parentPhoneCtl.text != clean) {
       parentPhoneCtl.value = TextEditingValue(text: clean, selection: TextSelection.collapsed(offset: clean.length));
     }
@@ -485,6 +461,12 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           'parentPhone',
           parentPhoneNumber.trim().isNotEmpty && !isPhoneComplete(parentPhoneNumber, parentPhonePrefix),
           'الرقم غير مكتمل: يجب إدخال ${phoneTargetLength(parentPhonePrefix)} أرقام بعد المقدمة ($parentPhonePrefix)',
+        )
+        ..check(
+          'parentSecondaryPhone',
+          parentSecondaryNumber.text.trim().isNotEmpty &&
+              !isPhoneComplete(parentSecondaryNumber.text, secondaryPrefix),
+          'الجوال البديل ${phoneTargetLength(secondaryPrefix)} أرقام بعد $secondaryPrefix، والمُدخل ${parentSecondaryNumber.text.trim().length}.',
         );
       final parentCode = digitsOnly(parentPortalCode.text);
       final studentCode = digitsOnly(portalCode.text);
@@ -815,10 +797,9 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
               target: studentLen,
               complete: studentComplete,
               error: errors['phone'] != null,
+              // تغيير المقدمة لا يمسح الرقم المكتوب
               onPrefix: (v) => setState(() {
                 phonePrefix = v;
-                phoneNumber = '';
-                phoneCtl.clear();
                 phoneDuplicateError = null;
               }),
               onNumber: _applyStudentPhone,
@@ -1398,11 +1379,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
         target: phoneTargetLength(parentPhonePrefix),
         complete: isPhoneComplete(parentPhoneNumber, parentPhonePrefix),
         error: errors['parentPhone'] != null,
-        onPrefix: (v) => setState(() {
-          parentPhonePrefix = v;
-          parentPhoneNumber = '';
-          parentPhoneCtl.clear();
-        }),
+        onPrefix: (v) => setState(() => parentPhonePrefix = v),
         onNumber: _applyParentPhone,
       ),
       _phoneHint(
@@ -1532,7 +1509,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
         ],
       ),
       _gap,
-      const FieldLabel('جوال بديل لولي الأمر'),
+      FieldLabel('جوال بديل لولي الأمر', key: errors.key('parentSecondaryPhone')),
       Directionality(
         textDirection: TextDirection.ltr,
         child: Row(
@@ -1541,7 +1518,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
               width: 92,
               child: AppDropdown<String>(
                 value: secondaryPrefix,
-                items: phonePrefixes.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
+                items: phonePrefixOptions(secondaryPrefix).map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
                 onChanged: (v) => setState(() => secondaryPrefix = v ?? secondaryPrefix),
               ),
             ),
@@ -1550,6 +1527,16 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
               child: TextField(
                 controller: parentSecondaryNumber,
                 keyboardType: TextInputType.phone,
+                onChanged: (raw) {
+                  final next = normalizePhoneInput(raw, secondaryPrefix);
+                  if (parentSecondaryNumber.text != next.number) {
+                    parentSecondaryNumber.value = TextEditingValue(
+                      text: next.number,
+                      selection: TextSelection.collapsed(offset: next.number.length),
+                    );
+                  }
+                  if (next.prefix != secondaryPrefix) setState(() => secondaryPrefix = next.prefix);
+                },
                 style: const TextStyle(fontSize: 13.5, letterSpacing: 0.8),
                 decoration: const InputDecoration(hintText: 'رقم إضافي'),
               ),
@@ -1781,7 +1768,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
             width: 92,
             child: AppDropdown<String>(
               value: prefix,
-              items: phonePrefixes.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
+              items: phonePrefixOptions(prefix).map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
               onChanged: (v) => onPrefix(v ?? prefix),
             ),
           ),
@@ -1790,7 +1777,8 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
             child: TextField(
               controller: controller,
               keyboardType: TextInputType.phone,
-              maxLength: target,
+              // رقم كامل يُلصق بمقدمته (00970...) ثم يُفصل
+              maxLength: 14,
               onChanged: onNumber,
               style: const TextStyle(fontSize: 13.5, letterSpacing: 0.8),
               decoration: InputDecoration(
