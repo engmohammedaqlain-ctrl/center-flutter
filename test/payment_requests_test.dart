@@ -13,6 +13,8 @@ AppStore _seeded() {
   injectDemoData(store);
   // الحسم السحابي بديله في الاختبار: الطلب متاح دائماً
   store.claimOverride = (_, _, _) async => () async {};
+  // القبول السحابي بديله: الطلب لم يصل السحابة فيُقبل على الجهاز، إلا حيث يُستبدل
+  store.approveOverride = (_, _) async => false;
   return store;
 }
 
@@ -105,10 +107,45 @@ void main() {
     final student = store.students.first;
     store.putRows('payment_requests', [_pending(student)]);
     final before = store.payments.length;
-    store.claimOverride = (_, _, _) async => throw StoreException(AppStore.claimTakenMessage);
+    store.approveOverride = (_, _) async => throw StoreException(AppStore.claimTakenMessage);
 
     await expectLater(store.approvePaymentRequest('req-1'), throwsA(isA<StoreException>()));
     expect(store.payments.length, before);
+  });
+
+  test('القبول في السحابة: السند والحسم معاً، والسند في الطابور لا الحسم', () async {
+    final store = _seeded();
+    final student = store.students.first;
+    store.putRows('payment_requests', [_pending(student)]);
+    Map<String, dynamic>? sent;
+    store.approveOverride = (id, payment) async {
+      sent = payment;
+      store.putRows('payment_requests', [
+        {..._pending(student), 'status': 'approved', 'payment_id': payment['id']},
+      ]);
+      return true;
+    };
+
+    final payment = await store.approvePaymentRequest('req-1');
+    expect(sent?['id'], payment.id);
+    expect(store.paymentRequests.single.paymentId, payment.id);
+    expect(store.pendingSyncs.any((p) => p.tableName == 'payments' && p.recordId == payment.id), isTrue);
+    expect(store.pendingSyncs.any((p) => p.tableName == 'payment_requests'), isFalse);
+  });
+
+  test('فشل القبول في السحابة: لا سند ولا حسم، والطالب كما كان', () async {
+    final store = _seeded();
+    final student = store.students.first;
+    store.putRows('payment_requests', [_pending(student)]);
+    final before = store.payments.length;
+    final balanceBefore = student.balance;
+    store.approveOverride = (_, _) async => throw StoreException('تعذّر قبول الطلب، أعد المحاولة');
+
+    await expectLater(store.approvePaymentRequest('req-1'), throwsA(isA<StoreException>()));
+    expect(store.payments.length, before);
+    expect(store.paymentRequests.single.status, 'pending');
+    expect(store.studentById(student.id)?.balance, balanceBefore);
+    expect(store.pendingSyncs.any((p) => p.tableName == 'payments' || p.tableName == 'payment_requests'), isFalse);
   });
 
   test('بلا اتصال لا يُحسم طلب', () async {
@@ -119,6 +156,11 @@ void main() {
       store.rejectPaymentRequest('req-1', rejectionReasonPresets.first),
       throwsA(predicate((e) => e is StoreException && e.message == AppStore.claimOfflineMessage)),
     );
+    await expectLater(
+      store.approvePaymentRequest('req-1'),
+      throwsA(predicate((e) => e is StoreException && e.message == AppStore.claimOfflineMessage)),
+    );
+    expect(store.paymentRequests.single.status, 'pending');
   });
 
   test('الجدول يُزامَن ويُنسخ احتياطياً بأعمدته', () {

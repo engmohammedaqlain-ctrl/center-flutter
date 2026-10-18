@@ -382,6 +382,18 @@ Future<dynamic> supabaseRpc(String function, Map<String, dynamic> args) async {
   }
 }
 
+/// كـ [supabaseRpc] لكن الفشل يُرمى بجسم الرد بدل `null`، فلا يلتبس بجواب الدالة.
+Future<dynamic> supabaseRpcOrThrow(String function, Map<String, dynamic> args) async {
+  await SupabaseAuth.ensureFresh();
+  final res = await http.post(
+    Uri.parse('${SupabaseConfig.url}/rest/v1/rpc/$function'),
+    headers: SupabaseConfig.headers,
+    body: jsonEncode(args),
+  );
+  if (res.statusCode >= 400) throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
+  return res.body.isEmpty ? null : jsonDecode(res.body);
+}
+
 /// كـ [supabaseRpc] لكن يعيد سبب الفشل، أو `null` عند النجاح.
 ///
 /// دالةٌ لا تُرجع شيئاً (`VOID`) يلتبس نجاحها بفشلها حين يكون `null` جواب

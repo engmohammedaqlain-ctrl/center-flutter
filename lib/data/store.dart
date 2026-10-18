@@ -1753,51 +1753,54 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         ? method!
         : (request.paymentMethod.isNotEmpty ? request.paymentMethod : 'bank_transfer');
 
-    // يُحسم في السحابة أولاً: جهازان يقبلان الطلب نفسه كانا يصدران سندين لدفعة واحدة
-    final now = _nowIso();
-    final release = await claimPendingRequest('payment_requests', id, {
-      'status': 'approved',
-      'decided_by_id': currentUserId,
-      'decided_by_name': deviceUser?.name ?? receiptReceiver,
-      'decided_at': now,
-      'updated_at': now,
-    });
+    // أول صورة تصير إشعار السند، فتفتح من الوصل كأي تحويل
+    final images = await paymentRequestImages(request);
+    final firstImage = images.whereType<String>().firstOrNull;
+    request = _pendingPaymentRequest(id);
 
-    Payment payment;
+    // السند يُكتب على الجهاز خارج الطابور، ثم يُرسل مع القبول في معاملة واحدة في السحابة:
+    // الحسم والسند معاً أو لا شيء. كان القبول يُحسم أولاً والسند يُرفع بالطابور، فإن تعثّر
+    // رفعه بقي الطلب مقبولاً في السحابة بلا سند
+    final payment = addPayment(
+      studentId: request.studentId,
+      amount: value,
+      method: payMethod,
+      date: DateTime.now(),
+      purpose: 'دفعة عامة',
+      notes: ['طلب من بوابة ولي الأمر', if (request.notes.isNotEmpty) request.notes].join(' — '),
+      reference: request.referenceNumber,
+      senderName: request.senderName,
+      channel: request.transferChannel.isNotEmpty ? request.transferChannel : paymentMethodLabel(payMethod),
+      transferDate: request.transferDate,
+      allowAdvance: true,
+      deferSync: true,
+    );
+
+    bool inCloud;
     try {
-      // أول صورة تصير إشعار السند، فتفتح من الوصل كأي تحويل
-      final images = await paymentRequestImages(request);
-      final firstImage = images.whereType<String>().firstOrNull;
-      request = _pendingPaymentRequest(id);
-
-      payment = addPayment(
-        studentId: request.studentId,
-        amount: value,
-        method: payMethod,
-        date: DateTime.now(),
-        purpose: 'دفعة عامة',
-        notes: ['طلب من بوابة ولي الأمر', if (request.notes.isNotEmpty) request.notes].join(' — '),
-        reference: request.referenceNumber,
-        senderName: request.senderName,
-        channel: request.transferChannel.isNotEmpty ? request.transferChannel : paymentMethodLabel(payMethod),
-        transferDate: request.transferDate,
-        allowAdvance: true,
-      );
-      if (firstImage != null) unawaited(saveFinanceAttachment(payment.id, 'payment', firstImage));
+      inCloud = await approvePaymentRequestInCloud(id, payment);
     } catch (_) {
-      // لم يصدر سند: يعود الطلب معلقاً ليُحسم لاحقاً
-      await release().catchError((_) {});
+      _discardUnsyncedPayment(payment);
       rethrow;
     }
 
-    request
-      ..status = 'approved'
-      ..paymentId = payment.id
-      ..decidedById = currentUserId
-      ..decidedByName = deviceUser?.name ?? receiptReceiver
-      ..decidedAt = now
-      ..updatedAt = now;
-    _writePaymentRequestDecision(request);
+    // للطابور الآن: إن قُبل في السحابة يعيد رفعه كما هو فيصير «متزامناً»، وإلا يرفعه أول مرة
+    queuePendingSync(pendingSyncs, tableName: 'payments', recordId: payment.id, action: 'INSERT', payload: payment.toCloud(), tenantId: tenantId ?? '');
+    markDirty(_pendingTable);
+    if (firstImage != null) unawaited(saveFinanceAttachment(payment.id, 'payment', firstImage));
+
+    if (!inCloud) {
+      // طلب لم يصل السحابة بعد: يُحسم على الجهاز ويُرفع بالطابور
+      final now = _nowIso();
+      request
+        ..status = 'approved'
+        ..paymentId = payment.id
+        ..decidedById = currentUserId
+        ..decidedByName = deviceUser?.name ?? receiptReceiver
+        ..decidedAt = now
+        ..updatedAt = now;
+      _writePaymentRequestDecision(request);
+    }
 
     final changed = (value - request.amount).abs() > cent ? ' (الطلب ${money(request.amount)})' : '';
     _recordFinanceAudit(
@@ -1809,6 +1812,52 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     );
     notifyListeners();
     return payment;
+  }
+
+  /// بديل القبول السحابي في الاختبارات.
+  @visibleForTesting
+  Future<bool> Function(String id, Map<String, dynamic> payment)? approveOverride;
+
+  /// قبول حوالة ولي الأمر: الحسم والسند في معاملة واحدة في السحابة — `approvePaymentRequestInCloud`.
+  ///
+  /// يعيد `true` إن قُبل في السحابة، و`false` إن لم يصل الطلب السحابة بعد فيُقبل محلياً.
+  Future<bool> approvePaymentRequestInCloud(String id, Payment payment) async {
+    final override = approveOverride;
+    if (override != null) return override(id, payment.toCloud());
+    if (!networkEnabled) throw StoreException(claimOfflineMessage);
+    final tid = tenantId;
+    if (tid == null || tid.isEmpty) throw StoreException('لا توجد منشأة محددة');
+
+    dynamic result;
+    try {
+      result = await supabaseRpcOrThrow('approve_payment_request', {
+        'p_request_id': id,
+        'p_payment': sanitizePayload('payments', payment.toCloud(), tid),
+        'p_decided_by_id': currentUserId,
+        'p_decided_by_name': deviceUser?.name ?? receiptReceiver,
+      });
+    } catch (e) {
+      throw StoreException(userMessage(e, 'تعذّر قبول الطلب، أعد المحاولة'));
+    }
+
+    final row = result is Map ? result['request'] : null;
+    if (row is Map) {
+      // نسخة السحابة تحلّ محل المحلية: محسومة برقم السند، أو محسومة من جهاز آخر
+      putRows('payment_requests', [Map<String, dynamic>.from(row)]);
+      notifyListeners();
+    }
+    if (result is Map && result['ok'] == true) return true;
+    if (row == null) return false;
+    throw StoreException(claimTakenMessage);
+  }
+
+  /// تراجع عن سند لم يدخل الطابور (`deferSync`) بعد فشل رفعه: يُحذف ويُعاد حساب الطالب.
+  void _discardUnsyncedPayment(Payment payment) {
+    payments.removeWhere((p) => p.id == payment.id);
+    markDirty('payments');
+    final student = studentById(payment.studentId);
+    if (student != null) _persistStudentLedger(student);
+    notifyListeners();
   }
 
   /// الرفض بسبب مكتوب يخبر ولي الأمر ماذا يصلح؛ القاعدة ترفض الأقصر أيضاً.
@@ -5849,6 +5898,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     double? totalDueAtPayment,
     // دفعة ولي أمر قبلتها المالية: حُوّلت فعلاً، فالزائد عن المستحق رصيد له لا رفض
     bool allowAdvance = false,
+    // لا يدخل الطابور: من ينشئه يرفعه بنفسه (قبول حوالة ولي الأمر) أو يتراجع عنه
+    bool deferSync = false,
   }) {
     requireFinanceAction('finance.collect');
     final disc = discountAmount < 0 ? 0.0 : discountAmount;
@@ -5945,7 +5996,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _persistStudentLedger(stu);
     final dueInsts = installments.where((i) => i.studentId == studentId && isInstallmentDue(i));
     p.remainingAfter = ((dueInsts.fold<double>(0, (s, i) => s + math.max(0.0, chargeableAmount(i) - i.paidAmount)) * 100).round() / 100);
-    queuePendingSync(pendingSyncs, tableName: 'payments', recordId: p.id, action: 'INSERT', payload: p.toCloud());
+    if (!deferSync) queuePendingSync(pendingSyncs, tableName: 'payments', recordId: p.id, action: 'INSERT', payload: p.toCloud());
     markDirty('payments');
     markDirty(_pendingTable);
     if (disc > cent) {
