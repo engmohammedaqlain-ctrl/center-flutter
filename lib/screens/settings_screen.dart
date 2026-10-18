@@ -2917,6 +2917,7 @@ Future<void> _restore(BuildContext context, AppStore store) async {
     message: 'دمج ${check.total} سجل؟\n'
         'المتطابق يُستبدل بنسخة الملف.'
         '${plan.moodleRows > 0 ? '\nومعها ${plan.moodleRows} عنصر مودل.' : ''}'
+        '${plan.deleteCount > 0 ? '\nوحذف ${plan.deleteCount} سجل قديم استبدله الملف.' : ''}'
         '${check.warnings.isNotEmpty ? '\n${check.warnings.length} تنبيه غير مانع.' : ''}',
     confirmLabel: 'تنفيذ',
   );

@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import 'backup_deletions.dart';
 import 'backup_validate.dart';
 import 'payment_methods.dart';
 import 'store.dart';
@@ -272,7 +273,22 @@ class BackupService {
       existingIds: existingIds,
       existingRows: {'payments': store.allOf('payments'), 'installments': store.allOf('installments')},
     );
-    return BackupPlan(backup: decoded, data: data, byCloud: byCloud, check: check, moodleRows: cloudOnlyRows(decoded));
+
+    // ما استبدله الملف (أقساط خطة قديمة مثلاً): يُحذف مما على الجهاز منه فقط
+    final deletions = <BackupDeletion>[];
+    for (final del in backupDeletions(decoded['deleted'], data, cloudToDexie.values)) {
+      final cloud = dexieToCloud[del.table]!;
+      final found = [for (final id in del.ids) if (existingIds[cloud]?.contains(id) ?? false) id];
+      if (found.isNotEmpty) deletions.add((table: cloud, ids: found));
+    }
+    return BackupPlan(
+      backup: decoded,
+      data: data,
+      byCloud: byCloud,
+      check: check,
+      moodleRows: cloudOnlyRows(decoded),
+      deletions: deletions,
+    );
   }
 
   /// أول جدول في الملف له سجلات مملوكة لمنشأة أخرى في السحابة — `findForeignOwnedTable`.
@@ -354,6 +370,10 @@ class BackupService {
       restored += toRestore.length;
     }
 
+    for (final del in plan.deletions) {
+      store.deleteRowsFromBackup(del.table, del.ids);
+    }
+
     // عام مسترجَع حالي بجوار عام حالي آخر على الجهاز: يُوحَّد الآن
     final years = data['academicYears'];
     if (years is List && years.isNotEmpty) {
@@ -415,13 +435,25 @@ const appVersionLabel = '2.7';
 /// ملف مفحوص قبل الكتابة: بياناته بعد استبدال الأعوام المؤقتة، وجداوله بأسمائها
 /// السحابية، ونتيجة الفحص، وعدد عناصر المودل.
 class BackupPlan {
-  const BackupPlan({required this.backup, required this.data, required this.byCloud, required this.check, required this.moodleRows});
+  const BackupPlan({
+    required this.backup,
+    required this.data,
+    required this.byCloud,
+    required this.check,
+    required this.moodleRows,
+    this.deletions = const [],
+  });
 
   final Map backup;
   final Map<String, dynamic> data;
   final Map<String, List> byCloud;
   final BackupCheckResult check;
   final int moodleRows;
+
+  /// ما استبدله الملف على هذا الجهاز، بأسماء الجداول السحابية.
+  final List<BackupDeletion> deletions;
+
+  int get deleteCount => deletions.fold(0, (n, d) => n + d.ids.length);
 
   /// ملف جُهّز خارج البرنامج (بلا رمز منشأة) لا يُقبل دون فحص الملكية.
   bool get hasTenantCode => '${backup['tenant_code'] ?? ''}'.isNotEmpty;

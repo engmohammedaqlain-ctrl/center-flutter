@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:center_mobile/data/backup.dart';
+import 'package:center_mobile/data/backup_deletions.dart';
 import 'package:center_mobile/data/demo_data.dart';
 import 'package:center_mobile/data/store.dart';
 import 'package:center_mobile/models/models.dart';
@@ -73,6 +74,46 @@ void main() {
 
     await service.write(target, service.prepare(target, json));
     expect(target.subjects.any((x) => x.id == extraId), isTrue, reason: 'الدمج يبقي السجلات المحلية الزائدة');
+  });
+
+  test('backupDeletions reads the list and skips ids the file itself writes', () {
+    const tables = ['students', 'installments', 'payments'];
+    final out = backupDeletions(
+      {'installments': ['old1', 'old2', 'keep', 'old1']},
+      {
+        'installments': [
+          {'id': 'keep'},
+        ],
+      },
+      tables,
+    );
+    expect(out.single.table, 'installments');
+    expect(out.single.ids, ['old1', 'old2']);
+    expect(backupDeletions(null, {}, tables), isEmpty);
+    expect(() => backupDeletions({'payments': ['p1']}, {}, tables), throwsFormatException);
+    expect(() => backupDeletions({'ghosts': ['x']}, {}, tables), throwsFormatException);
+    expect(() => backupDeletions({'installments': [1]}, {}, tables), throwsFormatException);
+    expect(() => backupDeletions(['x'], {}, tables), throwsFormatException);
+  });
+
+  test('a restore deletes the rows the file replaced, and queues the deletes', () async {
+    final source = await seeded();
+    final decoded = jsonDecode(service.encode(source)) as Map<String, dynamic>;
+    final target = await seeded();
+    final old = target.installments.first.id;
+    (decoded['data'] as Map)['installments'] = [
+      for (final r in (decoded['data'] as Map)['installments'] as List)
+        if (r['id'] != old) r,
+    ];
+    decoded['deleted'] = {
+      'installments': [old, 'not-on-this-device'],
+    };
+
+    final plan = service.prepare(target, jsonEncode(decoded));
+    expect(plan.deleteCount, 1);
+    await service.write(target, plan);
+    expect(target.installments.any((i) => i.id == old), isFalse);
+    expect(target.pendingSyncs.any((p) => p.tableName == 'installments' && p.recordId == old && p.action == 'DELETE'), isTrue);
   });
 
   test('a restore rejects a backup from another tenant', () async {

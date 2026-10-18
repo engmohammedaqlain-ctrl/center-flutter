@@ -970,6 +970,14 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     putRows(table, rows);
   }
 
+  /// حذف ما استبدلته نسخة احتياطية — `queuePendingDeleteBulk`: محلياً ثم للرفع.
+  void deleteRowsFromBackup(String table, List<String> ids) {
+    removeIds(table, ids);
+    for (final id in ids) {
+      _queue(table, id, 'DELETE', null);
+    }
+  }
+
   /// تسجيل صف مسترجَع من نسخة للرفع — بلا [putRowsFromBackup] يبقى محلياً ويمحوه السحب.
   void queueBackupSync(String table, String recordId, Map<String, dynamic> payload) {
     _queue(table, recordId, 'UPDATE', payload);
