@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../data/store.dart';
 import '../data/supabase.dart';
@@ -457,6 +459,15 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
     final months = TextEditingController(text: '12');
     var planType = existing?.planType ?? 'rental';
     var codeTouched = existing != null;
+    // شعار المدرسة: يُقرأ من سجل هويتها السحابي، ويُحفظ فقط إن تغيّر
+    String? logo;
+    var logoChanged = false;
+    if (existing != null) {
+      try {
+        logo = await fetchTenantLogo(existing.id);
+      } catch (_) {}
+      if (!context.mounted) return;
+    }
     var saving = false;
     String? failure;
     final errors = FieldErrors();
@@ -609,6 +620,44 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                 const SizedBox(height: 8),
                 const FieldLabel('ملاحظات'),
                 TextField(controller: notes, maxLines: 2),
+                const SizedBox(height: 8),
+                // يظهر في الترويسة والشهادات والسندات، ويصل أجهزة المدرسة مع السحب
+                const FieldLabel('شعار المدرسة'),
+                Row(
+                  children: [
+                    if (logo != null)
+                      Padding(
+                        padding: const EdgeInsetsDirectional.only(end: 10),
+                        child: Image.memory(base64Decode(logo!.split(',').last), height: 48, width: 48, fit: BoxFit.contain),
+                      ),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final file = await ImagePicker().pickImage(
+                          source: ImageSource.gallery,
+                          maxWidth: 512,
+                          maxHeight: 512,
+                          imageQuality: 90,
+                        );
+                        if (file == null) return;
+                        final bytes = await file.readAsBytes();
+                        setSt(() {
+                          logo = 'data:${file.mimeType ?? 'image/png'};base64,${base64Encode(bytes)}';
+                          logoChanged = true;
+                        });
+                      },
+                      icon: const Icon(Icons.image_outlined, size: 16),
+                      label: Text(logo == null ? 'اختيار' : 'تغيير'),
+                    ),
+                    if (logo != null)
+                      TextButton(
+                        onPressed: () => setSt(() {
+                          logo = null;
+                          logoChanged = true;
+                        }),
+                        child: const Text('إزالة'),
+                      ),
+                  ],
+                ),
                 // رفض السحابة يبقى داخل النموذج مع ما كُتب، فيُصحَّح ويُعاد بلا إعادة كتابة
                 if (failure != null) ...[
                   const SizedBox(height: 10),
@@ -723,6 +772,23 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                                   });
                                   return;
                                 }
+                                final savedId = saved?.id ?? '';
+                                if (logoChanged && savedId.isNotEmpty) {
+                                  try {
+                                    await saveTenantLogo(savedId, logo);
+                                  } catch (e) {
+                                    if (ctx.mounted) {
+                                      showAppSnack(
+                                        ctx,
+                                        existing == null
+                                            ? 'أُضيفت المنشأة وتعذّر حفظ الشعار؛ ارفعه من «تعديل»'
+                                            : 'حُفظت المنشأة وتعذّر حفظ الشعار',
+                                        error: true,
+                                      );
+                                    }
+                                  }
+                                }
+                                if (!ctx.mounted) return;
                                 Navigator.pop(ctx);
                                 if (saved != null) store.upsertTenant(saved);
                                 if (context.mounted) {
@@ -842,4 +908,35 @@ class _TenantCard extends StatelessWidget {
           ],
         ),
       );
+}
+
+/// شعار مدرسة من سجل هويتها السحابي (لوحة المطور، خارج جلسة المدرسة) — `fetchTenantLogo`.
+Future<String?> fetchTenantLogo(String tenantId) async {
+  final rows = await supabaseSelect('institution_settings', columns: 'logo', filters: {'tenant_id': 'eq.$tenantId'}, limit: 1);
+  if (rows == null) throw Exception('تعذّر قراءة الشعار');
+  final logo = rows.isEmpty ? null : rows.first['logo'];
+  return logo is String && logo.isNotEmpty ? logo : null;
+}
+
+/// يرفع المطور شعار المدرسة من لوحته دون الدخول عليها — `saveTenantLogo`: يُكتب في سجل
+/// هويتها السحابي، وأجهزتها تأخذه مع السحب التالي كما لو رفعه مديرها.
+Future<void> saveTenantLogo(String tenantId, String? logo) async {
+  final now = DateTime.now().toUtc().toIso8601String();
+  final rows = await supabaseSelect('institution_settings', columns: 'id', filters: {'tenant_id': 'eq.$tenantId'}, limit: 1);
+  if (rows == null) throw Exception('تعذّر قراءة سجل المدرسة');
+  if (rows.isNotEmpty) {
+    await supabaseUpdate('institution_settings', {'id': 'eq.${rows.first['id']}'}, {'logo': logo, 'updated_at': now});
+    return;
+  }
+  await supabaseInsert('institution_settings', [
+    {
+      'id': tenantId,
+      'tenant_id': tenantId,
+      'institution_type': 'school',
+      'institution_name': '',
+      'logo': logo,
+      'created_at': now,
+      'updated_at': now,
+    },
+  ]);
 }
