@@ -175,6 +175,7 @@ class AttendanceStudentRow extends StatefulWidget {
     required this.canEdit,
     required this.last,
     required this.onSet,
+    this.note = '',
   });
 
   final int index;
@@ -183,6 +184,9 @@ class AttendanceStudentRow extends StatefulWidget {
   final bool canEdit;
   final bool last;
   final ValueChanged<String?> onSet;
+
+  /// سطر تحت الاسم: غياب الشهر في بوابة المعلم.
+  final String note;
 
   @override
   State<AttendanceStudentRow> createState() => AttendanceStudentRowState();
@@ -266,6 +270,13 @@ class AttendanceStudentRowState extends State<AttendanceStudentRow> {
             student.phone,
             textDirection: TextDirection.ltr,
             style: const TextStyle(color: AppColors.faint, fontSize: 11),
+          ),
+        ],
+        if (widget.note.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(
+            widget.note,
+            style: const TextStyle(color: attendanceAbsentColor, fontSize: 11, fontWeight: FontWeight.w700),
           ),
         ],
       ],

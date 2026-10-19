@@ -1767,6 +1767,61 @@ class PortalService {
     };
   }
 
+  /// رصد عدة أيام للمعلم دفعةً (شهر كامل): لكل يوم حالة كل طالب، بقاعدة اليوم
+  /// الواحد — حصة المادة أو حصة شعبة الطالب، أيهما رُصد آخراً. طلب لكل 60 حصة
+  /// بدل طلب لكل يوم، فقائمة in() الطويلة لا تتجاوز حد طول الرابط.
+  Future<Map<String, Map<String, String>>> rangeTeacherAttendance({
+    required String groupId,
+    required List<String> dates,
+    required Map<String, String> roomOf,
+  }) async {
+    if (groupId.isEmpty || dates.isEmpty || roomOf.isEmpty) return {};
+    final roomIds = roomOf.values.where((r) => r.isNotEmpty).toSet();
+    final dateOf = <String, String>{
+      for (final d in dates) ...{
+        sessionIdFor(groupId, d): d,
+        for (final r in roomIds) roomSessionIdFor(r, d): d,
+      },
+    };
+    final ids = dateOf.keys.toList();
+    final rows = <Map<String, dynamic>>[];
+    for (var i = 0; i < ids.length; i += 60) {
+      final chunk = ids.sublist(i, (i + 60).clamp(0, ids.length));
+      rows.addAll(await _must(
+        'رصد الشهر',
+        supabaseSelect(
+          'attendance',
+          filters: {'session_id': 'in.(${chunk.join(',')})'},
+          columns: 'session_id,student_id,status,updated_at',
+        ),
+      ));
+    }
+
+    final chosen = <String, Map<String, dynamic>>{};
+    for (final rec in rows) {
+      final studentId = '${rec['student_id'] ?? ''}';
+      final sessionId = '${rec['session_id'] ?? ''}';
+      final date = dateOf[sessionId];
+      if (date == null || !roomOf.containsKey(studentId)) continue;
+      final roomId = roomOf[studentId] ?? '';
+      // كشف الشعبة يضم طلاباً ليسوا في هذه المادة، وطالب قد يظهر في شعبة غير شعبته
+      if (sessionId != sessionIdFor(groupId, date) && (roomId.isEmpty || sessionId != roomSessionIdFor(roomId, date))) {
+        continue;
+      }
+      final key = '$date|$studentId';
+      final prev = chosen[key];
+      if (prev == null || '${rec['updated_at'] ?? ''}'.compareTo('${prev['updated_at'] ?? ''}') > 0) {
+        chosen[key] = rec;
+      }
+    }
+    final out = <String, Map<String, String>>{};
+    for (final e in chosen.entries) {
+      final sep = e.key.indexOf('|');
+      out.putIfAbsent(e.key.substring(0, sep), () => {})[e.key.substring(sep + 1)] = '${e.value['status'] ?? 'present'}';
+    }
+    return out;
+  }
+
   /// رصد أسبوع للمعلم بدمج الشعبة/المادة لكل يوم.
   Future<Map<String, Map<String, String>>> weekTeacherAttendance({
     required String groupId,

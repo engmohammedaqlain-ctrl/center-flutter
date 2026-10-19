@@ -840,6 +840,11 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   int weekOffset = 0;
   /// رصد الأسبوع المعروض: `{تاريخ: {معرّف الطالب: الحالة}}`.
   Map<String, Map<String, String>> weekMarks = {};
+
+  /// غياب الشهر لكل طالب (شهر يوم الرصد المختار، أيام الدوام حتى اليوم).
+  Map<String, ({int absent, int excused})> monthAbsence = {};
+  String _monthKey = '';
+  int _monthToken = 0;
   bool savingAttendance = false;
   int _marksToken = 0;
 
@@ -1295,12 +1300,124 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         offline = false;
       });
       _flushPending();
+      unawaited(_loadMonthAbsence());
     } catch (_) {
       if (!mounted || token != _marksToken) return;
       setState(() {
         offline = true;
         pendingOps = _offline.pendingCountOf(widget.user.id);
       });
+    }
+  }
+
+  Map<String, String> _attendanceRoomOf() {
+    final roomId = _attendanceRoomId;
+    return {
+      for (final s in _current?.students ?? const <Student>[])
+        s.id: () {
+          final matched = _current?.roomIdFor(s.section) ?? '';
+          return matched.isNotEmpty ? matched : roomId;
+        }(),
+    };
+  }
+
+  /// أيام دوام شهر [month] (yyyy-MM)، عدا الجمعة؛ [untilToday] يقطعها عند اليوم.
+  static List<String> _monthSchoolDays(String month, {bool untilToday = false}) {
+    final parts = month.split('-');
+    final y = int.parse(parts[0]), m = int.parse(parts[1]);
+    final today = isoDate(DateTime.now());
+    return [
+      for (var d = DateTime(y, m, 1); d.month == m; d = d.add(const Duration(days: 1)))
+        if (d.weekday != DateTime.friday && (!untilToday || isoDate(d).compareTo(today) <= 0)) isoDate(d),
+    ];
+  }
+
+  Future<Map<String, Map<String, String>>> _rangeMarks(List<String> dates) {
+    final roomOf = _attendanceRoomOf();
+    return groupId.isNotEmpty
+        ? _service.rangeTeacherAttendance(groupId: groupId, dates: dates, roomOf: roomOf)
+        : _service.weekAttendance(_attendanceRoomId, dates);
+  }
+
+  /// غياب الشهر تحت اسم كل طالب.
+  Future<void> _loadMonthAbsence() async {
+    if (_current == null || sessionDate.length < 7) return;
+    final month = sessionDate.substring(0, 7);
+    final token = ++_monthToken;
+    _monthKey = month;
+    try {
+      final byDate = await _rangeMarks(_monthSchoolDays(month, untilToday: true)).timeout(_cloudTimeout);
+      if (!mounted || token != _monthToken) return;
+      final out = <String, ({int absent, int excused})>{};
+      for (final day in byDate.values) {
+        for (final e in day.entries) {
+          final prev = out[e.key] ?? (absent: 0, excused: 0);
+          out[e.key] = (
+            absent: prev.absent + (e.value == 'absent' ? 1 : 0),
+            excused: prev.excused + (e.value == 'excused' ? 1 : 0),
+          );
+        }
+      }
+      setState(() => monthAbsence = out);
+    } catch (_) {
+      // بلا شبكة يبقى الملخص السابق: ليس شرطاً للرصد
+    }
+  }
+
+  String _monthNote(String studentId) {
+    final m = monthAbsence[studentId];
+    if (m == null || (m.absent == 0 && m.excused == 0) || _monthKey.isEmpty) return '';
+    final name = gregorianMonths[int.parse(_monthKey.substring(5, 7)) - 1];
+    return [
+      if (m.absent > 0) 'غاب ${m.absent} في $name',
+      if (m.excused > 0) 'مأذون ${m.excused}',
+    ].join(' · ');
+  }
+
+  /// كشف حضور شهر يوم الرصد المختار: يوم لكل عمود، ومجموع الغياب والمأذون.
+  Future<SheetData?> _monthAttendanceSheet() async {
+    final month = sessionDate.substring(0, 7);
+    final days = _monthSchoolDays(month);
+    final byDate = await _rangeMarks(days).timeout(const Duration(seconds: 30));
+    final students = _students();
+    String symbol(String? s) => switch (s) { 'present' => '✔', 'absent' => 'غ', 'excused' => 'م', _ => '' };
+    final name = gregorianMonths[int.parse(month.substring(5, 7)) - 1];
+    return SheetData(
+      title: 'كشف حضور شهر $name ${month.substring(0, 4)}',
+      institution: data?.branding.name ?? '',
+      logo: data?.branding.logo ?? '',
+      landscape: true,
+      meta: [_attendanceClassLabel(), '${students.length} طالب', '✔ حاضر · غ غائب · م مأذون'],
+      headers: ['م', 'الطالب', for (final d in days) '${int.parse(d.substring(8))}', 'غياب', 'مأذون'],
+      flex: [2, 9, for (final _ in days) 2, 3, 3],
+      rows: [
+        for (var i = 0; i < students.length; i++)
+          () {
+            final statuses = [for (final d in days) byDate[d]?[students[i].id]];
+            return [
+              '${i + 1}',
+              students[i].fullName,
+              for (final s in statuses) symbol(s),
+              '${statuses.where((s) => s == 'absent').length}',
+              '${statuses.where((s) => s == 'excused').length}',
+            ];
+          }(),
+      ],
+    );
+  }
+
+  Future<void> _exportMonthAttendance({required bool excel}) async {
+    if (_students().isEmpty) return;
+    try {
+      final sheet = await _monthAttendanceSheet();
+      if (sheet == null || !mounted) return;
+      if (excel) {
+        await downloadSheetCsv(context, sheet);
+      } else {
+        await printSheet(context, sheet);
+      }
+    } catch (e) {
+      if (mounted) showAppSnack(context, userMessage(e, 'تعذّر تجهيز كشف الشهر، تأكد من الاتصال'), error: true);
     }
   }
 
@@ -1382,6 +1499,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         offline = false;
       });
       _flushPending();
+      unawaited(_loadMonthAbsence());
     } catch (e) {
       await _offline.queueAttendance(
         roomId: roomId,
@@ -2115,7 +2233,12 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                                     day: day,
                                     selected: day.dateStr == selected.dateStr,
                                     progress: dayProgress[day.dateStr] ?? 0,
-                                    onTap: () => setState(() => sessionDate = day.dateStr),
+                                    onTap: () {
+                                      setState(() => sessionDate = day.dateStr);
+                                      if (!sessionDate.startsWith(_monthKey) || _monthKey.isEmpty) {
+                                        unawaited(_loadMonthAbsence());
+                                      }
+                                    },
                                   ),
                                 ),
                               ),
@@ -2143,6 +2266,32 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         excused: excused,
         unmarked: unmarked,
       ),
+      if (students.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        _Card(
+          padding: const EdgeInsetsDirectional.fromSTEB(12, 2, 4, 2),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'كشف حضور شهر ${sessionDate.length >= 7 ? gregorianMonths[int.parse(sessionDate.substring(5, 7)) - 1] : ''}',
+                  style: const TextStyle(color: AppColors.text, fontSize: 12.5, fontWeight: FontWeight.w700),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => _exportMonthAttendance(excel: false),
+                icon: const Icon(Icons.print_outlined, size: 16),
+                label: const Text('طباعة'),
+              ),
+              TextButton.icon(
+                onPressed: () => _exportMonthAttendance(excel: true),
+                icon: const Icon(Icons.table_view_outlined, size: 16),
+                label: const Text('Excel'),
+              ),
+            ],
+          ),
+        ),
+      ],
       const SizedBox(height: 12),
       if (sectionFilter.trim().isEmpty && _sections().isNotEmpty)
         const _Empty('اختر الشعبة من زر الصف لعرض كشفها', height: 150)
@@ -2168,6 +2317,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                   canEdit: true,
                   last: i == visible.length - 1,
                   onSet: (status) => _setMark(visible[i].id, status),
+                  note: _monthNote(visible[i].id),
                 ),
             ],
           ),
