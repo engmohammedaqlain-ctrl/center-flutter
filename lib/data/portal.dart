@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/models.dart';
 import 'academic_matching.dart';
+import 'app_settings.dart';
 import 'attendance_days.dart';
 import 'balance.dart';
 import 'grading.dart';
@@ -214,6 +215,7 @@ class PortalBranding {
     this.colors = InstitutionColors.defaults,
     this.paymentMethods = defaultPaymentMethods,
     this.gradingScheme = GradingScheme.empty,
+    this.gradesLockedUntil = '',
   });
 
   final String name;
@@ -223,6 +225,9 @@ class PortalBranding {
 
   /// مخطط العلامات من `colors.__grading_scheme` — كما في بوابة الويب.
   final GradingScheme gradingScheme;
+
+  /// إقفال العلامات من إعدادات المدرسة (`settings.grades_locked_until`)، فارغ = مفتوحة.
+  final String gradesLockedUntil;
 
   /// مطابق لـ `getPaymentMethodLabel`.
   String methodLabel(String key) {
@@ -282,6 +287,8 @@ class StudentEvaluation {
     this.updatedAt = '',
     this.subjectName = '',
     this.teacherName = '',
+    this.recordedBy = '',
+    this.updatedBy = '',
   });
 
   final String id;
@@ -311,7 +318,11 @@ class StudentEvaluation {
   final String subjectName;
   final String teacherName;
 
-  StudentEvaluation copyWith({double? score}) => StudentEvaluation(
+  /// من رصدها ومن عدّلها آخراً: «المعلم: ...» أو «الإدارة: ...».
+  final String recordedBy;
+  final String updatedBy;
+
+  StudentEvaluation copyWith({double? score, String? updatedBy, String? updatedAt}) => StudentEvaluation(
         id: id,
         studentId: studentId,
         groupId: groupId,
@@ -326,9 +337,11 @@ class StudentEvaluation {
         term: term,
         componentId: componentId,
         createdAt: createdAt,
-        updatedAt: updatedAt,
+        updatedAt: updatedAt ?? this.updatedAt,
         subjectName: subjectName,
         teacherName: teacherName,
+        recordedBy: recordedBy,
+        updatedBy: updatedBy ?? this.updatedBy,
       );
 
   /// النسبة المئوية للدرجة، أو `null` إن لم تُرصد درجة بعد.
@@ -361,6 +374,8 @@ class StudentEvaluation {
         updatedAt: updatedAt,
         subjectName: subjectName,
         teacherName: teacherName,
+        recordedBy: recordedBy,
+        updatedBy: updatedBy,
       );
 
   /// تحويل للشكل الذي يقرأه `computeTermGrade` / `subjectGradeSummaries`.
@@ -394,6 +409,8 @@ class StudentEvaluation {
         'notes': notes.isEmpty ? null : notes,
         'term': term.isEmpty ? null : term,
         'component_id': componentId.isEmpty ? null : componentId,
+        'recorded_by': recordedBy.isEmpty ? null : recordedBy,
+        'updated_by': updatedBy.isEmpty ? null : updatedBy,
         'created_at': createdAt.isEmpty ? null : createdAt,
         'updated_at': updatedAt.isEmpty ? null : updatedAt,
       };
@@ -414,6 +431,8 @@ class StudentEvaluation {
         componentId: '${m['component_id'] ?? ''}',
         createdAt: '${m['created_at'] ?? ''}',
         updatedAt: '${m['updated_at'] ?? ''}',
+        recordedBy: '${m['recorded_by'] ?? ''}',
+        updatedBy: '${m['updated_by'] ?? ''}',
       );
 }
 
@@ -1269,6 +1288,9 @@ class PortalService {
             ? Map<String, dynamic>.from(colorMap['__grading_scheme'] as Map)
             : const {},
       ),
+      gradesLockedUntil: AppSettings.fromMap(
+        row['settings'] is Map ? Map<String, dynamic>.from(row['settings'] as Map) : null,
+      ).gradesLockedUntil,
     );
   }
 

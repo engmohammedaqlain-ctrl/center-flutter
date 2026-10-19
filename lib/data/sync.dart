@@ -464,6 +464,8 @@ const tableAllowedColumns = <String, List<String>>{
     'notes',
     'term',
     'component_id',
+    'recorded_by',
+    'updated_by',
     'created_at',
     'updated_at',
   ],

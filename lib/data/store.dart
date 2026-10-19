@@ -2227,8 +2227,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final group = groups.where((g) => g.id == groupId).firstOrNull;
     if (group == null) throw StoreException('الشعبة المختارة غير موجودة');
     checkScoreBounds(scores.values, maxScore);
+    _assertGradesUnlocked([evaluationDate]);
 
     final now = _nowIso();
+    final actor = gradeActorLabel;
     final bucket = extraCloud.putIfAbsent('student_evaluations', () => []);
     for (final entry in scores.entries) {
       final e = Evaluation(
@@ -2249,6 +2251,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         syncStatus: 'pending',
         createdAt: now,
         updatedAt: now,
+        recordedBy: actor,
+        updatedBy: actor,
       );
       final row = e.toCloud();
       bucket.add(row);
@@ -2267,6 +2271,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
     final bucket = extraCloud['student_evaluations'];
     if (bucket == null) return;
+    final target = bucket.where((e) => '${e['id']}' == id).firstOrNull;
+    if (target != null) _assertGradesUnlocked(['${target['evaluation_date'] ?? ''}']);
     final before = bucket.length;
     bucket.removeWhere((e) => '${e['id']}' == id);
     if (bucket.length == before) return;
@@ -3075,6 +3081,27 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     });
     // توافق أجهزة قديمة ما زالت تقرأ من colors
     await _syncInstitutionSetting(gradingSchemeColorKey, scheme.toMap());
+  }
+
+  /// إقفال العلامات حتى تاريخ (`grades_locked_until`)؛ فارغ يفتحها. للمدير وحده.
+  Future<void> setGradesLockedUntil(String date) async {
+    if (!isAdminUser) throw StoreException('إقفال العلامات للمدير وحده');
+    await _writeSettings((prev) => prev.copyWith(gradesLockedUntil: date));
+  }
+
+  /// الإقفال كما يسري على مستخدم هذا الجهاز: المدير لا يُقفل عليه شيء.
+  String get myGradesLock => isAdminUser ? '' : settings.gradesLockedUntil;
+
+  void _assertGradesUnlocked(Iterable<String> dates) {
+    final lock = myGradesLock;
+    if (lock.isEmpty) return;
+    if (dates.any((d) => isGradeLocked(d, lock))) throw StoreException(gradeLockMessage(lock));
+  }
+
+  /// من يرصد على هذا الجهاز كما يُعرض في كشف العلامات.
+  String get gradeActorLabel {
+    final name = (deviceUser?.name ?? '').trim();
+    return 'الإدارة: ${name.isNotEmpty ? name : receiptReceiver}';
   }
 
   Future<void> saveGradingSettings(GradingSettings grading) async {
@@ -8608,6 +8635,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   bool can(String section) => mySections.contains(resolveSection(section) ?? section);
 
   /// تعديل علامة مرصودة أو حذفها — `userCanEditGrades`: المدير دائماً، ولمن مُنح `evaluations.edit`.
+  /// مدير المنشأة على هذا الجهاز (أو جهاز المالك بلا حساب مثبَّت) — لا يسري عليه إقفال العلامات.
+  bool get isAdminUser {
+    final me = deviceUser;
+    if (me == null) return !isStaffSession;
+    return me.isActive && normalizeRole(me.role) == 'admin';
+  }
+
   bool get canEditGrades {
     final me = deviceUser;
     if (me == null) return true;

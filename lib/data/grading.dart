@@ -509,3 +509,16 @@ List<SubjectGradeSummary> subjectGradeSummaries(
       }(),
   ].where((s) => s.term1.components.isNotEmpty || s.term2.components.isNotEmpty).toList();
 }
+
+// ── إقفال العلامات (gradeLock.ts في الويب) ─────────────────────────────────────
+
+/// علامةٌ بتاريخ اختبار حتى [lockedUntil] (شاملاً) مقفلة: لا يرصدها ولا يعدّلها
+/// ولا يحذفها إلا المدير. يُستعمل بعد تسليم الشهادات.
+bool isGradeLocked(String evaluationDate, String lockedUntil) {
+  if (lockedUntil.isEmpty || evaluationDate.isEmpty) return false;
+  final d = evaluationDate.length >= 10 ? evaluationDate.substring(0, 10) : evaluationDate;
+  return d.compareTo(lockedUntil) <= 0;
+}
+
+String gradeLockMessage(String lockedUntil) =>
+    'العلامات مقفلة حتى ${lockedUntil.split('-').reversed.join('/')}: راجع مدير المدرسة لتعديلها';

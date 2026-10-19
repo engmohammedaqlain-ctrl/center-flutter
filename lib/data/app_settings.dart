@@ -50,6 +50,7 @@ class AppSettings {
     this.grading = GradingSettings.empty,
     this.gradingByYear = const {},
     this.receiptDevices = const {},
+    this.gradesLockedUntil = '',
     this.extra = const {},
   });
 
@@ -73,6 +74,10 @@ class AppSettings {
   /// رموز أجهزة الترقيم — `receipt_devices`.
   final Map<String, ReceiptDeviceEntry> receiptDevices;
 
+  /// إقفال العلامات: كل علامة بتاريخ اختبار حتى هذا اليوم (YYYY-MM-DD) لا يرصدها
+  /// ولا يعدّلها ولا يحذفها إلا المدير — `grades_locked_until`. فارغ = مفتوحة.
+  final String gradesLockedUntil;
+
   /// مفاتيح العمود التي لا تقرؤها هذه النسخة، تُعاد كما وصلت.
   final Map<String, dynamic> extra;
 
@@ -85,6 +90,7 @@ class AppSettings {
     GradingSettings? grading,
     Map<String, GradingSettings>? gradingByYear,
     Map<String, ReceiptDeviceEntry>? receiptDevices,
+    String? gradesLockedUntil,
     Map<String, dynamic>? extra,
   }) =>
       AppSettings(
@@ -94,6 +100,7 @@ class AppSettings {
         grading: grading ?? this.grading,
         gradingByYear: gradingByYear ?? this.gradingByYear,
         receiptDevices: receiptDevices ?? this.receiptDevices,
+        gradesLockedUntil: gradesLockedUntil ?? this.gradesLockedUntil,
         extra: extra ?? this.extra,
       );
 
@@ -111,6 +118,7 @@ class AppSettings {
           'receipt_devices': {
             for (final e in receiptDevices.entries) e.key: e.value.toMap(),
           },
+        if (gradesLockedUntil.isNotEmpty) 'grades_locked_until': gradesLockedUntil,
       };
 
   /// قراءة آمنة: رقمٌ سالب أو نصٌّ مكان قائمة لا يُعطّل بقية الإعدادات.
@@ -144,6 +152,9 @@ class AppSettings {
       grading: GradingSettings.normalize(m['grading']),
       gradingByYear: byYear,
       receiptDevices: devices,
+      gradesLockedUntil: RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch('${m['grades_locked_until'] ?? ''}')
+          ? '${m['grades_locked_until']}'
+          : '',
       extra: {
         for (final entry in m.entries)
           if (!_known.contains(entry.key)) entry.key: entry.value,
@@ -158,5 +169,6 @@ class AppSettings {
     'grading',
     'grading_by_year',
     'receipt_devices',
+    'grades_locked_until',
   };
 }

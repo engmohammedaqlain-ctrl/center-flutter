@@ -73,6 +73,7 @@ class PortalOffline {
         // الألوان تُحفظ معها: البوابة تفتح بلا شبكة بهوية المدرسة لا بالافتراضي
         'colors': data.branding.colors.toMap(),
         'grading_scheme': data.branding.gradingScheme.toMap(),
+        'grades_locked_until': data.branding.gradesLockedUntil,
       },
       // أسماء المواد: بلا حفظها يفتح المعلم «الدرجات» بلا نت على قائمة مواد فارغة
       'subjects': [for (final s in data.subjects) s.toCloud()],
@@ -100,6 +101,7 @@ class PortalOffline {
             gradingScheme: brandingRaw['grading_scheme'] is Map
                 ? GradingScheme.fromMap(Map<String, dynamic>.from(brandingRaw['grading_scheme'] as Map))
                 : GradingScheme.empty,
+            gradesLockedUntil: '${brandingRaw['grades_locked_until'] ?? ''}',
           )
         : const PortalBranding();
 

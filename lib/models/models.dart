@@ -1877,6 +1877,8 @@ class Evaluation {
     this.syncStatus = 'synced',
     this.createdAt,
     this.updatedAt,
+    this.recordedBy = '',
+    this.updatedBy = '',
   });
 
   final String id;
@@ -1898,6 +1900,11 @@ class Evaluation {
   String syncStatus;
   String? createdAt;
   String? updatedAt;
+
+  /// من رصدها ومن عدّلها آخراً كما يُعرض: «المعلم: ...» أو «الإدارة: ...» —
+  /// `recorded_by` / `updated_by` (مهاجرة 20261022). القديمة فارغة.
+  String recordedBy;
+  String updatedBy;
 
   /// النسبة المئوية. الدرجة القصوى صفراً تعني تقييماً بلا وزن لا قسمةً على صفر.
   int get percent {
@@ -1926,6 +1933,8 @@ class Evaluation {
     'notes': notes.isEmpty ? null : notes,
     'term': term.isEmpty ? null : term,
     'component_id': componentId.isEmpty ? null : componentId,
+    'recorded_by': recordedBy.isEmpty ? null : recordedBy,
+    'updated_by': updatedBy.isEmpty ? null : updatedBy,
     'created_at': createdAt,
     'updated_at': updatedAt,
     'sync_status': syncStatus,
@@ -1949,6 +1958,8 @@ class Evaluation {
     syncStatus: '${m['sync_status'] ?? 'synced'}',
     createdAt: m['created_at']?.toString(),
     updatedAt: m['updated_at']?.toString(),
+    recordedBy: '${m['recorded_by'] ?? ''}',
+    updatedBy: '${m['updated_by'] ?? ''}',
   );
 }
 
