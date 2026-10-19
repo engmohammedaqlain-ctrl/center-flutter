@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'data/app_update.dart';
+import 'data/play_update.dart';
 import 'data/db_platform.dart';
 import 'data/local_db.dart';
 import 'data/portal.dart';
@@ -66,6 +67,9 @@ Future<void> _bootstrap() async {
   unawaited(store.afterEnter());
 }
 
+/// رسائل لا تخص شاشة بعينها (تحديث المتجر جاهز) — تظهر فوق أي شاشة مفتوحة.
+final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+
 class CenterApp extends StatefulWidget {
   const CenterApp({super.key});
 
@@ -121,6 +125,7 @@ class _CenterAppState extends State<CenterApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      scaffoldMessengerKey: _messengerKey,
       title: appName,
       debugShowCheckedModeBanner: false,
       theme: _theme,
@@ -188,6 +193,20 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
       return SchoolBrand.instance.code;
     };
     unawaited(updater.start());
+    unawaited(PlayUpdate.check(onReady: _playUpdateReady));
+  }
+
+  /// نسخة المتجر: نزل إصدار جديد من Google Play — «تحديث الآن» يثبّته ويعيد الفتح.
+  void _playUpdateReady() {
+    final messenger = _messengerKey.currentState;
+    if (messenger == null) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: const Text('نزل تحديث جديد للتطبيق'),
+        duration: const Duration(days: 1),
+        action: SnackBarAction(label: 'تحديث الآن', onPressed: () => unawaited(PlayUpdate.install())),
+      ));
   }
 
   @override
@@ -249,6 +268,7 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
       if (mounted) _maybePrompt();
     }));
     unawaited(updater.checkPatch());
+    unawaited(PlayUpdate.check(onReady: _playUpdateReady));
     final store = AppStore.instance;
     if (!store.loggedIn || store.isMasterAdmin || !store.networkEnabled) return;
     if (store.autoSync) {
