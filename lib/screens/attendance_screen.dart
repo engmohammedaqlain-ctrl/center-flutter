@@ -258,11 +258,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 dayProgress: dayProgress,
                 onPrint: currentOwner.isEmpty
                     ? null
-                    : () => printWeeklyAttendance(
+                    : () => showAttendanceExport(
                           context,
                           store: store,
                           title: ownerName,
                           week: week,
+                          day: day.dateStr,
                           students: list,
                           ownerId: currentOwner,
                         ),

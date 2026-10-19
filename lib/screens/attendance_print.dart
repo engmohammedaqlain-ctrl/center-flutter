@@ -8,6 +8,7 @@ import '../data/printing.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../widgets/widgets.dart';
+import 'sheet_export.dart';
 
 /// طباعة كشف الحضور الأسبوعي — مطابق لتقارير Docs المعتمدة.
 Future<void> printWeeklyAttendance(
@@ -247,4 +248,120 @@ String _parentCellText(Student s) {
   if (name.isEmpty) return phoneDisplay;
   if (phoneDisplay.isEmpty) return name;
   return '$name ($phoneDisplay)';
+}
+
+/// كشف حضور لأيام [days] (أسبوع أو أيام دوام شهر) كجدول واحد يُطبع أو يُنزَّل Excel:
+/// رمز لكل يوم، ومجموع الغياب والمأذون.
+SheetData attendanceSheet({
+  required AppStore store,
+  required String title,
+  required String periodLabel,
+  required List<String> days,
+  required List<Student> students,
+  required String ownerId,
+}) {
+  String symbol(String? s) => switch (s) { 'present' => '✔', 'absent' => 'غ', 'excused' => 'م', _ => '' };
+  final month = days.length > 6;
+  return SheetData(
+    title: 'كشف الحضور والغياب $periodLabel',
+    institution: store.institutionName,
+    logo: store.institutionLogo,
+    landscape: true,
+    yearLabel: academicYear(),
+    meta: [title, '${students.length} طالب', '✔ حاضر · غ غائب · م مأذون'],
+    headers: [
+      'م',
+      'الطالب',
+      for (final d in days) month ? '${int.parse(d.substring(8))}' : '${int.parse(d.substring(8))}/${int.parse(d.substring(5, 7))}',
+      'غياب',
+      'مأذون',
+    ],
+    flex: [2, 9, for (final _ in days) month ? 2 : 3, 3, 3],
+    signatures: const ['مربي الصف', 'المشرف الإداري', 'مدير المدرسة'],
+    rows: [
+      for (var i = 0; i < students.length; i++)
+        () {
+          final statuses = [for (final d in days) store.attendanceInSession(ownerId, students[i].id, d)];
+          return [
+            '${i + 1}',
+            students[i].fullName,
+            for (final s in statuses) symbol(s),
+            '${statuses.where((s) => s == 'absent').length}',
+            '${statuses.where((s) => s == 'excused').length}',
+          ];
+        }(),
+    ],
+  );
+}
+
+/// أيام دوام شهر التاريخ [date]، عدا الجمعة.
+List<String> schoolDaysOfMonth(String date) {
+  final y = int.parse(date.substring(0, 4)), m = int.parse(date.substring(5, 7));
+  return [
+    for (var d = DateTime(y, m, 1); d.month == m; d = d.add(const Duration(days: 1)))
+      if (d.weekday != DateTime.friday) isoDate(d),
+  ];
+}
+
+/// زر الطباعة في كشف الحضور: الأسبوع أو الشهر، PDF أو Excel.
+Future<void> showAttendanceExport(
+  BuildContext context, {
+  required AppStore store,
+  required String title,
+  required List<SchoolDay> week,
+  required String day,
+  required List<Student> students,
+  required String ownerId,
+}) async {
+  final monthName = gregorianMonths[int.parse(day.substring(5, 7)) - 1];
+  final choice = await showModalBottomSheet<String>(
+    context: context,
+    backgroundColor: Colors.white,
+    builder: (sheet) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.print_outlined),
+            title: const Text('كشف الأسبوع'),
+            onTap: () => Navigator.pop(sheet, 'week'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.calendar_month_outlined),
+            title: Text('كشف شهر $monthName'),
+            onTap: () => Navigator.pop(sheet, 'month'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.table_view_outlined),
+            title: const Text('كشف الأسبوع Excel'),
+            onTap: () => Navigator.pop(sheet, 'week_excel'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.table_view_outlined),
+            title: Text('كشف شهر $monthName Excel'),
+            onTap: () => Navigator.pop(sheet, 'month_excel'),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (choice == null || !context.mounted) return;
+  if (choice == 'week') {
+    await printWeeklyAttendance(context, store: store, title: title, week: week, students: students, ownerId: ownerId);
+    return;
+  }
+  final isMonth = choice.startsWith('month');
+  final sheet = attendanceSheet(
+    store: store,
+    title: title,
+    periodLabel: isMonth ? '$monthName ${day.substring(0, 4)}' : '${week.first.shortDate} - ${week.last.shortDate}',
+    days: isMonth ? schoolDaysOfMonth(day) : [for (final d in week) d.dateStr],
+    students: students,
+    ownerId: ownerId,
+  );
+  if (choice.endsWith('excel')) {
+    await downloadSheetCsv(context, sheet);
+  } else {
+    await printSheet(context, sheet);
+  }
 }

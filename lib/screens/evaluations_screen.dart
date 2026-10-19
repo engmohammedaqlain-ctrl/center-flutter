@@ -203,6 +203,18 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
               PopupMenuItem(value: true, child: Text('كشف النتائج')),
             ],
           ),
+          // إقفال العلامات بعد تسليم الشهادات: المدير يضبطه، وغيره يراه
+          if (store.isAdminUser || store.settings.gradesLockedUntil.isNotEmpty)
+            IconButton(
+              tooltip: store.settings.gradesLockedUntil.isEmpty
+                  ? 'إقفال العلامات'
+                  : 'العلامات مقفلة حتى ${store.settings.gradesLockedUntil}',
+              icon: Icon(
+                store.settings.gradesLockedUntil.isEmpty ? Icons.lock_open_outlined : Icons.lock_outline,
+                color: store.settings.gradesLockedUntil.isEmpty ? null : const Color(0xFFF2C14E),
+              ),
+              onPressed: store.isAdminUser ? () => _editGradesLock(context, store) : null,
+            ),
           IconButton(
             tooltip: 'تنزيل الكشف',
             icon: const Icon(Icons.print_outlined),
@@ -259,6 +271,18 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                   ],
                 ),
               ),
+              if (store.settings.gradesLockedUntil.isNotEmpty)
+                Container(
+                  width: double.infinity,
+                  color: const Color(0xFFFFF8E6),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  child: Text(
+                    store.isAdminUser
+                        ? 'العلامات حتى ${store.settings.gradesLockedUntil.split('-').reversed.join('/')} مقفلة على غير المدير'
+                        : gradeLockMessage(store.settings.gradesLockedUntil),
+                    style: const TextStyle(color: Color(0xFF6B4A00), fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                ),
               Expanded(
                 child: groupIds.isEmpty
                     ? const Padding(
@@ -472,8 +496,67 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
       confirmLabel: 'حذف',
     );
     if (!ok) return;
-    store.deleteEvaluation(e.id);
+    try {
+      store.deleteEvaluation(e.id);
+    } on StoreException catch (err) {
+      if (context.mounted) showAppSnack(context, err.message, error: true);
+      return;
+    }
     if (context.mounted) showAppSnack(context, 'تم حذف التقييم');
+  }
+
+  /// إقفال العلامات حتى تاريخ، أو فتحها — للمدير.
+  Future<void> _editGradesLock(BuildContext context, AppStore store) async {
+    final current = store.settings.gradesLockedUntil;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      builder: (sheet) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 14, 16, 4),
+              child: Text(
+                'كل علامة بتاريخ اختبار حتى اليوم المختار لا يرصدها ولا يعدّلها ولا يحذفها إلا المدير، ولا المعلم من بوابته.',
+                style: TextStyle(color: AppColors.muted, fontSize: 12),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.lock_outline),
+              title: Text(current.isEmpty ? 'إقفال العلامات حتى تاريخ…' : 'تغيير تاريخ الإقفال ($current)'),
+              onTap: () => Navigator.pop(sheet, 'lock'),
+            ),
+            if (current.isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.lock_open_outlined),
+                title: const Text('فتح التعديل'),
+                onTap: () => Navigator.pop(sheet, 'open'),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !context.mounted) return;
+    var date = '';
+    if (choice == 'lock') {
+      final now = DateTime.now();
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: DateTime.tryParse(current) ?? now,
+        firstDate: DateTime(now.year - 2),
+        lastDate: DateTime(now.year + 2),
+        helpText: 'إقفال العلامات حتى',
+      );
+      if (picked == null) return;
+      date = isoDate(picked);
+    }
+    try {
+      await store.setGradesLockedUntil(date);
+      if (context.mounted) showAppSnack(context, date.isEmpty ? 'فُتح تعديل العلامات' : 'أُقفلت العلامات حتى $date');
+    } on StoreException catch (err) {
+      if (context.mounted) showAppSnack(context, err.message, error: true);
+    }
   }
 }
 
@@ -1101,6 +1184,7 @@ Future<void> _showStudentGrades(
   void Function(Evaluation)? onDelete,
 }) {
   final sorted = [...rows]..sort((a, b) => b.evaluationDate.compareTo(a.evaluationDate));
+  final lock = StoreScope.of(context).myGradesLock;
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.white,
@@ -1156,6 +1240,17 @@ Future<void> _showStudentGrades(
                                     .join('  ·  '),
                                 style: const TextStyle(color: AppColors.faint, fontSize: 10.5),
                               ),
+                              // من رصد العلامة ومن عدّلها (العلامات قبل التحديث بلا اسم)
+                              if (e.recordedBy.isNotEmpty || e.updatedBy.isNotEmpty)
+                                Text(
+                                  [
+                                    if (e.recordedBy.isNotEmpty) 'رصدها ${e.recordedBy}',
+                                    if (e.updatedBy.isNotEmpty && e.updatedBy != e.recordedBy) 'عدّلها ${e.updatedBy}',
+                                  ].join('  ·  '),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: AppColors.faint, fontSize: 10),
+                                ),
                             ],
                           ),
                         ),
@@ -1176,7 +1271,7 @@ Future<void> _showStudentGrades(
                             Text('${e.percent}%', style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
                           ],
                         ),
-                        if (onDelete != null)
+                        if (onDelete != null && !isGradeLocked(e.evaluationDate, lock))
                           IconButton(
                             tooltip: 'حذف',
                             visualDensity: VisualDensity.compact,
