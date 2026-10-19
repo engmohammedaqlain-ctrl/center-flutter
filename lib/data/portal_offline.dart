@@ -333,7 +333,11 @@ class PortalOffline {
             );
             done++;
           case 'evaluation_score':
-            await service.updateEvaluationScore('${op['id']}', (op['score'] as num).toDouble());
+            await service.updateEvaluationScore(
+              '${op['id']}',
+              (op['score'] as num).toDouble(),
+              updatedBy: '${op['updated_by'] ?? ''}',
+            );
             done++;
           case 'evaluation_delete':
             await service.deleteEvaluation('${op['id']}');

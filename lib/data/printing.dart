@@ -374,7 +374,7 @@ class PdfKit {
   static String fileName(String raw) {
     final base = raw.trim().replaceAll(RegExp(r'\s+'), '_');
     // صورة الوصل تبقى بامتدادها
-    if (RegExp(r'\.(pdf|png)$', caseSensitive: false).hasMatch(base)) return base;
+    if (RegExp(r'\.(pdf|png|csv)$', caseSensitive: false).hasMatch(base)) return base;
     return '$base.pdf';
   }
 
@@ -412,6 +412,8 @@ class PdfKit {
       } catch (_) {
         // نكمل بالمشاركة / الطباعة
       }
+      // نافذة الطباعة للـ PDF وحده: ملف Excel أُلغي حفظه لا يُطبع
+      if (!mimeType.contains('pdf')) return;
       await Printing.layoutPdf(onLayout: (_) async => bytes, name: file);
       return;
     }

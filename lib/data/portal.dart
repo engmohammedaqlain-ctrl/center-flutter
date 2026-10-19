@@ -1930,18 +1930,25 @@ class PortalService {
       }
     }
     final now = _nowIso();
+    // تعديل كشف قائم يُبقي تاريخ رصده الأول
     return supabaseUpsert('student_evaluations', [
-      for (final e in batch) {...e.toCloud(), 'tenant_id': tenantId, 'created_at': now, 'updated_at': now},
+      for (final e in batch)
+        {
+          ...e.toCloud(),
+          'tenant_id': tenantId,
+          'created_at': e.createdAt.isEmpty ? now : e.createdAt,
+          'updated_at': now,
+        },
     ]);
   }
 
   Future<void> deleteEvaluation(String id) => supabaseDelete('student_evaluations', {'id': 'eq.$id'});
 
   /// تعديل علامة مرصودة — مقابل `EvaluationService.updateScore` في الويب.
-  Future<void> updateEvaluationScore(String id, double score) => supabaseUpdate(
+  Future<void> updateEvaluationScore(String id, double score, {String updatedBy = ''}) => supabaseUpdate(
         'student_evaluations',
         {'id': 'eq.$id'},
-        {'score': score, 'updated_at': _nowIso()},
+        {'score': score, if (updatedBy.isNotEmpty) 'updated_by': updatedBy, 'updated_at': _nowIso()},
       );
 
   // ── طلبات الدفع من ولي الأمر (ParentPaymentRequests) ─────────────────────

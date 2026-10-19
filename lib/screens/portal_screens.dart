@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../data/features.dart';
 import '../data/grading.dart';
+import 'sheet_export.dart';
 import '../data/institution.dart';
 import '../data/portal.dart';
 import '../data/image_shrink.dart';
@@ -1456,7 +1457,20 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     }
   }
 
+  /// إقفال العلامات من المدير: ما قبله لا يُرصد ولا يُعدَّل ولا يُحذف من البوابة.
+  String get _gradesLock => data?.branding.gradesLockedUntil ?? '';
+
+  /// يظهر في كشف الإدارة: من رصد العلامة ومن عدّلها.
+  String get _gradeActor => 'المعلم: ${widget.user.name}'.trim();
+
+  bool _lockedOut(StudentEvaluation e) {
+    if (!isGradeLocked(e.evaluationDate, _gradesLock)) return false;
+    showAppSnack(context, gradeLockMessage(_gradesLock), error: true);
+    return true;
+  }
+
   Future<void> _deleteEvaluation(StudentEvaluation e) async {
+    if (_lockedOut(e)) return;
     final ok = await confirmSheet(
       context,
       title: 'حذف التقييم',
@@ -1477,14 +1491,16 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
 
   /// تعديل علامة مرصودة — كنقر الخلية في كشف الويب.
   Future<void> _editScore(StudentEvaluation e, double score) async {
+    if (_lockedOut(e)) return;
+    final actor = _gradeActor;
     final updated = [
-      for (final x in recent) x.id == e.id ? x.copyWith(score: score) : x,
+      for (final x in recent) x.id == e.id ? x.copyWith(score: score, updatedBy: actor) : x,
     ];
     setState(() => recent = updated);
     if (e.groupId.isNotEmpty) await _offline.saveEvaluations(e.groupId, updated);
     await _writeOrQueue(
-      () => _service.updateEvaluationScore(e.id, score),
-      {'kind': 'evaluation_score', 'id': e.id, 'score': score},
+      () => _service.updateEvaluationScore(e.id, score, updatedBy: actor),
+      {'kind': 'evaluation_score', 'id': e.id, 'score': score, 'updated_by': actor},
       announceTables: const ['student_evaluations'],
     );
   }
@@ -2245,7 +2261,8 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
 
   // ── تبويب الدرجات: السجل هنا، والرصد صفحة منفصلة لكشف الطلاب الطويل ──
 
-  Future<void> _openEvaluationForm() async {
+  Future<void> _openEvaluationForm({List<StudentEvaluation> editing = const []}) async {
+    if (editing.isNotEmpty && _lockedOut(editing.first)) return;
     final saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => _TeacherEvaluationFormPage(
@@ -2258,6 +2275,10 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
           initialGroupId: groupId,
           initialGrade: gradeFilter,
           initialSection: sectionFilter,
+          recent: recent,
+          editing: editing,
+          actor: _gradeActor,
+          gradesLock: _gradesLock,
         ),
       ),
     );
@@ -2286,6 +2307,10 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       // النطاق وحده في البطاقة: زر الرصد انتقل إلى منطقة الإبهام، والشرح
       // المكتوب كان يشغل مساحةً بلا فائدة يومية
       _Card(child: _scopePicker()),
+      if (_gradesLock.isNotEmpty) ...[
+        const SizedBox(height: 10),
+        _LockBanner('${gradeLockMessage(_gradesLock)}. الاختبارات بعد هذا التاريخ تُرصد عادي.'),
+      ],
       if (groups.isNotEmpty) ...[
         const SizedBox(height: 14),
         // بطاقة لكل اختبار بمعدّله، وتُفتح فتظهر درجات طلابه
@@ -2320,6 +2345,10 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
               nameOf: nameOf,
               onDelete: _deleteEvaluation,
               onEditScore: _editScore,
+              locked: isGradeLocked(entry.rows.first.evaluationDate, _gradesLock),
+              onEditSheet: () => _openEvaluationForm(editing: entry.rows),
+              onPrint: () => printSheet(context, _evaluationSheet(entry.rows, nameOf)),
+              onExcel: () => downloadSheetCsv(context, _evaluationSheet(entry.rows, nameOf)),
             ),
           ),
       ] else ...[
@@ -2329,6 +2358,47 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     ];
   }
 
+
+  /// كشف علامات اختبار واحد: كل طلاب الشعبة، ومن لم يختبر يظهر بلا علامة.
+  SheetData _evaluationSheet(List<StudentEvaluation> rows, String Function(String) nameOf) {
+    final first = rows.first;
+    final byStudent = {for (final r in rows) r.studentId: r};
+    final roster = _teacherRosterStudents(_current, sectionFilter: sectionFilter, grade: gradeFilter);
+    final ids = [
+      for (final s in roster) s.id,
+      for (final r in rows)
+        if (!roster.any((s) => s.id == r.studentId)) r.studentId,
+    ];
+    final scored = rows.where((r) => r.percent != null).toList();
+    final avg = scored.isEmpty ? 0 : (scored.fold<int>(0, (a, r) => a + (r.percent ?? 0)) / scored.length).round();
+    final subject = _current?.subjectName.trim() ?? '';
+    return SheetData(
+      title: 'كشف علامات ${first.title.isEmpty ? first.typeLabel : first.title}',
+      institution: data?.branding.name ?? '',
+      logo: data?.branding.logo ?? '',
+      meta: [
+        if (subject.isNotEmpty) 'المادة: $subject',
+        if (sectionFilter.isNotEmpty) 'الشعبة: $sectionFilter',
+        '${first.typeLabel} · ${first.evaluationDate}',
+        'المعدل $avg% · ${rows.length} من ${ids.length} طالب',
+      ],
+      headers: ['م', 'الطالب', 'العلامة (من ${trimNum(first.maxScore)})', 'النسبة', 'ملاحظات'],
+      flex: const [1, 5, 2, 2, 4],
+      rows: [
+        for (var i = 0; i < ids.length; i++)
+          () {
+            final r = byStudent[ids[i]];
+            return [
+              '${i + 1}',
+              nameOf(ids[i]),
+              r?.score == null ? 'لم يختبر' : trimNum(r!.score!),
+              r?.percent == null ? '' : '${r!.percent}%',
+              r?.notes ?? '',
+            ];
+          }(),
+      ],
+    );
+  }
 
   /// سجل الدرجات مجموعاً بالتقييم: اختبار واحد ببطاقة، لا صفّاً لكل طالب.
   List<({String title, String meta, int average, List<StudentEvaluation> rows})> _recentByEvaluation() {
@@ -2581,6 +2651,10 @@ class _TeacherEvaluationFormPage extends StatefulWidget {
     this.initialGroupId = '',
     this.initialGrade = '',
     this.initialSection = '',
+    this.recent = const [],
+    this.editing = const [],
+    this.actor = '',
+    this.gradesLock = '',
   });
 
   final PortalUser user;
@@ -2592,6 +2666,18 @@ class _TeacherEvaluationFormPage extends StatefulWidget {
   final String initialGroupId;
   final String initialGrade;
   final String initialSection;
+
+  /// سجل المادة: رصد اختبار بنفس العنوان والتاريخ والنوع يعدّل سجلاته بدل تكرارها.
+  final List<StudentEvaluation> recent;
+
+  /// كشف سابق مفتوح للتعديل: الحفظ يعدّل سجلاته، وإفراغ خانة يحذف علامة الطالب.
+  final List<StudentEvaluation> editing;
+
+  /// «المعلم: <الاسم>» — من رصد العلامة ومن عدّلها.
+  final String actor;
+
+  /// إقفال العلامات من الإدارة.
+  final String gradesLock;
 
   @override
   State<_TeacherEvaluationFormPage> createState() => _TeacherEvaluationFormPageState();
@@ -2620,9 +2706,25 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
 
   TeacherClass? get _current => widget.classes.where((c) => c.group.id == groupId).firstOrNull;
 
+  bool get _isEditing => widget.editing.isNotEmpty;
+
   @override
   void initState() {
     super.initState();
+    final first = widget.editing.firstOrNull;
+    if (first != null) {
+      if (first.groupId.isNotEmpty) groupId = first.groupId;
+      evalTitle.text = first.title;
+      evalMax.text = trimNum(first.maxScore);
+      evalType = first.type;
+      if (first.evaluationDate.isNotEmpty) evalDate = first.evaluationDate;
+      evalTerm = first.term.isNotEmpty ? first.term : termForDate(evalDate);
+      evalComponentId = first.componentId;
+      for (final r in widget.editing) {
+        if (r.score != null) _ctl(_scores, r.studentId).text = trimNum(r.score!);
+        if (r.notes.isNotEmpty) _ctl(_notes, r.studentId).text = r.notes;
+      }
+    }
     // إن فُتحت الصفحة بلا شعبة: اختر الوحيدة، أو شعبة قاعة المادة الحالية
     final secs = _sections();
     if (sectionFilter.isEmpty && secs.isNotEmpty) {
@@ -2753,42 +2855,85 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
       return;
     }
 
+    final lock = widget.gradesLock;
+    if (isGradeLocked(evalDate, lock) || widget.editing.any((r) => isGradeLocked(r.evaluationDate, lock))) {
+      showAppSnack(context, gradeLockMessage(lock), error: true);
+      return;
+    }
+
     final max = _maxScore;
+    final comps = evalTerm.isEmpty ? const <GradingComponent>[] : widget.gradingScheme.of(evalTerm);
+    final comp = comps.where((x) => x.id == evalComponentId).firstOrNull;
+    final type = evalComponentId.isNotEmpty ? evaluationTypeForComponent(comp?.name) : evalType;
+
+    // سجل كل طالب في هذا الاختبار: الكشف المفتوح للتعديل، وإلا رصد سابق بنفس العنوان
+    // والتاريخ والنوع. إعادة رصد الاختبار كانت تضيف نسخة ثانية لكل طالب فتُحسب مرتين
+    final existing = <String, StudentEvaluation>{
+      for (final r in _isEditing
+          ? widget.editing
+          : widget.recent.where((r) =>
+              r.groupId == c.group.id && r.title.trim() == title && r.evaluationDate == evalDate && r.type == type))
+        r.studentId: r,
+    };
+
     final batch = <StudentEvaluation>[];
+    final removed = <StudentEvaluation>[];
     for (final s in _students()) {
       final raw = _ctl(_scores, s.id).text.trim();
-      if (raw.isEmpty) continue;
+      final prev = existing[s.id];
+      if (raw.isEmpty) {
+        if (_isEditing && prev != null) removed.add(prev);
+        continue;
+      }
       final score = double.tryParse(raw);
       if (score == null || score < 0 || score > max) {
         showAppSnack(context, 'درجة غير صالحة للطالب ${s.fullName} (من 0 إلى ${trimNum(max)})', error: true);
         return;
       }
-      final comps = evalTerm.isEmpty ? const <GradingComponent>[] : widget.gradingScheme.of(evalTerm);
-      final comp = comps.where((x) => x.id == evalComponentId).firstOrNull;
       batch.add(StudentEvaluation(
-        id: _uuid.v4(),
+        id: prev?.id ?? _uuid.v4(),
         studentId: s.id,
         groupId: c.group.id,
         subjectId: c.group.subjectId,
-        teacherId: widget.user.id,
+        teacherId: (prev?.teacherId.isNotEmpty ?? false) ? prev!.teacherId : widget.user.id,
         title: title,
         score: score,
         maxScore: max,
         evaluationDate: evalDate,
-        type: evalComponentId.isNotEmpty ? evaluationTypeForComponent(comp?.name) : evalType,
+        type: type,
         notes: _ctl(_notes, s.id).text.trim(),
         term: evalTerm,
         componentId: evalTerm.isNotEmpty && evalComponentId.isNotEmpty ? evalComponentId : '',
+        createdAt: prev?.createdAt ?? '',
+        recordedBy: prev != null ? prev.recordedBy : widget.actor,
+        updatedBy: widget.actor,
       ));
     }
-    if (batch.isEmpty) {
+    if (batch.isEmpty && removed.isEmpty) {
       showAppSnack(context, 'يرجى إدخال درجة واحدة على الأقل', error: true);
       return;
+    }
+    if (removed.isNotEmpty) {
+      final ok = await confirmSheet(
+        context,
+        title: 'حذف علامات',
+        message: 'ستُحذف علامة ${removed.length} طالب أُفرغت خانته. متابعة؟',
+        confirmLabel: 'حفظ',
+      );
+      if (!ok || !mounted) return;
     }
 
     setState(() => saving = true);
     try {
-      await widget.service.saveEvaluations(batch, widget.user.tenantId);
+      if (batch.isNotEmpty) await widget.service.saveEvaluations(batch, widget.user.tenantId);
+      for (final r in removed) {
+        try {
+          await widget.service.deleteEvaluation(r.id);
+        } catch (e) {
+          if (e is PortalException || !isTransientSyncError(e)) rethrow;
+          await widget.offline.queueOp({'kind': 'evaluation_delete', 'id': r.id}, widget.user.id);
+        }
+      }
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
@@ -2918,9 +3063,9 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
       backgroundColor: AppColors.bg,
       appBar: AppBar(
         titleSpacing: 0,
-        title: const Text(
-          'رصد درجات',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
+        title: Text(
+          _isEditing ? 'تعديل كشف درجات' : 'رصد درجات',
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
         ),
       ),
       body: ListView(
@@ -4090,6 +4235,34 @@ class _CopySectionSheetState extends State<_CopySectionSheet> {
 }
 
 /// تقييم واحد في سجل المعلم: عنوانه ومعدّله، ويُفتح فتظهر درجات طلابه.
+/// تنبيه إقفال العلامات من الإدارة.
+class _LockBanner extends StatelessWidget {
+  const _LockBanner(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E6),
+        borderRadius: BorderRadius.circular(Corner.card),
+        border: Border.all(color: const Color(0xFFF2D58A)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.lock_outline, size: 16, color: Color(0xFF9A6700)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(text, style: const TextStyle(color: Color(0xFF6B4A00), fontSize: 12, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _RecentEvaluationCard extends StatefulWidget {
   const _RecentEvaluationCard({
     required this.title,
@@ -4099,6 +4272,10 @@ class _RecentEvaluationCard extends StatefulWidget {
     required this.nameOf,
     required this.onDelete,
     required this.onEditScore,
+    required this.onEditSheet,
+    required this.onPrint,
+    required this.onExcel,
+    this.locked = false,
   });
 
   final String title;
@@ -4108,6 +4285,14 @@ class _RecentEvaluationCard extends StatefulWidget {
   final String Function(String studentId) nameOf;
   final void Function(StudentEvaluation) onDelete;
   final void Function(StudentEvaluation, double) onEditScore;
+
+  /// فتح الكشف كاملاً في صفحة الرصد: تصحيح علامات أو إضافة من لم يختبر.
+  final VoidCallback onEditSheet;
+  final VoidCallback onPrint;
+  final VoidCallback onExcel;
+
+  /// مقفل من الإدارة: يُعرض ويُطبع ولا يُعدَّل.
+  final bool locked;
 
   @override
   State<_RecentEvaluationCard> createState() => _RecentEvaluationCardState();
@@ -4198,6 +4383,45 @@ class _RecentEvaluationCardState extends State<_RecentEvaluationCard> {
                     ),
                     child: Column(
                       children: [
+                        Padding(
+                          padding: const EdgeInsetsDirectional.fromSTEB(8, 2, 4, 2),
+                          child: Row(
+                            children: [
+                              if (widget.locked)
+                                const Padding(
+                                  padding: EdgeInsetsDirectional.only(start: 6),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.lock_outline, size: 14, color: Color(0xFF9A6700)),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'مقفل من الإدارة',
+                                        style: TextStyle(color: Color(0xFF9A6700), fontSize: 11, fontWeight: FontWeight.w700),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              const Spacer(),
+                              TextButton.icon(
+                                onPressed: widget.onPrint,
+                                icon: const Icon(Icons.print_outlined, size: 16),
+                                label: const Text('طباعة'),
+                              ),
+                              TextButton.icon(
+                                onPressed: widget.onExcel,
+                                icon: const Icon(Icons.table_view_outlined, size: 16),
+                                label: const Text('Excel'),
+                              ),
+                              if (!widget.locked)
+                                TextButton.icon(
+                                  onPressed: widget.onEditSheet,
+                                  icon: const Icon(Icons.edit_outlined, size: 16),
+                                  label: const Text('تعديل الكشف'),
+                                ),
+                            ],
+                          ),
+                        ),
                         for (var i = 0; i < widget.rows.length; i++)
                           Container(
                             padding: const EdgeInsetsDirectional.fromSTEB(14, 6, 6, 6),
@@ -4221,16 +4445,26 @@ class _RecentEvaluationCardState extends State<_RecentEvaluationCard> {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                _EditableScore(
-                                  row: widget.rows[i],
-                                  onSave: (v) => widget.onEditScore(widget.rows[i], v),
-                                ),
-                                IconButton(
-                                  tooltip: 'حذف',
-                                  visualDensity: VisualDensity.compact,
-                                  icon: const Icon(Icons.delete_outline, size: 17, color: AppColors.danger),
-                                  onPressed: () => widget.onDelete(widget.rows[i]),
-                                ),
+                                if (widget.locked)
+                                  Padding(
+                                    padding: const EdgeInsetsDirectional.only(end: 10),
+                                    child: Text(
+                                      '${widget.rows[i].score == null ? '-' : trimNum(widget.rows[i].score!)} / ${trimNum(widget.rows[i].maxScore)}',
+                                      style: const TextStyle(color: AppColors.text, fontSize: 12.5, fontWeight: FontWeight.w800),
+                                    ),
+                                  )
+                                else ...[
+                                  _EditableScore(
+                                    row: widget.rows[i],
+                                    onSave: (v) => widget.onEditScore(widget.rows[i], v),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'حذف',
+                                    visualDensity: VisualDensity.compact,
+                                    icon: const Icon(Icons.delete_outline, size: 17, color: AppColors.danger),
+                                    onPressed: () => widget.onDelete(widget.rows[i]),
+                                  ),
+                                ],
                               ],
                             ),
                           ),

@@ -35,7 +35,7 @@ class _OnlinePortal extends PortalService {
   final List<CourseSection> savedSections = [];
 
   @override
-  Future<void> updateEvaluationScore(String id, double score) async => scoreCalls.add((id: id, score: score));
+  Future<void> updateEvaluationScore(String id, double score, {String updatedBy = ''}) async => scoreCalls.add((id: id, score: score));
 
   @override
   Future<void> deleteEvaluation(String id) async => deletedEvaluations.add(id);
@@ -136,7 +136,7 @@ class _DeadPortal extends PortalService {
   Future<void> saveEvaluations(List<StudentEvaluation> batch, String tenantId) async => throw Exception('offline');
 
   @override
-  Future<void> updateEvaluationScore(String id, double score) async => throw Exception('offline');
+  Future<void> updateEvaluationScore(String id, double score, {String updatedBy = ''}) async => throw Exception('offline');
 
   @override
   Future<void> deleteEvaluation(String id) async => throw Exception('offline');
