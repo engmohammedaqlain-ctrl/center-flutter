@@ -535,6 +535,7 @@ typedef InstalledVersion = ({int code, String name});
 class AppUpdater extends ChangeNotifier {
   AppUpdater({
     required this.supported,
+    bool? patchesSupported,
     this.manifestUrl = releaseManifestUrl,
     Future<InstalledVersion> Function()? installedVersion,
     Future<Directory> Function()? downloadDir,
@@ -544,17 +545,23 @@ class AppUpdater extends ChangeNotifier {
     PatchSource? patches,
     DownloadNotifier? notifier,
     Future<void> Function(Duration delay)? wait,
-  })  : _installedVersion = installedVersion ?? _packageVersion,
+  })  : patchesSupported = patchesSupported ?? supported,
+        _installedVersion = installedVersion ?? _packageVersion,
         _downloadDir = downloadDir ?? getTemporaryDirectory,
         _openInstaller = openInstaller ?? _systemInstaller,
         _client = client ?? _defaultClient,
         _clock = clock ?? DateTime.now,
-        _patches = patches ?? (supported ? ShorebirdPatchSource() : null),
+        _patches = patches ?? ((patchesSupported ?? supported) ? ShorebirdPatchSource() : null),
         _notifier = notifier ?? defaultDownloadNotifier(),
         _wait = wait ?? Future<void>.delayed;
 
-  /// على أندرويد وحده: غيره لا يثبّت حزم APK. ونسخة المتجر تتحدث من المتجر.
-  static final instance = AppUpdater(supported: !kIsWeb && Platform.isAndroid && !playStore);
+  /// على أندرويد وحده: غيره لا يثبّت حزم APK. ونسخة المتجر تتحدث من المتجر،
+  /// وتستقبل التحديث الصامت (Shorebird) كنسخ GitHub — سياسة Google تمنع تثبيت حزمة
+  /// من خارج المتجر لا تصليح كود Dart.
+  static final instance = AppUpdater(
+    supported: !kIsWeb && Platform.isAndroid && !playStore,
+    patchesSupported: !kIsWeb && Platform.isAndroid,
+  );
 
   /// يُستدعى قبل فتح مثبِّت الـ APK: يرفع المعلّق ثم يسمح بالتثبيت.
   /// يعيد رسالة خطأ أو `null` عند النجاح.
@@ -588,6 +595,9 @@ class AppUpdater extends ChangeNotifier {
   static const _kCheckedAt = 'app_update_checked_at';
 
   final bool supported;
+
+  /// التحديث الصامت وحده — يشمل نسخة المتجر التي لا تثبّت حزماً.
+  final bool patchesSupported;
   final String manifestUrl;
   final Future<InstalledVersion> Function() _installedVersion;
   final Future<Directory> Function() _downloadDir;
@@ -699,7 +709,11 @@ class AppUpdater extends ChangeNotifier {
   /// التحديث الصامت يُفحص في الخلفية بعد فتح البوابة: لا يعلّق الإقلاع على
   /// Shorebird، ويُنزَّل إن وُجد ثم يُطبَّق عند الفتح التالي.
   Future<void> start() => _starting ??= () async {
-        if (!supported) return;
+        if (!supported) {
+          // نسخة المتجر: لا وصف إصدارات ولا مثبِّت، والتحديث الصامت في الخلفية
+          if (patchesSupported) unawaited(checkPatch());
+          return;
+        }
         try {
           await _load();
           // محفوظ إلزامي معروف مسبقاً: لا ننتظر الشبكة
@@ -1009,7 +1023,7 @@ class AppUpdater extends ChangeNotifier {
 
   /// التحديث الصامت: يُنزَّل في الخلفية ويُطبَّق عند فتح التطبيق التالي.
   Future<void> checkPatch({bool force = false}) {
-    if (!supported) return Future.value();
+    if (!patchesSupported) return Future.value();
     return _patching ??= _checkPatch(force).whenComplete(() => _patching = null);
   }
 

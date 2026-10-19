@@ -8,6 +8,8 @@
 #   SHOREBIRD_TOKEN           مفتاح API من console.shorebird.dev
 #   DEV_USERNAME/DEV_PASSWORD حساب المطوّر - لقائمة المدارس
 #   RELEASES_TOKEN            توكن يكتب على center-mobile-releases
+#   PLAY_UPLOAD_KEYSTORE_BASE64 / PLAY_UPLOAD_KEY_PROPERTIES
+#                             مفتاح رفع المتجر: التحديث الصامت يُرسل لنسخة Google Play أيضاً
 name: Release
 
 on:
@@ -118,3 +120,15 @@ jobs:
       - name: Push the version commit
         if: inputs.action == 'build'
         run: git push origin HEAD
+
+  # التحديث الصامت يصل نسخة Google Play أيضاً: إصدارها في Shorebird منفصل ويُبنى بـ STORE=play
+  play_patch:
+    needs: release
+    if: inputs.action == 'patch'
+    uses: ./.github/workflows/play-store.yml
+    with:
+      action: patch
+    secrets:
+      PLAY_UPLOAD_KEYSTORE_BASE64: ${{ secrets.PLAY_UPLOAD_KEYSTORE_BASE64 }}
+      PLAY_UPLOAD_KEY_PROPERTIES: ${{ secrets.PLAY_UPLOAD_KEY_PROPERTIES }}
+      SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}

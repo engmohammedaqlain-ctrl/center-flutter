@@ -1,27 +1,61 @@
-# نسخة Google Play: Actions ← Play Store ← Run workflow. يبني AAB موقَّعاً بمفتاح الرفع
-# ويحفظه في صفحة التشغيل (Artifacts). لا ينشر على المتجر ولا يلمس نسخ GitHub
-# (لا Release، ولا Shorebird، ولا كوميت رقم إصدار).
+# نسخة Google Play: Actions ← Play Store ← Run workflow.
+#
+#   action: build  يبني AAB موقَّعاً بمفتاح الرفع بـ `shorebird release` ويحفظه في صفحة
+#                  التشغيل (Artifacts) لترفعه على Play Console. إصدار Shorebird منفصل عن
+#                  نسخ GitHub: رقم بنائه 1000000 + رقم pubspec، فلا يتصادمان أبداً.
+#   action: patch  تحديث صامت لآخر إصدار متجر في Shorebird، يُبنى بـ STORE=play. يُشغَّل
+#                  تلقائياً بعد كل تحديث صامت من Release (action: patch).
+#
+# لا ينشر على المتجر ولا يلمس نسخ GitHub (لا Release، ولا كوميت رقم إصدار).
+# التحديث الصامت يصل من أول بناء متجر بُني بهذا الملف؛ ما رُفع قبله لا يستقبله.
 #
 # الأسرار (Settings ← Secrets and variables ← Actions):
 #   PLAY_UPLOAD_KEYSTORE_BASE64   ملف play-upload.jks بصيغة base64
 #   PLAY_UPLOAD_KEY_PROPERTIES    محتوى play-key.properties (storePassword, keyPassword, keyAlias, storeFile)
+#   SHOREBIRD_TOKEN               مفتاح API من console.shorebird.dev (نفسه في Release)
 name: Play Store
 
 on:
   workflow_dispatch:
     inputs:
+      action:
+        description: build = AAB for Play Console, patch = silent update for Play users
+        type: choice
+        options: [build, patch]
+        default: build
       build_number:
-        description: versionCode - أكبر من آخر رقم رُفع للمتجر (فارغ = رقم pubspec)
+        description: build only - versionCode (empty = 1000000 + pubspec build)
         type: string
         required: false
+  workflow_call:
+    inputs:
+      action:
+        type: string
+        default: patch
+      build_number:
+        type: string
+        required: false
+    secrets:
+      PLAY_UPLOAD_KEYSTORE_BASE64:
+        required: true
+      PLAY_UPLOAD_KEY_PROPERTIES:
+        required: true
+      SHOREBIRD_TOKEN:
+        required: true
+
+concurrency:
+  group: play-store
+  cancel-in-progress: false
 
 jobs:
-  aab:
+  play:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     env:
       # android/app/build.gradle.kts: com.noonschool.app بمفتاح الرفع
       NOON_STORE: play
+      SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
+      FLUTTER_VERSION: '3.41.6'
     steps:
       - uses: actions/checkout@v4
 
@@ -33,25 +67,41 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.41.6'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 
-      - name: Upload key
+      - uses: shorebirdtech/setup-shorebird@v1
+        with:
+          cache: true
+
+      # بناء المتجر لا يكمل بلا أسراره. أما التحديث الصامت التلقائي بعد Release فيُتخطّى
+      # بتنبيه: مستودعٌ لم تُضف فيه أسرار المتجر بعد لا يُفشل نشر نسخ GitHub
+      - name: Secrets
+        id: gate
         env:
           KEYSTORE: ${{ secrets.PLAY_UPLOAD_KEYSTORE_BASE64 }}
           KEY_PROPERTIES: ${{ secrets.PLAY_UPLOAD_KEY_PROPERTIES }}
+          ACTION: ${{ inputs.action }}
         run: |
-          if [ -z "$KEYSTORE" ] || [ -z "$KEY_PROPERTIES" ]; then
-            echo "::error::PLAY_UPLOAD_KEYSTORE_BASE64 / PLAY_UPLOAD_KEY_PROPERTIES secrets are missing"
+          if [ -z "$KEYSTORE" ] || [ -z "$KEY_PROPERTIES" ] || [ -z "$SHOREBIRD_TOKEN" ]; then
+            msg="PLAY_UPLOAD_KEYSTORE_BASE64 / PLAY_UPLOAD_KEY_PROPERTIES / SHOREBIRD_TOKEN secrets are missing"
+            if [ "$ACTION" = "patch" ]; then
+              echo "::warning::$msg - Play silent update skipped"
+              echo "ok=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::error::$msg"
             exit 1
           fi
           # الأسرار المرفوعة من ويندوز تحمل \r: تُفسد فكّ base64 وتلتصق بكلمات السر
           printf '%s' "$KEYSTORE" | tr -d '\r\n ' | base64 --decode > android/play-upload.jks
           printf '%s\n' "$KEY_PROPERTIES" | tr -d '\r' | sed 's/^storeFile=.*/storeFile=play-upload.jks/' > android/play-key.properties
           grep -q '^storeFile=' android/play-key.properties || echo 'storeFile=play-upload.jks' >> android/play-key.properties
+          echo "ok=true" >> "$GITHUB_OUTPUT"
 
       - name: google-services.json has com.noonschool.app
+        if: steps.gate.outputs.ok == 'true'
         run: |
           grep -q '"com.noonschool.app"' android/app/google-services.json || {
             echo "::error::android/app/google-services.json has no client for com.noonschool.app"
@@ -59,17 +109,46 @@ jobs:
           }
 
       - run: flutter pub get
+        if: steps.gate.outputs.ok == 'true'
 
-      - name: Build AAB
+      # رقم بناء المتجر: 1000000 + رقم pubspec. نسخ GitHub ترقّم من رقم pubspec نفسه،
+      # فلا يتطابق إصدار متجر وإصدار GitHub في Shorebird فيختلط تحديثاهما.
+      - name: Build AAB (shorebird release)
+        if: inputs.action == 'build'
         env:
           BUILD_NUMBER: ${{ inputs.build_number }}
         run: |
-          args=(--release --dart-define=STORE=play)
-          [ -n "$BUILD_NUMBER" ] && args+=(--build-number "$BUILD_NUMBER")
-          flutter build appbundle "${args[@]}"
+          line=$(grep -E '^version:' pubspec.yaml)
+          name=$(echo "$line" | sed -E 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+).*/\1/')
+          base=$(echo "$line" | sed -E 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+).*/\2/')
+          code="${BUILD_NUMBER:-$((1000000 + base))}"
+          echo "Play release: $name+$code"
+          shorebird release android --flutter-version "$FLUTTER_VERSION" \
+            --build-name "$name" --build-number "$code" -- --dart-define=STORE=play
+          echo "### Play release $name+$code" >> "$GITHUB_STEP_SUMMARY"
+          echo "Upload the AAB artifact to Play Console. Silent updates reach this version from now on." >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
+        if: inputs.action == 'build'
         with:
           name: noonschool-play-${{ github.run_number }}
           path: build/app/outputs/bundle/release/app-release.aab
           retention-days: 30
+
+      # آخر إصدار متجر في Shorebird (رقم بنائه 1000000 فأكثر). لا إصدار متجر بعد = لا شيء
+      # يُرسل: أول بناء متجر بهذا الملف هو أول ما يستقبل التحديث الصامت.
+      - name: Silent update for Play users (shorebird patch)
+        if: inputs.action == 'patch' && steps.gate.outputs.ok == 'true'
+        run: |
+          list=$(shorebird releases list --platform android 2>&1 || true)
+          echo "$list"
+          version=$(echo "$list" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+' \
+            | awk -F'+' '$2 >= 1000000' | sort -t'+' -k2,2n | tail -1)
+          if [ -z "$version" ]; then
+            echo "::warning::No Play release in Shorebird yet - build one with action: build and upload it to Play Console first"
+            echo "No Play release in Shorebird yet - nothing to patch." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "Patching Play release $version"
+          shorebird patch android --release-version "$version" --allow-asset-diffs -- --dart-define=STORE=play
+          echo "### Silent update sent to Play release $version" >> "$GITHUB_STEP_SUMMARY"

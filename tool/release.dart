@@ -86,6 +86,10 @@ Future<void> _silentUpdate() async {
   if (!_yes('\nPublish the silent update to everyone?', fallback: false)) return;
   if (!await _ensureCommitted(notes)) return;
   await _publish(['--patch', '--notes', notes]);
+  // نسخة المتجر إصدار Shorebird منفصل يُبنى بـ STORE=play ومفتاح الرفع، فيُرسل
+  // تحديثها من GitHub Actions بعد رفع الكود
+  stdout.writeln('\nGoogle Play copy: push to main, then run Actions → Play Store → action: patch');
+  stdout.writeln('  (or: gh workflow run play-store.yml -f action=patch)');
 }
 
 Future<void> _addSchools(Set<String> haveCopy, {required bool hasBuild}) async {

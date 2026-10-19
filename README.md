@@ -13,3 +13,13 @@ flutter run
 
 - المدرسة: `amal` / `amal2026`
 - المطور: `anas` / `anas2026`
+
+## النشر
+
+- **نسخ GitHub (APK):** Actions ← Release. `build` بناء جديد يثبّته المستخدم، و`patch` تحديث صامت (كود Dart فقط) يصل الأجهزة عند فتح التطبيق ويُطبَّق في الفتح التالي.
+- **نسخة Google Play:** Actions ← Play Store.
+  - `build`: يبني AAB بـ `shorebird release` (رقم البناء 1000000 + رقم pubspec) — نزّله من Artifacts وارفعه على Play Console.
+  - `patch`: تحديث صامت لآخر إصدار متجر. يُشغَّل تلقائياً بعد كل `patch` من Release، فالتحديث الصامت يصل النسختين معاً.
+  - التحديث الصامت يصل من أول بناء متجر بُني بهذه الطريقة؛ ما رُفع قبله يتحدث من المتجر فقط.
+  - يكفي الصامت لتغيير كود Dart. أما إضافة مكتبة فيها كود أندرويد، أو صلاحية، أو تغيير في `android/`، أو أيقونة، فتحتاج `build` ورفعاً جديداً على المتجر.
+  - الأسرار: `PLAY_UPLOAD_KEYSTORE_BASE64` و`PLAY_UPLOAD_KEY_PROPERTIES` و`SHOREBIRD_TOKEN`.
