@@ -1184,7 +1184,8 @@ Future<void> _showStudentGrades(
   void Function(Evaluation)? onDelete,
 }) {
   final sorted = [...rows]..sort((a, b) => b.evaluationDate.compareTo(a.evaluationDate));
-  final lock = StoreScope.of(context).myGradesLock;
+  final store = StoreScope.of(context);
+  final lock = store.myGradesLock;
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.white,
@@ -1255,21 +1256,37 @@ Future<void> _showStudentGrades(
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '${trimNum(e.score)} / ${trimNum(e.maxScore)}',
-                              style: TextStyle(
-                                fontFamily: AppText.family,
-                                color: _tierColor(e.percent),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
+                        InkWell(
+                          // تعديل العلامة بلمسها — كنقر الخلية في كشف الويب
+                          onTap: store.canEditGrades && !isGradeLocked(e.evaluationDate, lock)
+                              ? () async {
+                                  final value = await _askScore(ctx, e);
+                                  if (value == null || value == e.score) return;
+                                  try {
+                                    store.updateEvaluationScore(e.id, value);
+                                    if (ctx.mounted) Navigator.pop(ctx);
+                                    if (context.mounted) showAppSnack(context, 'عُدّلت العلامة');
+                                  } on StoreException catch (err) {
+                                    if (ctx.mounted) showAppSnack(ctx, err.message, error: true);
+                                  }
+                                }
+                              : null,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${trimNum(e.score)} / ${trimNum(e.maxScore)}',
+                                style: TextStyle(
+                                  fontFamily: AppText.family,
+                                  color: _tierColor(e.percent),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            ),
-                            Text('${e.percent}%', style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
-                          ],
+                              Text('${e.percent}%', style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
+                            ],
+                          ),
                         ),
                         if (onDelete != null && !isGradeLocked(e.evaluationDate, lock))
                           IconButton(
@@ -1389,4 +1406,30 @@ Color _tierColor(int percent) {
   if (percent >= 85) return AppColors.success;
   if (percent >= 50) return AppColors.amber;
   return AppColors.danger;
+}
+
+/// نافذة إدخال علامة جديدة لتقييم مرصود.
+Future<double?> _askScore(BuildContext context, Evaluation e) async {
+  final ctl = TextEditingController(text: trimNum(e.score));
+  final result = await showDialog<double>(
+    context: context,
+    builder: (dialog) => AlertDialog(
+      title: Text(e.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      content: TextField(
+        controller: ctl,
+        autofocus: true,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: InputDecoration(labelText: 'العلامة من ${trimNum(e.maxScore)}'),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(dialog), child: const Text('إلغاء')),
+        FilledButton(
+          onPressed: () => Navigator.pop(dialog, double.tryParse(ctl.text.trim())),
+          child: const Text('حفظ'),
+        ),
+      ],
+    ),
+  );
+  ctl.dispose();
+  return result;
 }

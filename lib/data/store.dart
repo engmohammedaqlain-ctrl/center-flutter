@@ -2264,6 +2264,32 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return scores.length;
   }
 
+  /// تعديل علامة مرصودة — `EvaluationService.updateScore`: لمن يملك «تعديل العلامات»،
+  /// وفي حدود علامتها الكاملة، وخارج فترة الإقفال لغير المدير.
+  void updateEvaluationScore(String id, double score) {
+    if (!canEditGrades) {
+      throw StoreException('لا صلاحية لك على «${sectionLabel('evaluations.edit')}»');
+    }
+    final bucket = extraCloud['student_evaluations'];
+    final idx = bucket?.indexWhere((e) => '${e['id']}' == id) ?? -1;
+    if (bucket == null || idx < 0) throw StoreException('العلامة غير موجودة');
+    final current = Evaluation.fromCloud(bucket[idx]);
+    _assertGradesUnlocked([current.evaluationDate]);
+    checkScoreBounds([score], current.maxScore);
+    final now = _nowIso();
+    final row = {
+      ...bucket[idx],
+      'score': score,
+      'updated_by': gradeActorLabel,
+      'updated_at': now,
+      'sync_status': 'pending',
+    };
+    bucket[idx] = row;
+    _queue('student_evaluations', id, 'UPDATE', row);
+    markDirty('student_evaluations');
+    notifyListeners();
+  }
+
   void deleteEvaluation(String id) {
     // تعديل/حذف علامة مرصودة — `userCanEditGrades` على الويب
     if (!canEditGrades) {
@@ -3150,7 +3176,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// يحفظ معدلات الشهر: يعدّل الموجود ويضيف الناقص، والخانة الفارغة تحذف معدلها.
   int saveMonthlyAverages(String month, List<({String studentId, double? score})> entries) {
     requireSection('evaluations');
+    // معدل الشهر بتاريخ أول يومه: شهرٌ داخل فترة الإقفال لا يُعدَّل إلا من المدير
+    _assertGradesUnlocked([monthDate(month)]);
     final now = _nowIso();
+    final actor = gradeActorLabel;
     final allRows = monthlyRowsByStudent(evaluations, month);
     final existing = loadMonthlyAverages(evaluations, month);
     final bucket = extraCloud.putIfAbsent('student_evaluations', () => <Map<String, dynamic>>[]);
@@ -3186,6 +3215,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         createdAt: current?.createdAt ?? now,
         updatedAt: now,
         syncStatus: 'pending',
+        recordedBy: current != null ? current.recordedBy : actor,
+        updatedBy: actor,
       );
       final row = record.toCloud();
       final idx = bucket.indexWhere((e) => '${e['id']}' == record.id);
