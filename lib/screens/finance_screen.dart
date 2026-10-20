@@ -135,11 +135,23 @@ class _FinanceScreenState extends State<FinanceScreen> {
     return true;
   }
 
-  /// سندات الفترة بسنة دفعها — أساس «المقبوضات» في البطاقة والصافي.
+  /// هل السند من الفترة المختارة؟ بسنة السند لا بيوم قبضه: رسوم تسجيل قُبضت قبل بدء
+  /// العام تُحسب على عامها. «حسب سنة الرسوم»: المربوط بقسط يُنسب لسنة قسطه.
+  bool _paymentInPeriod(AppStore store, Payment p, Map<String, Installment>? installmentById) {
+    final inst = installmentById?[p.installmentId];
+    if (inst != null) {
+      return _matchesFinancePeriod(store, yearId: inst.academicYearId, dueDate: isoDate(inst.dueDate));
+    }
+    return _matchesFinancePeriod(store, yearId: p.academicYearId, paymentDate: isoDate(p.date));
+  }
+
+  Map<String, Installment>? _installmentIndex(AppStore store) =>
+      paymentsBasis == 'installment' ? {for (final i in store.installments) i.id: i} : null;
+
+  /// سندات الفترة — أساس «المقبوضات» في البطاقة والصافي، وسجل المقبوضات قبل البحث والفلاتر.
   List<Payment> _periodPayments(AppStore store) {
-    return store.payments
-        .where((p) => _matchesFinancePeriod(store, yearId: p.academicYearId, paymentDate: isoDate(p.date)))
-        .toList();
+    final index = _installmentIndex(store);
+    return store.payments.where((p) => _paymentInPeriod(store, p, index)).toList();
   }
 
   /// المصروفات التشغيلية بتاريخها ضمن السنة والفصل — كما في الويب.
@@ -167,7 +179,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
   /// ربح الفترة بتاريخ القبض: المقبوض ناقص المصروفات والرواتب (المسحوبات والتحويل خارجه).
   ({double received, double spent, double net, double draws}) _periodNet(AppStore store) {
     // يُحسب مرة لكل تغيّر في السندات أو المصروفات أو الرواتب أو الفلتر، لا مع كل رسم
-    final stamp = Object.hash(store.netInputStamp, financeYearFilter, termFilter);
+    final stamp = Object.hash(store.netInputStamp, financeYearFilter, termFilter, paymentsBasis);
     final cached = _netCache;
     if (cached != null && stamp == _netStamp) return cached;
     _netStamp = stamp;
@@ -177,21 +189,20 @@ class _FinanceScreenState extends State<FinanceScreen> {
   int _netStamp = 0;
   ({double received, double spent, double net, double draws})? _netCache;
 
+  /// المقبوض بسنة السند كسجل المقبوضات فيتطابق الرقمان؛ المصروفات والرواتب بتاريخها.
   ({double received, double spent, double net, double draws}) _computePeriodNet(AppStore store) {
     final total = computeProfitReport(
-      payments: store.payments,
+      payments: const [],
       installments: const [],
       expenses: store.expenses,
       payouts: store.teacherPayouts,
       range: _periodRange(store),
       basis: ProfitBasis.paid,
     ).total;
-    return (
-      received: total.received,
-      spent: total.expenses + total.salaries,
-      net: total.net,
-      draws: total.draws,
-    );
+    // الصافي بعد الرد والعكس، والملغى خارجه — كمجموع سجل المقبوضات
+    final received = _periodPayments(store).fold<double>(0, (a, p) => a + (p.cancelled ? 0 : p.amount));
+    final spent = total.expenses + total.salaries;
+    return (received: received, spent: spent, net: received - spent, draws: total.draws);
   }
 
   @override
@@ -868,16 +879,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
   ({Widget? toolbar, List<Widget> slivers}) _payments(BuildContext context, AppStore store, String q) {
     // «حسب سنة الرسوم»: السند المربوط بقسط يُنسب لسنة قسطه (دين العام الماضي
     // المدفوع اليوم يُحسب على العام الماضي)، والدفعة غير المربوطة بسنة دفعها
-    final installmentById = paymentsBasis == 'installment' ? {for (final i in store.installments) i.id: i} : null;
-    bool inPeriod(Payment p) {
-      final inst = installmentById?[p.installmentId];
-      if (inst != null) {
-        return _matchesFinancePeriod(store, yearId: inst.academicYearId, dueDate: isoDate(inst.dueDate));
-      }
-      return _matchesFinancePeriod(store, yearId: p.academicYearId, paymentDate: isoDate(p.date));
-    }
-
-    final periodPays = store.payments.where(inPeriod).toList();
+    final periodPays = _periodPayments(store);
     final pays = periodPays.where((p) {
       final studentName = store.studentById(p.studentId)?.fullName ?? '${p.payerName} ${p.incomeCategory}';
       // البحث يشمل البيان والمحوِّل وجهة التحويل، كما في Finance.tsx
