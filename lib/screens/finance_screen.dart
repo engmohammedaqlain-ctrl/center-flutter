@@ -914,11 +914,45 @@ class _FinanceScreenState extends State<FinanceScreen> {
       );
     }
 
+    // المقبوض لكل طريقة دفع (كل حساب أو محفظة باسمه) — كبطاقات Finance.tsx
+    final byMethod = <String, ({double amount, int count})>{};
+    for (final p in pays) {
+      if (p.cancelled) continue;
+      final prev = byMethod[p.method] ?? (amount: 0.0, count: 0);
+      byMethod[p.method] = (amount: prev.amount + p.amount, count: prev.count + 1);
+    }
+    final methodRows = byMethod.entries.toList()..sort((a, b) => b.value.amount.compareTo(a.value.amount));
+    final methodsStrip = methodRows.isEmpty
+        ? null
+        : _MethodTotals(
+            rows: [
+              for (final m in methodRows)
+                (
+                  id: m.key,
+                  label: m.key.isEmpty ? 'بلا طريقة' : store.paymentMethodLabel(m.key),
+                  amount: m.value.amount,
+                  count: m.value.count,
+                ),
+            ],
+            selected: method,
+            onTap: (id) => setState(() => method = method == id ? '' : id),
+          );
+    final header = methodsStrip == null && feesLine == null
+        ? null
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ?methodsStrip,
+              if (methodsStrip != null && feesLine != null) const SizedBox(height: 8),
+              ?feesLine,
+            ],
+          );
+
     return (
       toolbar: _toolbar(hint: 'اسم أو رقم وصل', shown: pays.length, total: periodPays.length, store: store),
       slivers: _listSlivers(
-        // سطر «رسوم الفترة» وحده يبقى، حين يُحتسب المقبوض بسنة الرسوم
-        header: feesLine,
+        // بطاقات طرق الدفع، وسطر «رسوم الفترة» حين يُحتسب المقبوض بسنة الرسوم
+        header: header,
         items: pays,
         emptyMessage: 'لا نتائج',
         groupOf: (p) => _dayLabel(p.date),
@@ -1891,6 +1925,61 @@ class _FiltersButton extends StatelessWidget {
 }
 
 /// سطر أرقام فوق السجل — «رسوم الفترة» حين يُحتسب المقبوض بسنة الرسوم.
+/// المقبوض لكل طريقة دفع: لمس بطاقة يعرض سندات ذلك الحساب وحده، ولمسة ثانية تلغي.
+class _MethodTotals extends StatelessWidget {
+  const _MethodTotals({required this.rows, required this.selected, required this.onTap});
+
+  final List<({String id, String label, double amount, int count})> rows;
+  final String selected;
+  final ValueChanged<String> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = rows.fold<double>(0, (a, r) => a + r.amount);
+    Widget chip({required String label, required String value, required bool active, VoidCallback? onTap, Color? color}) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(Corner.field),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: active ? AppColors.navy.withValues(alpha: 0.06) : Colors.white,
+            borderRadius: BorderRadius.circular(Corner.field),
+            border: Border.all(color: active ? AppColors.navy : AppColors.line),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+              Text(
+                value,
+                style: TextStyle(fontFamily: AppText.family, color: color ?? AppColors.heading, fontSize: 12.5, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        for (final r in rows)
+          chip(
+            label: r.label,
+            value: '${money(r.amount)} · ${r.count}',
+            active: selected == r.id,
+            onTap: () => onTap(r.id),
+          ),
+        if (rows.length > 1 && selected.isEmpty)
+          chip(label: 'المجموع', value: money(total), active: false, color: AppColors.success),
+      ],
+    );
+  }
+}
+
 class _ListHeader extends StatelessWidget {
   const _ListHeader({required this.parts});
 
