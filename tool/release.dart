@@ -66,7 +66,7 @@ Future<void> _newBuild() async {
   stdout.writeln('\nCopies will be built for ${schools.length} schools: ${schools.map((s) => s.code).join(', ')}');
 
   final notes = _askNotes();
-  final optional = _yes('Let users skip this update? (mandatory if you say no)', fallback: false);
+  final optional = _yes('Let users skip this update? (mandatory if you say no)', fallback: true);
   if (!_yes('\nStart the build and publish it to everyone?', fallback: false)) return;
   if (!await _ensureCommitted(notes)) return;
   final ok = await _publish([

@@ -30,7 +30,7 @@ on:
       optional:
         description: Let users skip this build (build only)
         type: boolean
-        default: false
+        default: true
 
 # نشران معاً يتسابقان على رقم الإصدار نفسه
 concurrency:
