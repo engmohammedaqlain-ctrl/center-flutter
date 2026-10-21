@@ -462,9 +462,16 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
     // شعار المدرسة: يُقرأ من سجل هويتها السحابي، ويُحفظ فقط إن تغيّر
     String? logo;
     var logoChanged = false;
+    // الاسم تحت أيقونة نسخة المدرسة: يصل الأجهزة مع البناء التالي
+    final iconName = TextEditingController();
+    var savedIconName = '';
     if (existing != null) {
       try {
         logo = await fetchTenantLogo(existing.id);
+      } catch (_) {}
+      try {
+        savedIconName = await fetchTenantIconName(existing.id);
+        iconName.text = savedIconName;
       } catch (_) {}
       if (!context.mounted) return;
     }
@@ -658,6 +665,16 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                       ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                const FieldLabel('الاسم تحت الأيقونة'),
+                Tooltip(
+                  message: 'يظهر تحت أيقونة نسخة المدرسة من البناء التالي',
+                  child: TextField(
+                    controller: iconName,
+                    maxLength: 14,
+                    decoration: const InputDecoration(hintText: 'فارغ = اسم المدرسة'),
+                  ),
+                ),
                 // رفض السحابة يبقى داخل النموذج مع ما كُتب، فيُصحَّح ويُعاد بلا إعادة كتابة
                 if (failure != null) ...[
                   const SizedBox(height: 10),
@@ -788,6 +805,14 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                                     }
                                   }
                                 }
+                                final shortName = iconName.text.trim();
+                                if (shortName != savedIconName && savedId.isNotEmpty) {
+                                  try {
+                                    await saveTenantIconName(savedId, shortName);
+                                  } catch (e) {
+                                    if (ctx.mounted) showAppSnack(ctx, 'تعذّر حفظ الاسم تحت الأيقونة', error: true);
+                                  }
+                                }
                                 if (!ctx.mounted) return;
                                 Navigator.pop(ctx);
                                 if (saved != null) store.upsertTenant(saved);
@@ -807,7 +832,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
       ),
     );
 
-    for (final c in [name, code, username, password, adminPassword, ownerName, ownerPhone, notes, months]) {
+    for (final c in [name, code, username, password, adminPassword, ownerName, ownerPhone, notes, months, iconName]) {
       c.dispose();
     }
   }
@@ -917,6 +942,20 @@ Future<String?> fetchTenantLogo(String tenantId) async {
   final logo = rows.isEmpty ? null : rows.first['logo'];
   return logo is String && logo.isNotEmpty ? logo : null;
 }
+
+/// الاسم تحت أيقونة نسخة المدرسة (`tenants.icon_name`)؛ فارغ = اسم المدرسة.
+Future<String> fetchTenantIconName(String tenantId) async {
+  final rows = await supabaseSelect('tenants', columns: 'icon_name', filters: {'id': 'eq.$tenantId'}, limit: 1);
+  if (rows == null) throw Exception('تعذّر قراءة الاسم تحت الأيقونة');
+  return rows.isEmpty ? '' : '${rows.first['icon_name'] ?? ''}'.trim();
+}
+
+/// يُقرأ عند بناء نسخ المدارس (`get_school_download_page`)، فيصل الأجهزة مع البناء التالي.
+Future<void> saveTenantIconName(String tenantId, String name) => supabaseUpdate(
+      'tenants',
+      {'id': 'eq.$tenantId'},
+      {'icon_name': name.isEmpty ? null : name, 'updated_at': DateTime.now().toUtc().toIso8601String()},
+    );
 
 /// يرفع المطور شعار المدرسة من لوحته دون الدخول عليها — `saveTenantLogo`: يُكتب في سجل
 /// هويتها السحابي، وأجهزتها تأخذه مع السحب التالي كما لو رفعه مديرها.

@@ -894,7 +894,7 @@ const supabaseUrl = 'https://tmybbunguiurisdcvrqo.supabase.co';
 const supabaseKey = 'sb_publishable_TowjoMRcd5BJtaUqmCs6Sw_IHhVd3Jj';
 
 /// مدرسة تُبنى لها نسخة: كودها، وشعارها كما في إعداداتها.
-typedef SchoolSource = ({String code, String? logo, String name, Map<String, dynamic>? colors});
+typedef SchoolSource = ({String code, String? logo, String name, String label, Map<String, dynamic>? colors});
 
 /// نسخة مدرسة جاهزة للرفع.
 typedef SchoolCopy = ({String code, File file, Map<String, dynamic> entry});
@@ -914,10 +914,13 @@ Future<List<SchoolSource>> _loadSchools(List<String>? codes) async {
       continue;
     }
     final logo = page['logo'];
+    final iconName = '${page['icon_name'] ?? ''}'.trim();
     schools.add((
       code: normalizeSchoolCode(code),
       logo: logo is String && logo.trim().isNotEmpty ? logo : null,
       name: '${page['name']}'.trim(),
+      // الاسم تحت الأيقونة: القصير من خيارات المطور، وإلا اسم المدرسة
+      label: iconName.isEmpty ? '${page['name']}'.trim() : iconName,
       colors: schoolColors(page['colors']),
     ));
   }
@@ -987,7 +990,7 @@ Future<List<SchoolCopy>> _buildSchoolCopies(
           code: school.code,
           logo: logo,
           name: school.name,
-          label: labeled ? school.name : '',
+          label: labeled ? school.label : '',
           colors: school.colors,
           splash: splash,
           out: file,
@@ -999,7 +1002,7 @@ Future<List<SchoolCopy>> _buildSchoolCopies(
     try {
       await build(labeled: true);
       final label = apkLabel(await _tryCapture(aapt, ['dump', 'badging', file.path]) ?? '');
-      if (label != school.name) throw SchoolApkException('the copy reads "${label ?? '-'}"');
+      if (label != school.label) throw SchoolApkException('the copy reads "${label ?? '-'}"');
     } on SchoolApkException catch (e) {
       _warn('${school.code}: school name under the icon failed (${e.message}) - generic name');
       labeled = false;
@@ -1021,7 +1024,7 @@ Future<List<SchoolCopy>> _buildSchoolCopies(
     final sha = (await crypto.sha256.bind(file.openRead()).first).toString();
     copies.add((code: school.code, file: file, entry: schoolManifestEntry(version, school.code, sha256: sha, sizeBytes: size)));
     _info('${school.code}: ${logo == null ? 'generic icon (no drawable logo - PNG/JPEG/WebP needed)' : 'school icon'}'
-        '${labeled ? ', named "${school.name}"' : ''}'
+        '${labeled ? ', named "${school.label}"' : ''}'
         ' - ${(size / (1024 * 1024)).toStringAsFixed(1)} MB');
   }
   return copies;
