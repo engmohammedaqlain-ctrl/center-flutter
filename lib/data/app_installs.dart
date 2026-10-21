@@ -1,8 +1,9 @@
 /// أجهزة التطبيق وإصداراتها لكل مدرسة.
 ///
-/// كل جهاز يبلّغ السحابة عند الفتح وبعد كل دخول (`report_app_install`): معرّف
-/// عشوائي ثابت يُنشأ مرة، والإصدار ورقم التحديث الصامت، ونوع النسخة، والمنصة.
-/// المنشأة والدور يأخذهما الخادم من الجلسة لا من الجهاز. بلا اسم ولا رقم.
+/// كل جهاز يبلّغ السحابة (`report_app_install`) مرة في اليوم على الأكثر، أو فور تغيّر
+/// إصداره أو دخوله بحساب آخر: صف واحد لكل جهاز يُكتب فوقه، بلا سجل يكبر. معرّف
+/// عشوائي ثابت، والإصدار ورقم التحديث الصامت، ونوع النسخة، والمنصة. المنشأة والدور
+/// يأخذهما الخادم من الجلسة لا من الجهاز. بلا اسم ولا رقم.
 ///
 /// لوحة المطور تقرأ المجاميع (`app_installs_overview`) وعدّاد صفحة التحميل
 /// (`tenant_downloads`) وتنزيلات ملفات GitHub لكل مدرسة. الهجرة:
@@ -26,6 +27,21 @@ import 'supabase.dart';
 String installChannel({required bool play, required bool schoolBuild}) =>
     play ? 'play' : (schoolBuild ? 'school' : 'general');
 
+/// هل يُبلَّغ الآن؟ مرة في اليوم على الأكثر، إلا إن تغيّر الإصدار أو دخل الجهاز بحساب
+/// آخر. الخروج ([session] `null`) لا يبلّغ: الخادم يبقي المدرسة والدور كما كانا.
+bool installReportDue({
+  required String version,
+  required String? session,
+  required String? lastVersion,
+  required String? lastSession,
+  required DateTime? lastAt,
+  required DateTime now,
+}) {
+  if (lastAt == null || version != lastVersion) return true;
+  if (session != null && session != lastSession) return true;
+  return now.difference(lastAt) >= const Duration(days: 1);
+}
+
 class AppInstalls {
   AppInstalls._();
 
@@ -34,47 +50,64 @@ class AppInstalls {
   /// في التفضيلات لا في قاعدة الجهاز: تحديث البناء يمسح القاعدة، والجهاز يبقى هو.
   static const _kDevice = 'app_install_device_id';
 
-  /// نفس الحال (الدور والمنشأة والإصدار) لا يُعاد قبلها: تجديد التوكن كل ساعة لا يبلّغ.
-  static const _repeatAfter = Duration(hours: 6);
+  /// آخر تبليغ نجح: الإصدار والحساب والوقت — ما لم يتغيّر شيء لا يخرج طلب.
+  static const _kVersion = 'app_install_last_version';
+  static const _kSession = 'app_install_last_session';
+  static const _kAt = 'app_install_last_at';
 
-  String? _lastKey;
-  DateTime? _lastAt;
+  /// الإصدار ورقم التحديث الصامت لا يتغيّران أثناء التشغيل: يُقرآن مرة.
+  ({String version, int build, int patch})? _installed;
   Future<void> _chain = Future.value();
 
-  /// بلا أي أثر عند الفشل: بلا شبكة أو قبل تنفيذ الهجرة يعمل التطبيق كما كان.
+  /// خلفيّ وصامت: لا يؤخّر الفتح، وبلا شبكة أو قبل تنفيذ الهجرة يعمل التطبيق كما كان.
+  /// تجديد التوكن كل ساعة يمرّ من هنا ولا يخرج منه طلب.
   Future<void> report() => _chain = _chain.then((_) => _report()).catchError((Object e) {
         debugPrint('app installs: $e');
       });
 
   Future<void> _report() async {
     if (kIsWeb) return;
+    final installed = _installed ??= await () async {
+      final info = await PackageInfo.fromPlatform();
+      return (version: info.version, build: int.tryParse(info.buildNumber) ?? 0, patch: await currentPatchNumber());
+    }();
+    final version = '${installed.version}+${installed.build}.${installed.patch}';
+    final session = SupabaseAuth.signedIn ? '${SupabaseAuth.role}|${SupabaseAuth.tenantId}' : null;
+
     final prefs = await SharedPreferences.getInstance();
+    final now = DateTime.now();
+    if (!installReportDue(
+      version: version,
+      session: session,
+      lastVersion: prefs.getString(_kVersion),
+      lastSession: prefs.getString(_kSession),
+      lastAt: DateTime.tryParse(prefs.getString(_kAt) ?? ''),
+      now: now,
+    )) {
+      return;
+    }
+
     var device = prefs.getString(_kDevice) ?? '';
     if (device.isEmpty) {
       device = const Uuid().v4();
       await prefs.setString(_kDevice, device);
     }
-    final info = await PackageInfo.fromPlatform();
-    final patch = await currentPatchNumber();
     await SchoolBrand.instance.readBundled();
     final brand = SchoolBrand.instance;
-
-    final key = [SupabaseAuth.role, SupabaseAuth.tenantId, info.version, info.buildNumber, patch].join('|');
-    final last = _lastAt;
-    if (key == _lastKey && last != null && DateTime.now().difference(last) < _repeatAfter) return;
-
     final res = await supabaseRpcError('report_app_install', {
       'p_device_id': device,
       'p_channel': installChannel(play: playStore, schoolBuild: brand.bundled),
       'p_school_code': brand.code,
       'p_platform': defaultTargetPlatform.name,
-      'p_version': info.version,
-      'p_build': int.tryParse(info.buildNumber) ?? 0,
-      'p_patch': patch,
+      'p_version': installed.version,
+      'p_build': installed.build,
+      'p_patch': installed.patch,
     });
+    // فشل: يُعاد في الفتح التالي
     if (res != null) return;
-    _lastKey = key;
-    _lastAt = DateTime.now();
+    await prefs.setString(_kVersion, version);
+    if (session != null) await prefs.setString(_kSession, session);
+    await prefs.setString(_kAt, now.toIso8601String());
   }
 }
 

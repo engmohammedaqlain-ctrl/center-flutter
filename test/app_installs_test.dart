@@ -31,6 +31,28 @@ void main() {
     expect(installChannel(play: false, schoolBuild: false), 'general');
   });
 
+  test('التبليغ مرة في اليوم، أو فور تغيّر الإصدار أو الحساب', () {
+    final at = DateTime(2026, 10, 21, 9);
+    bool due({String version = '2.10.0+43.0', String? session = 'parent|t1', DateTime? lastAt, DateTime? now}) =>
+        installReportDue(
+          version: version,
+          session: session,
+          lastVersion: '2.10.0+43.0',
+          lastSession: 'parent|t1',
+          lastAt: lastAt ?? at,
+          now: now ?? at.add(const Duration(hours: 3)),
+        );
+    expect(due(), isFalse);
+    expect(due(session: null), isFalse);
+    expect(due(now: at.add(const Duration(days: 1))), isTrue);
+    expect(due(version: '2.10.0+43.1'), isTrue);
+    expect(due(session: 'tenant_admin|t2'), isTrue);
+    expect(
+      installReportDue(version: 'x', session: null, lastVersion: null, lastSession: null, lastAt: null, now: at),
+      isTrue,
+    );
+  });
+
   test('مقارنة الإصدارات بالأجزاء', () {
     expect(compareVersions('2.10.0', '2.9.0') > 0, isTrue);
     expect(compareVersions('2.9', '2.9.0'), 0);
