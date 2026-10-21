@@ -17,6 +17,7 @@ import '../theme/app_theme.dart';
 import '../widgets/form_layout.dart';
 import '../widgets/panels.dart';
 import '../widgets/widgets.dart';
+import 'app_installs_screen.dart';
 
 /// إعدادات المطور — المقابل لـ `features/settings/DeveloperSettings.tsx`.
 ///
@@ -609,6 +610,13 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
 
   List<Widget> _tools(BuildContext context, AppStore store) => [
         const FormSection(icon: Icons.build_outlined, title: 'أدوات الاختبار والبيانات'),
+        _toolTile(
+          icon: Icons.devices_outlined,
+          title: 'الأجهزة',
+          subtitle: 'الإصدارات لكل مدرسة',
+          onTap: () => openAppInstalls(context),
+        ),
+        const SizedBox(height: 8),
         _toolTile(
           icon: Icons.science_outlined,
           title: 'حقن بيانات تجريبية',

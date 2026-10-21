@@ -394,6 +394,17 @@ Future<dynamic> supabaseRpcOrThrow(String function, Map<String, dynamic> args) a
   return res.body.isEmpty ? null : jsonDecode(res.body);
 }
 
+/// كـ [supabaseRpcOrThrow] بتوكن بعينه — لوحات المطور بجلسة تحقّقه. الرفض يُرمى.
+Future<dynamic> supabaseRpcAs(String function, Map<String, dynamic> args, {required String token}) async {
+  final res = await http.post(
+    Uri.parse('${SupabaseConfig.url}/rest/v1/rpc/$function'),
+    headers: {...SupabaseConfig.headers, 'Authorization': 'Bearer $token'},
+    body: jsonEncode(args),
+  );
+  if (res.statusCode >= 400) throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
+  return res.body.isEmpty ? null : jsonDecode(res.body);
+}
+
 /// كـ [supabaseRpc] لكن يعيد سبب الفشل، أو `null` عند النجاح.
 ///
 /// دالةٌ لا تُرجع شيئاً (`VOID`) يلتبس نجاحها بفشلها حين يكون `null` جواب
