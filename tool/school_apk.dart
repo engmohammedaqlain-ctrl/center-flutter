@@ -1,11 +1,10 @@
-/// نسخة المدرسة من حزمة التطبيق: أيقونتها شعارُ المدرسة، وكودها مكتوبٌ داخلها.
+/// نسخة المدرسة من حزمة التطبيق: أيقونتها شعارُ المدرسة، والاسم تحتها اسمها،
+/// وكودها مكتوبٌ داخلها.
 ///
 /// لا يُعاد البناء: تُفتح الحزمة المبنية كملف مضغوط، وتُستبدل صور الأيقونة
-/// وملف الكود، ثم تُحاذى وتُوقَّع بمفتاح التطبيق نفسه. التوقيع يغطي الأيقونة،
-/// فلا يصحّ تغييرها بعد التوقيع — وإعادة التوقيع بالمفتاح نفسه تُبقي التحديث
-/// ممكناً فوق أي نسخة مثبّتة، عامةً كانت أو لمدرسة.
-///
-/// الاسم على الشاشة يبقى اسم التطبيق للجميع؛ الأيقونة وحدها للمدرسة.
+/// وملف الكود والبيان، ثم تُحاذى وتُوقَّع بمفتاح التطبيق نفسه. التوقيع يغطي
+/// الأيقونة، فلا يصحّ تغييرها بعد التوقيع — وإعادة التوقيع بالمفتاح نفسه تُبقي
+/// التحديث ممكناً فوق أي نسخة مثبّتة، عامةً كانت أو لمدرسة.
 library;
 
 import 'dart:convert';
@@ -379,14 +378,187 @@ String logoDataUrl(img.Image logo, {int maxSide = 512}) {
   return 'data:image/png;base64,${base64Encode(img.encodePng(sized))}';
 }
 
-/// ما يُستبدل داخل الحزمة لمدرسة: ملف الكود بهويتها، وإن كان لها شعارٌ يُرسم
-/// فصور الأيقونة وشعار شاشة الإقلاع الأصلية.
+// ── الاسم تحت الأيقونة ──────────────────────────────────────────────────────────
+
+/// البيان داخل الحزمة: XML ثنائي فيه `android:label` الذي يظهر تحت الأيقونة.
+const manifestEntry = 'AndroidManifest.xml';
+
+/// معرّف `android:label` في موارد أندرويد.
+const _labelAttr = 0x01010001;
+
+/// النص [i] من جدول النصوص الذي يبدأ عند [pool].
+String _poolString(ByteData data, int pool, int i) {
+  final flags = data.getUint32(pool + 16, Endian.little);
+  final stringsStart = data.getUint32(pool + 20, Endian.little);
+  var at = pool + stringsStart + data.getUint32(pool + data.getUint16(pool + 2, Endian.little) + i * 4, Endian.little);
+  if (flags & 0x100 != 0) {
+    at += (data.getUint8(at) & 0x80) != 0 ? 2 : 1; // طول الحروف
+    var length = data.getUint8(at);
+    if ((length & 0x80) != 0) {
+      length = ((length & 0x7f) << 8) | data.getUint8(at + 1);
+      at += 2;
+    } else {
+      at += 1;
+    }
+    return utf8.decode(data.buffer.asUint8List(data.offsetInBytes + at, length), allowMalformed: true);
+  }
+  var length = data.getUint16(at, Endian.little);
+  at += 2;
+  if ((length & 0x8000) != 0) {
+    length = ((length & 0x7fff) << 16) | data.getUint16(at, Endian.little);
+    at += 2;
+  }
+  return String.fromCharCodes([for (var k = 0; k < length; k++) data.getUint16(at + k * 2, Endian.little)]);
+}
+
+/// [text] بصيغة جدول النصوص: طوله ثم حروفه ثم صفر.
+Uint8List _encodePoolString(String text, {required bool utf8Pool}) {
+  final out = BytesBuilder();
+  void length8(int n) => out.add(n < 0x80 ? [n] : [(n >> 8) | 0x80, n & 0xff]);
+  if (utf8Pool) {
+    final bytes = utf8.encode(text);
+    length8(text.length);
+    length8(bytes.length);
+    out
+      ..add(bytes)
+      ..addByte(0);
+  } else {
+    final units = ByteData(2 + text.length * 2 + 2)..setUint16(0, text.length, Endian.little);
+    for (var k = 0; k < text.length; k++) {
+      units.setUint16(2 + k * 2, text.codeUnitAt(k), Endian.little);
+    }
+    out.add(units.buffer.asUint8List());
+  }
+  return out.takeBytes();
+}
+
+/// البيان الثنائي [axml] واسم التطبيق فيه [label].
+///
+/// يُضاف الاسم آخر جدول النصوص — أرقام النصوص القديمة لا تتغير فلا يُمسّ
+/// غيره — وتشير إليه `android:label` في `<application>`. الحزمة تبقى هي
+/// نفسها لأندرويد (الرقم والتوقيع)، فالتحديث فوق أي نسخة مثبّتة يبقى ممكناً.
+Uint8List setManifestLabel(Uint8List axml, String label) {
+  final src = ByteData.sublistView(axml);
+  const pool = 8;
+  if (axml.length < 36 || src.getUint16(0, Endian.little) != 0x0003 || src.getUint16(pool, Endian.little) != 0x0001) {
+    throw const SchoolApkException('AndroidManifest.xml is not binary XML');
+  }
+  if (label.isEmpty || label.length >= 0x8000) throw const SchoolApkException('App name is empty or too long');
+  final headerSize = src.getUint16(pool + 2, Endian.little);
+  final poolSize = src.getUint32(pool + 4, Endian.little);
+  final count = src.getUint32(pool + 8, Endian.little);
+  final flags = src.getUint32(pool + 16, Endian.little);
+  final stringsStart = src.getUint32(pool + 20, Endian.little);
+  if (src.getUint32(pool + 12, Endian.little) != 0 || stringsStart != headerSize + count * 4) {
+    throw const SchoolApkException('AndroidManifest.xml: unexpected string pool layout');
+  }
+
+  // جدول النصوص الجديد: الترويسة، والمواضع ومعها موضع الاسم، والنصوص ثم الاسم
+  final oldData = axml.sublist(pool + stringsStart, pool + poolSize);
+  final added = _encodePoolString(label, utf8Pool: flags & 0x100 != 0);
+  final dataLength = oldData.length + added.length;
+  final padded = (dataLength + 3) & ~3;
+  final newStart = stringsStart + 4;
+  final newPoolSize = newStart + padded;
+  final newPool = ByteData(newPoolSize);
+  final poolBytes = newPool.buffer.asUint8List();
+  poolBytes.setRange(0, stringsStart, axml, pool);
+  newPool
+    ..setUint32(4, newPoolSize, Endian.little)
+    ..setUint32(8, count + 1, Endian.little)
+    // نصٌّ في آخر الجدول يكسر ترتيبه
+    ..setUint32(16, flags & ~0x1, Endian.little)
+    ..setUint32(20, newStart, Endian.little)
+    ..setUint32(24, 0, Endian.little)
+    ..setUint32(headerSize + count * 4, oldData.length, Endian.little);
+  poolBytes
+    ..setRange(newStart, newStart + oldData.length, oldData)
+    ..setRange(newStart + oldData.length, newStart + dataLength, added);
+
+  final rest = axml.sublist(pool + poolSize);
+  final out = Uint8List(pool + newPoolSize + rest.length)
+    ..setRange(0, pool, axml)
+    ..setRange(pool, pool + newPoolSize, poolBytes)
+    ..setRange(pool + newPoolSize, pool + newPoolSize + rest.length, rest);
+  final data = ByteData.sublistView(out)..setUint32(4, out.length, Endian.little);
+
+  // خريطة الموارد (رقم النص ← معرّف الخاصية)، ثم <application> وخاصية label فيها
+  var resourceIds = const <int>[];
+  var labeled = false;
+  for (var at = pool + newPoolSize; at + 8 <= out.length;) {
+    final type = data.getUint16(at, Endian.little);
+    final size = data.getUint32(at + 4, Endian.little);
+    if (size < 8 || at + size > out.length) throw const SchoolApkException('AndroidManifest.xml: broken chunk');
+    if (type == 0x0180) {
+      final chunkHeader = data.getUint16(at + 2, Endian.little);
+      resourceIds = [for (var k = at + chunkHeader; k + 4 <= at + size; k += 4) data.getUint32(k, Endian.little)];
+    } else if (type == 0x0102 && _poolString(src, pool, data.getUint32(at + 20, Endian.little)) == 'application') {
+      final attrStart = data.getUint16(at + 24, Endian.little);
+      final attrSize = data.getUint16(at + 26, Endian.little);
+      final attrCount = data.getUint16(at + 28, Endian.little);
+      for (var k = 0; k < attrCount; k++) {
+        final attr = at + 16 + attrStart + k * attrSize;
+        final name = data.getUint32(attr + 4, Endian.little);
+        final isLabel = name < resourceIds.length ? resourceIds[name] == _labelAttr : _poolString(src, pool, name) == 'label';
+        if (!isLabel) continue;
+        data
+          ..setUint32(attr + 8, count, Endian.little) // النص الخام
+          ..setUint16(attr + 12, 8, Endian.little)
+          ..setUint8(attr + 14, 0)
+          ..setUint8(attr + 15, 0x03) // نص
+          ..setUint32(attr + 16, count, Endian.little);
+        labeled = true;
+      }
+      break;
+    }
+    at += size;
+  }
+  if (!labeled) throw const SchoolApkException('AndroidManifest.xml: android:label not found on <application>');
+  return out;
+}
+
+/// الاسم تحت الأيقونة من مخرجات `aapt2 dump badging`.
+String? apkLabel(String badging) =>
+    RegExp(r"^application-label:'(.*)'$", multiLine: true).firstMatch(badging)?.group(1)?.replaceAll(r"\'", "'");
+
+/// الاسم المكتوب في `android:label` لـ `<application>` في البيان الثنائي، أو
+/// `null` إن كان مرجعاً لا نصاً.
+String? manifestLabel(Uint8List axml) {
+  final data = ByteData.sublistView(axml);
+  const pool = 8;
+  var resourceIds = const <int>[];
+  for (var at = pool + data.getUint32(pool + 4, Endian.little); at + 8 <= axml.length;) {
+    final type = data.getUint16(at, Endian.little);
+    final size = data.getUint32(at + 4, Endian.little);
+    if (size < 8) return null;
+    if (type == 0x0180) {
+      final chunkHeader = data.getUint16(at + 2, Endian.little);
+      resourceIds = [for (var k = at + chunkHeader; k + 4 <= at + size; k += 4) data.getUint32(k, Endian.little)];
+    } else if (type == 0x0102 && _poolString(data, pool, data.getUint32(at + 20, Endian.little)) == 'application') {
+      final attrStart = data.getUint16(at + 24, Endian.little);
+      final attrSize = data.getUint16(at + 26, Endian.little);
+      for (var k = 0; k < data.getUint16(at + 28, Endian.little); k++) {
+        final attr = at + 16 + attrStart + k * attrSize;
+        final name = data.getUint32(attr + 4, Endian.little);
+        if (name < resourceIds.length ? resourceIds[name] != _labelAttr : _poolString(data, pool, name) != 'label') continue;
+        return data.getUint8(attr + 15) == 0x03 ? _poolString(data, pool, data.getUint32(attr + 16, Endian.little)) : null;
+      }
+      return null;
+    }
+    at += size;
+  }
+  return null;
+}
+
+/// ما يُستبدل داخل الحزمة لمدرسة: ملف الكود بهويتها، وإن كان [label] فالاسم
+/// تحت الأيقونة، وإن كان لها شعارٌ يُرسم فصور الأيقونة وشعار شاشة الإقلاع الأصلية.
 Map<String, Uint8List> schoolReplacements(
   Uint8List apk,
   List<LauncherIcon> icons, {
   required String code,
   required img.Image? logo,
   String name = '',
+  String label = '',
   Map<String, dynamic>? colors,
   List<String> splash = const [],
 }) {
@@ -394,6 +566,11 @@ Map<String, Uint8List> schoolReplacements(
   final replace = <String, Uint8List>{
     schoolAssetEntry: schoolAssetBytes(code, name: name, logo: logo == null ? '' : logoDataUrl(logo), colors: colors),
   };
+  if (label.trim().isNotEmpty) {
+    final manifest = entries[manifestEntry];
+    if (manifest == null) throw const SchoolApkException('AndroidManifest.xml is not in the APK');
+    replace[manifestEntry] = setManifestLabel(entryContent(apk, manifest), label.trim());
+  }
   if (logo == null) return replace;
   for (final icon in icons) {
     final entry = entries[icon.path];
@@ -461,12 +638,22 @@ Future<void> buildSchoolApk({
   required BuildTools tools,
   required SigningKey key,
   String name = '',
+  String label = '',
   Map<String, dynamic>? colors,
   List<String> splash = const [],
 }) async {
   final work = Directory.systemTemp.createTempSync('school_apk_');
   try {
-    final replace = schoolReplacements(base, icons, code: code, logo: logo, name: name, colors: colors, splash: splash);
+    final replace = schoolReplacements(
+      base,
+      icons,
+      code: code,
+      logo: logo,
+      name: name,
+      label: label,
+      colors: colors,
+      splash: splash,
+    );
     final unsigned = File('${work.path}${Platform.pathSeparator}unsigned.apk')..writeAsBytesSync(rewriteZip(base, replace));
     final aligned = '${work.path}${Platform.pathSeparator}aligned.apk';
     await _tool(tools.zipalign, ['-f', '-P', '16', '4', unsigned.path, aligned]);

@@ -981,21 +981,33 @@ Future<List<SchoolCopy>> _buildSchoolCopies(
   for (final school in schools) {
     final logo = decodeLogo(school.logo);
     final file = File('${outDir.path}${Platform.pathSeparator}${schoolApkNameFor(version, school.code)}');
+    Future<void> build({required bool labeled}) => buildSchoolApk(
+          base: base,
+          icons: icons,
+          code: school.code,
+          logo: logo,
+          name: school.name,
+          label: labeled ? school.name : '',
+          colors: school.colors,
+          splash: splash,
+          out: file,
+          tools: tools,
+          key: key,
+        );
+    // الاسم تحت الأيقونة لا يوقف النشر: إن تعذّر خرجت النسخة بالاسم العام
+    var labeled = true;
     try {
-      await buildSchoolApk(
-        base: base,
-        icons: icons,
-        code: school.code,
-        logo: logo,
-        name: school.name,
-        colors: school.colors,
-        splash: splash,
-        out: file,
-        tools: tools,
-        key: key,
-      );
+      await build(labeled: true);
+      final label = apkLabel(await _tryCapture(aapt, ['dump', 'badging', file.path]) ?? '');
+      if (label != school.name) throw SchoolApkException('the copy reads "${label ?? '-'}"');
     } on SchoolApkException catch (e) {
-      _fail('${school.code}: ${e.message}');
+      _warn('${school.code}: school name under the icon failed (${e.message}) - generic name');
+      labeled = false;
+      try {
+        await build(labeled: false);
+      } on SchoolApkException catch (e) {
+        _fail('${school.code}: ${e.message}');
+      }
     }
 
     final digest = signerDigest(await _capture(apksigner, ['verify', '--print-certs', file.path], shell: true));
@@ -1009,6 +1021,7 @@ Future<List<SchoolCopy>> _buildSchoolCopies(
     final sha = (await crypto.sha256.bind(file.openRead()).first).toString();
     copies.add((code: school.code, file: file, entry: schoolManifestEntry(version, school.code, sha256: sha, sizeBytes: size)));
     _info('${school.code}: ${logo == null ? 'generic icon (no drawable logo - PNG/JPEG/WebP needed)' : 'school icon'}'
+        '${labeled ? ', named "${school.name}"' : ''}'
         ' - ${(size / (1024 * 1024)).toStringAsFixed(1)} MB');
   }
   return copies;
@@ -1194,6 +1207,12 @@ Future<String> _capture(String exe, List<String> args, {bool shell = false}) asy
   );
   if (result.exitCode != 0) _fail('$exe ${args.first} failed:\n${result.stderr}${result.stdout}');
   return '${result.stdout}';
+}
+
+/// كـ [_capture] لكن الفشل يعيد `null` بدل إيقاف النشر.
+Future<String?> _tryCapture(String exe, List<String> args) async {
+  final result = await Process.run(exe, args, stdoutEncoding: utf8, stderrEncoding: utf8);
+  return result.exitCode == 0 ? '${result.stdout}' : null;
 }
 
 T _orFail<T>(T Function() body) {

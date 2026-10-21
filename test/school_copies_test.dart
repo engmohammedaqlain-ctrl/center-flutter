@@ -53,7 +53,111 @@ Uint8List _zip(Map<String, List<int>> files) {
   return out.takeBytes();
 }
 
+/// بيان ثنائي صغير: `<application android:label="النظام المدرسي">`.
+Uint8List _manifest({required bool utf8Pool}) {
+  const strings = ['label', 'application', 'النظام المدرسي'];
+  final data = BytesBuilder();
+  final offsets = <int>[];
+  for (final s in strings) {
+    offsets.add(data.length);
+    if (utf8Pool) {
+      final b = utf8.encode(s);
+      data
+        ..add([s.length, b.length])
+        ..add(b)
+        ..addByte(0);
+    } else {
+      final u = ByteData(4 + s.length * 2)..setUint16(0, s.length, Endian.little);
+      for (var k = 0; k < s.length; k++) {
+        u.setUint16(2 + k * 2, s.codeUnitAt(k), Endian.little);
+      }
+      data.add(u.buffer.asUint8List());
+    }
+  }
+  while (data.length % 4 != 0) {
+    data.addByte(0);
+  }
+  final body = data.takeBytes();
+  final stringsStart = 28 + strings.length * 4;
+  final pool = ByteData(stringsStart + body.length)
+    ..setUint16(0, 0x0001, Endian.little)
+    ..setUint16(2, 28, Endian.little)
+    ..setUint32(4, stringsStart + body.length, Endian.little)
+    ..setUint32(8, strings.length, Endian.little)
+    ..setUint32(16, utf8Pool ? 0x100 : 0, Endian.little)
+    ..setUint32(20, stringsStart, Endian.little);
+  for (var i = 0; i < offsets.length; i++) {
+    pool.setUint32(28 + i * 4, offsets[i], Endian.little);
+  }
+  pool.buffer.asUint8List().setRange(stringsStart, stringsStart + body.length, body);
+
+  final map = ByteData(12)
+    ..setUint16(0, 0x0180, Endian.little)
+    ..setUint16(2, 8, Endian.little)
+    ..setUint32(4, 12, Endian.little)
+    ..setUint32(8, 0x01010001, Endian.little);
+  final element = ByteData(56)
+    ..setUint16(0, 0x0102, Endian.little)
+    ..setUint16(2, 16, Endian.little)
+    ..setUint32(4, 56, Endian.little)
+    ..setUint32(12, 0xffffffff, Endian.little)
+    ..setUint32(16, 0xffffffff, Endian.little)
+    ..setUint32(20, 1, Endian.little) // application
+    ..setUint16(24, 20, Endian.little)
+    ..setUint16(26, 20, Endian.little)
+    ..setUint16(28, 1, Endian.little)
+    ..setUint32(36, 0xffffffff, Endian.little)
+    ..setUint32(40, 0, Endian.little) // label
+    ..setUint32(44, 2, Endian.little)
+    ..setUint16(48, 8, Endian.little)
+    ..setUint8(51, 0x03)
+    ..setUint32(52, 2, Endian.little);
+  final total = 8 + pool.lengthInBytes + 12 + 56;
+  final head = ByteData(8)
+    ..setUint16(0, 0x0003, Endian.little)
+    ..setUint16(2, 8, Endian.little)
+    ..setUint32(4, total, Endian.little);
+  return (BytesBuilder()
+        ..add(head.buffer.asUint8List())
+        ..add(pool.buffer.asUint8List())
+        ..add(map.buffer.asUint8List())
+        ..add(element.buffer.asUint8List()))
+      .takeBytes();
+}
+
 void main() {
+  group('الاسم تحت الأيقونة', () {
+    for (final utf8Pool in [true, false]) {
+      test('اسم المدرسة يحلّ محل اسم التطبيق (${utf8Pool ? 'UTF-8' : 'UTF-16'})', () {
+        final before = _manifest(utf8Pool: utf8Pool);
+        expect(manifestLabel(before), 'النظام المدرسي');
+        final after = setManifestLabel(before, 'مدرسة الحسام الخاصة');
+        expect(manifestLabel(after), 'مدرسة الحسام الخاصة');
+        final data = ByteData.sublistView(after);
+        expect(data.getUint32(4, Endian.little), after.length);
+        expect(data.getUint32(12, Endian.little) % 4, 0); // الجدول على حدّ 4
+        // التعديل مرتين يبقى صحيحاً
+        expect(manifestLabel(setManifestLabel(after, 'TOP')), 'TOP');
+      });
+    }
+
+    test('بيانٌ ليس ثنائياً يُرفض بلا تخريب', () {
+      expect(() => setManifestLabel(Uint8List.fromList(utf8.encode('<manifest/>')), 'x'), throwsA(isA<SchoolApkException>()));
+    });
+
+    test('الاسم من مخرجات aapt2', () {
+      expect(apkLabel("package: name='a'\napplication-label:'مدرسة\\'نا'\n"), "مدرسة'نا");
+      expect(apkLabel('package: x'), isNull);
+    });
+
+    test('نسخة المدرسة تحمل البيان المعدّل', () {
+      final apk = _zip({schoolAssetEntry: utf8.encode('{}'), manifestEntry: _manifest(utf8Pool: true)});
+      final replace = schoolReplacements(apk, const [], code: 'mister', logo: null, label: 'مدرسة المستر');
+      expect(manifestLabel(replace[manifestEntry]!), 'مدرسة المستر');
+      expect(schoolReplacements(apk, const [], code: 'mister', logo: null).containsKey(manifestEntry), isFalse);
+    });
+  });
+
   group('نسخة المدرسة داخل الحزمة', () {
     test('يُستبدل الملف المطلوب ويبقى غيره، وتسقط ملفات توقيع v1', () {
       final zip = _zip({
