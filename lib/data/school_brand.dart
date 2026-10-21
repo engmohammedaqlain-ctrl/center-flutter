@@ -87,6 +87,9 @@ class SchoolBrand extends ChangeNotifier {
   /// كود المدرسة المكتوب في هذه النسخة.
   String? code;
 
+  /// نسخة مدرسة خاصة: `assets/school.json` يحمل كودها (لا رابط تنزيل المتجر).
+  bool bundled = false;
+
   /// آخر ما عُرف عنها — من ملف النسخة، ثم المحفوظ على الجهاز، ثم السحابة.
   String name = '';
   String logo = '';
@@ -109,6 +112,7 @@ class SchoolBrand extends ChangeNotifier {
       return;
     }
     code = parseSchoolAsset(raw);
+    bundled = code != null;
     if (code == null) {
       if (_readReferrer != null) await _savedReferrer();
       return;

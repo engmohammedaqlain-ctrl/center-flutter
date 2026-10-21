@@ -12,6 +12,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
+import 'app_installs_screen.dart';
 
 /// مطابق لـ USERNAME_RULE في دالة السيرفر `admin-tenants`.
 const _usernameRule = 'اسم المستخدم: 3 إلى 32 من الأحرف الإنجليزية الصغيرة والأرقام و . _ -';
@@ -197,6 +198,12 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
               ],
             ),
           ),
+          IconButton(
+            tooltip: 'الأجهزة',
+            icon: Icon(Icons.devices_outlined, color: AppColors.amber, size: 20),
+            onPressed: () => openAppInstalls(context),
+          ),
+          const SizedBox(width: 4),
           InkWell(
             onTap: () async {
               final ok = await confirmSheet(

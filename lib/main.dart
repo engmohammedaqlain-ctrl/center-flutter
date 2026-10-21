@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'data/app_installs.dart';
 import 'data/app_update.dart';
 import 'data/play_update.dart';
 import 'data/db_platform.dart';
@@ -63,6 +64,13 @@ Future<void> _bootstrap() async {
     await store.bootstrap(NoPersistence());
   }
   SupabaseConfig.applyOverrides(store.db.settings);
+  // كل دخول (موظف أو ولي أمر) يبلّغ إصدار الجهاز مع منشأته ودوره، والتجديد المتكرر لا يُعاد
+  final saveSession = SupabaseAuth.onSessionChanged;
+  SupabaseAuth.onSessionChanged = () async {
+    await saveSession?.call();
+    unawaited(AppInstalls.instance.report());
+  };
+  unawaited(AppInstalls.instance.report());
   // جلسة مستعادة: نفس ما يجري بعد تسجيل الدخول
   unawaited(store.afterEnter());
 }
@@ -269,6 +277,7 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
     }));
     unawaited(updater.checkPatch());
     unawaited(PlayUpdate.check(onReady: _playUpdateReady));
+    unawaited(AppInstalls.instance.report());
     final store = AppStore.instance;
     if (!store.loggedIn || store.isMasterAdmin || !store.networkEnabled) return;
     if (store.autoSync) {

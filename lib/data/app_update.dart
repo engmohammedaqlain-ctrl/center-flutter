@@ -1090,7 +1090,7 @@ Future<InstalledVersion> _packageVersion() async {
   final info = await PackageInfo.fromPlatform();
   // التحديث الصامت جزءٌ ثالث كما يُكتب عند النشر: 2.18.3. رقم البناء لا يتغيّر
   // به، فالمقارنة مع الإصدارات المنشورة تبقى على رقم البناء وحده
-  final patch = await _currentPatchNumber();
+  final patch = await currentPatchNumber();
   final name = displayVersion(info.version);
   return (code: int.tryParse(info.buildNumber) ?? 0, name: patch > 0 ? '$name.$patch' : name);
 }
@@ -1103,7 +1103,7 @@ String displayVersion(String pubspecName) {
 }
 
 /// رقم التحديث الصامت المثبَّت، أو 0: نسخة بُنيت بغير Shorebird لا تحمل محرّكه.
-Future<int> _currentPatchNumber() async {
+Future<int> currentPatchNumber() async {
   try {
     final updater = shorebird.ShorebirdUpdater();
     if (!updater.isAvailable) return 0;
