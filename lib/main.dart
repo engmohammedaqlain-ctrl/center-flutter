@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'data/app_installs.dart';
 import 'data/app_update.dart';
+import 'data/client_config.dart';
 import 'data/play_update.dart';
 import 'data/db_platform.dart';
 import 'data/local_db.dart';
@@ -27,6 +28,7 @@ import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 import 'widgets/auth_frame.dart';
 import 'widgets/animated_count.dart';
+import 'widgets/platform_notices.dart';
 import 'widgets/subscription_banner.dart';
 import 'widgets/widgets.dart' show decodeLogo, launchWaWithText;
 
@@ -189,7 +191,11 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     updater.addListener(_onUpdater);
+    // الصيانة وأقل بناء وتجميد التحديث تغيّر قرار التحديث نفسه
+    ClientConfig.instance.addListener(_onUpdater);
     AppStore.instance.addListener(_maybePrompt);
+    AppStore.instance.addListener(_onTenant);
+    unawaited(ClientConfig.instance.refresh(force: true));
     // قبل تثبيت بناء جديد: ارفع المعلّق حتى لا تضيع البيانات بعد المسح
     updater.beforeInstall = AppStore.instance.prepareForBuildUpdate;
     // التحديث من نسخة المدرسة كي تبقى أيقونتها: مدرسة الحساب الداخل أولاً،
@@ -221,8 +227,20 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     updater.removeListener(_onUpdater);
+    ClientConfig.instance.removeListener(_onUpdater);
     AppStore.instance.removeListener(_maybePrompt);
+    AppStore.instance.removeListener(_onTenant);
     super.dispose();
+  }
+
+  String? _tenantId;
+
+  /// الإعلانات والصيانة لكل مدرسة: تُعاد قراءتها عند الدخول بحساب آخر أو الخروج.
+  void _onTenant() {
+    final id = AppStore.instance.loggedIn ? AppStore.instance.currentTenant?.id : null;
+    if (id == _tenantId) return;
+    _tenantId = id;
+    unawaited(ClientConfig.instance.refresh(force: true));
   }
 
   void _onUpdater() {
@@ -278,6 +296,7 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
     unawaited(updater.checkPatch());
     unawaited(PlayUpdate.check(onReady: _playUpdateReady));
     unawaited(AppInstalls.instance.report());
+    unawaited(ClientConfig.instance.refresh());
     final store = AppStore.instance;
     if (!store.loggedIn || store.isMasterAdmin || !store.networkEnabled) return;
     if (store.autoSync) {
@@ -291,7 +310,7 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     return ListenableBuilder(
-      listenable: Listenable.merge([store, updater]),
+      listenable: Listenable.merge([store, updater, ClientConfig.instance]),
       builder: (context, _) {
         final Widget screen;
         // قرار التحديث يُنتظر مع إقلاع المخزن: بدونه تُعرض شاشة الدخول ثم تُقلب
@@ -309,6 +328,10 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
         } else if (!store.loggedIn) {
           _booted = true;
           screen = const LoginScreen();
+        } else if (ClientConfig.instance.maintenance && !store.isMasterAdmin) {
+          _booted = true;
+          // المطور لا يُوقف: يحتاج الدخول ليصلح
+          screen = const MaintenanceScreen();
         } else if (store.isMasterAdmin) {
           _booted = true;
           screen = const DeveloperScreen();
@@ -324,10 +347,21 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
         Widget body = KeyedSubtree(key: ValueKey(screen.runtimeType), child: screen);
         // كالويب: شريط الاشتراك فوق الشاشة دون منع العمل
         if (store.loggedIn && !store.isMasterAdmin) {
-          body = Column(
+          final rest = Column(
             children: [
               SubscriptionStatusBanner(store: store),
               Expanded(child: body),
+            ],
+          );
+          // الإعلان أخذ حافة الشاشة العليا: ما تحته لا يضيف فراغ شريط الحالة مرة ثانية
+          body = Column(
+            children: [
+              const AnnouncementsBanner(),
+              Expanded(
+                child: ClientConfig.instance.visible.isEmpty
+                    ? rest
+                    : MediaQuery.removePadding(context: context, removeTop: true, child: rest),
+              ),
             ],
           );
         }

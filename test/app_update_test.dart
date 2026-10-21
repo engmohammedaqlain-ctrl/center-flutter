@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:center_mobile/data/app_update.dart';
+import 'package:center_mobile/data/client_config.dart';
 import 'package:center_mobile/data/download_notification.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter_test/flutter_test.dart';
@@ -196,6 +197,45 @@ void main() {
 
     test('بلا وصف لا قرار', () {
       expect(decideUpdate(installed: 1, release: null), UpdateAction.none);
+    });
+
+    test('أقل بناء من لوحة المطور يُلزم الأقدم منه، بحدّ المنشور', () {
+      final release = AppRelease.fromJson(_manifest(versionCode: 5));
+      expect(decideUpdate(installed: 3, release: release, minBuild: 4), UpdateAction.mandatory);
+      expect(decideUpdate(installed: 4, release: release, minBuild: 4), UpdateAction.optional);
+      // رقمٌ لم يُنشر بعد لا يحبس من حدّث لآخر المنشور
+      expect(decideUpdate(installed: 5, release: release, minBuild: 9), UpdateAction.none);
+      expect(decideUpdate(installed: 4, release: release, minBuild: 9), UpdateAction.mandatory);
+    });
+
+    test('تجميد التحديث يُخفي الاختياري ولا يمسّ الإلزامي', () {
+      final optional = AppRelease.fromJson(_manifest(versionCode: 5));
+      expect(decideUpdate(installed: 4, release: optional, hold: true), UpdateAction.none);
+      final mandatory = AppRelease.fromJson(_manifest(versionCode: 5, mandatory: true));
+      expect(decideUpdate(installed: 4, release: mandatory, hold: true), UpdateAction.mandatory);
+      expect(decideUpdate(installed: 3, release: optional, minBuild: 4, hold: true), UpdateAction.mandatory);
+    });
+  });
+
+  group('ما يرسله المطور', () {
+    test('الرد يُقرأ، والإعلان بلا نص يُترك', () {
+      ClientConfig.instance.apply({
+        'maintenance': true,
+        'maintenance_message': ' صيانة قصيرة ',
+        'min_build': 44,
+        'update_hold': true,
+        'announcements': [
+          {'id': 'a', 'body': 'نسخة جديدة', 'level': 'warn'},
+          {'id': 'b', 'body': '  '},
+          {'body': 'بلا معرّف'},
+        ],
+      });
+      final c = ClientConfig.instance;
+      expect((c.maintenance, c.message, c.minBuild, c.updateHold), (true, 'صيانة قصيرة', 44, true));
+      expect(c.announcements.map((a) => (a.id, a.warn)), [('a', true)]);
+
+      ClientConfig.instance.apply(const {});
+      expect((c.maintenance, c.minBuild, c.updateHold, c.announcements.length), (false, 0, false, 0));
     });
   });
 

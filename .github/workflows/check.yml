@@ -53,7 +53,7 @@ jobs:
       # نسخ المدارس: اسم المدرسة تحت الأيقونة يُكتب في بيان الحزمة المبنية
       - name: School copies
         run: |
-          flutter test test/school_copies_test.dart
+          flutter test test/school_copies_test.dart test/app_update_test.dart
           dart run tool/school_label_check.dart build/app/outputs/flutter-apk/app-release.apk "$RUNNER_TEMP/labeled.apk" 'مدرسة تجربة'
           AAPT2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
           "$AAPT2" dump badging "$RUNNER_TEMP/labeled.apk" | grep -E "^(package|application-label|launchable)"

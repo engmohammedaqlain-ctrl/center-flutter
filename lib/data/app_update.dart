@@ -23,6 +23,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart' as shorebird;
 
+import 'client_config.dart';
 import 'download_notification.dart';
 import 'play_store.dart';
 
@@ -132,12 +133,18 @@ enum UpdateAction {
 }
 
 /// قرار التحديث — يُحسب بلا شبكة ولا واجهة، فيُختبر وحده.
-UpdateAction decideUpdate({required int installed, required AppRelease? release}) {
+///
+/// [minBuild] و[hold] من لوحة المطور (`ClientConfig`): الأول يُلزم الأقدم منه —
+/// بحدّ المنشور، فرقمٌ لم يُنشر بعد لا يحبس الجهاز في إلزامٍ لا يُقضى — والثاني
+/// يُخفي الاختياري عن مدرسة جُمّد تحديثها، ولا يمسّ الإلزامي.
+UpdateAction decideUpdate({required int installed, required AppRelease? release, int minBuild = 0, bool hold = false}) {
   if (release == null) return UpdateAction.none;
   // القديم الذي لم تعد السحابة تقبله: يُلزَم ولو لم يُعلن الناشر الإلزام
-  if (installed < release.minSupported) return UpdateAction.mandatory;
+  final floor = minBuild < release.versionCode ? minBuild : release.versionCode;
+  if (installed < release.minSupported || installed < floor) return UpdateAction.mandatory;
   if (installed >= release.versionCode) return UpdateAction.none;
-  return release.mandatory ? UpdateAction.mandatory : UpdateAction.optional;
+  if (release.mandatory) return UpdateAction.mandatory;
+  return hold ? UpdateAction.none : UpdateAction.optional;
 }
 
 /// جلب وصف أحدث إصدار من الاستضافة.
@@ -670,7 +677,13 @@ class AppUpdater extends ChangeNotifier {
   UpdateAction get action {
     // إصدارٌ مثبَّت مجهول لا يُقارن: خيرٌ من إلزامٍ خاطئ يحجب التطبيق
     if (!supported || installedCode <= 0) return UpdateAction.none;
-    return decideUpdate(installed: installedCode, release: release);
+    final config = ClientConfig.instance;
+    return decideUpdate(
+      installed: installedCode,
+      release: release,
+      minBuild: config.minBuild,
+      hold: config.updateHold,
+    );
   }
 
   /// تحديثٌ اختياري لم يُعرض بعد في هذه الجلسة.
