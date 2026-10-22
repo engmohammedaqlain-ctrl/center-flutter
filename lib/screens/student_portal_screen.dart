@@ -118,7 +118,8 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
   List<Widget> _familyTop() {
     if (!_notesOn) return const [];
     return [
-      FamilyAnnouncementsCard(service: widget.notes, reloadTick: _announceTick),
+      // لكل ابن إعلانات نطاقه (مرحلته وشعبته)
+      FamilyAnnouncementsCard(key: ValueKey(user.id), service: widget.notes, reloadTick: _announceTick),
       NewNotesBanner(
         threads: noteThreads,
         onOpen: () {
@@ -847,12 +848,12 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
         ),
       _PortalSummary(
         label: owes ? 'المستحق حالياً' : 'حالة الحساب',
-        value: owes ? money(f.currentDue) : 'مسدد بالكامل',
+        value: owes ? money(f.currentDue) : (f.scheduledRemaining > 0 ? 'مسدد حتى الآن' : 'مسدد بالكامل'),
         valueColor: owes ? const Color(0xFFA5484A) : const Color(0xFF2E7D57),
         parts: [
           (label: 'المقبوض', value: money(f.totalPaid), color: const Color(0xFF2E7D57)),
           if (f.scheduledRemaining > 0)
-            (label: 'مجدول لاحقاً', value: money(f.scheduledRemaining), color: AppColors.muted),
+            (label: 'قادم', value: money(f.scheduledRemaining), color: AppColors.muted),
         ],
       ),
       const SizedBox(height: Gap.lg),
@@ -1023,11 +1024,11 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
 
   Widget _installmentChip(PortalInstallment i) {
     if (i.status == 'unpaid') {
-      return i.isScheduled ? StatusChip.muted('مجدول') : StatusChip.danger('مستحق');
+      return i.isScheduled ? StatusChip.muted('قادم') : StatusChip.danger('مستحق');
     }
     if (i.status == 'partially_paid') {
       return i.isScheduled
-          ? StatusChip.muted('مجدول (باقي ${money(i.remaining)})')
+          ? StatusChip.muted('قادم (باقي ${money(i.remaining)})')
           : StatusChip.amber('باقي ${money(i.remaining)}');
     }
     return StatusChip.success('مسدد');
@@ -1202,7 +1203,7 @@ class _SubjectGradesCard extends StatelessWidget {
     final tone = percent == null ? AppColors.muted : _tone(percent);
 
     String termLabel(TermGrade t) {
-      if (t.components.isEmpty || t.currentAverage == null) return '—';
+      if (t.components.isEmpty || t.currentAverage == null) return 'لم تُرصد بعد';
       return t.isComplete ? '${t.total.round()}%' : '${t.currentAverage!.round()}% حالي';
     }
 
