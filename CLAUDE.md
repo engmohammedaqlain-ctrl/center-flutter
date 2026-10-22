@@ -7,6 +7,11 @@
 - لا تنشر أي نسخة (build أو patch) بدون طلب صريح من صاحب المشروع.
 - لا فحص محلي (pub get / analyze / test / build) على جهاز صاحب المشروع: نسخة Flutter عنده قديمة. الفحص على GitHub Actions.
 
+## بناء تجريبي (قبل أي شيء يصل المدارس)
+- Actions ← Release ← Run workflow ← Use workflow from: الفرع ← action: test.
+- APK واحد في Artifacts صفحة التشغيل (7 أيام)، بلا نشر لأي مدرسة ولا Play ولا رقم إصدار. التجارب على مدرسة النخبة.
+- build وpatch وadd-schools ترفض أي فرع غير main.
+
 ## طريقة النشر (لما صاحب المشروع يقول: انشر نسخة جديدة)
 1. نسخة GitHub للمدارس: Actions ← Release ← Run workflow
    - action: build

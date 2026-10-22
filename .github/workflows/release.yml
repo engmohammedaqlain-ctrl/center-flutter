@@ -2,6 +2,11 @@
 # يشغّل tool/publish_release.dart نفسه الذي تشغّله القائمة المحلية (tool/release.dart)،
 # فالطريقتان تنشران الشيء نفسه وتبقى المحلية احتياطاً.
 #
+# test: بناء تجريبي من الفرع المختار (Use workflow from)، APK واحد يُرفع في صفحة
+# التشغيل (Artifacts) وحدها: لا نشر لأي مدرسة، ولا Play، ولا رقم إصدار جديد.
+# يُثبَّت على جوال التجربة (مدرسة النخبة) ثم يُحذف تلقائياً بعد 7 أيام.
+# build وpatch وadd-schools من main وحده: بناء من فرع تجريبي لا يصل المدارس بالخطأ.
+#
 # الأسرار (Settings ← Secrets and variables ← Actions):
 #   ANDROID_KEYSTORE_BASE64   ملف center-release.jks بصيغة base64
 #   ANDROID_KEY_PROPERTIES    محتوى android/key.properties كما هو
@@ -22,6 +27,7 @@ on:
           - build        # New build for all schools
           - patch        # Silent update (Dart code only)
           - add-schools  # Copies for every school that has none yet
+          - test         # One trial APK in Artifacts only - no school, no Play
         default: build
       notes:
         description: What changed (users see this) - needed for build and patch
@@ -32,9 +38,9 @@ on:
         type: boolean
         default: true
 
-# نشران معاً يتسابقان على رقم الإصدار نفسه
+# نشران معاً يتسابقان على رقم الإصدار نفسه. التجريبي لا ينشر فلا ينتظرهما
 concurrency:
-  group: release
+  group: ${{ inputs.action == 'test' && format('release-test-{0}', github.ref) || 'release' }}
   cancel-in-progress: false
 
 permissions:
@@ -45,6 +51,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
+      - name: Publish from main only
+        if: inputs.action != 'test' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::${{ inputs.action }} publishes to schools: run it from main (this run is on ${{ github.ref_name }}). Trial builds: action test"
+          exit 1
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
@@ -61,6 +73,7 @@ jobs:
           cache: true
 
       - uses: shorebirdtech/setup-shorebird@v1
+        if: inputs.action != 'test'
         with:
           cache: true
 
@@ -82,6 +95,7 @@ jobs:
 
       # اعتماد أُضيف لـ pubspec دون قفله: يُقفل هنا بإصدار Flutter نفسه، ويُرفع مع كوميت الإصدار
       - name: Commit pubspec.lock
+        if: inputs.action != 'test'
         run: |
           if ! git diff --quiet -- pubspec.lock; then
             git config user.name "github-actions[bot]"
@@ -89,7 +103,21 @@ jobs:
             git commit -m "pubspec.lock" -- pubspec.lock
           fi
 
+      # بناء تجريبي: الحزمة العامة كما يبنيها فحص main، بلا Shorebird ولا رفع لأحد
+      - name: Trial build
+        if: inputs.action == 'test'
+        run: flutter build apk --release --target-platform android-arm64
+
+      - name: Trial APK
+        if: inputs.action == 'test'
+        uses: actions/upload-artifact@v4
+        with:
+          name: noon-test-${{ github.run_number }}-${{ github.sha }}
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 7
+
       - name: Publish
+        if: inputs.action != 'test'
         env:
           ACTION: ${{ inputs.action }}
           NOTES: ${{ inputs.notes }}
