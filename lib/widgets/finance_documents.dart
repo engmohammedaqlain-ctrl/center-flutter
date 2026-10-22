@@ -355,7 +355,7 @@ class ReceiptDocument extends StatelessWidget {
                         v.advance > 0
                             ? const _Cell('رصيد مقدم', color: _emerald700, bold: true)
                             : v.dueRemaining <= 0.01
-                                ? const _Cell('مسدد حتى تاريخه', color: _emerald700, bold: true)
+                                ? const _Cell('مسدد حتى الآن', color: _emerald700, bold: true)
                                 : const _Cell('مستمر (متأخرات)', color: _amber800, bold: true),
                       ],
                     ),

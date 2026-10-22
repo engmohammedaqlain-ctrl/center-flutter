@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 
-/// سطر مستحق/له/خالص + مجدول — مطابق لـ `DueStatus` في الويب.
+/// سطر مستحق/رصيد له/خالص + قادم — مطابق لـ `DueStatus` في الويب.
 enum DueStatusKind { clear, due, credit }
 
 class DueStatus extends StatelessWidget {
@@ -28,10 +28,11 @@ class DueStatus extends StatelessWidget {
   Widget build(BuildContext context) {
     final (label, color) = switch (kind) {
       DueStatusKind.due => ('مستحق', AppColors.danger),
-      DueStatusKind.credit => ('له', AppColors.heading),
+      DueStatusKind.credit => ('رصيد له', AppColors.heading),
       DueStatusKind.clear => (clearLabel, AppColors.success),
     };
-    final showAmount = kind != DueStatusKind.clear || clearLabel != 'مسدد';
+    // «مسدد» و«مسدد حتى الآن» بلا صفر بجانبهما، و«خالص» بصفرها
+    final showAmount = kind != DueStatusKind.clear || clearLabel == 'خالص';
 
     return Column(
       crossAxisAlignment: endAligned ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -65,7 +66,7 @@ class DueStatus extends StatelessWidget {
                   color: AppColors.muted,
                 ),
                 children: [
-                  const TextSpan(text: 'مجدول '),
+                  const TextSpan(text: 'قادم '),
                   TextSpan(text: money(scheduled)),
                 ],
               ),

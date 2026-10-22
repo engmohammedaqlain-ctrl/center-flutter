@@ -1284,7 +1284,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 const SizedBox(height: 4),
                 Text(
                   [
-                    request.status == 'approved' ? 'مقبول' : 'مرفوض',
+                    request.status == 'approved' ? 'اعتُمد' : 'مرفوض',
                     if (request.decisionNote.isNotEmpty)
                       '— ${request.decisionNote}',
                   ].join(' '),

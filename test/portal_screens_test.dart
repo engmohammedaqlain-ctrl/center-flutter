@@ -563,7 +563,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('المقبوض'), findsOneWidget);
       expect(find.text('مسدد'), findsOneWidget);
-      expect(find.text('مجدول'), findsOneWidget, reason: 'القسط الذي لم يحن موعده ليس مطلوباً الآن');
+      expect(find.text('قادم'), findsOneWidget, reason: 'القسط الذي لم يحن موعده ليس مطلوباً الآن');
       await tester.scrollUntilVisible(find.text('عرض الوصل'), 200, scrollable: find.byType(Scrollable).last);
       expect(find.text('سند #2026/1062'), findsOneWidget);
       expect(find.text('محفظة بال بي'), findsOneWidget);

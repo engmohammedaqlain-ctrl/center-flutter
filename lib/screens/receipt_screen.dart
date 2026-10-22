@@ -237,7 +237,7 @@ String receiptWhatsAppMessage(AppStore store, Payment p) {
   final dueText = advance > 0
       ? '0 شيكل (يوجد رصيد مقدم: ${trimNum(advance)} شيكل)'
       : due <= 0
-          ? '0 شيكل (مسدد حتى تاريخه)'
+          ? '0 شيكل (مسدد حتى الآن)'
           : '${trimNum(due)} شيكل';
   return [
     'السلام عليكم ورحمة الله وبركاته',
