@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../data/features.dart';
 import '../data/grading.dart';
 import '../data/institution.dart';
+import '../data/notes.dart';
 import '../data/portal.dart';
 import '../data/push.dart';
 import '../data/realtime.dart';
@@ -15,6 +16,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/moodle_style.dart';
 import '../widgets/widgets.dart';
+import 'notes_parts.dart';
 import 'parent_payments.dart';
 import 'portal_chrome.dart';
 
@@ -25,6 +27,7 @@ class StudentPortalScreen extends StatefulWidget {
     required this.user,
     required this.onExit,
     this.service = const PortalService(),
+    this.notes = const NotesService(),
   });
 
   final PortalUser user;
@@ -32,6 +35,7 @@ class StudentPortalScreen extends StatefulWidget {
 
   /// قابلة للاستبدال في الاختبارات كي لا تمسّ السحابة.
   final PortalService service;
+  final NotesService notes;
 
   @override
   State<StudentPortalScreen> createState() => _StudentPortalScreenState();
@@ -66,6 +70,65 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
 
   PortalService get _service => widget.service;
 
+  // ── الملاحظات والإعلانات ──────────────────────────────────────────────────
+
+  /// ملاحظات المدرسة لهذا الطالب بردودها: محادثة كل معلم على بطاقة مادته.
+  List<NoteThread> noteThreads = const [];
+
+  /// يزيد ليُعاد جلب الإعلانات (إشعار إعلان وصل).
+  int _announceTick = 0;
+
+  /// محادثة يطلبها إشعار لُمس قبل أن تجهز البيانات.
+  String? _pendingNoteId;
+
+  bool get _notesOn => data != null && resolveFeatures(data!.features)['portal.notes'] == true;
+
+  Future<void> _loadNotes() async {
+    if (!_notesOn) return;
+    final id = user.id;
+    try {
+      final list = await widget.notes.family();
+      if (mounted && user.id == id) setState(() => noteThreads = list);
+    } catch (_) {
+      // بلا شبكة تبقى المعروضة: الملاحظات ليست شرطاً للبوابة
+    }
+  }
+
+  Future<void> _openChat(Conversation c) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => FamilyChatPage(conv: c, canReply: isParent, service: widget.notes),
+      ),
+    );
+    if (mounted) await _loadNotes();
+  }
+
+  /// المحادثة التي فيها ملاحظة الإشعار، أو أحدث ما لم يُقرأ.
+  Future<void> _openPendingNote() async {
+    final noteId = _pendingNoteId;
+    if (noteId == null || data == null) return;
+    _pendingNoteId = null;
+    await _loadNotes();
+    if (!mounted) return;
+    final c = familyConversationOf(byAuthor(noteThreads), noteId: noteId);
+    if (c != null) await _openChat(c);
+  }
+
+  /// فوق محتوى كل تبويب: إعلان المدرسة، وشريط «ملاحظة جديدة» يفتح محادثتها.
+  List<Widget> _familyTop() {
+    if (!_notesOn) return const [];
+    return [
+      FamilyAnnouncementsCard(service: widget.notes, reloadTick: _announceTick),
+      NewNotesBanner(
+        threads: noteThreads,
+        onOpen: () {
+          final c = familyConversationOf(byAuthor(noteThreads));
+          if (c != null) _openChat(c);
+        },
+      ),
+    ];
+  }
+
   /// فتح ملف ابن آخر: دخولٌ جديد بهويته، ثم إعادة تحميل الشاشة على ملفه.
   Future<void> _switchChild(PortalChild child) async {
     if (child.id == user.id || switchingChildId != null) return;
@@ -93,6 +156,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       switchingChildId = null;
       loading = true;
       sections = const [];
+      noteThreads = const [];
     });
     // الجلسة الآن على هذا الابن: الجهاز يُسجَّل معه
     unawaited(ParentPush.instance.register());
@@ -199,6 +263,13 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     }
     final tab = notice.tab;
     if (tab != null && _navItems.any((n) => n.id == tab)) _selectTab(tab);
+    // الملاحظة: محادثتها مباشرة. الإعلان: البوابة نفسها، وبطاقته فوقها
+    if (notice.kind == 'note') {
+      _pendingNoteId = notice.noteId;
+      await _openPendingNote();
+    } else if (notice.kind == 'announcement') {
+      setState(() => _announceTick++);
+    }
   }
 
   /// إشعار وصل والبوابة مفتوحة: أندرويد لا يعرضه، فيظهر هنا ويُحدَّث الملف.
@@ -206,6 +277,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     if (!mounted || notice.body.isEmpty) return;
     showAppSnack(context, notice.body);
     if (notice.studentId == user.id) unawaited(_load(silent: true));
+    if (notice.kind == 'announcement') setState(() => _announceTick++);
   }
 
   PortalRealtime? _portalRt;
@@ -272,6 +344,9 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       });
       // مشاركة وصلت قبل أن تجهز البيانات
       if (result != null && ShareInbox.instance.hasFiles) unawaited(_onShared());
+      if (result != null) {
+        unawaited(_pendingNoteId != null ? _openPendingNote() : _loadNotes());
+      }
       if (!silent && tab == 'moodle' && !isParent) _loadMoodle();
     } catch (_) {
       if (!mounted || (silent && data != null)) return;
@@ -361,13 +436,16 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                         color: AppColors.accent,
                         child: ListView(
                           padding: const EdgeInsets.fromLTRB(14, 12, 14, 18),
-                          children: switch (tab) {
-                            'subjects' => _subjectsTab(),
-                            'attendance' => _attendanceTab(),
-                            'evaluations' => _evaluationsTab(),
-                            'financial' => _financialTab(),
-                            _ => _moodleTab(),
-                          },
+                          children: [
+                            ..._familyTop(),
+                            ...switch (tab) {
+                              'subjects' => _subjectsTab(),
+                              'attendance' => _attendanceTab(),
+                              'evaluations' => _evaluationsTab(),
+                              'financial' => _financialTab(),
+                              _ => _moodleTab(),
+                            },
+                          ],
                         ),
                       ),
           ),
@@ -516,7 +594,13 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
 
   List<Widget> _subjectsTab() {
     final subjects = data!.subjects;
+    // محادثة كل معلم على بطاقة مادته، وما سواها (الإدارة، مربي الصف) صفوف فوق البطاقات
+    final chats = byAuthor(noteThreads);
+    final subjectKeys = {for (final s in subjects) teacherChatKey(s.teacherName, s.subjectName)};
+    Conversation? chatOf(PortalSubject s) =>
+        chats.where((c) => c.key == teacherChatKey(s.teacherName, s.subjectName)).firstOrNull;
     return [
+      FamilyOtherChats(convs: [for (final c in chats) if (!subjectKeys.contains(c.key)) c], onOpen: _openChat),
       Text(
         'المواد والمعلمون (${subjects.length}):',
         style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600),
@@ -565,6 +649,10 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                         if (s.roomName.isNotEmpty) ...[
                           const SizedBox(height: 3),
                           Text('القاعة: ${s.roomName}', style: TextStyle(color: AppColors.faint, fontSize: 10.5)),
+                        ],
+                        if (chatOf(s) case final chat?) ...[
+                          const SizedBox(height: 8),
+                          SubjectChatButton(unread: chat.unread, onTap: () => _openChat(chat)),
                         ],
                       ],
                     ),
