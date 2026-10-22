@@ -3,18 +3,59 @@ package com.center.center_mobile
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import org.json.JSONArray
 
 class MainActivity : FlutterActivity() {
+
+    /** ملفات مشارَكة نسخها [ShareActivity] تنتظر أن يأخذها Flutter (`take`). */
+    private val shared = mutableListOf<Map<String, Any?>>()
+    private var shareChannel: MethodChannel? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         createSchoolChannel()
+        // فتحٌ من «الأخيرة» يعيد آخر Intent: المشاركة نفسها لا تُستقبل مرتين
+        val fromHistory = (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+        if (savedInstanceState == null && !fromHistory) receiveShared(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        receiveShared(intent)
+    }
+
+    private fun receiveShared(intent: Intent?) {
+        if (intent?.action != ACTION_SHARED) return
+        val json = intent.getStringExtra(EXTRA_SHARED) ?: return
+        intent.removeExtra(EXTRA_SHARED)
+        val files = try {
+            val arr = JSONArray(json)
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                mapOf<String, Any?>(
+                    "path" to o.optString("path", ""),
+                    "name" to o.optString("name", ""),
+                    "mime" to o.optString("mime", ""),
+                    "size" to o.optLong("size", 0),
+                    "error" to o.optString("error", ""),
+                )
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+        if (files.isEmpty()) return
+        // مشاركة جديدة تحل محل ما لم يُؤخذ بعد
+        shared.clear()
+        shared.addAll(files)
+        shareChannel?.invokeMethod("ready", null)
     }
 
     /**
@@ -33,6 +74,18 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, DocumentsBridge.CHANNEL)
             .setMethodCallHandler(DocumentsBridge(this))
         StoreReferrer.register(this, flutterEngine)
+        shareChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SHARE_CHANNEL).apply {
+            setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "take" -> {
+                        val out = ArrayList(shared)
+                        shared.clear()
+                        result.success(out)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -75,6 +128,9 @@ class MainActivity : FlutterActivity() {
     }
 
     companion object {
+        const val ACTION_SHARED = "com.center.center_mobile.SHARED"
+        const val EXTRA_SHARED = "shared_files"
+        private const val SHARE_CHANNEL = "center/share"
         private const val CHANNEL = "center/update_download"
         private const val SCHOOL_CHANNEL = "school"
         private const val NOTIFY_REQUEST = 4711

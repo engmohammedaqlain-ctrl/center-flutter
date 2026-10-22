@@ -15,6 +15,7 @@ import 'data/play_store.dart';
 import 'data/portal_offline.dart';
 import 'data/push.dart';
 import 'data/school_brand.dart';
+import 'data/share_inbox.dart';
 import 'data/store.dart';
 import 'data/supabase.dart';
 import 'models/models.dart';
@@ -51,6 +52,8 @@ Future<void> main() async {
   SchoolBrand.instance.addListener(AppStore.instance.applyBrandColors);
 
   runApp(StoreScope(store: AppStore.instance, child: const CenterApp()));
+  // ملفات «مشاركة» من تطبيق آخر: عند الإقلاع منها وأثناء العمل
+  ShareInbox.instance.start();
 
   unawaited(_bootstrap());
   // الهوية المحفوظة ثم تحديثها من السحابة: شاشة الدخول تعرض مدرستها قبل أي حساب
@@ -195,6 +198,8 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
     ClientConfig.instance.addListener(_onUpdater);
     AppStore.instance.addListener(_maybePrompt);
     AppStore.instance.addListener(_onTenant);
+    AppStore.instance.addListener(_onShared);
+    ShareInbox.instance.addListener(_onShared);
     unawaited(ClientConfig.instance.refresh(force: true));
     // قبل تثبيت بناء جديد: ارفع المعلّق حتى لا تضيع البيانات بعد المسح
     updater.beforeInstall = AppStore.instance.prepareForBuildUpdate;
@@ -230,7 +235,20 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
     ClientConfig.instance.removeListener(_onUpdater);
     AppStore.instance.removeListener(_maybePrompt);
     AppStore.instance.removeListener(_onTenant);
+    AppStore.instance.removeListener(_onShared);
+    ShareInbox.instance.removeListener(_onShared);
     super.dispose();
+  }
+
+  /// مشاركة وصلت وحساب الإدارة داخل: المشاركة لبوابتي المعلم وولي الأمر.
+  /// قبل الدخول تبقى في الصندوق حتى تأخذها البوابة بعده.
+  void _onShared() {
+    final store = AppStore.instance;
+    if (!ShareInbox.instance.hasFiles || !store.ready || !store.loggedIn) return;
+    ShareInbox.instance.take();
+    _messengerKey.currentState
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('المشاركة للمعلم وولي الأمر')));
   }
 
   String? _tenantId;
@@ -749,7 +767,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return const ColoredBox(color: Colors.white, child: SizedBox.expand());
     }
     return ListenableBuilder(
-      listenable: SchoolBrand.instance,
+      listenable: Listenable.merge([SchoolBrand.instance, ShareInbox.instance]),
       builder: (context, _) => _frame(store),
     );
   }
@@ -769,6 +787,21 @@ class _LoginScreenState extends State<LoginScreen> {
         style: const TextStyle(color: AppColors.faint, fontSize: 10.5),
       ),
       children: [
+        // ملفات شوركت قبل الدخول: تُكمل بعده
+        if (ShareInbox.instance.hasFiles) ...[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.attach_file, size: 15, color: AppColors.muted),
+              const SizedBox(width: 4),
+              Text(
+                '${ShareInbox.instance.files.length} ملف بانتظار الدخول',
+                style: const TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+        ],
         AuthCard(child: portalTab ? _portalForm() : _adminForm()),
         const SizedBox(height: 10),
         // حساب المنشأة خلف رابط: الدخول اليومي للجميع برقم الهوية
