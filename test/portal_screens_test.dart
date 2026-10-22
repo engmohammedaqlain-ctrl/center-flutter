@@ -1,3 +1,4 @@
+import 'package:center_mobile/data/notes.dart';
 import 'package:center_mobile/data/portal.dart';
 import 'package:center_mobile/models/models.dart';
 import 'package:center_mobile/screens/portal_screens.dart';
@@ -66,6 +67,26 @@ class _FakePortal extends PortalService {
   Future<void> saveEvaluations(List<StudentEvaluation> batch, String tenantId) async {
     savedEvaluations = batch;
   }
+}
+
+/// ملاحظات بلا شبكة: ما يُرسل ويُعلَّم مقروءاً يُسجَّل.
+class _FakeNotes extends NotesService {
+  _FakeNotes(this.rows);
+
+  final List<StudentNote> rows;
+  final sent = <String>[];
+  bool markedRead = false;
+
+  @override
+  Future<List<NoteThread>> school({String? studentId}) async =>
+      threadNotes([for (final r in rows) if (studentId == null || r.studentId == studentId) r]);
+
+  @override
+  Future<void> send({required String studentId, required String body, required String audience, String subject = ''}) async =>
+      sent.add('$studentId:$audience:$subject:$body');
+
+  @override
+  Future<void> markRead() async => markedRead = true;
 }
 
 const _branding = PortalBranding(name: 'مدرسة أبو عقلين الخاصة');
@@ -329,6 +350,53 @@ void main() {
     await tester.tap(find.text('حفظ الرصد'));
     await tester.pumpAndSettle();
     expect(fake.savedAttendance, {'s1': 'absent'}, reason: 'من لم يُلمس يبقى غير مرصود كما عند الإدارة');
+  });
+
+  testWidgets('«الكل حاضر» يرصد من لم يُرصد ولا يمسح غياباً رُصد قبله', (tester) async {
+    final fake = _FakePortal(teacher: _teacherData());
+    await _pump(tester, TeacherPortalScreen(user: _teacherUser, onExit: () {}, service: fake));
+
+    await tester.tap(find.descendant(of: find.byType(AttendanceStudentRow), matching: find.text('غائب')).first);
+    await tester.pump();
+    await tester.tap(find.text('الكل حاضر'));
+    await tester.pump();
+    await tester.tap(find.text('حفظ الرصد'));
+    await tester.pumpAndSettle();
+    expect(fake.savedAttendance, {'s1': 'absent', 's2': 'present'});
+  });
+
+  testWidgets('ملاحظات المعلم: الطلاب محادثات، صاحب الرد الجديد أولاً، والمحادثة بفقاعاتها', (tester) async {
+    final notes = _FakeNotes([
+      const StudentNote(id: 'n1', studentId: 's1', body: 'أحسنت', studentName: 'علي أبو حسنين', createdAt: '2026-10-20T08:00:00Z'),
+      const StudentNote(id: 'n2', studentId: 's2', body: 'لم يُسلَّم الواجب', studentName: 'سارة محمود', createdAt: '2026-10-21T08:00:00Z', readAt: '2026-10-21T09:00:00Z'),
+      const StudentNote(id: 'r2', studentId: 's2', body: 'سنتابعه', authorRole: 'parent', replyTo: 'n2', createdAt: '2026-10-21T10:00:00Z'),
+    ]);
+    final fake = _FakePortal(teacher: _teacherData());
+    await _pump(tester, TeacherPortalScreen(user: _teacherUser, onExit: () {}, service: fake, notes: notes));
+
+    await tester.tap(find.text('ملاحظات'));
+    await tester.pumpAndSettle();
+    expect(find.text('رسالة للصف (2)'), findsOneWidget);
+    expect(find.text('ولي الأمر: سنتابعه'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('سارة محمود')).dy,
+      lessThan(tester.getTopLeft(find.text('علي أبو حسنين')).dy),
+      reason: 'من فيه رد جديد أولاً',
+    );
+
+    await tester.tap(find.text('سارة محمود'));
+    await tester.pumpAndSettle();
+    expect(find.text('لم يُسلَّم الواجب'), findsWidgets, reason: 'الفقاعة، والعبارة الجاهزة نفسها');
+    expect(find.text('سنتابعه'), findsOneWidget);
+    expect(find.byTooltip('قُرئت'), findsOneWidget);
+    expect(find.text('ولي الأمر'), findsOneWidget, reason: 'زر لمن تُرسل');
+    expect(notes.markedRead, isTrue);
+
+    await tester.enterText(find.byType(TextField), 'شكراً');
+    await tester.pump();
+    await tester.tap(find.byTooltip('إرسال'));
+    await tester.pumpAndSettle();
+    expect(notes.sent, ['s2:parent:اللغة العربية:شكراً']);
   });
 
   testWidgets('رصد الدرجات بلا عنوان يُظهر الخطأ تحت الحقل ولا يحفظ', (tester) async {

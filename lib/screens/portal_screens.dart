@@ -11,7 +11,9 @@ import 'sheet_export.dart';
 import '../data/institution.dart';
 import '../data/portal.dart';
 import '../data/material_limits.dart';
+import '../data/notes.dart';
 import '../data/portal_offline.dart';
+import '../data/push.dart';
 import '../data/realtime.dart';
 import '../data/share_inbox.dart';
 import '../data/store.dart';
@@ -28,6 +30,7 @@ import '../widgets/widgets.dart';
 import '../widgets/list_paging.dart';
 import '../widgets/moodle_style.dart';
 import 'homeroom_class.dart';
+import 'notes_parts.dart';
 import 'portal_chrome.dart';
 
 export 'student_portal_screen.dart' show StudentPortalScreen;
@@ -775,6 +778,7 @@ class TeacherPortalScreen extends StatefulWidget {
     required this.onExit,
     this.service = const PortalService(),
     this.offline,
+    this.notes = const NotesService(),
   });
 
   final PortalUser user;
@@ -782,6 +786,7 @@ class TeacherPortalScreen extends StatefulWidget {
 
   /// قابلة للاستبدال في الاختبارات كي لا تمسّ السحابة.
   final PortalService service;
+  final NotesService notes;
 
   /// مخزن العمل بلا إنترنت. يُستبدل في الاختبارات بقاعدة في الذاكرة.
   final PortalOffline? offline;
@@ -988,6 +993,171 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     unawaited(_loadHomeroom());
     _startPortalRealtime();
     ShareInbox.instance.addListener(_onShared);
+    _listenPush();
+  }
+
+  // ── الملاحظات ─────────────────────────────────────────────────────────────
+
+  /// ما كتبه المعلم للأسر وردودها. تُجلب عند الدخول، فيظهر على التبويب ما وصل من ردود.
+  List<NoteThread> noteThreads = const [];
+  String notesError = '';
+
+  bool get _notesOn => _tabIds().contains('notes');
+
+  Future<void> _loadNotes() async {
+    if (!_notesOn) return;
+    try {
+      final list = await widget.notes.school();
+      if (!mounted) return;
+      setState(() {
+        noteThreads = list;
+        notesError = '';
+      });
+    } catch (e) {
+      if (mounted) setState(() => notesError = e is NotesException ? e.message : 'تعذّر تحميل الملاحظات');
+    }
+  }
+
+  List<StreamSubscription<PushNotice>> _pushSubs = const [];
+
+  /// جهاز المعلم تصله ردود الأهل على ملاحظاته (يُسجَّل في صفحة التجهيز قبل البوابة).
+  void _listenPush() {
+    _pushSubs = [
+      ParentPush.instance.opened.listen(_openNotice),
+      ParentPush.instance.received.listen(_showNotice),
+    ];
+    final pending = ParentPush.instance.takePendingOpen();
+    if (pending != null) WidgetsBinding.instance.addPostFrameCallback((_) => _openNotice(pending));
+  }
+
+  /// رد ولي أمر لُمس: تبويب الملاحظات ومحادثة الطالب.
+  Future<void> _openNotice(PushNotice notice) async {
+    if (!mounted || notice.kind != 'note_reply' || !_notesOn) return;
+    setState(() => tab = 'notes');
+    await _loadNotes();
+    if (!mounted || notice.studentId.isEmpty) return;
+    await _openStudentChat(notice.studentId);
+  }
+
+  /// وصل والبوابة مفتوحة: أندرويد لا يعرضه، فيظهر هنا وتُحدَّث المحادثات.
+  void _showNotice(PushNotice notice) {
+    if (!mounted || notice.body.isEmpty) return;
+    showAppSnack(context, notice.body);
+    if (notice.kind == 'note_reply') unawaited(_loadNotes());
+  }
+
+  /// محادثة طالب: ما كتبه له المعلم وردود أهله، والكتابة في أسفلها.
+  Future<void> _openStudentChat(String studentId, {String name = ''}) async {
+    final threads = [
+      for (final t in noteThreads)
+        if (t.studentId == studentId) t,
+    ];
+    String rosterName() {
+      for (final c in _classes) {
+        for (final s in c.students) {
+          if (s.id == studentId && s.fullName.trim().isNotEmpty) return s.fullName.trim();
+        }
+      }
+      return threads.map((t) => t.note.studentName).where((n) => n.isNotEmpty).firstOrNull ?? 'طالب';
+    }
+
+    // المادة: المختارة إن كان الطالب فيها، وإلا مادة آخر ملاحظة له
+    final current = _current;
+    final inCurrent = current?.students.any((s) => s.id == studentId) ?? false;
+    final subject = inCurrent
+        ? current!.subjectName
+        : threads.map((t) => t.note.subjectName).where((n) => n.isNotEmpty).firstOrNull ?? '';
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SchoolChatPage(
+          studentId: studentId,
+          title: name.isNotEmpty ? name : rosterName(),
+          subtitle: subject,
+          subject: subject,
+          threads: threads,
+          service: widget.notes,
+        ),
+      ),
+    );
+    if (mounted) await _loadNotes();
+  }
+
+  Future<void> _openClassMessage(List<Student> students) async {
+    await Navigator.of(context).push<int>(
+      MaterialPageRoute(
+        builder: (_) => ClassMessagePage(
+          studentIds: [for (final s in students) s.id],
+          subject: _current?.subjectName ?? '',
+          service: widget.notes,
+        ),
+      ),
+    );
+    if (mounted) await _loadNotes();
+  }
+
+  /// تبويب «الملاحظات»: طلاب المادة كقائمة محادثات، من فيه رد جديد أولاً ثم الأحدث.
+  List<Widget> _notesTab(_Brand brand) {
+    final students = _students();
+    final convs = {for (final c in byStudent(noteThreads)) c.key: c};
+    final rows = [for (final s in students) (s: s, c: convs[s.id])]
+      ..sort((a, b) {
+        final ua = a.c?.unread ?? 0, ub = b.c?.unread ?? 0;
+        if (ua != ub) return ub - ua;
+        if (a.c != null && b.c != null) return b.c!.last.createdAt.compareTo(a.c!.last.createdAt);
+        return a.c != null ? -1 : (b.c != null ? 1 : 0);
+      });
+    return [
+      _Card(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _scopePicker(),
+            if (students.isNotEmpty)
+              OutlinedButton.icon(
+                onPressed: () => _openClassMessage(students),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(42),
+                  foregroundColor: brand.primary,
+                  side: const BorderSide(color: AppColors.lineStrong),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Corner.field)),
+                ),
+                icon: const Icon(Icons.campaign_outlined, size: 18),
+                label: Text('رسالة للصف (${students.length})', style: const TextStyle(fontWeight: FontWeight.w700)),
+              ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 12),
+      if (notesError.isNotEmpty) ...[
+        Text(notesError, style: const TextStyle(color: AppColors.warn, fontSize: 12, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+      ],
+      if (students.isEmpty)
+        const _Empty('لا طلاب في هذه المادة', height: 150)
+      else
+        Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(Corner.card),
+            border: Border.all(color: AppColors.line),
+            boxShadow: cardShadow,
+          ),
+          child: Column(
+            children: [
+              for (var i = 0; i < rows.length; i++)
+                NoteChatRow(
+                  title: rows[i].s.fullName,
+                  preview: rows[i].c == null ? 'اكتب له' : notePreview(rows[i].c!, school: true),
+                  time: rows[i].c == null ? '' : noteTime(rows[i].c!.last.createdAt),
+                  unread: rows[i].c?.unread ?? 0,
+                  last: i == rows.length - 1,
+                  onTap: () => _openStudentChat(rows[i].s.id, name: rows[i].s.fullName),
+                ),
+            ],
+          ),
+        ),
+    ];
   }
 
   /// ملفات شوركت من تطبيق آخر: تُرفع دروساً في وحدة يختارها المعلم.
@@ -1077,6 +1247,9 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     if (due != null) unawaited(_pushOnLeave(due));
     unawaited(_portalRt?.disconnect() ?? Future.value());
     ShareInbox.instance.removeListener(_onShared);
+    for (final sub in _pushSubs) {
+      unawaited(sub.cancel());
+    }
     super.dispose();
   }
 
@@ -1168,6 +1341,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       if (!mounted) return;
       setState(() => _applyTeacherData(result, fromCache: false));
       unawaited(_flushPending());
+      unawaited(_loadNotes());
       // تحديث الموارد بالخلفية إن لم يكتمل تنزيل حديث (صفحة التجهيز)
       if (!teacherResourcesFresh(_offline)) {
         unawaited(
@@ -1302,6 +1476,8 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         _loadEvaluations();
       case 'moodle':
         _loadMoodle();
+      case 'notes':
+        unawaited(_loadNotes());
     }
   }
 
@@ -2018,7 +2194,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
 
   /// إجراء التبويب المفتوح، قريباً من الإبهام بدل أعلى الشاشة.
   ThumbAction? _thumbAction(_Brand brand) {
-    if (tab == 'homeroom') return null;
+    if (tab == 'homeroom' || tab == 'notes') return null;
     if (groupId.isEmpty && tab != 'attendance') return null;
     return switch (tab) {
       'moodle' => ThumbAction(
@@ -2040,24 +2216,30 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
               color: AppColors.amber,
               onPressed: savingAttendance ? null : _saveAttendanceNow,
             )
-          : ThumbAction(
-              label: 'الكل حاضر',
-              icon: Icons.done_all,
-              color: AppColors.success,
-              onPressed: _students().isEmpty ? null : _markAllPresent,
-            ),
+          : _allPresentAction(),
     };
   }
 
-  /// رصد الجميع حاضرين في المسودّة — يُحفظ بزر الحفظ.
+  /// «الكل حاضر» في شريط الحفظ: يرصد من لم يُرصد بعد، فيُعطَّل حين لا يبقى أحد.
+  ThumbAction _allPresentAction() => ThumbAction(
+        label: 'الكل حاضر',
+        icon: Icons.done_all,
+        color: AppColors.success,
+        onPressed: _students().any((s) => _statusOf(s.id) == null) ? _markAllPresent : null,
+      );
+
+  /// من لم يُرصد بعد حاضراً في المسودّة، ولا يمسح غياباً رُصد قبله — يُحفظ بزر الحفظ.
   void _markAllPresent() {
     final roomId = _attendanceRoomId;
     if (roomId.isEmpty) return;
-    final day = {for (final s in _students()) s.id: 'present'};
+    final added = [
+      for (final s in _students())
+        if (_statusOf(s.id) == null) s.id,
+    ];
+    if (added.isEmpty) return;
+    final day = {...marks, for (final id in added) id: 'present'};
     setState(() => weekMarks = {...weekMarks, sessionDate: day});
-    _dirtyMarks
-      ..clear()
-      ..addAll(day.keys);
+    _dirtyMarks.addAll(added);
     unawaited(_offline.saveMarks(roomId, sessionDate, day));
     _duePush = (roomId: roomId, date: sessionDate, statuses: day, dirty: {..._dirtyMarks});
     _pushTimer?.cancel();
@@ -2098,12 +2280,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                     : ThumbActionLayer(
                         action: _thumbAction(brand),
                         secondary: tab == 'attendance' && (_dirtyMarks.isNotEmpty || _duePush != null)
-                            ? ThumbAction(
-                                label: 'الكل حاضر',
-                                icon: Icons.done_all,
-                                color: AppColors.success,
-                                onPressed: _students().isEmpty ? null : _markAllPresent,
-                              )
+                            ? _allPresentAction()
                             : null,
                         child: RefreshIndicator(
                           onRefresh: tab == 'homeroom' ? _loadHomeroom : _load,
@@ -2122,6 +2299,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                                 ],
                               'evaluations' => _evaluationsTab(brand),
                               'moodle' => _moodleTab(brand),
+                              'notes' => _notesTab(brand),
                               _ => _attendanceTab(brand),
                             },
                           ),
@@ -2138,7 +2316,16 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                 else if (id == 'evaluations')
                   const PortalNavItem(id: 'evaluations', label: 'الدرجات', icon: Icons.workspace_premium_outlined)
                 else if (id == 'moodle')
-                  const PortalNavItem(id: 'moodle', label: 'المودل', icon: Icons.menu_book_outlined),
+                  const PortalNavItem(id: 'moodle', label: 'المودل', icon: Icons.menu_book_outlined)
+                else if (id == 'notes')
+                  PortalNavItem(
+                    id: 'notes',
+                    label: 'ملاحظات',
+                    icon: Icons.chat_bubble_outline_rounded,
+                    activeIcon: Icons.chat_bubble_rounded,
+                    // ردود أهل لم تُقرأ
+                    dot: tab != 'notes' && unreadReplies(noteThreads) > 0,
+                  ),
             ],
             activeId: tab,
             onSelect: _selectTab,
@@ -3332,12 +3519,12 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
                   ),
                   useComponents
                       ? field(
-                          'المكوّن',
+                          'الجزء',
                           _Select<String>(
                             value: evalComponentId,
                             height: 36,
                             items: [
-                              const DropdownMenuItem(value: '', child: Text('اختر المكوّن')),
+                              const DropdownMenuItem(value: '', child: Text('اختر الجزء')),
                               for (final c in components)
                                 DropdownMenuItem(
                                   value: c.id,
@@ -3375,7 +3562,7 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
                 const SizedBox(height: 10),
                 pair(
                   field(
-                    'من',
+                    'العلامة من',
                     _Input(controller: evalMax, keyboardType: TextInputType.number, ltr: true),
                   ),
                   field(
