@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'data/activity_ping.dart';
 import 'data/app_installs.dart';
 import 'data/app_update.dart';
 import 'data/client_config.dart';
@@ -74,8 +75,11 @@ Future<void> _bootstrap() async {
   SupabaseAuth.onSessionChanged = () async {
     await saveSession?.call();
     unawaited(AppInstalls.instance.report());
+    unawaited(ActivityPing.touch());
   };
   unawaited(AppInstalls.instance.report());
+  // آخر ظهور للحساب عند المطور — مرة في الساعة على الأكثر
+  unawaited(ActivityPing.touch());
   // جلسة مستعادة: نفس ما يجري بعد تسجيل الدخول
   unawaited(store.afterEnter());
 }
@@ -314,6 +318,7 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
     unawaited(updater.checkPatch());
     unawaited(PlayUpdate.check(onReady: _playUpdateReady));
     unawaited(AppInstalls.instance.report());
+    unawaited(ActivityPing.touch());
     unawaited(ClientConfig.instance.refresh());
     final store = AppStore.instance;
     if (!store.loggedIn || store.isMasterAdmin || !store.networkEnabled) return;

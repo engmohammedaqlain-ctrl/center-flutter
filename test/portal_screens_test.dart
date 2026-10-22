@@ -522,10 +522,10 @@ void main() {
       // فتح صفحة الوحدة يعرض موادها
       await tester.tap(find.text('الوحدة الأولى - النحو والصرف'));
       await tester.pumpAndSettle();
-      expect(find.byIcon(Icons.download_rounded), findsOneWidget, reason: 'الملف يُفتح بلمس سطره');
+      expect(find.byIcon(Icons.picture_as_pdf_outlined), findsOneWidget, reason: 'الملف يُفتح بلمس سطره');
       await tester.pageBack();
       await tester.pumpAndSettle();
-      expect(find.byIcon(Icons.download_rounded), findsNothing);
+      expect(find.byIcon(Icons.picture_as_pdf_outlined), findsNothing);
     });
 
     testWidgets('ولي الأمر يتابع ملف ابنه بلا المودل — عرض ${width.toInt()}', (tester) async {

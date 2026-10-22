@@ -3679,7 +3679,7 @@ class _TeacherSectionPageState extends State<_TeacherSectionPage> {
                       if (it.contentUrl.isNotEmpty)
                         _Soft(
                           label: 'فتح',
-                          icon: it.type == 'file' ? Icons.description_outlined : Icons.open_in_new,
+                          icon: it.type == 'link' ? Icons.open_in_new : portalMaterialIcon(it),
                           fg: _C.navy,
                           height: 28,
                           radius: Corner.field,
@@ -3756,9 +3756,6 @@ class _ItemTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = _itemTypeColors(item.type);
     final overdue = item.isOverdue();
-    final showImage = item.contentUrl.isNotEmpty &&
-        item.type != 'link' &&
-        portalLooksLikeImage(item.contentUrl, fileName: item.fileName);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -3817,8 +3814,6 @@ class _ItemTile extends StatelessWidget {
               trailing,
             ],
           ),
-          if (showImage)
-            PortalInlineImage(url: item.contentUrl, fileName: item.fileName, service: service),
         ],
       ),
     );

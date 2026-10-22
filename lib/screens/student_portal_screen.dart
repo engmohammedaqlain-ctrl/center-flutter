@@ -1310,9 +1310,6 @@ class _ContentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final showImage = item.contentUrl.isNotEmpty &&
-        item.type != 'link' &&
-        portalLooksLikeImage(item.contentUrl, fileName: item.fileName);
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(Corner.card),
@@ -1344,7 +1341,7 @@ class _ContentTile extends StatelessWidget {
                   ),
                   if (onOpen != null)
                     Icon(
-                      item.type == 'file' ? Icons.download_rounded : Icons.open_in_new_rounded,
+                      item.type == 'link' ? Icons.open_in_new_rounded : portalMaterialIcon(item),
                       size: 18,
                       color: AppColors.amberDark,
                     ),
@@ -1374,8 +1371,6 @@ class _ContentTile extends StatelessWidget {
                   ),
                 ),
               ],
-              if (showImage)
-                PortalInlineImage(url: item.contentUrl, fileName: item.fileName, service: service),
             ],
           ),
         ),

@@ -275,80 +275,17 @@ bool portalLooksLikeImage(String url, {String fileName = ''}) {
 bool _looksLikeImage(String url, {String fileName = ''}) =>
     portalLooksLikeImage(url, fileName: fileName);
 
-/// صورة مرفقة تحت نص المادة — كعرض فيسبوك: كلام ثم صورة بعرض الصفحة.
-class PortalInlineImage extends StatefulWidget {
-  const PortalInlineImage({
-    super.key,
-    required this.url,
-    this.fileName = '',
-    this.service = const PortalService(),
-  });
-
-  final String url;
-  final String fileName;
-  final PortalService service;
-
-  @override
-  State<PortalInlineImage> createState() => _PortalInlineImageState();
-}
-
-class _PortalInlineImageState extends State<PortalInlineImage> {
-  String? _resolved;
-  bool _failed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _resolve();
-  }
-
-  Future<void> _resolve() async {
-    final target = await widget.service.materialOpenUrl(widget.url);
-    if (!mounted) return;
-    if (target == null || target.isEmpty) {
-      setState(() => _failed = true);
-      return;
-    }
-    setState(() => _resolved = polishExternalLink(target));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_failed) return const SizedBox.shrink();
-    final src = _resolved;
-    if (src == null) {
-      return const Padding(
-        padding: EdgeInsets.only(top: 8),
-        child: SizedBox(
-          height: 120,
-          child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-        ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(Corner.box),
-        // contain لا cover: الصورة كاملة بلا قصّ لأطرافها
-        child: ColoredBox(
-          color: AppColors.hover,
-          child: Image.network(
-            src,
-            fit: BoxFit.contain,
-            width: double.infinity,
-            errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            loadingBuilder: (context, child, progress) {
-              if (progress == null) return child;
-              return const SizedBox(
-                height: 160,
-                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
+/// أيقونة نوع الملف — بدل معاينة الصورة: تنزيلها لكل طالب عند فتح الوحدة كان
+/// يستهلك نقل ملفات المدرسة. يُفتح الملف باللمس فقط.
+IconData portalMaterialIcon(CourseItem item) {
+  if (item.type == 'link') return Icons.open_in_new_rounded;
+  final name = (item.fileName.isNotEmpty ? item.fileName : item.contentUrl.split('?').first).toLowerCase();
+  if (portalLooksLikeImage(item.contentUrl, fileName: item.fileName)) return Icons.image_outlined;
+  if (name.endsWith('.pdf')) return Icons.picture_as_pdf_outlined;
+  if (RegExp(r'\.docx?$').hasMatch(name)) return Icons.description_outlined;
+  if (RegExp(r'\.pptx?$').hasMatch(name)) return Icons.slideshow_outlined;
+  if (RegExp(r'\.xlsx?$').hasMatch(name)) return Icons.table_chart_outlined;
+  return Icons.insert_drive_file_outlined;
 }
 
 /// فتح مادة دراسية داخل التطبيق قدر الإمكان (صورة / تبويب داخلي)، لا المتصفح الخارجي.

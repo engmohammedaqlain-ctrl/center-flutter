@@ -321,6 +321,8 @@ void main() {
         () => service.materialOpenUrl(
             'https://x.supabase.co/storage/v1/object/public/course_materials/t1/170_ab.pdf'),
         () => MockClient((request) async {
+          // بعد التوقيع يُسجَّل الفتح (log_material_open) بلا انتظار
+          if (request.url.path.contains('/rpc/')) return http.Response('', 204);
           asked = request.url;
           body = jsonDecode(request.body);
           return http.Response(

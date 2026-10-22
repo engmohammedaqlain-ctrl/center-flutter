@@ -2273,7 +2273,17 @@ class PortalService {
     if (url.isEmpty) return null;
     final path = materialPath(url);
     if (path == null) return url;
-    return storageSignedUrl(materialsBucket, path);
+    final signed = await storageSignedUrl(materialsBucket, path);
+    // كل فتح يُحسب عند المطور: نقل ملفات المودل يكبر مع عدد الطلاب
+    if (signed != null) unawaited(logMaterialOpen(path));
+    return signed;
+  }
+
+  /// فتح ملف مادة — `log_material_open`. بلا انتظار، وفشله لا يمنع الفتح.
+  static Future<void> logMaterialOpen(String path) async {
+    try {
+      await supabaseRpc('log_material_open', {'p_path': path});
+    } catch (_) {}
   }
 
   /// نوع الملف المسموح من امتداده، أو `null` لغير المدعوم — PDF والصور وأوفيس.
