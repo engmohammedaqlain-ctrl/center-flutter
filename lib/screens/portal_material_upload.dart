@@ -297,8 +297,6 @@ class _ShareToMoodlePageState extends State<_ShareToMoodlePage> {
   int uploaded = 0;
   int _token = 0;
 
-  TeacherClass? get _class => widget.classes.where((c) => c.group.id == groupId).firstOrNull;
-
   @override
   void initState() {
     super.initState();
