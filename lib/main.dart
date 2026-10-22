@@ -20,6 +20,7 @@ import 'data/share_inbox.dart';
 import 'data/store.dart';
 import 'data/supabase.dart';
 import 'models/models.dart';
+import 'screens/admin_share.dart';
 import 'screens/app_update_sheet.dart';
 import 'screens/developer_screen.dart';
 import 'screens/device_setup_screen.dart';
@@ -244,15 +245,33 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  /// مشاركة وصلت وحساب الإدارة داخل: المشاركة لبوابتي المعلم وولي الأمر.
-  /// قبل الدخول تبقى في الصندوق حتى تأخذها البوابة بعده.
+  bool _sharing = false;
+
+  /// مشاركة وصلت وحساب المدرسة داخل: ملف طالب أو محتوى مودل أو سند قبض
+  /// (`admin_share.dart`). قبل الدخول تبقى في الصندوق حتى تأخذها البوابة أو
+  /// الإدارة بعده.
   void _onShared() {
     final store = AppStore.instance;
-    if (!ShareInbox.instance.hasFiles || !store.ready || !store.loggedIn) return;
-    ShareInbox.instance.take();
-    _messengerKey.currentState
-      ?..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('المشاركة للمعلم وولي الأمر')));
+    if (_sharing || !ShareInbox.instance.hasFiles || !store.ready || !store.loggedIn) return;
+    if (store.isMasterAdmin) {
+      ShareInbox.instance.take();
+      _messengerKey.currentState
+        ?..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('المشاركة لحسابات المدارس')));
+      return;
+    }
+    // التهيئة والتحديث الإجباري أولاً: المشاركة تنتظر في الصندوق
+    if (store.needsInitialSetup || updater.action == UpdateAction.mandatory) return;
+    _sharing = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        if (mounted && ShareInbox.instance.hasFiles) await openAdminShare(context, ShareInbox.instance.take());
+      } finally {
+        _sharing = false;
+      }
+      // مشاركة جديدة وصلت أثناء الأولى
+      if (mounted && ShareInbox.instance.hasFiles) _onShared();
+    });
   }
 
   String? _tenantId;

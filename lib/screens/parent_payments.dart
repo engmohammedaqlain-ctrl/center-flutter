@@ -567,11 +567,13 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
 /// تطبيقات البنوك والمحافظ (بنك فلسطين، جوال باي، PalPay) تشارك الإشعار صورةً
 /// أو PDF. الطلب يحمل صوراً فقط، فالـ PDF تُرسم صفحته الأولى صورة. ما سوى ذلك
 /// يُعدّ في [skipped].
-Future<({List<String> images, int skipped})> receiptsFromShared(List<SharedFile> files) async {
+///
+/// [max] أقصى عدد يُؤخذ: صور طلب الدفع، وللإدارة صورة السند أو صورتا ملف الطالب.
+Future<({List<String> images, int skipped})> receiptsFromShared(List<SharedFile> files, {int max = maxRequestImages}) async {
   final images = <String>[];
   var skipped = 0;
   for (final f in files) {
-    if (images.length >= maxRequestImages || f.path.isEmpty || f.unreadable) {
+    if (images.length >= max || f.path.isEmpty || f.unreadable) {
       skipped++;
       continue;
     }
