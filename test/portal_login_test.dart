@@ -111,6 +111,48 @@ void main() {
       expect(data['error'], isNot(contains('الإنترنت')));
     });
 
+    test('عطل السيرفر المؤقت ليس رفضاً: الجلسة المحفوظة وتسجيل الإشعارات يبقيان', () async {
+      for (final code in [500, 502, 503, 429]) {
+        final result = await http.runWithClient(
+          () => const PortalService().login('401092580', '246810'),
+          () => MockClient((_) async => http.Response('<html>Bad Gateway</html>', code)),
+        );
+        expect(result.ok, isFalse);
+        expect(result.offline, isTrue, reason: 'رمز $code');
+      }
+    });
+
+    test('الرفض الصريح وحده يُنهي الجلسة', () async {
+      final result = await http.runWithClient(
+        () => const PortalService().login('401092580', '246810'),
+        () => MockClient((_) async => http.Response(
+              jsonEncode({'error': 'رقم الهوية أو كلمة المرور غير صحيحة'}),
+              401,
+              headers: {'content-type': 'application/json; charset=utf-8'},
+            )),
+      );
+      expect(result.ok, isFalse);
+      expect(result.offline, isFalse);
+    });
+
+    test('تعذّر استبدال رمز الدخول بجلسة ليس رفضاً للحساب', () async {
+      final result = await http.runWithClient(
+        () => const PortalService().login('401092580', '246810'),
+        () => MockClient((request) async {
+          if (request.url.path.endsWith('/functions/v1/portal-login')) {
+            return http.Response(
+              jsonEncode({'token_hash': 'hash-1', 'choice': _parentChoice(), 'tenant': {'id': 'tenant-1'}}),
+              200,
+              headers: {'content-type': 'application/json'},
+            );
+          }
+          throw http.ClientException('Connection reset');
+        }),
+      );
+      expect(result.ok, isFalse);
+      expect(result.offline, isTrue);
+    });
+
     test('انقطاع الشبكة وحده يقول «تحتاج اتصالاً بالإنترنت»', () async {
       final data = await http.runWithClient(
         () => supabaseInvoke('portal-login', const {}, anonymous: true),

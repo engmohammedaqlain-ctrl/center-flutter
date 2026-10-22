@@ -218,10 +218,12 @@ typedef SignInResult = ({Map<String, dynamic>? claims, String? error});
 const _invalidCredentials = 'اسم المستخدم أو كلمة المرور غير صحيحة';
 const _offlineMessage = 'هذه العملية تحتاج اتصالاً بالإنترنت';
 
-/// علامة تُرفق بخطأ انقطاع الشبكة في ردّ [supabaseInvoke].
+/// علامة تُرفق بخطأ انقطاع الشبكة في ردّ [supabaseInvoke]، وبخطأ السيرفر المؤقت
+/// (5xx، أو 408، أو 429 «محاولات كثيرة»).
 ///
 /// تعذّرُ الوصول إلى السيرفر ليس رفضاً لبيانات الدخول: الأول يُعالَج بالعمل من
 /// نسخة الجهاز، والثاني يُنهي الجلسة. تمييزهما بنصّ الرسالة هشّ، فيُرفع علماً.
+/// الرفض الصريح وحده (401، 403…) يُنهي الجلسة ويحذف تسجيل إشعارات الجهاز.
 const kOfflineFlag = 'offline';
 
 /// دخول الإدارة أو المطور — المقابل لـ `signInWithUsername`.
@@ -316,6 +318,8 @@ Future<Map<String, dynamic>> supabaseInvoke(
       final detail = data['message'] ?? data['msg'] ?? (res.body.length <= 120 ? res.body.trim() : '');
       data['error'] = 'تعذّر تنفيذ الطلب (${res.statusCode})${detail == '' ? '' : ': $detail'}';
     }
+    final code = res.statusCode;
+    if (code >= 500 || code == 408 || code == 429) data[kOfflineFlag] = true;
     return data;
   } on http.ClientException {
     return {'error': _offlineMessage, kOfflineFlag: true};

@@ -596,6 +596,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
 
     if (!result.ok) {
+      // انقطاع أو عطل في السيرفر ليس رفضاً للحساب: الجلسة والجهاز يبقيان
       if (result.offline) return;
       await ParentPush.instance.unregister();
       await _appStore.clearPortalSession();
@@ -688,8 +689,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
     // الخروج يُنهي جلسة البوابة: لا تبقى صلاحيات طالب أو ولي أمر على الجهاز
     Future<void> exit() async {
-      // قبل إنهاء الجلسة: لا تصل الجهاز إشعارات من كان عليه
-      if (account.isParent) await ParentPush.instance.unregister();
+      // قبل إنهاء الجلسة: لا تصل الجهاز إشعارات من كان عليه (ولي أمر أو طالب أو معلم)
+      await ParentPush.instance.unregister();
       await _appStore.clearPortalSession();
       // ولا تبقى كشوف صفوفه معروضة لمن يدخل بعده
       await PortalOffline(_appStore.db).clear();

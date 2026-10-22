@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../data/download_notification.dart';
 import '../data/portal.dart';
 import '../data/portal_offline.dart';
+import '../data/push.dart';
 import '../data/store.dart';
 import '../data/teacher_resources.dart';
 import '../theme/app_colors.dart';
@@ -52,6 +53,8 @@ class _TeacherResourcesScreenState extends State<TeacherResourcesScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _start());
+    // جهاز المعلم تصله ردود الأهل على ملاحظاته
+    unawaited(ParentPush.instance.register());
   }
 
   @override

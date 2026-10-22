@@ -1,12 +1,17 @@
-/// إشعارات الجوال لولي الأمر وللمدير (Firebase Cloud Messaging) — أندرويد وحده.
+/// إشعارات الجوال لولي الأمر والطالب والمعلم والمدير (Firebase Cloud Messaging) — أندرويد وحده.
 ///
 /// المدير (المالك أو موظف بدور مدير) يُسجَّل جهازه بعد دخوله، فتصله الحوالات وطلبات
-/// الموافقة (`kind: approval`). والخادم يرفض تسجيل بقية الأدوار.
+/// الموافقة (`kind: approval`) وردود الأهل على ملاحظات الإدارة (`note_reply`).
+/// والخادم يرفض تسجيل بقية موظفي الإدارة.
 ///
-/// بعد دخول ولي الأمر، ومع كل ابن يبدّل إليه، يُسجَّل توكن الجهاز على الخادم
-/// (`register_push_device`) بجلسته؛ والخادم يأخذ المنشأة والطالب من الجلسة لا من
-/// الجهاز. الخروج يحذف التوكن قبل إنهاء الجلسة. الخادم يبعث الغياب والأقساط من
-/// دالة `push-notify` (مستودع الويب)، والإشعار يحمل `{kind, tenant_id, student_id}`.
+/// بعد دخول ولي الأمر أو الطالب أو المعلم (ومع كل ابن يبدّل إليه ولي الأمر) يُسجَّل
+/// توكن الجهاز على الخادم (`register_push_device`) بجلسته؛ والخادم يأخذ المنشأة
+/// والدور والطالب أو المعلم من الجلسة لا من الجهاز. الخروج يحذف التوكن قبل إنهاء
+/// الجلسة. الخادم يبعث من دالة `push-notify` (مستودع الويب)، والإشعار يحمل
+/// `{kind, tenant_id, student_id}`، ومع الملاحظات `note_id`.
+///
+/// من يصله ماذا (الخادم يقرر): ولي الأمر كل شيء عن ابنه، والطالب الملاحظة الموجّهة
+/// له والإعلان، والمعلم رد ولي الأمر على ملاحظته.
 ///
 /// قناة الإشعارات `school` («المدرسة») تُنشأ في MainActivity، وهي القناة التي
 /// يذكرها الخادم في كل رسالة.
@@ -89,24 +94,46 @@ class ParentPush {
     return _ready;
   }
 
-  /// بعد دخول ولي الأمر وبعد كل تبديل لابن: الجلسة الآن على هذا الابن.
-  /// تعذّر الإذن أو الشبكة لا يوقف البوابة.
+  /// التسجيل والحذف بالترتيب: الحذف ينتهي على الخادم قبل أي تسجيل بعده، فلا يصل
+  /// حذف متأخر (خروج على شبكة بطيئة) بعد دخول جديد فيمسحه.
+  Future<void> _queue = Future.value();
+
+  Future<void> _serial(Future<void> Function() op) {
+    final run = _queue.then((_) => op());
+    _queue = run.then((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  /// أقصى انتظار للحذف قبل أن يُسمح بتسجيل بعده. بعده يحمي الخادمُ التسجيلَ
+  /// الجديد: الحذف يتجاهل جهازاً سُجّل في آخر 15 ثانية (20261101_push_unregister_guard.sql).
+  static const _unregisterCap = Duration(seconds: 12);
+
+  /// بعد دخول ولي الأمر أو الطالب أو المعلم أو المدير، وبعد كل تبديل لابن: الجلسة
+  /// الآن على هذا الحساب. تعذّر الإذن أو الشبكة لا يوقف البوابة.
   Future<void> register() async {
     if (!await _init()) return;
     try {
-      final messaging = FirebaseMessaging.instance;
       // نافذة الإذن (أندرويد 13+) مرة في كل تشغيل، بعد الدخول لا عند الإقلاع
       if (!_asked) {
         _asked = true;
-        await messaging.requestPermission();
+        await FirebaseMessaging.instance.requestPermission();
       }
+    } catch (e) {
+      debugPrint('push permission: $e');
+    }
+    await _serial(_register);
+  }
+
+  Future<void> _register() async {
+    try {
+      final messaging = FirebaseMessaging.instance;
       final token = await messaging.getToken();
       if (token == null || token.isEmpty) return;
       _token = token;
       await _send(token);
       _refresh ??= messaging.onTokenRefresh.listen((t) {
         _token = t;
-        unawaited(_send(t));
+        unawaited(_serial(() => _send(t)));
       });
     } catch (e) {
       debugPrint('push register: $e');
@@ -124,20 +151,33 @@ class ParentPush {
   }
 
   /// عند الخروج، قبل إنهاء الجلسة: الجهاز لا يستقبل إشعارات من كان عليه.
+  ///
+  /// الخروج لا ينتظر شبكة ضعيفة أكثر من 4 ثوانٍ، لكن أي تسجيل بعده ينتظر انتهاء
+  /// الحذف نفسه (حتى [_unregisterCap]).
   Future<void> unregister() async {
-    if (!_ready) return;
+    if (!supported) return;
+    try {
+      await _serial(_unregister).timeout(const Duration(seconds: 4));
+    } catch (e) {
+      debugPrint('push unregister: $e');
+    }
+  }
+
+  Future<void> _unregister() async {
     await _refresh?.cancel();
     _refresh = null;
-    // شبكة ضعيفة لا تعلّق الخروج: بعد المهلة يكمل، ويبقى الجهاز مسجلاً حتى يدخل عليه أحد فيُكتب فوقه
     try {
       await () async {
+        // جلسة رُفضت قبل أن تسجّل البوابة الجهاز في هذا التشغيل: التوكن من Firebase
+        // مباشرة، بلا [_init] كي لا يُستهلك إشعار فتح التطبيق قبل أن تستمع البوابة
+        if (!_ready) await Firebase.initializeApp();
         final token = _token ?? await FirebaseMessaging.instance.getToken();
         _token = null;
         if (token != null && token.isNotEmpty) {
           await supabaseRpc('unregister_push_device', {'p_token': token});
         }
       }()
-          .timeout(const Duration(seconds: 4));
+          .timeout(_unregisterCap);
     } catch (e) {
       debugPrint('push unregister: $e');
     }

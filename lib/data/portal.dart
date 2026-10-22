@@ -1200,8 +1200,9 @@ class PortalService {
     if (tokenHash.isEmpty || matched is! Map) {
       return const PortalLoginResult(error: 'رقم الهوية أو كلمة المرور غير صحيحة');
     }
+    // السيرفر قبل بيانات الدخول، وتعذّر استبدال الرمز (شبكة غالباً): ليس رفضاً للحساب
     if (!await supabaseVerifyTokenHash(tokenHash)) {
-      return const PortalLoginResult(error: 'تعذّر فتح جلسة البوابة، حاول مجدداً');
+      return const PortalLoginResult(error: 'تعذّر فتح جلسة البوابة، حاول مجدداً', offline: true);
     }
     return PortalLoginResult(users: [userFromChoice(Map<String, dynamic>.from(matched))]);
   }

@@ -177,13 +177,12 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     ShareInbox.instance.addListener(_onShared);
     _load();
     _startPortalRealtime();
-    if (isParent) {
-      _pushSubs = [
-        ParentPush.instance.opened.listen(_openNotice),
-        ParentPush.instance.received.listen(_showNotice),
-      ];
-      unawaited(ParentPush.instance.register());
-    }
+    // ولي الأمر والطالب: الخادم يقرر ما يصل كلاً منهما
+    _pushSubs = [
+      ParentPush.instance.opened.listen(_openNotice),
+      ParentPush.instance.received.listen(_showNotice),
+    ];
+    unawaited(ParentPush.instance.register());
   }
 
   List<StreamSubscription<PushNotice>> _pushSubs = const [];
