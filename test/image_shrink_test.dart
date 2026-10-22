@@ -32,7 +32,7 @@ Uint8List _photo({int width = 4000, int height = 3000, bool alpha = false}) {
 }
 
 void main() {
-  test('صورة هاتف ضخمة تُصغَّر كثيراً ويصير أطول ضلع 1600', () async {
+  test('صورة هاتف ضخمة تُصغَّر كثيراً ويصير أطول ضلع 1920', () async {
     final original = _photo();
     final out = await ImageShrink.forUpload(original, 'ورقة عمل.jpg');
 
@@ -57,12 +57,22 @@ void main() {
     expect(out.bytes, same(small));
   });
 
-  test('الشفافية تبقى PNG ولا تنقلب خلفية سوداء', () async {
+  test('الشفافية تُسطَّح على أبيض ولا تنقلب خلفية سوداء', () async {
     final png = _photo(width: 2400, height: 2400, alpha: true);
     final out = await ImageShrink.forUpload(png, 'رسم.png');
 
-    expect(out.fileName, 'رسم.png');
-    expect(img.decodeImage(out.bytes)!.hasAlpha, isTrue);
+    expect(out.fileName, 'رسم.jpg');
+    final decoded = img.decodeImage(out.bytes)!;
+    // الهامش كان شفافاً
+    expect(decoded.getPixel(5, decoded.height ~/ 2).r, greaterThan(240));
+  });
+
+  test('صورة الإيصال تصغر تحت حد طلبات الدفع', () async {
+    final out = await ImageShrink.forReceipt(_photo());
+    expect(out, isNotNull);
+    expect(out!.length, lessThan(2 * 1024 * 1024));
+    final decoded = img.decodeImage(out)!;
+    expect([decoded.width, decoded.height].reduce((a, b) => a > b ? a : b), 1400);
   });
 
   test('PNG معتم يصير jpg ويبقى الاسم مقروءاً', () async {

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:center_mobile/data/institution.dart';
+import 'package:center_mobile/data/material_limits.dart';
 import 'package:center_mobile/data/payment_methods.dart';
 import 'package:center_mobile/data/portal.dart';
 import 'package:center_mobile/models/models.dart';
@@ -345,17 +346,37 @@ void main() {
       expect(result, isNull, reason: 'الحاوية خاصة: الرابط العام لا يفتح');
     });
 
-    test('الأنواع المسموحة PDF والصور وحدها', () {
+    test('الأنواع المسموحة PDF والصور وأوفيس، والنوع صريح من الامتداد', () {
       expect(PortalService.materialMime('ملخص.PDF'), 'application/pdf');
       expect(PortalService.materialMime('صورة.jpeg'), 'image/jpeg');
-      expect(PortalService.materialMime('عرض.pptx'), isNull);
+      expect(PortalService.materialMime('عرض.pptx'),
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation');
+      expect(PortalService.materialMime('درجات.xls'), 'application/vnd.ms-excel');
+      expect(PortalService.materialMime('مقطع.mp4'), isNull);
+    });
+
+    test('الصورة تُفحص بحدها الخام، والملف بحد 25 ميجا', () {
+      expect(checkMaterial(name: 'ورقة.jpg', size: 30 * 1024 * 1024).ok, isTrue, reason: 'تُضغط ثم تُفحص');
+      expect(checkMaterial(name: 'ورقة.jpg', size: 41 * 1024 * 1024).error, 'الصورة أكبر من 40 ميجا');
+      expect(checkMaterial(name: 'كتاب.pdf', size: 26 * 1024 * 1024).error, 'الملف أكبر من 25 ميجا');
+      expect(checkMaterial(name: 'بلا امتداد', size: 10, mime: 'application/pdf').ok, isTrue);
+      expect(checkMaterial(name: 'صورة.bmp', size: 10, mime: 'image/bmp').ok, isFalse);
+      expect(titleFromFileName('الوحدة_الأولى.docx'), 'الوحدة الأولى');
+    });
+
+    test('مساحة المدرسة من الدالة، والحصة الغائبة 2 جيجا', () {
+      final s = StorageStatus.fromRpc({'used_bytes': 1024, 'quota_bytes': null})!;
+      expect(s.quotaBytes, 2048 * 1024 * 1024);
+      expect(s.full, isFalse);
+      expect(StorageStatus.fromRpc({'used_bytes': 5, 'quota_bytes': 5})!.full, isTrue);
+      expect(StorageStatus.fromRpc(null), isNull);
     });
 
     test('الملف الكبير يُرفض قبل أي رفع', () async {
       const service = PortalService();
       await expectLater(
         service.uploadMaterial(bytes: List.filled(PortalService.maxMaterialBytes + 1, 0), fileName: 'a.pdf', tenantId: 't'),
-        throwsA(isA<PortalException>().having((e) => e.message, 'message', contains('10 ميجابايت'))),
+        throwsA(isA<PortalException>().having((e) => e.message, 'message', contains('25 ميجا'))),
       );
     });
   });

@@ -8,7 +8,9 @@ import 'app_settings.dart';
 import 'attendance_days.dart';
 import 'balance.dart';
 import 'grading.dart';
+import 'image_shrink.dart';
 import 'institution.dart';
+import 'material_limits.dart';
 import 'payment_methods.dart';
 import 'supabase.dart';
 
@@ -1122,8 +1124,8 @@ class PortalService {
 
   static const materialsBucket = 'course_materials';
 
-  /// أقصى حجم لملف مادة — 10 ميجابايت كما في حاوية التخزين.
-  static const maxMaterialBytes = 10 * 1024 * 1024;
+  /// أقصى حجم لملف مادة بعد ضغطه — 25 ميجا كما في حاوية التخزين.
+  static const maxMaterialBytes = materialMaxBytes;
 
   /// معرّف حصة حتمي: الشعبة نفسها في اليوم نفسه = الحصة نفسها على كل جهاز.
   /// مطابق لـ `AttendanceService.sessionIdFor`.
@@ -2274,37 +2276,136 @@ class PortalService {
     return storageSignedUrl(materialsBucket, path);
   }
 
-  /// نوع الملف المسموح من امتداده، أو `null` لغير المدعوم (PDF والصور وحدها).
-  static String? materialMime(String fileName) {
-    final ext = fileName.split('.').last.toLowerCase();
-    return switch (ext) {
-      'pdf' => 'application/pdf',
-      'jpg' || 'jpeg' => 'image/jpeg',
-      'png' => 'image/png',
-      'webp' => 'image/webp',
-      _ => null,
-    };
+  /// نوع الملف المسموح من امتداده، أو `null` لغير المدعوم — PDF والصور وأوفيس.
+  static String? materialMime(String fileName) => uploadMime(fileName);
+
+  /// مساحة المدرسة — `course_storage_status()`. `null` إن تعذّر السؤال (قاعدة لم
+  /// تُرحَّل أو بلا اتصال): الخادم يفرض الحصة على كل حال، فلا يُمنع الرفع.
+  Future<StorageStatus?> storageStatus() async {
+    try {
+      return StorageStatus.fromRpc(await supabaseRpc('course_storage_status', const {}));
+    } catch (_) {
+      return null;
+    }
   }
 
   /// رفع ملف مادة — `uploadMaterialFile`. يُعيد الرابط العام، ويرمي برسالة عربية.
+  /// [fileName] اسم ما يُرفع فعلاً (الصورة بعد ضغطها `.jpg`).
   Future<String> uploadMaterial({
     required List<int> bytes,
     required String fileName,
     required String tenantId,
   }) async {
     if (bytes.length > maxMaterialBytes) {
-      throw const PortalException('حجم الملف يتجاوز الحد الأقصى المسموح به (10 ميجابايت)');
+      throw const PortalException('الملف أكبر من 25 ميجا');
     }
     final mime = materialMime(fileName);
-    if (mime == null) throw const PortalException('نوع الملف غير مدعوم؛ يُسمح بملفات PDF والصور فقط');
+    if (mime == null) {
+      throw const PortalException('نوع غير مدعوم: PDF أو صورة أو Word أو PowerPoint أو Excel');
+    }
 
-    final ext = fileName.split('.').last.toLowerCase();
+    final ext = materialExtension(fileName);
     final path = '$tenantId/${DateTime.now().millisecondsSinceEpoch}_${_uuid.v4().substring(0, 8)}.$ext';
     try {
       return await storageUpload(materialsBucket, path, bytes, mime);
     } catch (_) {
+      // سياسة الحصة ترفض بخطأ صلاحية عام؛ يُترجم حين تكون المساحة هي السبب
+      final status = await storageStatus();
+      if (status != null && status.full) throw const PortalException(storageFullMessage);
       throw const PortalException('فشل رفع الملف إلى السحابة');
     }
+  }
+
+  /// تجهيز ملف للرفع: الصورة تُضغط ثم يُفحص حجمها — `uploadMaterialFile`.
+  static Future<({List<int> bytes, String fileName})> prepareMaterial(MaterialDraft draft) async {
+    if (!draft.ok) throw PortalException(draft.error!);
+    final raw = await draft.read();
+    final name = draft.nameWithExtension;
+    final out = draft.isImage ? await ImageShrink.forUpload(raw, name) : (bytes: raw, fileName: name);
+    if (materialMime(out.fileName) == null) {
+      // HEIC وغيره لم يُفكّ
+      throw const PortalException('تعذّر تحويل الصورة؛ صوّرها بصيغة JPG');
+    }
+    if (out.bytes.length > maxMaterialBytes) throw const PortalException('الملف أكبر من 25 ميجا');
+    return (bytes: out.bytes, fileName: out.fileName);
+  }
+
+  /// رفع دفعة ملفات إلى وحدة — `uploadMaterialFiles`: كل ملف درس مستقل بعنوان
+  /// اسمه، بالترتيب بعد دروس الوحدة. الملفات تُرفع واحداً واحداً، وفشل ملف لا
+  /// يوقف البقية إلا امتلاء المساحة.
+  ///
+  /// [onProgress] قبل كل ملف: (المرفوع، الكل، اسم الحالي). التنسيق والوصف لكل
+  /// الدروس، و[singleTitle] عنوان الملف الوحيد إن كتبه المعلم.
+  Future<({List<CourseItem> created, List<({String name, String error})> failed})> uploadMaterialBatch({
+    required List<MaterialDraft> files,
+    required String tenantId,
+    required CourseSection section,
+    String description = '',
+    String titleColor = '',
+    bool titleBold = false,
+    String? singleTitle,
+    int? startSortOrder,
+    void Function(int done, int total, String current)? onProgress,
+  }) async {
+    final created = <CourseItem>[];
+    final failed = <({String name, String error})>[];
+    final batch = files.take(materialBatchMax).toList();
+    for (final extra in files.skip(materialBatchMax)) {
+      failed.add((name: extra.name, error: 'أقصى $materialBatchMax ملفات في المرة'));
+    }
+
+    for (var i = 0; i < batch.length; i++) {
+      final file = batch[i];
+      onProgress?.call(i, batch.length, file.name);
+      final String url;
+      final int size;
+      try {
+        final ready = await prepareMaterial(file);
+        url = await uploadMaterial(bytes: ready.bytes, fileName: ready.fileName, tenantId: tenantId);
+        size = ready.bytes.length;
+      } on PortalException catch (e) {
+        failed.add((name: file.name, error: e.message));
+        if (e.message == storageFullMessage) {
+          for (final rest in batch.skip(i + 1)) {
+            failed.add((name: rest.name, error: storageFullMessage));
+          }
+          break;
+        }
+        continue;
+      } catch (_) {
+        failed.add((name: file.name, error: 'تعذّر قراءة الملف'));
+        continue;
+      }
+
+      final title = batch.length == 1 && (singleTitle ?? '').trim().isNotEmpty ? singleTitle!.trim() : titleFromFileName(file.name);
+      try {
+        final item = await createItem(CourseItem(
+          id: '',
+          tenantId: tenantId,
+          sectionId: section.id,
+          groupId: section.groupId,
+          title: title,
+          type: 'file',
+          contentUrl: url,
+          fileName: file.nameWithExtension,
+          fileSize: size,
+          description: description,
+          dueDate: '',
+          sortOrder: (startSortOrder ?? section.items.length) + created.length,
+          createdAt: '',
+          titleColor: titleColor,
+          titleBold: titleBold,
+        ));
+        created.add(item);
+      } catch (_) {
+        // ملف بلا درس لا يراه أحد ويحجز مساحة
+        final path = materialPath(url);
+        if (path != null) await storageRemove(materialsBucket, [path]);
+        failed.add((name: file.name, error: 'فشل إضافة الدرس'));
+      }
+    }
+    onProgress?.call(batch.length, batch.length, '');
+    return (created: created, failed: failed);
   }
 
   Future<CourseItem> createItem(CourseItem draft) async {

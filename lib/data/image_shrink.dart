@@ -8,43 +8,70 @@ import 'package:image/image.dart' as img;
 /// المعلم يصوّر ورقة بهاتفه فتخرج بعشرة ميجابايت وأبعاد 4000 بكسل، بينما
 /// الطالب يفتحها على شاشة صغيرة. الرفع كان يستهلك باقته ويفشل عند الحد،
 /// والتنزيل يستهلك باقة الطالب — بلا فرق يُرى في الوضوح.
+///
+/// العقد نفسه في الويب (`MATERIAL_IMAGE_COMPRESSION` في `materialLimits.ts`):
+/// أطول ضلع 1920، JPEG بجودة 0.82، والحجم يُفحص بعد الضغط لا قبله.
 class ImageShrink {
-  /// أطول ضلع بعد التصغير — يكفي لقراءة ورقة مصوّرة على أي شاشة.
-  static const maxDimension = 1600;
+  /// أطول ضلع بعد التصغير — أوضح من أي شاشة جوال.
+  static const maxDimension = 1920;
 
   /// جودة JPEG: أقل من ذلك يُظهر أثراً على خط اليد والنص المصوَّر.
-  static const jpegQuality = 80;
+  static const jpegQuality = 82;
 
   /// ما دون هذا الحجم لا يستحق فكّ الترميز وإعادته — صورة بمئتي كيلوبايت
   /// لا ترهق رفعاً ولا تنزيلاً.
   static const minBytesToTry = 200 * 1024;
 
-  /// هل الاسم لصورة يمكن تصغيرها؟ PDF يمرّ كما هو.
+  /// صيغ تقبلها حاوية المواد كما هي، فالصغيرة منها لا تُعاد.
+  static const _uploadable = {'jpg', 'jpeg', 'png', 'webp'};
+
+  /// هل الاسم لصورة يمكن تصغيرها؟ PDF وملفات أوفيس تمرّ كما هي.
   static bool isImage(String fileName) => const {
         'jpg',
         'jpeg',
         'png',
         'webp',
-      }.contains(fileName.split('.').last.toLowerCase());
+        'gif',
+        'heic',
+        'heif',
+      }.contains(_ext(fileName));
 
-  /// يُعيد ما يجب رفعه فعلاً. إن تعذّر التصغير أو لم يُجدِ نفعاً عاد الأصل
-  /// كما هو — فشلُ ضغطٍ لا يجوز أن يمنع معلماً من إرفاق ورقته.
+  static String _ext(String fileName) {
+    final dot = fileName.lastIndexOf('.');
+    return dot < 0 ? '' : fileName.substring(dot + 1).toLowerCase();
+  }
+
+  /// يُعيد ما يجب رفعه فعلاً: الصورة JPEG باسم `.jpg`. إن تعذّر التصغير أو لم
+  /// يُجدِ نفعاً عاد الأصل كما هو — فشلُ ضغطٍ لا يجوز أن يمنع معلماً من إرفاق
+  /// ورقته، وصيغةٌ لا تقبلها الحاوية يرفضها فحص النوع بعده برسالة مفهومة.
   static Future<({Uint8List bytes, String fileName})> forUpload(
     Uint8List bytes,
     String fileName,
   ) async {
-    if (!isImage(fileName) || bytes.length < minBytesToTry) {
+    if (!isImage(fileName)) return (bytes: bytes, fileName: fileName);
+    final uploadable = _uploadable.contains(_ext(fileName));
+    if (uploadable && bytes.length < minBytesToTry) {
       return (bytes: bytes, fileName: fileName);
     }
     try {
       // خارج خيط الواجهة: فكّ ترميز صورة بأربعة آلاف بكسل يُجمّد الشاشة
-      final out = await Isolate.run(() => _shrink(bytes));
-      if (out == null || out.bytes.length >= bytes.length) {
+      final out = await Isolate.run(() => _toJpeg(bytes, maxDimension, jpegQuality));
+      if (out == null || (uploadable && out.length >= bytes.length)) {
         return (bytes: bytes, fileName: fileName);
       }
-      return (bytes: out.bytes, fileName: _rename(fileName, out.extension));
+      return (bytes: out, fileName: _rename(fileName, 'jpg'));
     } catch (_) {
       return (bytes: bytes, fileName: fileName);
+    }
+  }
+
+  /// صورة إشعار التحويل لطلب الدفع: JPEG صغير يمرّ تحت حد حاوية الطلبات
+  /// (2 ميجا). `null` إن لم تكن صورة تُقرأ.
+  static Future<Uint8List?> forReceipt(Uint8List bytes) async {
+    try {
+      return await Isolate.run(() => _toJpeg(bytes, 1400, 70));
+    } catch (_) {
+      return null;
     }
   }
 
@@ -59,26 +86,25 @@ class ImageShrink {
       before <= 0 || after >= before ? 0 : (100 - (after * 100 / before)).round();
 }
 
-({Uint8List bytes, String extension})? _shrink(Uint8List bytes) {
+/// فكّ الصورة وتصغيرها إلى [maxDimension] ثم JPEG. فكّ JPEG وتصغيره يطبّقان
+/// اتجاه الكاميرا (EXIF)، فلا تنقلب الورقة المصوّرة.
+Uint8List? _toJpeg(Uint8List bytes, int maxDimension, int quality) {
   final decoded = img.decodeImage(bytes);
   if (decoded == null) return null;
 
   final longest = decoded.width > decoded.height ? decoded.width : decoded.height;
-  final resized = longest <= ImageShrink.maxDimension
+  final resized = longest <= maxDimension
       ? decoded
       : img.copyResize(
           decoded,
-          width: decoded.width >= decoded.height ? ImageShrink.maxDimension : null,
-          height: decoded.height > decoded.width ? ImageShrink.maxDimension : null,
+          width: decoded.width >= decoded.height ? maxDimension : null,
+          height: decoded.height > decoded.width ? maxDimension : null,
           interpolation: img.Interpolation.average,
         );
 
-  // الشفافية تُفقد في JPEG فتصير خلفيةً سوداء. لكن أغلب ملفات PNG تحمل قناة
-  // ألفا معتمة بالكامل — الحكم بوجودها وحده كان يُبقيها PNG ضخماً بلا سبب.
-  if (_usesTransparency(resized)) {
-    return (bytes: img.encodePng(resized, level: 6), extension: 'png');
-  }
-  return (bytes: img.encodeJpg(resized, quality: ImageShrink.jpegQuality), extension: 'jpg');
+  // JPEG بلا شفافية: الشفاف يُسطَّح على أبيض بدل أن يصير خلفية سوداء
+  final flat = _usesTransparency(resized) ? _onWhite(resized) : resized;
+  return img.encodeJpg(flat, quality: quality);
 }
 
 /// هل في الصورة بكسل شفاف فعلاً؟ يتوقف عند أول واحد.
@@ -88,4 +114,10 @@ bool _usesTransparency(img.Image image) {
     if (pixel.a < pixel.maxChannelValue) return true;
   }
   return false;
+}
+
+img.Image _onWhite(img.Image image) {
+  final bg = img.Image(width: image.width, height: image.height, numChannels: 3);
+  img.fill(bg, color: img.ColorRgb8(255, 255, 255));
+  return img.compositeImage(bg, image);
 }
