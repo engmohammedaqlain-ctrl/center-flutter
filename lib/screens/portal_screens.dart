@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 
 import '../data/features.dart';
@@ -9,9 +10,10 @@ import '../data/grading.dart';
 import 'sheet_export.dart';
 import '../data/institution.dart';
 import '../data/portal.dart';
-import '../data/image_shrink.dart';
+import '../data/material_limits.dart';
 import '../data/portal_offline.dart';
 import '../data/realtime.dart';
+import '../data/share_inbox.dart';
 import '../data/store.dart';
 import '../data/sync.dart' show isTransientSyncError;
 import '../data/user_message.dart';
@@ -29,6 +31,8 @@ import 'homeroom_class.dart';
 import 'portal_chrome.dart';
 
 export 'student_portal_screen.dart' show StudentPortalScreen;
+
+part 'portal_material_upload.dart';
 
 // بوابتا المعلم والطالب — المقابل لـ `pages/TeacherPortal.tsx` و`pages/StudentPortal.tsx`.
 //
@@ -874,6 +878,12 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   String? moodleMessage;
   int _moodleToken = 0;
 
+  /// مساحة المدرسة — `null` إن تعذّر السؤال، فلا يظهر شيء.
+  StorageStatus? storage;
+
+  /// صفحة رفع المشاركة مفتوحة: مشاركة ثانية أثناءها تنتظر.
+  bool _sharing = false;
+
   PortalService get _service => widget.service;
 
   late final PortalOffline _offline = widget.offline ?? PortalOffline(AppStore.instance.db);
@@ -977,6 +987,62 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     _load();
     unawaited(_loadHomeroom());
     _startPortalRealtime();
+    ShareInbox.instance.addListener(_onShared);
+  }
+
+  /// ملفات شوركت من تطبيق آخر: تُرفع دروساً في وحدة يختارها المعلم.
+  Future<void> _onShared() async {
+    final inbox = ShareInbox.instance;
+    final d = data;
+    if (!mounted || _sharing || !inbox.hasFiles || d == null) return;
+    if (!_tabIds().contains('moodle')) {
+      inbox.take();
+      showAppSnack(context, 'المودل غير مفعّل لمدرستك', error: true);
+      return;
+    }
+    if (d.classes.isEmpty) {
+      inbox.take();
+      showAppSnack(context, 'لا توجد مواد مسندة لك', error: true);
+      return;
+    }
+    final files = [for (final f in inbox.take()) f.toDraft()];
+    _sharing = true;
+    final result = await Navigator.of(context).push<_SharedUploadResult>(
+      MaterialPageRoute(
+        builder: (_) => _ShareToMoodlePage(
+          service: _service,
+          offline: _offline,
+          tenantId: widget.user.tenantId,
+          classes: d.classes,
+          initialGroupId: groupId,
+          initialTerm: term,
+          files: files,
+          color: _Brand(d.branding).primary,
+        ),
+      ),
+    );
+    _sharing = false;
+    if (!mounted) return;
+    if (result != null) {
+      _portalRt?.announce(const ['course_sections', 'course_items']);
+      setState(() {
+        term = result.term;
+        tab = 'moodle';
+      });
+      if (result.groupId != groupId) {
+        _selectGroup(result.groupId);
+      } else {
+        await _loadMoodle();
+      }
+      if (mounted) _flash('رُفع ${result.count} ملف');
+    }
+    // مشاركة وصلت والصفحة مفتوحة
+    if (mounted && inbox.hasFiles) unawaited(_onShared());
+  }
+
+  Future<void> _loadStorage() async {
+    final s = await _service.storageStatus();
+    if (mounted) setState(() => storage = s);
   }
 
   PortalRealtime? _portalRt;
@@ -1010,6 +1076,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     _pushTimer?.cancel();
     if (due != null) unawaited(_pushOnLeave(due));
     unawaited(_portalRt?.disconnect() ?? Future.value());
+    ShareInbox.instance.removeListener(_onShared);
     super.dispose();
   }
 
@@ -1064,6 +1131,8 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     error = null;
     offline = fromCache;
     pendingOps = _offline.pendingCountOf(widget.user.id);
+    // مشاركة وصلت قبل أن تجهز البيانات (فتحٌ من «مشاركة» أو قبل الدخول)
+    if (ShareInbox.instance.hasFiles) WidgetsBinding.instance.addPostFrameCallback((_) => _onShared());
   }
 
   Future<void> _load() async {
@@ -1630,6 +1699,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     if (c == null) return;
     final token = ++_moodleToken;
     final gid = c.group.id;
+    unawaited(_loadStorage());
 
     // وحدات محفوظة تظهر فوراً — بلا انتظار شبكة (مثل الحضور)
     final cached = _offline.loadSections(gid, term);
@@ -1867,6 +1937,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
             section: sec,
             color: _Brand(data!.branding).primary,
             asPage: true,
+            onFilesUploaded: (items) => _filesUploaded(sec, items),
           ),
         ),
       ),
@@ -1887,6 +1958,18 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       message: 'جارٍ حفظ المادة...',
     );
     if (mounted && sent != null) _flash(sent ? 'تمت إضافة المادة بنجاح' : 'حُفظت على الجهاز، سترفع عند عودة الاتصال');
+  }
+
+  /// دروس ملفات رُفعت وأُنشئت في السحابة — تظهر فوراً وتُحفظ على الجهاز.
+  Future<void> _filesUploaded(CourseSection sec, List<CourseItem> items) async {
+    if (!mounted || items.isEmpty) return;
+    setState(() => sections = [
+          for (final s in sections) s.id == sec.id ? s.copyWith(items: [...s.items, ...items]) : s,
+        ]);
+    _portalRt?.announce(const ['course_items']);
+    await _cacheSections();
+    unawaited(_loadStorage());
+    if (mounted) _flash(items.length == 1 ? 'تمت إضافة المادة بنجاح' : 'رُفع ${items.length} ملف');
   }
 
   Future<void> _deleteItem(CourseSection sec, CourseItem item) async {
@@ -2600,20 +2683,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                       for (final k in classes)
                         DropdownMenuItem(
                           value: k.group.id,
-                          child: Text(
-                            [
-                              if (k.subjectName.trim().isNotEmpty) k.subjectName.trim(),
-                              if (k.roomName.trim().isNotEmpty) '— ${k.roomName.trim()}',
-                              if (k.subjectName.trim().isEmpty)
-                                (k.roomName.trim().isNotEmpty
-                                    ? k.roomName.trim()
-                                    : cleanGroupName(k.group.name, k.group.gradeLevel)),
-                              if (k.group.gradeLevel.trim().isNotEmpty)
-                                '(${k.group.gradeLevel.trim()})',
-                            ].where((e) => e.toString().trim().isNotEmpty).join(' '),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          child: Text(_classLabel(k), maxLines: 1, overflow: TextOverflow.ellipsis),
                         ),
                     ],
               onChanged: classes.isEmpty ? null : _selectGroup,
@@ -2636,6 +2706,10 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
               radius: Corner.field,
               onTap: hasGroup ? _newSection : null,
             ),
+            if (storage != null) ...[
+              const SizedBox(height: 10),
+              _StorageLine(storage),
+            ],
           ],
         ),
       ),
@@ -4003,6 +4077,7 @@ class _NewItemSheet extends StatefulWidget {
     required this.section,
     required this.color,
     this.asPage = false,
+    this.onFilesUploaded,
   });
 
   final PortalService service;
@@ -4010,6 +4085,10 @@ class _NewItemSheet extends StatefulWidget {
   final CourseSection section;
   final Color color;
   final bool asPage;
+
+  /// دروس الملفات تُنشأ في السحابة هنا، درساً لكل ملف، وتُبلَّغ فور رفعها: قد
+  /// يفشل بعض الدفعة فتبقى الصفحة مفتوحة على ما فشل.
+  final ValueChanged<List<CourseItem>>? onFilesUploaded;
 
   @override
   State<_NewItemSheet> createState() => _NewItemSheetState();
@@ -4023,19 +4102,26 @@ class _NewItemSheetState extends State<_NewItemSheet> {
   String dueDate = '';
   String titleColor = '';
   bool titleBold = false;
-  XFile? file;
-  int fileSize = 0;
-  List<int>? fileBytes;
 
-  /// اسم ما يُرفع فعلاً — قد يختلف امتداده عن المختار بعد التصغير.
-  String fileName = '';
+  /// ملفات الدرس: درس لكل ملف، والصورة تُضغط عند رفعها.
+  List<MaterialDraft> files = const [];
+  final failures = <MaterialDraft, String>{};
+  ({int done, int total})? progress;
+  StorageStatus? storage;
+
+  /// دروس رُفعت في هذه الصفحة: ترتيب ما بعدها يأتي بعدها.
+  int uploaded = 0;
   String? titleError;
   String? error;
-
-  /// يُصغَّر الآن: اللمس على «حفظ» قبل انتهائه يرفع الأصل الضخم.
-  bool shrinking = false;
-  String? shrunkNotice;
   bool busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.service.storageStatus().then((s) {
+      if (mounted) setState(() => storage = s);
+    });
+  }
 
   @override
   void dispose() {
@@ -4045,59 +4131,85 @@ class _NewItemSheetState extends State<_NewItemSheet> {
     super.dispose();
   }
 
-  Future<void> _pick() async {
-    final picked = await openFile(
-      acceptedTypeGroups: const [
-        XTypeGroup(
-          label: 'PDF أو صورة',
-          extensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp'],
-          mimeTypes: ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'],
-          uniformTypeIdentifiers: ['com.adobe.pdf', 'public.jpeg', 'public.png', 'org.webmproject.webp'],
-        ),
-      ],
-    );
-    if (picked == null) return;
-    final original = await picked.readAsBytes();
-    if (!mounted) return;
-    setState(() => shrinking = ImageShrink.isImage(picked.name));
-
-    // صورة الهاتف تأتي بأبعاد ضخمة: تُصغَّر قبل أن تستهلك باقة المعلم رفعاً
-    // وباقة الطالب تنزيلاً — وقبل أن ترتد عند حد العشرة ميجابايت.
-    final shrunk = await ImageShrink.forUpload(original, picked.name);
-    final bytes = shrunk.bytes;
-    final saved = ImageShrink.savedPercent(original.length, bytes.length);
-    if (!mounted) return;
-    setState(() {
-      shrinking = false;
-      if (bytes.length > PortalService.maxMaterialBytes) {
-        error = 'حجم الملف يتجاوز 10 ميجابايت';
-        file = null;
-        fileBytes = null;
-      } else if (PortalService.materialMime(shrunk.fileName) == null) {
-        error = 'نوع الملف غير مدعوم؛ يُسمح بملفات PDF والصور فقط';
-        file = null;
-        fileBytes = null;
-      } else {
+  Future<void> _addFiles(Future<List<MaterialDraft>> Function() pick) async {
+    try {
+      final more = await pick();
+      if (!mounted || more.isEmpty) return;
+      setState(() {
         error = null;
-        file = picked;
-        fileName = shrunk.fileName;
-        fileBytes = bytes;
-        fileSize = bytes.length;
-        shrunkNotice = saved >= 10 ? 'صُغّرت الصورة $saved٪' : null;
+        files = [...files, ...more].take(materialBatchMax).toList();
+        // ملف واحد: عنوانه اسمه ما لم يكتب المعلم غيره
+        if (files.length == 1 && title.text.trim().isEmpty) title.text = titleFromFileName(files.first.name);
+      });
+    } catch (_) {
+      if (mounted) showAppSnack(context, 'تعذّر اختيار الملف', error: true);
+    }
+  }
+
+  Future<List<MaterialDraft>> _camera() async {
+    final shot = await _takeMaterialPhoto();
+    return shot == null ? const <MaterialDraft>[] : [shot];
+  }
+
+  /// رفع الملفات دروساً — `uploadMaterialFiles`. يبقى في الصفحة ما فشل بسببه.
+  Future<void> _uploadFiles() async {
+    final ready = files.where((f) => f.ok).toList();
+    if (ready.isEmpty) {
+      setState(() => error = files.isEmpty ? 'اختر ملفاً' : 'لا ملفات صالحة للرفع');
+      return;
+    }
+    setState(() {
+      busy = true;
+      error = null;
+      failures.clear();
+      progress = (done: 0, total: ready.length);
+    });
+    final result = await widget.service.uploadMaterialBatch(
+      files: ready,
+      tenantId: widget.tenantId,
+      section: widget.section,
+      startSortOrder: widget.section.items.length + uploaded,
+      description: description.text,
+      titleColor: titleColor,
+      titleBold: titleBold,
+      singleTitle: ready.length == 1 ? title.text : null,
+      onProgress: (done, total, _) {
+        if (mounted) setState(() => progress = (done: done, total: total));
+      },
+    );
+    if (!mounted) return;
+    uploaded += result.created.length;
+    if (result.created.isNotEmpty) widget.onFilesUploaded?.call(result.created);
+    if (result.failed.isEmpty) {
+      Navigator.pop(context);
+      return;
+    }
+    final storageNow = await widget.service.storageStatus();
+    if (!mounted) return;
+    final failedNames = {for (final f in result.failed) f.name: f.error};
+    setState(() {
+      busy = false;
+      progress = null;
+      storage = storageNow ?? storage;
+      // الباقي ما فشل وحده، بسببه، ليُعاد أو يُزال
+      files = [
+        for (final f in files)
+          if (!f.ok || failedNames.containsKey(f.name)) f,
+      ];
+      for (final f in files) {
+        if (failedNames[f.name] case final reason?) failures[f] = reason;
       }
+      error = result.created.isEmpty ? null : 'رُفع ${result.created.length}، وتعذّر ${result.failed.length}';
     });
   }
 
   Future<void> _save() async {
+    if (type == 'file') return _uploadFiles();
     setState(() {
       titleError = title.text.trim().isEmpty ? 'يرجى إدخال العنوان' : null;
       error = null;
     });
     if (titleError != null) return;
-    if (type == 'file' && fileBytes == null) {
-      setState(() => error = 'يرجى اختيار ملف (PDF أو صورة)');
-      return;
-    }
     final link = url.text.trim();
     if (type == 'link') {
       final uri = Uri.tryParse(link);
@@ -4109,21 +4221,9 @@ class _NewItemSheetState extends State<_NewItemSheet> {
 
     setState(() => busy = true);
     try {
-      var contentUrl = type == 'link' ? link : '';
-      var uploadedName = '';
-      int? size;
-      if (type == 'file') {
-        final name = fileName.isEmpty ? file!.name : fileName;
-        contentUrl = await widget.service.uploadMaterial(
-          bytes: fileBytes!,
-          fileName: name,
-          tenantId: widget.tenantId,
-        );
-        uploadedName = name;
-        size = fileSize;
-      }
+      final contentUrl = type == 'link' ? link : '';
       // تُبنى بمعرّفها هنا: المادة النصية والرابط والواجب تُنشأ بلا شبكة،
-      // ويتولّى الرفع من فتح الورقة. الملف وحده يلزمه اتصال لرفع بايتاته.
+      // ويتولّى الرفع من فتح الورقة. الملفات تُرفع في [_uploadFiles].
       // تاريخ التسليم: إن لم يختر المعلم يوماً نستخدم المعروض (اليوم) لا فراغاً.
       final resolvedDue =
           type == 'assignment' ? (dueDate.isEmpty ? isoDate(DateTime.now()) : dueDate) : '';
@@ -4135,11 +4235,9 @@ class _NewItemSheetState extends State<_NewItemSheet> {
         title: title.text,
         type: type,
         contentUrl: contentUrl,
-        fileName: uploadedName,
-        fileSize: size,
         description: description.text,
         dueDate: resolvedDue,
-        sortOrder: widget.section.items.length,
+        sortOrder: widget.section.items.length + uploaded,
         createdAt: DateTime.now().toIso8601String(),
         titleColor: titleColor,
         titleBold: titleBold,
@@ -4156,8 +4254,7 @@ class _NewItemSheetState extends State<_NewItemSheet> {
       if (mounted) {
         setState(() {
           busy = false;
-          // رفع بايتات الملف لا يمكن تأجيله، بخلاف بقية الأنواع
-          error = type == 'file' ? 'رفع الملف يحتاج اتصالاً بالإنترنت' : 'فشل إضافة العنصر';
+          error = 'فشل إضافة العنصر';
         });
       }
     }
@@ -4170,7 +4267,7 @@ class _NewItemSheetState extends State<_NewItemSheet> {
         _Select<String>(
           value: type,
           items: const [
-            DropdownMenuItem(value: 'file', child: Text('ورقة عمل / ملخص (PDF أو صورة)')),
+            DropdownMenuItem(value: 'file', child: Text('ورقة عمل / ملخص (ملفات أو صور)')),
             DropdownMenuItem(value: 'link', child: Text('رابط فيديو / شرح (YouTube / Drive)')),
             DropdownMenuItem(value: 'assignment', child: Text('واجب منزلي')),
             DropdownMenuItem(value: 'note', child: Text('ملاحظة / توجيه تعليمي')),
@@ -4184,16 +4281,19 @@ class _NewItemSheetState extends State<_NewItemSheet> {
             }
           }),
         ),
-        const SizedBox(height: 12),
-        const _Label('العنوان:'),
-        _Input(
-          controller: title,
-          hint: 'عنوان الدرس أو ورقة العمل أو الواجب...',
-          errorText: titleError,
-          onChanged: (_) {
-            if (titleError != null) setState(() => titleError = null);
-          },
-        ),
+        // عدة ملفات: عنوان كل درس اسم ملفه
+        if (type != 'file' || files.length <= 1) ...[
+          const SizedBox(height: 12),
+          const _Label('العنوان:'),
+          _Input(
+            controller: title,
+            hint: type == 'file' ? 'اسم الملف' : 'عنوان الدرس أو ورقة العمل أو الواجب...',
+            errorText: titleError,
+            onChanged: (_) {
+              if (titleError != null) setState(() => titleError = null);
+            },
+          ),
+        ],
         const SizedBox(height: 12),
         ItemTitleStyleFields(
           color: titleColor,
@@ -4203,30 +4303,18 @@ class _NewItemSheetState extends State<_NewItemSheet> {
         ),
         if (type == 'file') ...[
           const SizedBox(height: 12),
-          const _Label('الملف المرفق (PDF أو صورة - أقصى حد 10MB):'),
-          Row(
-            children: [
-              _Soft(label: 'اختيار ملف', icon: Icons.attach_file, fg: _C.navy, bg: _C.soft, border: _C.soft, height: 36, radius: Corner.field, onTap: shrinking ? null : _pick),
-              const SizedBox(width: 8),
-              if (shrinking)
-                const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: _C.muted)),
-              if (shrinking) const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  shrinking ? 'جارٍ تصغير الصورة...' : (file?.name ?? 'لم يُختر ملف'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: _C.muted, fontSize: 12),
-                ),
-              ),
-            ],
+          const _Label('الملفات:'),
+          _MaterialFilesBox(
+            files: files,
+            failures: failures,
+            progress: progress,
+            onPick: busy ? null : () => _addFiles(_pickMaterialFiles),
+            onCamera: busy ? null : () => _addFiles(_camera),
+            onRemove: busy ? null : (f) => setState(() => files = [for (final x in files) if (!identical(x, f)) x]),
           ),
-          if (shrunkNotice != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              shrunkNotice!,
-              style: const TextStyle(color: _C.muted, fontSize: 10.5, fontWeight: FontWeight.w700),
-            ),
+          if (storage != null) ...[
+            const SizedBox(height: 10),
+            _StorageLine(storage),
           ],
         ],
         if (type == 'link') ...[
@@ -4272,7 +4360,13 @@ class _NewItemSheetState extends State<_NewItemSheet> {
             ),
           ),
         ],
-        _sheetActions(context, label: 'حفظ المادة', color: widget.color, busy: busy || shrinking, onSave: _save),
+        _sheetActions(
+          context,
+          label: type == 'file' && files.length > 1 ? 'رفع ${files.where((f) => f.ok).length}' : 'حفظ المادة',
+          color: widget.color,
+          busy: busy,
+          onSave: _save,
+        ),
     ];
     if (widget.asPage) {
       return ListView(

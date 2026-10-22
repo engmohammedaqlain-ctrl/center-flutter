@@ -8,6 +8,7 @@ import '../data/institution.dart';
 import '../data/portal.dart';
 import '../data/push.dart';
 import '../data/realtime.dart';
+import '../data/share_inbox.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -137,9 +138,43 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     return [for (final id in ids) if (item(id) case final n?) n];
   }
 
+  /// إشعار تحويل شورك من تطبيق البنك: يُفتح به نموذج الدفع في تبويب الرسوم.
+  List<String> sharedReceipts = const [];
+  bool _readingShare = false;
+
+  Future<void> _onShared() async {
+    final inbox = ShareInbox.instance;
+    if (!mounted || _readingShare || !inbox.hasFiles || data == null) return;
+    if (!isParent) {
+      inbox.take();
+      showAppSnack(context, 'المشاركة للمعلم وولي الأمر', error: true);
+      return;
+    }
+    if (!_navItems.any((n) => n.id == 'financial')) {
+      inbox.take();
+      showAppSnack(context, 'الدفع غير مفعّل لمدرستك', error: true);
+      return;
+    }
+    _readingShare = true;
+    final got = await receiptsFromShared(inbox.take());
+    _readingShare = false;
+    if (!mounted) return;
+    if (got.images.isEmpty) {
+      showAppSnack(context, 'الإشعار صورة أو PDF', error: true);
+    } else {
+      if (got.skipped > 0) showAppSnack(context, 'أُرفق ${got.images.length} من ${got.images.length + got.skipped}');
+      setState(() {
+        tab = 'financial';
+        sharedReceipts = got.images;
+      });
+    }
+    if (inbox.hasFiles) unawaited(_onShared());
+  }
+
   @override
   void initState() {
     super.initState();
+    ShareInbox.instance.addListener(_onShared);
     _load();
     _startPortalRealtime();
     if (isParent) {
@@ -200,6 +235,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
 
   @override
   void dispose() {
+    ShareInbox.instance.removeListener(_onShared);
     for (final sub in _pushSubs) {
       unawaited(sub.cancel());
     }
@@ -234,6 +270,8 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
           if (!ids.contains(tab) && ids.isNotEmpty) tab = ids.first;
         }
       });
+      // مشاركة وصلت قبل أن تجهز البيانات
+      if (result != null && ShareInbox.instance.hasFiles) unawaited(_onShared());
       if (!silent && tab == 'moodle' && !isParent) _loadMoodle();
     } catch (_) {
       if (!mounted || (silent && data != null)) return;
@@ -716,6 +754,8 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
           suggestedAmount: f.currentDue,
           accent: parseHexColor(data!.branding.colors.primaryButton) ?? AppColors.amber,
           refreshTick: _realtimeTick,
+          sharedReceipts: sharedReceipts,
+          onSharedReceiptsUsed: () => sharedReceipts = const [],
         ),
       _PortalSummary(
         label: owes ? 'المستحق حالياً' : 'حالة الحساب',

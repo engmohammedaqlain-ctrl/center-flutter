@@ -1,10 +1,15 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:printing/printing.dart';
 
+import '../data/image_shrink.dart';
 import '../data/portal.dart';
+import '../data/share_inbox.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
@@ -23,9 +28,15 @@ class ParentPaymentsSection extends StatefulWidget {
     required this.accent,
     this.refreshTick = 0,
     this.service = const PortalService(),
+    this.sharedReceipts = const [],
+    this.onSharedReceiptsUsed,
   });
 
   final PortalUser user;
+
+  /// إشعار تحويل شورك من تطبيق البنك أو المحفظة: يفتح نموذج الدفع به مرفقاً.
+  final List<String> sharedReceipts;
+  final VoidCallback? onSharedReceiptsUsed;
 
   /// المستحق الآن: يُقترح مبلغاً للدفعة.
   final double suggestedAmount;
@@ -47,12 +58,24 @@ class _ParentPaymentsSectionState extends State<ParentPaymentsSection> {
   void initState() {
     super.initState();
     _load();
+    _openShared();
   }
 
   @override
   void didUpdateWidget(ParentPaymentsSection old) {
     super.didUpdateWidget(old);
     if (old.refreshTick != widget.refreshTick || old.user.id != widget.user.id) _load();
+    if (!identical(old.sharedReceipts, widget.sharedReceipts)) _openShared();
+  }
+
+  void _openShared() {
+    final images = widget.sharedReceipts;
+    if (images.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.onSharedReceiptsUsed?.call();
+      _openForm(initialImages: images);
+    });
   }
 
   Future<void> _load() async {
@@ -60,7 +83,7 @@ class _ParentPaymentsSectionState extends State<ParentPaymentsSection> {
     if (mounted && list != null) setState(() => requests = list);
   }
 
-  Future<void> _openForm() async {
+  Future<void> _openForm({List<String> initialImages = const []}) async {
     setState(() => sent = false);
     final done = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
@@ -69,6 +92,7 @@ class _ParentPaymentsSectionState extends State<ParentPaymentsSection> {
           suggestedAmount: widget.suggestedAmount,
           accent: widget.accent,
           service: widget.service,
+          initialImages: initialImages,
         ),
       ),
     );
@@ -88,7 +112,7 @@ class _ParentPaymentsSectionState extends State<ParentPaymentsSection> {
           icon: Icons.send_rounded,
           color: widget.accent,
           height: 44,
-          onPressed: _openForm,
+          onPressed: () => _openForm(),
         ),
         if (sent) ...[
           const SizedBox(height: 8),
@@ -221,12 +245,21 @@ class _RequestCard extends StatelessWidget {
 // ── نموذج الإرسال ─────────────────────────────────────────────────────────────
 
 class _PaymentRequestForm extends StatefulWidget {
-  const _PaymentRequestForm({required this.user, required this.suggestedAmount, required this.accent, required this.service});
+  const _PaymentRequestForm({
+    required this.user,
+    required this.suggestedAmount,
+    required this.accent,
+    required this.service,
+    this.initialImages = const [],
+  });
 
   final PortalUser user;
   final double suggestedAmount;
   final Color accent;
   final PortalService service;
+
+  /// صور الإشعار المشارَكة من تطبيق آخر (`data:` URLs).
+  final List<String> initialImages;
 
   @override
   State<_PaymentRequestForm> createState() => _PaymentRequestFormState();
@@ -244,7 +277,7 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
   /// الوسيلة المختارة؛ الفارغ = لا وسائل للمدرسة، فالجهة تُكتب باليد.
   String methodId = '';
   String date = isoDate(DateTime.now());
-  final images = <String>[];
+  late final images = <String>[...widget.initialImages.take(maxRequestImages)];
   bool busy = false;
   String error = '';
 
@@ -527,4 +560,42 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
       ),
     );
   }
+}
+
+/// إشعارات تحويل شوركت من تطبيق البنك أو المحفظة ← صور لطلب الدفع.
+///
+/// تطبيقات البنوك والمحافظ (بنك فلسطين، جوال باي، PalPay) تشارك الإشعار صورةً
+/// أو PDF. الطلب يحمل صوراً فقط، فالـ PDF تُرسم صفحته الأولى صورة. ما سوى ذلك
+/// يُعدّ في [skipped].
+Future<({List<String> images, int skipped})> receiptsFromShared(List<SharedFile> files) async {
+  final images = <String>[];
+  var skipped = 0;
+  for (final f in files) {
+    if (images.length >= maxRequestImages || f.path.isEmpty || f.unreadable) {
+      skipped++;
+      continue;
+    }
+    try {
+      final raw = await File(f.path).readAsBytes();
+      Uint8List? picture;
+      if (f.isPdf) {
+        await for (final page in Printing.raster(raw, pages: const [0], dpi: 150)) {
+          picture = await page.toPng();
+          break;
+        }
+      } else if (f.isImage) {
+        picture = raw;
+      }
+      final jpg = picture == null ? null : await ImageShrink.forReceipt(picture);
+      // حد حاوية الطلبات 2 ميجابايت
+      if (jpg == null || jpg.length > 2 * 1024 * 1024) {
+        skipped++;
+        continue;
+      }
+      images.add('data:image/jpeg;base64,${base64Encode(jpg)}');
+    } catch (_) {
+      skipped++;
+    }
+  }
+  return (images: images, skipped: skipped);
 }
