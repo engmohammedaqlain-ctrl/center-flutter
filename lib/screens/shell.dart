@@ -16,6 +16,7 @@ import 'developer_settings_screen.dart';
 import 'evaluations_screen.dart';
 import 'finance_screen.dart';
 import 'moodle_admin_screen.dart';
+import 'notes_parts.dart';
 import 'settings_screen.dart';
 import 'students_screen.dart';
 import 'sync_sheet.dart';
@@ -75,9 +76,29 @@ class _AppShellState extends State<AppShell> {
     super.dispose();
   }
 
-  /// طلب موافقة لُمس: المالية، وفيها الطلبات المعلقة.
+  /// طلب موافقة لُمس: المالية، وفيها الطلبات المعلقة. رد ولي أمر على ملاحظة
+  /// الإدارة: محادثة الطالب، بما كتبه معلموه والإدارة.
   void _openNotice(PushNotice notice) {
-    if (!mounted || notice.kind != 'approval') return;
+    if (!mounted) return;
+    if (notice.kind == 'note_reply' && notice.studentId.isNotEmpty) {
+      final name = StoreScope.of(context).studentById(notice.studentId)?.fullName ?? '';
+      // لمسة فتحت التطبيق تصل والشل يُبنى: الصفحة بعد أول إطار
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SchoolChatPage(
+              studentId: notice.studentId,
+              title: name.isEmpty ? 'ملاحظات الطالب' : name,
+              showAuthor: true,
+            ),
+          ),
+        ));
+      });
+      WidgetsBinding.instance.scheduleFrame();
+      return;
+    }
+    if (notice.kind != 'approval') return;
     if (StoreScope.of(context).canOpenSection('finance')) setState(() => current = 'finance');
   }
 
