@@ -124,9 +124,28 @@ List<SchoolHealth> buildHealth(Map<String, String> names, List usage, dynamic ac
 /// `null` إن غابت الدالة: يُخفى القسم.
 Future<List<ErrorRow>?> loadErrorReports(String token, {int days = 7}) async {
   try {
-    final res = await supabaseRpcAs('dev_error_reports', {'p_days': days}, token: token);
+    // صف لكل بصمة خطأ (20261103_client_errors.sql)؛ يُفرد لكل مدرسة ظهر فيها، فالمفتاح اسمها
+    final res = await supabaseRpcAs('dev_client_errors', {'p_days': days}, token: token);
     if (res is! List) return null;
-    return [for (final m in res) if (m is Map) ErrorRow.fromMap(Map<String, dynamic>.from(m))];
+    String join(dynamic v) => v is List ? v.join('، ') : '';
+    return [
+      for (final m in res)
+        if (m is Map)
+          for (final name in (m['school_names'] is List && (m['school_names'] as List).isNotEmpty
+              ? (m['school_names'] as List).map((e) => '$e')
+              : const <String?>[null]))
+            ErrorRow(
+              tenantId: name,
+              tenantName: name ?? '',
+              role: join(m['roles']),
+              platform: join(m['platforms']),
+              version: join(m['versions']),
+              route: (m['route'] as String?) ?? '',
+              message: (m['message'] as String?) ?? (m['kind'] as String?) ?? '',
+              count: (m['occurrences'] as num?)?.toInt() ?? 0,
+              lastAt: DateTime.tryParse('${m['last_seen']}'),
+            ),
+    ];
   } catch (_) {
     return null;
   }
