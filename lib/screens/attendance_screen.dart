@@ -4,6 +4,8 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/admin_tokens.dart';
+import '../widgets/admin_ui.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/list_paging.dart';
 import '../widgets/attendance_view.dart';
@@ -221,7 +223,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   ? ThumbAction(
                       label: 'حفظ الرصد',
                       icon: Icons.save_rounded,
-                      color: AppColors.amber,
+                      color: AdminNoon.action,
+                      foreground: AdminNoon.onAction,
+                      noon: true,
                       onPressed: list.isEmpty || currentOwner.isEmpty || _saving
                           ? null
                           : () => _saveDrafts(store),
@@ -230,6 +234,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       label: 'الكل حاضر',
                       icon: Icons.done_all,
                       color: AppColors.success,
+                      noon: true,
                       onPressed: list.isEmpty || currentOwner.isEmpty
                           ? null
                           : () => _markAllDraftPresent(currentOwner, day.dateStr, list),
@@ -240,6 +245,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   label: 'الكل حاضر',
                   icon: Icons.done_all,
                   color: AppColors.success,
+                  noon: true,
                   onPressed: list.isEmpty || currentOwner.isEmpty
                       ? null
                       : () => _markAllDraftPresent(currentOwner, day.dateStr, list),
@@ -494,81 +500,58 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     required String? currentGrade,
     required String currentOwner,
   }) async {
-    final picked = await showModalBottomSheet<(String?, String)>(
-      context: context,
-      backgroundColor: Colors.white,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.sheet))),
-      builder: (ctx) {
-        var g = currentGrade;
-        return StatefulBuilder(
-          builder: (ctx, setSheet) {
-            final rooms = store.roomsInViewedYear.where((r) => g == null || r.gradeLevel == g).toList();
-            return SafeArea(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.75),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
-                      child: Text('المرحلة', style: AppText.cardTitle),
-                    ),
-                    SizedBox(
-                      height: 34,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        children: [
-                          for (final x in grades)
-                            Padding(
-                              padding: const EdgeInsetsDirectional.only(end: 6),
-                              child: _SheetPill(
-                                label: x,
-                                selected: x == g,
-                                onTap: () => setSheet(() => g = x),
-                              ),
-                            ),
-                        ],
+    var g = currentGrade;
+    final picked = await showNoonSheet<(String?, String)>(
+      context,
+      title: 'اختر الصف',
+      body: (ctx, setSheet) {
+        final rooms = store.roomsInViewedYear.where((r) => g == null || r.gradeLevel == g).toList();
+        return [
+          if (grades.isNotEmpty)
+            NoonSegment<String>(
+              scroll: true,
+              value: g ?? '',
+              options: [for (final x in grades) (x, x)],
+              onChanged: (x) => setSheet(() => g = x),
+            ),
+          if (rooms.isEmpty)
+            Text('لا توجد شعب مسجلة', style: NoonText.style(12, weight: FontWeight.w500, color: AdminNoon.muted))
+          else
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 3.4,
+              children: [
+                for (final r in rooms)
+                  InkWell(
+                    onTap: () => Navigator.pop(ctx, (g, r.id)),
+                    borderRadius: BorderRadius.circular(AdminNoon.rTile),
+                    child: Container(
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: r.id == currentOwner ? AdminNoon.mist : Colors.white,
+                        borderRadius: BorderRadius.circular(AdminNoon.rTile),
+                        border: Border.all(color: r.id == currentOwner ? AdminNoon.teal : AdminNoon.line),
+                      ),
+                      child: Text(
+                        r.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: NoonText.style(
+                          14,
+                          weight: FontWeight.w700,
+                          color: r.id == currentOwner ? AdminNoon.text : AdminNoon.muted,
+                        ),
                       ),
                     ),
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 14, 16, 4),
-                      child: Divider(height: 1, color: AppColors.line),
-                    ),
-                    Flexible(
-                      child: ListView(
-                        shrinkWrap: true,
-                        padding: const EdgeInsets.only(bottom: 8),
-                        children: [
-                          for (final r in rooms)
-                            ListTile(
-                              dense: true,
-                              leading: Icon(
-                                r.id == currentOwner ? Icons.radio_button_checked : Icons.radio_button_off,
-                                size: 20,
-                                color: r.id == currentOwner ? AppColors.amber : AppColors.faint,
-                              ),
-                              title: Text(
-                                r.name,
-                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
-                              ),
-                              trailing: Text(
-                                '${store.studentsOf(r).length}',
-                                style: const TextStyle(color: AppColors.faint, fontSize: 12, fontWeight: FontWeight.w700),
-                              ),
-                              onTap: () => Navigator.pop(ctx, (g, r.id)),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
+                  ),
+              ],
+            ),
+        ];
       },
     );
     if (picked == null || !mounted) return;
@@ -629,40 +612,6 @@ class _ClassButton extends StatelessWidget {
             ),
             const Icon(Icons.expand_more_rounded, size: 20, color: AppColors.muted),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SheetPill extends StatelessWidget {
-  const _SheetPill({required this.label, required this.selected, required this.onTap});
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return PressableScale(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected ? AppColors.amber : Colors.white,
-          borderRadius: BorderRadius.circular(17),
-          border: Border.all(color: selected ? AppColors.amber : AppColors.lineStrong),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontFamily: AppText.family,
-            color: selected ? Colors.white : AppColors.heading,
-            fontSize: 12.5,
-            fontWeight: FontWeight.w700,
-          ),
         ),
       ),
     );
