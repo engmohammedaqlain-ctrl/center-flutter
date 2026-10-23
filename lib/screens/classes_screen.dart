@@ -7,6 +7,7 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/admin_ui.dart';
 import '../widgets/due_status.dart';
 import '../widgets/list_paging.dart';
 import '../widgets/panels.dart';
@@ -90,6 +91,20 @@ class _ClassesScreenState extends State<ClassesScreen> {
             child: Column(
               children: [
                 _tierBar(tabs, countOf),
+                if (rooms.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                    child: AdminHero(
+                      icon: Icons.meeting_room_outlined,
+                      label: 'الصفوف',
+                      value: '${rooms.length}',
+                      unit: 'شعبة',
+                      chips: [
+                        '${rooms.fold<int>(0, (n, r) => n + store.studentsOf(r).length)} طالب',
+                        tier == 'all' ? '${orderedGrades.length} مرحلة' : 'في هذه المرحلة',
+                      ],
+                    ),
+                  ),
                 Expanded(
                   child: rooms.isEmpty
                       ? const EmptyState(message: 'لا توجد شعب أو صفوف مسجلة في هذه المرحلة.')
