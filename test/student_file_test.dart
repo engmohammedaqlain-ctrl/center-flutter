@@ -106,12 +106,12 @@ void main() {
 
     // بيانات الدخول مطوية: كلمة المرور لا تظهر قبل فتح القسم
     expect(find.text('بيانات الدخول'), findsOneWidget);
-    expect(find.text('كلمة مرور الطالب'), findsNothing);
+    expect(find.text('كلمة مرور الطالب:'), findsNothing);
 
     await tester.tap(find.text('بيانات الدخول'));
     await tester.pumpAndSettle();
-    expect(find.text('كلمة مرور الطالب'), findsOneWidget);
-    expect(find.text('كلمة مرور ولي الأمر'), findsOneWidget);
+    expect(find.text('كلمة مرور الطالب:'), findsOneWidget);
+    expect(find.text('كلمة مرور ولي الأمر:'), findsOneWidget);
 
     // وبيانات التواصل كذلك: كانت وحدها مفتوحة فتدفع بقية الملف إلى أسفل الشاشة
     expect(find.text('بيانات التواصل'), findsOneWidget);
@@ -124,32 +124,29 @@ void main() {
     await s.flush();
   });
 
-  testWidgets('الحضور يعرض آخر خمسة أيام مرصودة، الأحدث أولاً', (tester) async {
+  testWidgets('الحضور يعرض أيام الغياب والإذن وحدها، الأحدث أولاً كالويب', (tester) async {
     final s = await _store();
     final student = s.students.first;
-    // سبعة أيام مرصودة: الخمسة الأحدث تُعرض والباقي لا
     s.attendance.removeWhere((a) => a.studentId == student.id);
     final today = DateTime.now();
-    for (var i = 0; i < 7; i++) {
+    for (var i = 0; i < 6; i++) {
       s.attendance.add(AttendanceMark(
         studentId: student.id,
         date: isoDate(today.subtract(Duration(days: i))),
         status: i.isEven ? 'present' : 'absent',
       ));
     }
-    final dates = s.attendance.where((a) => a.studentId == student.id).map((a) => a.date).toList()
-      ..sort((a, b) => b.compareTo(a));
 
     await _pump(tester, s, student.id);
-    final header = find.textContaining('الحضور والالتزام');
+    final header = find.text('الحضور');
     await tester.scrollUntilVisible(header, 200, scrollable: find.byType(Scrollable).first);
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -140));
+    await tester.pumpAndSettle();
     await tester.tap(header);
     await tester.pumpAndSettle();
 
-    for (final date in dates.take(5)) {
-      expect(find.text(date), findsOneWidget, reason: date);
-    }
-    expect(find.text(dates[5]), findsNothing, reason: 'السادس أقدم من أن يُعرض');
+    expect(find.text('غائب'), findsNWidgets(3), reason: 'أيام الغياب وحدها تُسرد');
+    expect(find.text('حاضر'), findsNothing);
 
     await s.flush();
   });
