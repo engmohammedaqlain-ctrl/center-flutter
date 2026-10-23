@@ -131,8 +131,8 @@ Future<List<ErrorRow>?> loadErrorReports(String token, {int days = 7}) async {
     return [
       for (final m in res)
         if (m is Map)
-          for (final name in (m['school_names'] is List && (m['school_names'] as List).isNotEmpty
-              ? (m['school_names'] as List).map((e) => '$e')
+          for (final String? name in (m['school_names'] is List && (m['school_names'] as List).isNotEmpty
+              ? <String?>[for (final e in m['school_names'] as List) '$e']
               : const <String?>[null]))
             ErrorRow(
               tenantId: name,
