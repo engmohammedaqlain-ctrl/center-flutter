@@ -8,7 +8,6 @@ import 'package:uuid/uuid.dart';
 import '../data/features.dart';
 import '../data/grading.dart';
 import 'sheet_export.dart';
-import '../data/institution.dart';
 import '../data/portal.dart';
 import '../data/material_limits.dart';
 import '../data/notes.dart';
@@ -29,6 +28,8 @@ import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import '../widgets/list_paging.dart';
 import '../widgets/moodle_style.dart';
+import '../widgets/noon_moodle.dart';
+import '../widgets/noon_ui.dart';
 import 'homeroom_class.dart';
 import 'notes_parts.dart';
 import 'portal_chrome.dart';
@@ -144,55 +145,41 @@ List<Student> _teacherRosterStudents(
   }).toList();
 }
 
-// ═══ ألوان البوابة (درجات Tailwind في الصفحتين) ═════════════════════════════
+// ═══ ألوان البوابة: لوحة نون (lib/theme/app_colors.dart) ════════════════════════
 
 abstract final class _C {
-  static const bg = Color(0xFFF8FAFC);
-  static const line = Color(0xFFE2E8F0);
-  static const lineStrong = Color(0xFFCBD5E1);
-  static const soft = Color(0xFFF1F5F9);
-  static const text = Color(0xFF0F172A);
-  static const slate700 = Color(0xFF334155);
-  static const slate600 = Color(0xFF475569);
-  static const muted = Color(0xFF64748B);
-  static const faint = Color(0xFF94A3B8);
-  static const navy = Color(0xFF0B2545);
+  // محايدات من لوحة نون (تتبع ثيم المدرسة) — docs/dev/UI.md
+  static Color get bg => Noon.paper;
+  static Color get line => Noon.line;
+  static Color get soft => Noon.band;
+  static Color get text => Noon.text;
+  static Color get muted => Noon.muted;
+  static Color get faint => Noon.faint;
 
-  static const emerald50 = Color(0xFFECFDF5);
-  static const emerald200 = Color(0xFFA7F3D0);
-  static const emerald600 = Color(0xFF059669);
-  static const emerald700 = Color(0xFF047857);
-  static const emerald800 = Color(0xFF065F46);
-
-  static const rose50 = Color(0xFFFFF1F2);
-  static const rose200 = Color(0xFFFECDD3);
-  static const rose600 = Color(0xFFE11D48);
-  static const rose700 = Color(0xFFBE123C);
-
-  static const amber100 = Color(0xFFFEF3C7);
-  static const amber200 = Color(0xFFFDE68A);
-  static const amber600 = Color(0xFFD97706);
-  static const amber700 = Color(0xFFB45309);
+  /// الحبر: الأزرار غير الرئيسية والإطارات الداكنة.
+  static Color get navy => Noon.ink;
 
 
+  static const rose50 = Noon.red50;
+  static const rose200 = Noon.red200;
+  static const rose600 = Noon.red600;
+  static const rose700 = Noon.red700;
 
+  /// التنبيه الكهرماني من لوحة نون.
+  static const amber600 = Noon.warn;
 
-  static const blue50 = Color(0xFFEFF6FF);
   static const blue600 = Color(0xFF2563EB);
-  static const blue700 = Color(0xFF1D4ED8);
-  static const purple50 = Color(0xFFFAF5FF);
-  static const purple700 = Color(0xFF7E22CE);
 }
 
-const _mono = 'monospace';
-
-/// ألوان الهوية بعد قراءتها من إعدادات المنشأة، بافتراضي Center.
+/// ألوان الهوية من لوحة نون المشتقة من إعدادات المنشأة: الحبر لما سوى الإجراء الرئيسي،
+/// والعنصر النشط للتمييز، والإجراء للزر الرئيسي الوحيد في الشاشة.
 class _Brand {
-  _Brand(PortalBranding b)
-      : primary = parseHexColor(b.colors.primaryButton) ?? const Color(0xFF0B2545),
-        active = parseHexColor(b.colors.activeItem) ?? const Color(0xFFE88C15),
-        action = parseHexColor(b.colors.actionButton) ?? const Color(0xFFE88C15),
-        side = parseHexColor(b.colors.sidebarBg) ?? const Color(0xFF0B2545);
+  // ignore: avoid_unused_constructor_parameters
+  _Brand(PortalBranding _)
+      : primary = Noon.ink,
+        active = Noon.teal,
+        action = Noon.action,
+        side = Noon.ink;
 
   final Color primary;
   final Color active;
@@ -200,36 +187,22 @@ class _Brand {
   final Color side;
 }
 
-TextStyle _base(BuildContext context) => Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+// ═══ عناصر مشتركة (لبنات نون) ═══════════════════════════════════════════════
 
-// ═══ عناصر مشتركة ═══════════════════════════════════════════════════════════
-
-
-
-
-/// بطاقة البوابة: بيضاء بإطار رفيع وزوايا 16.
+/// لوح البوابة (`nPanel`): أبيض بحد `line` وزوايا 10 وظل ناعم.
 class _Card extends StatelessWidget {
-  const _Card({required this.child, this.padding = const EdgeInsets.all(14)});
+  const _Card({required this.child, this.padding = const EdgeInsets.all(16)});
 
   final Widget child;
   final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: padding,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(Corner.card),
-        border: Border.all(color: _C.line),
-        boxShadow: const [BoxShadow(color: Color(0x0A0F172A), blurRadius: 3, offset: Offset(0, 1))],
-      ),
-      child: child,
-    );
+    return Container(padding: padding, decoration: nPanelDecoration(), child: child);
   }
 }
 
-/// «الشعبة / المادة:» — عنوان الحقل.
+/// عنوان الحقل فوقه (`NField`): 12 عريض بحبر النص، بلا نقطتين كالويب.
 class _Label extends StatelessWidget {
   const _Label(this.text);
   final String text;
@@ -237,8 +210,8 @@ class _Label extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 5),
-      child: Text(text, style: const TextStyle(color: _C.slate600, fontSize: 11, fontWeight: FontWeight.w800)),
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(text.replaceFirst(RegExp(r'\s*:$'), ''), style: nText(12, weight: FontWeight.w700)),
     );
   }
 }
@@ -248,7 +221,7 @@ class _Select<T> extends StatelessWidget {
     required this.value,
     required this.items,
     required this.onChanged,
-    this.height = 40,
+    this.height = NoonSize.input,
     this.hint,
   });
 
@@ -264,28 +237,23 @@ class _Select<T> extends StatelessWidget {
     final safeValue = value != null && items.any((i) => i.value == value) ? value : null;
     return Container(
       height: height,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
-        color: _C.bg,
-        borderRadius: BorderRadius.circular(Corner.input),
-        border: Border.all(color: _C.lineStrong),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(NoonRadius.btn),
+        border: Border.all(color: Noon.line),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<T>(
           value: safeValue,
-          hint: hint == null
-              ? null
-              : Text(
-                  hint!,
-                  style: _base(context).copyWith(color: _C.faint, fontSize: 12, fontWeight: FontWeight.w600),
-                ),
+          hint: hint == null ? null : Text(hint!, style: nText(14, weight: FontWeight.w500, color: Noon.faint)),
           items: items,
           onChanged: onChanged,
           isExpanded: true,
           dropdownColor: Colors.white,
-          borderRadius: BorderRadius.circular(Corner.input),
-          icon: const Icon(Icons.keyboard_arrow_down, size: 18, color: _C.muted),
-          style: _base(context).copyWith(color: _C.text, fontSize: 12, fontWeight: FontWeight.w800),
+          borderRadius: BorderRadius.circular(NoonRadius.panel),
+          icon: Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: Noon.muted),
+          style: nText(14, weight: FontWeight.w700),
         ),
       ),
     );
@@ -319,9 +287,6 @@ class _Input extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    OutlineInputBorder outline(Color c, [double w = 1]) =>
-        OutlineInputBorder(borderRadius: BorderRadius.circular(Corner.input), borderSide: BorderSide(color: c, width: w));
-
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
@@ -329,22 +294,8 @@ class _Input extends StatelessWidget {
       onChanged: onChanged,
       textAlign: center ? TextAlign.center : TextAlign.start,
       textDirection: ltr ? TextDirection.ltr : null,
-      style: _base(context).copyWith(color: _C.text, fontSize: 12, fontWeight: FontWeight.w700, fontFamily: ltr ? _mono : null),
-      decoration: InputDecoration(
-        isDense: true,
-        hintText: hint,
-        hintStyle: const TextStyle(color: _C.faint, fontSize: 12, fontWeight: FontWeight.w500),
-        filled: true,
-        fillColor: _C.bg,
-        errorText: errorText,
-        errorStyle: const TextStyle(color: _C.rose700, fontSize: 10.5, fontWeight: FontWeight.w700),
-        contentPadding: EdgeInsets.symmetric(horizontal: dense ? 8 : 12, vertical: dense ? 9 : 12),
-        border: outline(_C.lineStrong),
-        enabledBorder: outline(_C.lineStrong),
-        focusedBorder: outline(_C.navy, 1.4),
-        errorBorder: outline(_C.rose200),
-        focusedErrorBorder: outline(_C.rose700, 1.4),
-      ),
+      style: nText(dense && center ? 16 : 14, weight: dense && center ? FontWeight.w700 : FontWeight.w500),
+      decoration: nInputDecoration(hint: hint, errorText: errorText, dense: dense),
     );
   }
 }
@@ -360,8 +311,8 @@ class _DateBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final current = parseIsoDate(date) ?? DateTime.now();
-    return InkWell(
-      borderRadius: BorderRadius.circular(Corner.input),
+    return NFieldBox(
+      trailing: Icons.calendar_today_outlined,
       onTap: () async {
         final picked = await showDatePicker(
           context: context,
@@ -373,43 +324,21 @@ class _DateBox extends StatelessWidget {
         );
         if (picked != null) onPicked(isoDate(picked));
       },
-      child: Container(
-        height: 40,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: _C.bg,
-          borderRadius: BorderRadius.circular(Corner.input),
-          border: Border.all(color: _C.lineStrong),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                formatDate(current),
-                textDirection: TextDirection.ltr,
-                textAlign: TextAlign.right,
-                style: const TextStyle(color: _C.text, fontSize: 12, fontFamily: _mono),
-              ),
-            ),
-            const SizedBox(width: 6),
-            const Icon(Icons.calendar_today_outlined, size: 15, color: _C.text),
-          ],
-        ),
-      ),
+      child: Text(formatDate(current), textDirection: TextDirection.ltr, textAlign: TextAlign.right),
     );
   }
 }
 
-/// زر ممتلئ بلون الهوية.
+/// زر ممتلئ (`NBtn` بالحبر أو بالإجراء): زوايا 8 ونص 14 عريض.
 class _Solid extends StatelessWidget {
   const _Solid({
     required this.label,
     required this.color,
     required this.onTap,
     this.icon,
-    this.height = 44,
+    this.height = NoonSize.btn,
     this.busy = false,
-    this.radius = Corner.field,
+    this.radius = NoonRadius.btn,
   });
 
   final String label;
@@ -423,8 +352,9 @@ class _Solid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = onTap != null && !busy;
+    final fg = noonReadableOn(color);
     return Opacity(
-      opacity: enabled ? 1 : 0.6,
+      opacity: enabled ? 1 : 0.5,
       child: Material(
         color: color,
         borderRadius: BorderRadius.circular(radius),
@@ -434,26 +364,78 @@ class _Solid extends StatelessWidget {
           child: SizedBox(
             height: height,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   if (busy)
-                    const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
+                    SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: fg))
                   else if (icon != null)
-                    Icon(icon, size: 16, color: Colors.white),
-                  if (busy || icon != null) const SizedBox(width: 7),
+                    Icon(icon, size: 18, color: fg),
+                  if (busy || icon != null) const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(14, weight: FontWeight.w700, color: fg)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// زر بإطار (`NBtn` line) — «الكل حاضر» و«إلغاء».
+class _Soft extends StatelessWidget {
+  const _Soft({
+    required this.label,
+    required this.onTap,
+    this.icon,
+    this.fg,
+    this.bg = Colors.white,
+    this.border,
+    this.height = NoonSize.btn,
+    this.radius = NoonRadius.btn,
+  });
+
+  final String label;
+  final VoidCallback? onTap;
+  final IconData? icon;
+  final Color? fg;
+  final Color bg;
+  final Color? border;
+  final double height;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = fg ?? Noon.text;
+    return Opacity(
+      opacity: onTap == null ? 0.5 : 1,
+      child: Material(
+        color: bg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius), side: BorderSide(color: border ?? Noon.line)),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(radius),
+          highlightColor: Noon.mist2,
+          child: SizedBox(
+            height: height,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: height < NoonSize.btn ? 14 : 16),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (icon != null) ...[Icon(icon, size: height < NoonSize.btn ? 16 : 18, color: color), const SizedBox(width: 6)],
                   Flexible(
                     child: Text(
                       label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800),
+                      style: nText(height < NoonSize.btn ? 12 : 14, weight: FontWeight.w700, color: color),
                     ),
                   ),
                 ],
@@ -466,98 +448,9 @@ class _Solid extends StatelessWidget {
   }
 }
 
-/// زر فاتح بإطار — «الكل حاضر» و«إلغاء».
-class _Soft extends StatelessWidget {
-  const _Soft({
-    required this.label,
-    required this.onTap,
-    this.icon,
-    this.fg = _C.muted,
-    this.bg = Colors.white,
-    this.border = _C.lineStrong,
-    this.height = 40,
-    this.radius = Corner.field,
-  });
-
-  final String label;
-  final VoidCallback? onTap;
-  final IconData? icon;
-  final Color fg;
-  final Color bg;
-  final Color border;
-  final double height;
-  final double radius;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: bg,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius), side: BorderSide(color: border)),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(radius),
-        child: SizedBox(
-          height: height,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (icon != null) ...[Icon(icon, size: 15, color: fg), const SizedBox(width: 5)],
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// شارة حالة بإطار.
-class _Badge extends StatelessWidget {
-  const _Badge(this.text, {required this.fg, required this.bg, this.radius = Corner.chip});
-
-  final String text;
-  final Color fg;
-  final Color bg;
-  final double radius;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(radius),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Flexible(
-            child: Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: fg, fontSize: 10.5, fontWeight: FontWeight.w800),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// بطاقة فارغة: رسالة في المنتصف، بإطار متقطع حين تدعو لإضافة شيء.
+/// حالة فارغة (`NEmpty`).
 class _Empty extends StatelessWidget {
+  // ignore: unused_element_parameter
   const _Empty(this.message, {this.icon, this.dashed = false, this.action, this.onAction, this.height = 110});
 
   final String message;
@@ -569,155 +462,35 @@ class _Empty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final body = Container(
-      constraints: BoxConstraints(minHeight: height),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 22),
-      alignment: Alignment.center,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[Icon(icon, size: 32, color: _C.lineStrong), const SizedBox(height: 8)],
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: _C.faint, fontSize: 12, fontWeight: FontWeight.w800, height: 1.6),
-          ),
-          if (action != null) ...[
-            const SizedBox(height: 6),
-            InkWell(
-              onTap: onAction,
-              child: Text(
-                action!,
-                style: const TextStyle(
-                  color: _C.navy,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  decoration: TextDecoration.underline,
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-
-    if (!dashed) return _Card(padding: EdgeInsets.zero, child: body);
-    return CustomPaint(
-      painter: const _DashedBorder(color: _C.lineStrong, radius: Corner.card),
-      child: Container(
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(Corner.card)),
-        child: body,
-      ),
+    return NEmpty(
+      text: message,
+      icon: icon ?? Icons.inbox_outlined,
+      dashed: dashed,
+      action: action,
+      actionIcon: action == null ? null : Icons.add_rounded,
+      onAction: onAction,
     );
   }
 }
 
-class _DashedBorder extends CustomPainter {
-  const _DashedBorder({required this.color, required this.radius});
-  final Color color;
-  final double radius;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-    final path = Path()..addRRect(RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius)));
-    for (final metric in path.computeMetrics()) {
-      var d = 0.0;
-      while (d < metric.length) {
-        canvas.drawPath(metric.extractPath(d, d + 5), paint);
-        d += 9;
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DashedBorder old) => old.color != color || old.radius != radius;
-}
-
-/// شريط نجاح أخضر مقتضب.
+/// شريط نجاح عابر (`NNotice` mist).
 class _Success extends StatelessWidget {
   const _Success(this.text);
   final String text;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(11),
-      decoration: BoxDecoration(
-        color: _C.emerald50,
-        borderRadius: BorderRadius.circular(Corner.box),
-        border: Border.all(color: _C.emerald200),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.check, size: 16, color: _C.emerald600),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(text, style: const TextStyle(color: _C.emerald800, fontSize: 12, fontWeight: FontWeight.w800)),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => NNotice(text: text, icon: Icons.check_rounded);
 }
 
-/// «الفصل الأول / الفصل الثاني / أخرى» — أزرار مجزّأة على خلفية رمادية.
+/// «الفصل الأول / الفصل الثاني / أخرى» — مفتاح خيارات نون.
 class _TermSwitch extends StatelessWidget {
   const _TermSwitch({required this.value, required this.onChanged});
   final String value;
   final ValueChanged<String> onChanged;
 
-  static const _terms = ['term_1', 'term_2', 'other'];
-
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(color: _C.soft, borderRadius: BorderRadius.circular(Corner.box)),
-      child: Row(
-        children: [
-          for (final t in _terms)
-            Expanded(
-              child: GestureDetector(
-                onTap: () => onChanged(t),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 160),
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: value == t ? Colors.white : Colors.transparent,
-                    borderRadius: BorderRadius.circular(Corner.chip),
-                    boxShadow: value == t
-                        ? const [BoxShadow(color: Color(0x0F0F172A), blurRadius: 2, offset: Offset(0, 1))]
-                        : null,
-                  ),
-                  child: Text(
-                    academicTermLabels[t]!,
-                    style: TextStyle(
-                      color: value == t ? _C.navy : _C.muted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => NSegment<String>(value: value, options: noonTermOptions, onChanged: onChanged);
 }
-
-/// ألوان شارة نوع المادة التعليمية.
-({Color fg, Color bg}) _itemTypeColors(String type) => switch (type) {
-      'file' => (fg: _C.blue700, bg: _C.blue50),
-      'link' => (fg: _C.purple700, bg: _C.purple50),
-      'assignment' => (fg: _C.emerald700, bg: _C.emerald50),
-      _ => (fg: _C.slate700, bg: _C.soft),
-    };
 
 /// فتح ملف مادة داخل التطبيق — صورٌ معاينة، وروابط يوتيوب/درايف في تبويب داخلي.
 Future<void> _openMaterial(
@@ -728,43 +501,21 @@ Future<void> _openMaterial(
 }) =>
     openPortalMaterial(context, url, service: service, fileName: fileName);
 
-/// حالة تحميل أو خطأ بشكل Center.
-Widget _loadingView([String message = 'جارِ تحميل البيانات...']) => Center(
-      child: Padding(
-        padding: const EdgeInsets.all(40),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2, color: _C.navy),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: _C.muted, fontSize: 12, fontWeight: FontWeight.w800),
-            ),
-          ],
-        ),
-      ),
-    );
+/// حالة تحميل (`NLoading`).
+Widget _loadingView([String message = 'جارٍ تحميل البيانات']) => ListView(children: [NLoading(text: message)]);
 
-Widget _errorView(String message, VoidCallback retry) => Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.cloud_off, size: 34, color: _C.faint),
-            const SizedBox(height: 10),
-            Text(message, style: const TextStyle(color: _C.muted, fontSize: 12, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 14),
-            _Soft(label: 'إعادة المحاولة', icon: Icons.refresh, onTap: retry, fg: _C.navy),
-          ],
+Widget _errorView(String message, VoidCallback retry) => ListView(
+      padding: const EdgeInsets.all(NoonSize.page),
+      children: [
+        NEmpty(
+          text: message,
+          icon: Icons.cloud_off_rounded,
+          dashed: false,
+          action: 'إعادة المحاولة',
+          actionIcon: Icons.refresh_rounded,
+          onAction: retry,
         ),
-      ),
+      ],
     );
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -1108,41 +859,27 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       });
     return [
       _Card(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: NColumn(
+          gap: 12,
           children: [
             _scopePicker(),
             if (students.isNotEmpty)
-              OutlinedButton.icon(
-                onPressed: () => _openClassMessage(students),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(42),
-                  foregroundColor: brand.primary,
-                  side: const BorderSide(color: AppColors.lineStrong),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Corner.field)),
-                ),
-                icon: const Icon(Icons.campaign_outlined, size: 18),
-                label: Text('رسالة للصف (${students.length})', style: const TextStyle(fontWeight: FontWeight.w700)),
+              NBtn(
+                icon: Icons.campaign_outlined,
+                label: 'رسالة للصف (${students.length})',
+                expand: true,
+                onTap: () => _openClassMessage(students),
               ),
           ],
         ),
       ),
-      const SizedBox(height: 12),
-      if (notesError.isNotEmpty) ...[
-        Text(notesError, style: const TextStyle(color: AppColors.warn, fontSize: 12, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
-      ],
+      if (notesError.isNotEmpty) NNotice(text: notesError, sun: true),
       if (students.isEmpty)
-        const _Empty('لا طلاب في هذه المادة', height: 150)
+        const NEmpty(text: 'لا طلاب في هذه المادة', icon: Icons.groups_outlined, dashed: false)
       else
         Container(
           clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(Corner.card),
-            border: Border.all(color: AppColors.line),
-            boxShadow: cardShadow,
-          ),
+          decoration: nPanelDecoration(),
           child: Column(
             children: [
               for (var i = 0; i < rows.length; i++)
@@ -1931,13 +1668,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       MaterialPageRoute(
         builder: (_) => Scaffold(
           backgroundColor: Colors.white,
-          appBar: AppBar(
-            titleSpacing: 0,
-            title: const Text(
-              'إضافة قسم أو وحدة دراسية',
-              style: TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
-            ),
-          ),
+          appBar: const NPageHeader(title: 'إضافة قسم أو وحدة دراسية'),
           body: _NewSectionSheet(
             service: _service,
             tenantId: widget.user.tenantId,
@@ -2102,13 +1833,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       MaterialPageRoute(
         builder: (_) => Scaffold(
           backgroundColor: Colors.white,
-          appBar: AppBar(
-            titleSpacing: 0,
-            title: const Text(
-              'إضافة مادة تعليمية / واجب',
-              style: TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
-            ),
-          ),
+          appBar: const NPageHeader(title: 'إضافة مادة تعليمية / واجب'),
           body: _NewItemSheet(
             service: _service,
             tenantId: widget.user.tenantId,
@@ -2196,7 +1921,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
 
   /// إجراء التبويب المفتوح، قريباً من الإبهام بدل أعلى الشاشة.
   ThumbAction? _thumbAction(_Brand brand) {
-    if (tab == 'homeroom' || tab == 'notes') return null;
+    if (tab == 'homeroom' || tab == 'notes' || tab == 'moodle' || tab == 'evaluations') return null;
     if (groupId.isEmpty && tab != 'attendance') return null;
     return switch (tab) {
       'moodle' => ThumbAction(
@@ -2256,15 +1981,14 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     final brand = _Brand(branding);
 
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: Noon.paper,
       body: DefaultTextStyle.merge(
-        style: const TextStyle(fontFamily: AppText.family),
+        style: nText(14),
         child: Column(
         children: [
           PortalChromeHeader(
             branding: branding,
-            displayName: widget.user.name,
-            gradeLine: '',
+            sub: 'المعلم: ${widget.user.name}',
             onExit: widget.onExit,
             action: _PortalSyncButton(
               offline: offline,
@@ -2289,7 +2013,9 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                           color: brand.active,
                           child: ListView(
                             padding: const EdgeInsets.fromLTRB(16, 16, 16, thumbActionClearance),
-                            children: switch (tab) {
+                            children: [
+                              NColumn(
+                                children: switch (tab) {
                               'homeroom' => [
                                   HomeroomClassView(
                                     data: homeroom,
@@ -2303,7 +2029,9 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                               'moodle' => _moodleTab(brand),
                               'notes' => _notesTab(brand),
                               _ => _attendanceTab(brand),
-                            },
+                                },
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -2473,7 +2201,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
               label: _attendanceClassLabel(),
               onTap: _pickAttendanceClass,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             // الأيام بين سهمي الأسبوع، والسحب عليها ينقل بين الأسابيع أيضاً
             GestureDetector(
               behavior: HitTestBehavior.translucent,
@@ -2529,56 +2257,45 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
           ],
         ),
       ),
-      const SizedBox(height: 12),
-      AttendanceDaySummary(
-        day: selected,
-        total: students.length,
-        present: present,
-        absent: absent,
-        excused: excused,
-        unmarked: unmarked,
+      // بطاقة اليوم: عدد الطلاب وشرائح الحاضر والغائب والمأذون ومن لم يُرصد
+      NHeroCard(
+        label: '${selected.dayName} ${selected.shortDate}',
+        icon: Icons.how_to_reg_rounded,
+        value: '${students.length}',
+        unit: 'طالب',
+        chips: ['حاضر $present', 'غائب $absent', 'مأذون $excused', 'بلا رصد $unmarked'],
       ),
-      if (students.isNotEmpty) ...[
-        const SizedBox(height: 8),
-        _Card(
-          padding: const EdgeInsetsDirectional.fromSTEB(12, 2, 4, 2),
+      if (students.isNotEmpty)
+        Container(
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 8, 8),
+          decoration: nPanelDecoration(),
           child: Row(
             children: [
               Expanded(
                 child: Text(
-                  'كشف حضور شهر ${sessionDate.length >= 7 ? gregorianMonths[int.parse(sessionDate.substring(5, 7)) - 1] : ''}',
-                  style: const TextStyle(color: AppColors.text, fontSize: 12.5, fontWeight: FontWeight.w700),
+                  'كشف شهر ${sessionDate.length >= 7 ? gregorianMonths[int.parse(sessionDate.substring(5, 7)) - 1] : ''}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: nText(14, weight: FontWeight.w700),
                 ),
               ),
-              TextButton.icon(
-                onPressed: () => _exportMonthAttendance(excel: false),
-                icon: const Icon(Icons.print_outlined, size: 16),
-                label: const Text('طباعة'),
-              ),
-              TextButton.icon(
-                onPressed: () => _exportMonthAttendance(excel: true),
-                icon: const Icon(Icons.table_view_outlined, size: 16),
-                label: const Text('Excel'),
-              ),
+              NBtn(small: true, icon: Icons.print_outlined, label: 'طباعة', onTap: () => _exportMonthAttendance(excel: false)),
+              const SizedBox(width: 6),
+              NBtn(small: true, icon: Icons.table_view_outlined, label: 'Excel', onTap: () => _exportMonthAttendance(excel: true)),
             ],
           ),
         ),
-      ],
-      const SizedBox(height: 12),
       if (sectionFilter.trim().isEmpty && _sections().isNotEmpty)
-        const _Empty('اختر الشعبة من زر الصف لعرض كشفها', height: 150)
+        const NEmpty(text: 'اختر الشعبة من زر الصف لعرض كشفها', icon: Icons.groups_outlined, dashed: false)
       else if (students.isEmpty)
-        const _Empty('لا يوجد طلاب مسجلون في هذه الشعبة', height: 150)
-      else
+        const NEmpty(text: 'لا طلاب في هذه الشعبة', icon: Icons.groups_outlined, dashed: false)
+      else ...[
+        NSectionTitle(title: 'كشف الطلاب', count: students.length),
         Container(
           clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(Corner.card),
-            border: Border.all(color: AppColors.line),
-            boxShadow: cardShadow,
-          ),
+          decoration: nPanelDecoration(),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               for (var i = 0; i < visible.length; i++)
                 AttendanceStudentRow(
@@ -2591,14 +2308,16 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                   onSet: (status) => _setMark(visible[i].id, status),
                   note: _monthNote(visible[i].id),
                 ),
+              NFootRow(label: 'عدد الطلاب', value: '${students.length}'),
             ],
           ),
         ),
-      LoadMoreButton(
-        shown: visible.length,
-        total: students.length,
-        onMore: () => setState(() => attendanceVisible += kListPageSize),
-      ),
+        LoadMoreButton(
+          shown: visible.length,
+          total: students.length,
+          onMore: () => setState(() => attendanceVisible += kListPageSize),
+        ),
+      ],
     ];
   }
 
@@ -2673,7 +2392,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       visualDensity: VisualDensity.compact,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-      icon: Icon(icon, size: 20, color: AppColors.muted),
+      icon: Icon(icon, size: 20, color: Noon.muted),
     );
   }
 
@@ -2726,60 +2445,54 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     final groups = _recentByEvaluation();
 
     return [
-      // النطاق وحده في البطاقة: زر الرصد انتقل إلى منطقة الإبهام، والشرح
-      // المكتوب كان يشغل مساحةً بلا فائدة يومية
-      _Card(child: _scopePicker()),
-      if (_gradesLock.isNotEmpty) ...[
-        const SizedBox(height: 10),
-        _LockBanner('${gradeLockMessage(_gradesLock)}. الاختبارات بعد هذا التاريخ تُرصد عادي.'),
-      ],
-      if (groups.isNotEmpty) ...[
-        const SizedBox(height: 14),
-        // بطاقة لكل اختبار بمعدّله، وتُفتح فتظهر درجات طلابه
-        Row(
+      _Card(
+        child: NColumn(
+          gap: 12,
           children: [
-            Expanded(
-              child: Text(
-                'التقييمات السابقة',
-                style: TextStyle(
-                  fontFamily: AppText.family,
-                  color: AppColors.heading,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-            Text(
-              '${groups.length}',
-              style: const TextStyle(color: AppColors.faint, fontSize: 12, fontWeight: FontWeight.w800),
+            _scopePicker(),
+            NBtn(
+              tone: NBtnTone.sun,
+              icon: Icons.add_rounded,
+              label: 'رصد درجات',
+              expand: true,
+              onTap: _current == null ? null : _openEvaluationForm,
             ),
           ],
         ),
-        const SizedBox(height: 8),
-        for (final entry in groups)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: _RecentEvaluationCard(
-              title: entry.title,
-              meta: entry.meta,
-              average: entry.average,
-              rows: entry.rows,
-              nameOf: nameOf,
-              onDelete: _deleteEvaluation,
-              onEditScore: _editScore,
-              locked: isGradeLocked(entry.rows.first.evaluationDate, _gradesLock),
-              onEditSheet: () => _openEvaluationForm(editing: entry.rows),
-              onPrint: () => printSheet(context, _evaluationSheet(entry.rows, nameOf)),
-              onExcel: () => downloadSheetCsv(context, _evaluationSheet(entry.rows, nameOf)),
-            ),
-          ),
-      ] else ...[
-        const SizedBox(height: 16),
-        const _Empty('لا تقييمات سابقة لهذه المادة بعد', height: 110),
-      ],
+      ),
+      if (_gradesLock.isNotEmpty)
+        NNotice(
+          sun: true,
+          icon: Icons.lock_outline_rounded,
+          text: gradeLockMessage(_gradesLock),
+          tooltip: 'الاختبارات بعد هذا التاريخ تُرصد عادي',
+        ),
+      if (groups.isNotEmpty) ...[
+        // بطاقة لكل اختبار بمعدّله، وتُفتح فتظهر درجات طلابه
+        NSectionTitle(title: 'التقييمات السابقة', count: groups.length),
+        NColumn(
+          gap: 12,
+          children: [
+            for (final entry in groups)
+              _RecentEvaluationCard(
+                title: entry.title,
+                meta: entry.meta,
+                average: entry.average,
+                rows: entry.rows,
+                nameOf: nameOf,
+                onDelete: _deleteEvaluation,
+                onEditScore: _editScore,
+                locked: isGradeLocked(entry.rows.first.evaluationDate, _gradesLock),
+                onEditSheet: () => _openEvaluationForm(editing: entry.rows),
+                onPrint: () => printSheet(context, _evaluationSheet(entry.rows, nameOf)),
+                onExcel: () => downloadSheetCsv(context, _evaluationSheet(entry.rows, nameOf)),
+              ),
+          ],
+        ),
+      ] else
+        const NEmpty(text: 'لا كشوف سابقة', icon: Icons.workspace_premium_outlined, dashed: false),
     ];
   }
-
 
   /// كشف علامات اختبار واحد: كل طلاب الشعبة، ومن لم يختبر يظهر بلا علامة.
   SheetData _evaluationSheet(List<StudentEvaluation> rows, String Function(String) nameOf) {
@@ -2842,7 +2555,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
           first.typeLabel,
           if (first.evaluationDate.isNotEmpty) first.evaluationDate.split('T').first,
           '${rows.length} طالب',
-        ].where((x) => x.trim().isNotEmpty).join('  ·  '),
+        ].where((x) => x.trim().isNotEmpty).join(' · '),
         average: average,
         rows: rows,
       ));
@@ -2858,26 +2571,34 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
 
     return [
       _Card(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: NColumn(
+          gap: 12,
           children: [
-            const Text('المادة / المجموعة:', style: TextStyle(color: _C.muted, fontSize: 11, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 5),
-            _Select<String>(
-              value: groupId,
-              height: 36,
-              items: classes.isEmpty
-                  ? const [DropdownMenuItem(value: '', child: Text('لا توجد مواد مسندة لك'))]
-                  : [
-                      for (final k in classes)
-                        DropdownMenuItem(
-                          value: k.group.id,
-                          child: Text(_classLabel(k), maxLines: 1, overflow: TextOverflow.ellipsis),
-                        ),
-                    ],
-              onChanged: classes.isEmpty ? null : _selectGroup,
+            NField(
+              label: 'المادة والصف',
+              child: _Select<String>(
+                value: groupId,
+                items: classes.isEmpty
+                    ? const [DropdownMenuItem(value: '', child: Text('لا مواد مسندة لك'))]
+                    : [
+                        for (final k in classes)
+                          DropdownMenuItem(
+                            value: k.group.id,
+                            child: Text(_classLabel(k), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          ),
+                      ],
+                onChanged: classes.isEmpty ? null : _selectGroup,
+              ),
             ),
-            const SizedBox(height: 10),
+            // الإجراء الرئيسي الوحيد في التبويب: بلون الإجراء
+            NBtn(
+              tone: NBtnTone.sun,
+              icon: Icons.add_rounded,
+              label: 'إضافة وحدة / قسم',
+              tooltip: 'إضافة وحدة',
+              expand: true,
+              onTap: hasGroup ? _newSection : null,
+            ),
             _TermSwitch(
               value: term,
               onChanged: (t) {
@@ -2885,104 +2606,58 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                 _loadMoodle();
               },
             ),
-            const SizedBox(height: 10),
-            // الإضافة تحت الفصل بعرض الشعبة كاملاً — هي الإجراء المقصود هنا
-            _Solid(
-              label: 'إضافة وحدة / قسم',
-              icon: Icons.add,
-              color: brand.primary,
-              height: 42,
-              radius: Corner.field,
-              onTap: hasGroup ? _newSection : null,
-            ),
-            if (storage != null) ...[
-              const SizedBox(height: 10),
-              _StorageLine(storage),
-            ],
+            if (storage != null) NStorageMeter(status: storage!),
           ],
         ),
       ),
-      if (moodleMessage != null) ...[const SizedBox(height: 12), _Success(moodleMessage!)],
-      const SizedBox(height: 16),
+      if (moodleMessage != null) _Success(moodleMessage!),
       if (loadingMoodle)
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 40),
-          child: Column(
-            children: [
-              SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: _C.navy)),
-              SizedBox(height: 8),
-              Text('جارٍ تحميل الوحدات الدراسية...', style: TextStyle(color: _C.muted, fontSize: 12, fontWeight: FontWeight.w800)),
-            ],
-          ),
-        )
+        const NLoading(text: 'جارٍ تحميل الوحدات')
       else if (sections.isEmpty)
-        _Empty(
-          'لا توجد وحدات مضافة لهذه المادة في هذا الفصل',
-          icon: Icons.layers_outlined,
-          dashed: true,
-          height: 200,
-          action: hasGroup ? 'انقر هنا لإضافة أول وحدة' : null,
-          onAction: hasGroup ? _newSection : null,
-        )
+        // الإضافة زر واحد في اللوح أعلاه: لا زر ثانٍ لنفس العمل
+        const NEmpty(text: 'لا وحدات', icon: Icons.layers_outlined)
       else
-        for (var i = 0; i < sections.length; i++)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Material(
-              color: sections[i].isVisible ? unitHeaderBg(unitColor(sections[i], i)) : const Color(0x33FFFBEB),
-              borderRadius: BorderRadius.circular(Corner.card),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(Corner.card),
-                onTap: () => _openSectionPage(sections[i]),
-                child: Container(
-                  padding: const EdgeInsetsDirectional.fromSTEB(12, 12, 4, 12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(Corner.card),
-                    border: Border.all(color: sections[i].isVisible ? unitBorder(unitColor(sections[i], i)) : _C.amber200),
-                  ),
-                  child: Row(
-                    children: [
-                      UnitNumber(n: i + 1, color: unitColor(sections[i], i)),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              sections[i].title,
-                              style: TextStyle(
-                                fontFamily: AppText.family,
-                                color: unitColor(sections[i], i),
-                                fontSize: 14,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 4,
-                              children: [
-                                _Badge(sections[i].termLabel, fg: _C.muted, bg: _C.line, radius: Corner.chip),
-                                _Badge('${sections[i].items.length} عنصر', fg: _C.muted, bg: _C.line, radius: Corner.chip),
-                                if (!sections[i].isVisible)
-                                  const _Badge('مخفي', fg: _C.amber700, bg: _C.amber100, radius: Corner.chip),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      _MoveButtons(
-                        onUp: i == 0 ? null : () => _moveSection(i, -1),
-                        onDown: i == sections.length - 1 ? null : () => _moveSection(i, 1),
-                      ),
-                      const AppChevron(color: _C.faint),
-                    ],
-                  ),
+        NColumn(
+          gap: 10,
+          children: [
+            for (var i = 0; i < sections.length; i++)
+              NUnitRow(
+                section: sections[i],
+                index: i,
+                color: unitColor(sections[i], i),
+                meta: NUnitMeta(section: sections[i], rooms: _sectionRoomsLabel(sections[i]), showHidden: true),
+                onOpen: () => _openSectionPage(sections[i]),
+                trailing: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    NBtn(
+                      tone: NBtnTone.ghost,
+                      small: true,
+                      icon: Icons.keyboard_arrow_up_rounded,
+                      tooltip: 'تقديم',
+                      onTap: i == 0 ? null : () => _moveSection(i, -1),
+                    ),
+                    NBtn(
+                      tone: NBtnTone.ghost,
+                      small: true,
+                      icon: Icons.keyboard_arrow_down_rounded,
+                      tooltip: 'تأخير',
+                      onTap: i == sections.length - 1 ? null : () => _moveSection(i, 1),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ),
+          ],
+        ),
     ];
+  }
+
+  /// شعب الوحدة: أسماؤها، و«كل الشعب» حين لا تُحصر — يظهر فقط لمادة بأكثر من شعبة.
+  String _sectionRoomsLabel(CourseSection sec) {
+    final rooms = _current?.rooms ?? const <PortalRoom>[];
+    if (rooms.length <= 1) return '';
+    if (sec.roomIds.isEmpty) return 'كل الشعب';
+    return [for (final r in rooms) if (sec.roomIds.contains(r.id)) r.name].join('، ');
   }
 
   Future<void> _openSectionPage(CourseSection sec) async {
@@ -3473,14 +3148,8 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
         );
 
     return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: Text(
-          _isEditing ? 'تعديل كشف درجات' : 'رصد درجات',
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
-        ),
-      ),
+      backgroundColor: Noon.paper,
+      appBar: NPageHeader(title: _isEditing ? 'تعديل الكشف' : 'رصد درجات'),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -3594,7 +3263,7 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
                 Expanded(
                   child: Text(
                     'قائمة الطلاب (${students.length})',
-                    style: const TextStyle(color: _C.navy, fontSize: 13, fontWeight: FontWeight.w900),
+                    style: TextStyle(color: _C.navy, fontSize: 13, fontWeight: FontWeight.w900),
                   ),
                 ),
                 if (students.isNotEmpty)
@@ -3615,7 +3284,7 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
               ],
             ),
           ),
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(4, 4, 4, 8),
             child: Text(
               'اترك الدرجة فارغة لمن لم يختبر',
@@ -3637,7 +3306,7 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
                           s.fullName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: _C.text,
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
@@ -3683,7 +3352,7 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
               onPressed: saving || students.isEmpty ? null : _save,
               style: FilledButton.styleFrom(
                 backgroundColor: brand.action,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Corner.field)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(NoonRadius.btn)),
               ),
               child: Text(
                 saving ? 'جاري الحفظ...' : 'حفظ كشف الدرجات',
@@ -3758,258 +3427,86 @@ class _TeacherSectionPageState extends State<_TeacherSectionPage> {
   @override
   Widget build(BuildContext context) {
     final sec = section;
-    final unit = widget.unitIndex();
-    final color = unitColor(sec, unit < 0 ? 0 : unit);
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
+    return NPageScaffold(
+      title: sec.title,
+      subtitle: _roomsLabel,
+      children: [
+        // «مادة» ظاهرة دائماً، والإخفاء، وقائمة «⋯» بالباقي
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Text(
-              sec.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.5),
+            NBtn(small: true, icon: Icons.add_rounded, label: 'مادة', tooltip: 'إضافة مادة أو واجب', onTap: () => _refreshAfter(widget.onAddItem)),
+            NBtn(
+              tone: NBtnTone.ghost,
+              small: true,
+              icon: sec.isVisible ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+              tooltip: sec.isVisible ? 'إخفاء القسم عن الطلاب' : 'إظهار القسم للطلاب',
+              onTap: () => _refreshAfter(widget.onToggle),
             ),
-            Text(
-              _roomsLabel,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontFamily: AppText.family, color: Colors.white.withValues(alpha: 0.72), fontSize: 11, fontWeight: FontWeight.w500),
+            NMenu(
+              items: [
+                if (widget.onEditRooms != null)
+                  NMenuItem(
+                    label: 'الشعب',
+                    icon: Icons.groups_outlined,
+                    onTap: () => _refreshAfter(() async {
+                      widget.onEditRooms!();
+                    }),
+                  ),
+                NMenuItem(label: 'تنسيق', icon: Icons.palette_outlined, onTap: () => _refreshAfter(widget.onStyle)),
+                NMenuItem(label: 'نسخ لمواد أخرى', icon: Icons.copy_outlined, onTap: widget.onCopy),
+                NMenuItem(label: 'حذف الوحدة', icon: Icons.delete_outline_rounded, danger: true, onTap: widget.onDelete),
+              ],
             ),
           ],
         ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 28),
-        children: [
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              _Soft(
-                label: 'مادة',
-                icon: Icons.add,
-                fg: _C.navy,
-                height: 34,
-                radius: Corner.field,
-                onTap: () => _refreshAfter(widget.onAddItem),
-              ),
-              if (widget.onEditRooms != null)
-                _Soft(
-                  label: 'الشعب',
-                  icon: Icons.meeting_room_outlined,
-                  fg: _C.muted,
-                  height: 34,
-                  radius: Corner.field,
-                  onTap: () => _refreshAfter(() async {
-                    widget.onEditRooms!();
-                  }),
-                ),
-              _Soft(
-                label: 'تنسيق',
-                icon: Icons.palette_outlined,
-                fg: _C.muted,
-                height: 34,
-                radius: Corner.field,
-                onTap: () => _refreshAfter(widget.onStyle),
-              ),
-              _Soft(label: 'نسخ', icon: Icons.copy_outlined, fg: _C.muted, height: 34, radius: Corner.field, onTap: widget.onCopy),
-              _Soft(
-                label: sec.isVisible ? 'إخفاء' : 'إظهار',
-                icon: sec.isVisible ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                fg: sec.isVisible ? _C.muted : _C.amber600,
-                height: 34,
-                radius: Corner.field,
-                onTap: () => _refreshAfter(widget.onToggle),
-              ),
-              _Soft(label: 'حذف', icon: Icons.delete_outline, fg: _C.rose600, height: 34, radius: Corner.field, onTap: widget.onDelete),
-            ],
-          ),
-          const SizedBox(height: 14),
-          if (sec.items.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 40),
-              child: Text(
-                'لا توجد مواد أو واجبات مضافة في هذه الوحدة',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontFamily: AppText.family, color: _C.faint, fontSize: 12),
-              ),
-            )
-          else
+        NLessonsList(
+          children: [
             for (var i = 0; i < sec.items.length; i++)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: _ItemTile(
-                  item: sec.items[i],
-                  number: i + 1,
-                  color: color,
-                  service: widget.service,
-                  trailing: Builder(builder: (context) {
-                    final it = sec.items[i];
-                    return Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _MoveButtons(
-                        onUp: i == 0 ? null : () => _refreshAfter(() => widget.onMoveItem(i, -1)),
-                        onDown: i == sec.items.length - 1 ? null : () => _refreshAfter(() => widget.onMoveItem(i, 1)),
+              NLessonRow(
+                item: sec.items[i],
+                student: false,
+                dueLabel: nDayLabel,
+                onOpen: () => widget.onOpenItem(sec.items[i]),
+                trailing: NMenu(
+                  tooltip: 'خيارات الدرس',
+                  items: [
+                    if (sec.items[i].contentUrl.isNotEmpty)
+                      NMenuItem(
+                        label: 'فتح',
+                        icon: sec.items[i].type == 'link' ? Icons.open_in_new_rounded : Icons.description_outlined,
+                        onTap: () => widget.onOpenItem(sec.items[i]),
                       ),
-                      IconButton(
-                        tooltip: 'تعديل الدرس',
-                        visualDensity: VisualDensity.compact,
-                        constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                        padding: EdgeInsets.zero,
-                        icon: const Icon(Icons.palette_outlined, size: 16, color: _C.muted),
-                        onPressed: () => _refreshAfter(() => widget.onStyleItem(it)),
-                      ),
-                      if (it.contentUrl.isNotEmpty)
-                        _Soft(
-                          label: 'فتح',
-                          icon: it.type == 'link' ? Icons.open_in_new : portalMaterialIcon(it),
-                          fg: _C.navy,
-                          height: 28,
-                          radius: Corner.field,
-                          onTap: () => widget.onOpenItem(it),
-                        ),
-                      IconButton(
-                        tooltip: 'حذف المادة',
-                        visualDensity: VisualDensity.compact,
-                        constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                        padding: EdgeInsets.zero,
-                        icon: const Icon(Icons.delete_outline, size: 16, color: _C.rose600),
-                        onPressed: () => _refreshAfter(() => widget.onDeleteItem(it)),
-                      ),
-                    ],
-                  );
-                  }),
+                    NMenuItem(label: 'تعديل', icon: Icons.edit_outlined, onTap: () => _refreshAfter(() => widget.onStyleItem(sec.items[i]))),
+                    NMenuItem(
+                      label: 'تقديم',
+                      icon: Icons.keyboard_arrow_up_rounded,
+                      enabled: i > 0,
+                      onTap: () => _refreshAfter(() => widget.onMoveItem(i, -1)),
+                    ),
+                    NMenuItem(
+                      label: 'تأخير',
+                      icon: Icons.keyboard_arrow_down_rounded,
+                      enabled: i < sec.items.length - 1,
+                      onTap: () => _refreshAfter(() => widget.onMoveItem(i, 1)),
+                    ),
+                    NMenuItem(
+                      label: 'حذف',
+                      icon: Icons.delete_outline_rounded,
+                      danger: true,
+                      onTap: () => _refreshAfter(() => widget.onDeleteItem(sec.items[i])),
+                    ),
+                  ],
                 ),
               ),
-        ],
-      ),
-    );
-  }
-}
-
-/// سهما تقديم وتأخير الوحدة أو الدرس.
-class _MoveButtons extends StatelessWidget {
-  const _MoveButtons({required this.onUp, required this.onDown});
-
-  final VoidCallback? onUp;
-  final VoidCallback? onDown;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget arrow(IconData icon, VoidCallback? onTap, String tip) => InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(6),
-          child: Tooltip(
-            message: tip,
-            child: Padding(
-              padding: const EdgeInsets.all(2),
-              child: Icon(icon, size: 16, color: onTap == null ? _C.line : _C.muted),
-            ),
-          ),
-        );
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        arrow(Icons.keyboard_arrow_up_rounded, onUp, 'تقديم'),
-        arrow(Icons.keyboard_arrow_down_rounded, onDown, 'تأخير'),
+          ],
+        ),
       ],
     );
   }
 }
-
-/// مادة تعليمية: نوعها وعنوانها ووصفها وموعد تسليمها، مقابل إجراءاتها.
-class _ItemTile extends StatelessWidget {
-  const _ItemTile({
-    required this.item,
-    required this.trailing,
-    this.service = const PortalService(),
-    this.number,
-    this.color,
-  });
-
-  final CourseItem item;
-  final Widget trailing;
-  final PortalService service;
-
-  /// رقم الدرس داخل وحدته، ولون وحدته.
-  final int? number;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = _itemTypeColors(item.type);
-    final overdue = item.isOverdue();
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(Corner.box),
-        border: Border.all(color: _C.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        if (number != null && color != null) ItemNumber(n: number!, color: color!),
-                        ItemTitle.of(item, maxLines: 3),
-                        _Badge(item.typeLabel, fg: colors.fg, bg: colors.bg, radius: Corner.chip),
-                      ],
-                    ),
-                    if (item.description.trim().isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        item.description.trim(),
-                        style: const TextStyle(
-                          fontFamily: AppText.family,
-                          color: _C.slate600,
-                          fontSize: 12.5,
-                          height: 1.65,
-                        ),
-                      ),
-                    ],
-                    if (item.type == 'assignment' && item.dueDate.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        'تاريخ التسليم: ${item.dueDate}${overdue ? ' (منتهٍ)' : ''}',
-                        style: TextStyle(
-                          fontFamily: AppText.family,
-                          color: overdue ? _C.faint : _C.emerald700,
-                          fontSize: 11,
-                          fontWeight: overdue ? FontWeight.w500 : FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              trailing,
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── نوافذ المودل ───────────────────────────────────────────────────────────
 
 Widget _sheetFrame(BuildContext context, {required String title, required List<Widget> children}) {
   return Padding(
@@ -4025,13 +3522,9 @@ Widget _sheetFrame(BuildContext context, {required String title, required List<W
             Row(
               children: [
                 Expanded(
-                  child: Text(title, style: const TextStyle(fontFamily: AppText.family, color: _C.navy, fontSize: 13, fontWeight: FontWeight.w900)),
+                  child: Text(title, style: nText(16, weight: FontWeight.w700)),
                 ),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.close, size: 18),
-                  onPressed: () => Navigator.pop(context),
-                ),
+                NBtn(tone: NBtnTone.ghost, small: true, icon: Icons.close_rounded, tooltip: 'إغلاق', onTap: () => Navigator.pop(context)),
               ],
             ),
             const SizedBox(height: 10),
@@ -4050,10 +3543,10 @@ Widget _sheetActions(BuildContext context, {required String label, required Colo
       children: [
         Expanded(
           flex: 2,
-          child: _Solid(label: busy ? 'جارٍ الحفظ...' : label, color: color, busy: busy, onTap: onSave, height: 40, radius: Corner.field),
+          child: _Solid(label: busy ? 'جارٍ الحفظ...' : label, color: color, busy: busy, onTap: onSave, height: 40, radius: NoonRadius.btn),
         ),
         const SizedBox(width: 8),
-        Expanded(child: _Soft(label: 'إلغاء', onTap: () => Navigator.pop(context), height: 40, radius: Corner.field)),
+        Expanded(child: _Soft(label: 'إلغاء', onTap: () => Navigator.pop(context), height: 40, radius: NoonRadius.btn)),
       ],
     ),
   );
@@ -4506,7 +3999,7 @@ class _NewItemSheetState extends State<_NewItemSheet> {
           const _Label('رابط الشرح أو المادة:'),
           _Input(controller: url, hint: 'https://...', keyboardType: TextInputType.url, ltr: true),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             'تنبيه: إذا كان الرابط من Google Drive تأكد من ضبطه على "متاح لأي شخص لديه الرابط".',
             style: TextStyle(color: _C.muted, fontSize: 10.5, height: 1.5),
           ),
@@ -4532,7 +4025,7 @@ class _NewItemSheetState extends State<_NewItemSheet> {
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: _C.rose50,
-              borderRadius: BorderRadius.circular(Corner.box),
+              borderRadius: BorderRadius.circular(NoonRadius.tile),
               border: Border.all(color: _C.rose200),
             ),
             child: Row(
@@ -4609,19 +4102,19 @@ class _CopySectionSheetState extends State<_CopySectionSheet> {
             children: [
               TextSpan(
                 text: '"${widget.section.title}"',
-                style: const TextStyle(color: _C.text, fontWeight: FontWeight.w800),
+                style: TextStyle(color: _C.text, fontWeight: FontWeight.w800),
               ),
               const TextSpan(text: ' وجميع موادها للشعب المختارة:'),
             ],
           ),
-          style: const TextStyle(color: _C.muted, fontSize: 12, height: 1.6),
+          style: TextStyle(color: _C.muted, fontSize: 12, height: 1.6),
         ),
         const SizedBox(height: 10),
         Container(
           constraints: const BoxConstraints(maxHeight: 220),
           decoration: BoxDecoration(
             color: _C.bg,
-            borderRadius: BorderRadius.circular(Corner.box),
+            borderRadius: BorderRadius.circular(NoonRadius.tile),
             border: Border.all(color: _C.line),
           ),
           child: ListView(
@@ -4644,7 +4137,7 @@ class _CopySectionSheetState extends State<_CopySectionSheet> {
                       if (t.subjectName.trim().isNotEmpty) '(${t.subjectName.trim()})',
                       if (t.group.gradeLevel.trim().isNotEmpty) '— ${t.group.gradeLevel.trim()}',
                     ].join(' '),
-                    style: const TextStyle(color: _C.text, fontSize: 12, fontWeight: FontWeight.w800),
+                    style: TextStyle(color: _C.text, fontSize: 12, fontWeight: FontWeight.w800),
                   ),
                 ),
             ],
@@ -4664,33 +4157,6 @@ class _CopySectionSheetState extends State<_CopySectionSheet> {
 
 /// تقييم واحد في سجل المعلم: عنوانه ومعدّله، ويُفتح فتظهر درجات طلابه.
 /// تنبيه إقفال العلامات من الإدارة.
-class _LockBanner extends StatelessWidget {
-  const _LockBanner(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF8E6),
-        borderRadius: BorderRadius.circular(Corner.card),
-        border: Border.all(color: const Color(0xFFF2D58A)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.lock_outline, size: 16, color: Color(0xFF9A6700)),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(text, style: const TextStyle(color: Color(0xFF6B4A00), fontSize: 12, fontWeight: FontWeight.w600)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _RecentEvaluationCard extends StatefulWidget {
   const _RecentEvaluationCard({
     required this.title,
@@ -4729,177 +4195,100 @@ class _RecentEvaluationCard extends StatefulWidget {
 class _RecentEvaluationCardState extends State<_RecentEvaluationCard> {
   bool open = false;
 
-  Color get _tone {
-    if (widget.average >= 85) return const Color(0xFF2E7D57);
-    if (widget.average >= 60) return const Color(0xFF9A6700);
-    return const Color(0xFFA5484A);
-  }
+  NTone get _tone => widget.average >= 85 ? NTone.green : (widget.average >= 60 ? NTone.sun : NTone.red);
 
   @override
   Widget build(BuildContext context) {
     return Container(
       clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(Corner.card),
-        border: Border.all(color: AppColors.line),
-        boxShadow: cardShadow,
-      ),
+      decoration: nPanelDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          InkWell(
-            onTap: () => setState(() => open = !open),
-            child: Padding(
-              padding: const EdgeInsetsDirectional.fromSTEB(14, 11, 8, 11),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontFamily: AppText.family,
-                            color: AppColors.heading,
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          widget.meta,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AppColors.faint, fontSize: 11),
-                        ),
-                      ],
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => setState(() => open = !open),
+              highlightColor: Noon.mist2,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(14, weight: FontWeight.w700)),
+                          const SizedBox(height: 2),
+                          Text(widget.meta, maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(11, weight: FontWeight.w500, color: Noon.muted)),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${widget.average}%',
-                    style: TextStyle(
-                      fontFamily: AppText.family,
-                      color: _tone,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  AnimatedRotation(
-                    turns: open ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 200),
-                    child: const Icon(Icons.keyboard_arrow_down_rounded, size: 22, color: AppColors.faint),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    NBadge('${widget.average}%', tone: _tone),
+                    const SizedBox(width: 12),
+                    NFoldArrow(open: open, size: 20),
+                  ],
+                ),
               ),
             ),
           ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOut,
-            alignment: Alignment.topCenter,
-            child: !open
-                ? const SizedBox(width: double.infinity)
-                : Container(
-                    decoration: const BoxDecoration(
-                      color: AppColors.sunken,
-                      border: Border(top: BorderSide(color: AppColors.line)),
-                    ),
-                    child: Column(
+          if (open)
+            Container(
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: Noon.line))),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(color: Noon.band, border: Border(bottom: BorderSide(color: Noon.line))),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      alignment: WrapAlignment.end,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Padding(
-                          padding: const EdgeInsetsDirectional.fromSTEB(8, 2, 4, 2),
-                          child: Row(
-                            children: [
-                              if (widget.locked)
-                                const Padding(
-                                  padding: EdgeInsetsDirectional.only(start: 6),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.lock_outline, size: 14, color: Color(0xFF9A6700)),
-                                      SizedBox(width: 4),
-                                      Text(
-                                        'مقفل من الإدارة',
-                                        style: TextStyle(color: Color(0xFF9A6700), fontSize: 11, fontWeight: FontWeight.w700),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              const Spacer(),
-                              TextButton.icon(
-                                onPressed: widget.onPrint,
-                                icon: const Icon(Icons.print_outlined, size: 16),
-                                label: const Text('طباعة'),
-                              ),
-                              TextButton.icon(
-                                onPressed: widget.onExcel,
-                                icon: const Icon(Icons.table_view_outlined, size: 16),
-                                label: const Text('Excel'),
-                              ),
-                              if (!widget.locked)
-                                TextButton.icon(
-                                  onPressed: widget.onEditSheet,
-                                  icon: const Icon(Icons.edit_outlined, size: 16),
-                                  label: const Text('تعديل الكشف'),
-                                ),
-                            ],
-                          ),
-                        ),
-                        for (var i = 0; i < widget.rows.length; i++)
-                          Container(
-                            padding: const EdgeInsetsDirectional.fromSTEB(14, 6, 6, 6),
-                            decoration: BoxDecoration(
-                              border: i == widget.rows.length - 1
-                                  ? null
-                                  : const Border(bottom: BorderSide(color: AppColors.hover)),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    widget.nameOf(widget.rows[i].studentId),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: AppColors.text,
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                if (widget.locked)
-                                  Padding(
-                                    padding: const EdgeInsetsDirectional.only(end: 10),
-                                    child: Text(
-                                      '${widget.rows[i].score == null ? '-' : trimNum(widget.rows[i].score!)} / ${trimNum(widget.rows[i].maxScore)}',
-                                      style: const TextStyle(color: AppColors.text, fontSize: 12.5, fontWeight: FontWeight.w800),
-                                    ),
-                                  )
-                                else ...[
-                                  _EditableScore(
-                                    row: widget.rows[i],
-                                    onSave: (v) => widget.onEditScore(widget.rows[i], v),
-                                  ),
-                                  IconButton(
-                                    tooltip: 'حذف',
-                                    visualDensity: VisualDensity.compact,
-                                    icon: const Icon(Icons.delete_outline, size: 17, color: AppColors.danger),
-                                    onPressed: () => widget.onDelete(widget.rows[i]),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
+                        if (widget.locked) const NBadge('مقفل من الإدارة', tone: NTone.sun, icon: Icons.lock_outline_rounded),
+                        NBtn(small: true, icon: Icons.print_outlined, label: 'طباعة', onTap: widget.onPrint),
+                        NBtn(small: true, icon: Icons.table_view_outlined, label: 'Excel', onTap: widget.onExcel),
+                        if (!widget.locked)
+                          NBtn(tone: NBtnTone.ink, small: true, icon: Icons.edit_outlined, label: 'تعديل الكشف', onTap: widget.onEditSheet),
                       ],
                     ),
                   ),
-          ),
+                  const NTableHead(cells: [('الطالب', 1), ('العلامة', -132)]),
+                  NDivided(
+                    children: [
+                      for (final row in widget.rows)
+                        Padding(
+                          padding: const EdgeInsetsDirectional.fromSTEB(12, 6, 8, 6),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(widget.nameOf(row.studentId), maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(13)),
+                              ),
+                              const SizedBox(width: 8),
+                              if (widget.locked)
+                                Padding(
+                                  padding: const EdgeInsetsDirectional.only(end: 10),
+                                  child: Text(
+                                    '${row.score == null ? '-' : trimNum(row.score!)} / ${trimNum(row.maxScore)}',
+                                    style: nText(13, weight: FontWeight.w700),
+                                  ),
+                                )
+                              else ...[
+                                _EditableScore(row: row, onSave: (v) => widget.onEditScore(row, v)),
+                                NBtn(tone: NBtnTone.danger, small: true, icon: Icons.delete_outline_rounded, tooltip: 'حذف', onTap: () => widget.onDelete(row)),
+                              ],
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                  NFootRow(label: 'المعدل', value: '${widget.average}%'),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -4930,49 +4319,35 @@ class _PortalSyncButton extends StatelessWidget {
 
     return Tooltip(
       message: tooltip,
-      child: InkResponse(
+      child: InkWell(
         onTap: busy ? null : onTap,
-        radius: 22,
-        child: Padding(
-          padding: const EdgeInsets.all(8),
+        borderRadius: BorderRadius.circular(NoonRadius.btn),
+        child: SizedBox(
+          width: 32,
+          height: 32,
           child: Stack(
             clipBehavior: Clip.none,
+            alignment: Alignment.center,
             children: [
               if (busy)
-                SizedBox(
-                  width: 19,
-                  height: 19,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white.withValues(alpha: 0.85),
-                  ),
-                )
+                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Noon.onInk))
               else
                 Icon(
-                  offline ? Icons.cloud_off_outlined : Icons.cloud_done_outlined,
-                  size: 19,
-                  color: offline ? const Color(0xFFF2C14E) : Colors.white.withValues(alpha: 0.85),
+                  offline ? Icons.cloud_off_outlined : Icons.cloud_outlined,
+                  size: 18,
+                  color: offline ? Noon.action : Noon.onInkSoft,
                 ),
               if (pending > 0 && !busy)
                 PositionedDirectional(
-                  top: -4,
-                  end: -4,
+                  top: -2,
+                  start: -2,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                    constraints: const BoxConstraints(minWidth: 14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF2C14E),
-                      borderRadius: BorderRadius.circular(7),
-                    ),
-                    child: Text(
-                      '$pending',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Color(0xFF3A2A00),
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    constraints: const BoxConstraints(minWidth: 16),
+                    height: 16,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(color: Noon.action, borderRadius: BorderRadius.circular(NoonRadius.tag)),
+                    child: Text('$pending', style: nText(10, weight: FontWeight.w700, color: Noon.onAction, height: 1)),
                   ),
                 ),
             ],
@@ -5082,7 +4457,7 @@ class _PortalSyncSheetState extends State<_PortalSyncSheet> {
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: AppColors.line,
+                    color: Noon.line,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -5090,30 +4465,30 @@ class _PortalSyncSheetState extends State<_PortalSyncSheet> {
               const SizedBox(height: 12),
               Text(
                 'تفاصيل المزامنة',
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: AppColors.navy),
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: Noon.ink),
               ),
               const SizedBox(height: 6),
               Text(
                 _syncedLabel,
-                style: const TextStyle(fontSize: 12, color: AppColors.muted, fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 12, color: Noon.muted, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 14),
               if (ops.isEmpty)
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: AppColors.sunken,
-                    borderRadius: BorderRadius.circular(Corner.box),
+                    color: Noon.band,
+                    borderRadius: BorderRadius.circular(NoonRadius.tile),
                   ),
-                  child: const Text(
+                  child: Text(
                     'لا يوجد رصد معلّق للرفع. البوابة تعمل من نسخة الجهاز عند انقطاع الشبكة.',
-                    style: TextStyle(fontSize: 12.5, color: AppColors.muted, height: 1.45),
+                    style: TextStyle(fontSize: 12.5, color: Noon.muted, height: 1.45),
                   ),
                 )
               else ...[
                 Text(
                   '${ops.length} بانتظار الرفع',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.navy),
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Noon.ink),
                 ),
                 const SizedBox(height: 8),
                 ConstrainedBox(
@@ -5152,7 +4527,7 @@ class _PortalSyncSheetState extends State<_PortalSyncSheet> {
               FilledButton(
                 onPressed: running ? null : _run,
                 style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.navy,
+                  backgroundColor: Noon.ink,
                   minimumSize: const Size.fromHeight(44),
                 ),
                 child: running
@@ -5180,40 +4555,15 @@ class _AttendanceClassButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.sunken,
-      borderRadius: BorderRadius.circular(Corner.field),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(Corner.field),
-        child: Container(
-          height: 40,
-          padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 8, 0),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(Corner.field),
-            border: Border.all(color: AppColors.line),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.groups_2_outlined, size: 17, color: AppColors.muted),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: AppText.family,
-                    color: AppColors.heading,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              const Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: AppColors.faint),
-            ],
-          ),
-        ),
+    return NFieldBox(
+      onTap: onTap,
+      trailing: Icons.keyboard_arrow_down_rounded,
+      child: Row(
+        children: [
+          Icon(Icons.groups_2_outlined, size: 18, color: Noon.teal),
+          const SizedBox(width: 8),
+          Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis)),
+        ],
       ),
     );
   }
@@ -5267,11 +4617,11 @@ class _AttendanceClassSheetState extends State<_AttendanceClassSheet> {
             const SizedBox(height: 16),
             Text('الشعبة', style: AppText.cardTitle),
             if (sections.isEmpty)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
                 child: Text(
                   'لا شعب مسندة لهذا الصف',
-                  style: TextStyle(color: AppColors.faint, fontSize: 12, fontWeight: FontWeight.w700),
+                  style: TextStyle(color: Noon.faint, fontSize: 12, fontWeight: FontWeight.w700),
                 ),
               )
             else
@@ -5281,7 +4631,7 @@ class _AttendanceClassSheetState extends State<_AttendanceClassSheet> {
                   contentPadding: EdgeInsets.zero,
                   title: Text(
                     s,
-                    style: const TextStyle(color: AppColors.text, fontSize: 13, fontWeight: FontWeight.w700),
+                    style: TextStyle(color: Noon.text, fontSize: 13, fontWeight: FontWeight.w700),
                   ),
                   trailing: s == widget.currentSection
                       ? const Icon(Icons.check_rounded, size: 18, color: AppColors.success)
@@ -5347,14 +4697,14 @@ class _EditableScoreState extends State<_EditableScore> {
             fontFamily: AppText.family,
             fontSize: 12.5,
             fontWeight: FontWeight.w800,
-            color: AppColors.heading,
+            color: Noon.text,
           ),
           decoration: InputDecoration(
             isDense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             suffixText: '/${trimNum(widget.row.maxScore)}',
-            suffixStyle: const TextStyle(color: AppColors.faint, fontSize: 10.5),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(Corner.field - 2)),
+            suffixStyle: TextStyle(color: Noon.faint, fontSize: 10.5),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(NoonRadius.btn)),
           ),
           onSubmitted: (_) => _commit(),
           onTapOutside: (_) => _commit(),
@@ -5373,7 +4723,7 @@ class _EditableScoreState extends State<_EditableScore> {
           textDirection: TextDirection.ltr,
           style: TextStyle(
             fontFamily: AppText.family,
-            color: AppColors.heading,
+            color: Noon.text,
             fontSize: 12.5,
             fontWeight: FontWeight.w800,
           ),

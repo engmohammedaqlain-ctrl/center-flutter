@@ -130,7 +130,7 @@ void main() {
     await tester.tap(find.text('ملاحظة من أ. عيسى'));
     await tester.pumpAndSettle();
     expect(find.byType(TextField), findsNothing);
-    await tester.pageBack();
+    await tester.tap(find.byTooltip('رجوع'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('إخفاء'));

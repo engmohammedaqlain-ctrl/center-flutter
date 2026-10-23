@@ -50,11 +50,14 @@ Future<void> offerSchoolShortcut(
 
 /// زر ترويسة البوابة (طالب وولي أمر ومعلم)، ويعرض الاختصار مرة حين تصل هوية المدرسة.
 class HomeShortcutButton extends StatefulWidget {
-  const HomeShortcutButton({super.key, required this.name, required this.logo, this.color});
+  const HomeShortcutButton({super.key, required this.name, required this.logo, this.color, this.builder});
 
   final String name;
   final String logo;
   final Color? color;
+
+  /// شكل الزر حين يخالف زر الأيقونة: «تثبيت» في ترويسة نون.
+  final Widget Function(VoidCallback onTap)? builder;
 
   @override
   State<HomeShortcutButton> createState() => _HomeShortcutButtonState();
@@ -87,6 +90,10 @@ class _HomeShortcutButtonState extends State<HomeShortcutButton> {
   @override
   Widget build(BuildContext context) {
     if (!HomeShortcut.available || !_realName(widget.name)) return const SizedBox.shrink();
+    void pin() => unawaited(
+          addSchoolShortcut(ScaffoldMessenger.maybeOf(context), code: _code, name: widget.name, logo: widget.logo),
+        );
+    if (widget.builder != null) return widget.builder!(pin);
     return IconButton(
       tooltip: 'أضف للشاشة الرئيسية',
       visualDensity: VisualDensity.compact,

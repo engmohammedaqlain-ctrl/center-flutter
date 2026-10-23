@@ -111,6 +111,77 @@ final cardShadow = <BoxShadow>[
   ),
 ];
 
+// ── رموز هوية نون (البوابات والمودل) — مطابقة لـ docs/dev/UI.md في الويب ─────
+
+/// سلّم زوايا نون: لوح وبطاقة 10، بلاطة داخلية 8، زر وحقل 8، وسم حالة 4.
+/// الدائرة للصور الشخصية والنقاط الصغيرة فقط. بطاقة الملخص وحدها بزوايا غير متناظرة.
+abstract final class NoonRadius {
+  static const panel = 10.0;
+  static const tile = 8.0;
+  static const btn = 8.0;
+  static const tag = 4.0;
+
+  /// بطاقة الملخص العميقة: `20px 12px 20px 12px` (أعلى يسار، أعلى يمين، أسفل يمين، أسفل يسار).
+  static const hero = BorderRadius.only(
+    topLeft: Radius.circular(20),
+    topRight: Radius.circular(12),
+    bottomRight: Radius.circular(20),
+    bottomLeft: Radius.circular(12),
+  );
+}
+
+/// أبعاد نون: زر الصفحة 40 وزر البطاقة 32، والحقل 40، وخانة الرصد 28.
+abstract final class NoonSize {
+  static const btn = 40.0;
+  static const btnSm = 32.0;
+  static const input = 40.0;
+  static const segment = 36.0;
+  static const mark = 28.0;
+
+  /// هامش الصفحة والفراغ بين أقسامها (`p-4 space-y-4`).
+  static const page = 16.0;
+  static const gap = 16.0;
+}
+
+/// ظل اللوح الناعم جداً فوق حدّه 1px — `0 1px 2px` و`0 2px 8px` بحبر نون 6% و5%.
+/// قيم الضبابية محوّلة من CSS (ضبابية CSS = ضعف سيغما).
+const nShadow = <BoxShadow>[
+  BoxShadow(color: Color(0x0F0A3336), blurRadius: 0.9, offset: Offset(0, 1)),
+  BoxShadow(color: Color(0x0D0A3336), blurRadius: 6, offset: Offset(0, 2)),
+];
+
+/// ظل النوافذ والأوراق السفلية والقوائم المنبثقة: أقوى من ظل اللوح.
+const nShadowPop = <BoxShadow>[
+  BoxShadow(color: Color(0x4D0A3336), blurRadius: 10, offset: Offset(0, 12), spreadRadius: -12),
+];
+
+/// مقياس خط نون (أحجام Tailwind بارتفاع سطرها): xs 12/16، sm 14/20، base 16/24، lg 18/28.
+/// الأرقام جدولية في كل البوابة (`.noon-ui { tabular-nums }`).
+TextStyle nText(
+  double size, {
+  FontWeight weight = FontWeight.w400,
+  Color? color,
+  double? height,
+}) =>
+    TextStyle(
+      fontFamily: AppText.family,
+      fontSize: size,
+      fontWeight: weight,
+      color: color ?? Noon.text,
+      height: height ?? _lineHeight(size),
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+
+double _lineHeight(double size) {
+  // الأحجام الحرّة (11px، 10.5px) بلا ارتفاع خاص: سطر الصفحة 1.5
+  if (size < 12) return 1.5;
+  if (size <= 12) return 16 / 12;
+  if (size <= 14) return 20 / 14;
+  if (size <= 16) return 24 / 16;
+  if (size <= 18) return 28 / 18;
+  return 1.15;
+}
+
 abstract final class AppTheme {
   static final radius = BorderRadius.circular(Corner.input);
 
