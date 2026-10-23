@@ -6,7 +6,6 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
-import '../widgets/admin_ui.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/moodle_style.dart';
 import '../widgets/widgets.dart';
@@ -535,28 +534,8 @@ class _GroupDetail extends StatelessWidget {
                     )
                   : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-                      itemCount: sections.length + 1,
-                      itemBuilder: (context, k) {
-                        if (k == 0) {
-                          final subject = store.subjectName(group.subjectId);
-                          final teacher = store.teacherById(group.teacherId)?.name ?? '';
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: AdminHero(
-                              icon: Icons.menu_book_outlined,
-                              label: [
-                                subject == 'غير محدد' ? 'المادة' : subject,
-                                if (group.gradeLevel.trim().isNotEmpty) group.gradeLevel.trim(),
-                              ].join(' · '),
-                              value: '${sections.fold<int>(0, (n, s) => n + s.items.length)}',
-                              unit: 'درس',
-                              end: term == 'term_2' ? 'الفصل الثاني' : term == 'term_1' ? 'الفصل الأول' : '',
-                              chips: ['وحدات ${sections.length}', 'المعلم ${teacher.isEmpty ? 'غير محدد' : teacher}'],
-                            ),
-                          );
-                        }
-                        final i = k - 1;
-                        return Padding(
+                      itemCount: sections.length,
+                      itemBuilder: (context, i) => Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: _SectionCard(
                           section: sections[i],
@@ -568,8 +547,7 @@ class _GroupDetail extends StatelessWidget {
                           onStyle: () => onStyleSection(sections[i], i),
                           onStyleItem: (it) => onStyleItem(sections[i], it),
                         ),
-                        );
-                      },
+                      ),
                     ),
         ),
       ],
