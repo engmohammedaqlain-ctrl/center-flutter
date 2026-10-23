@@ -4,10 +4,13 @@ import 'package:flutter/material.dart';
 
 import '../data/app_update.dart';
 import '../data/push.dart';
+import '../data/school_brand.dart';
+import '../data/school_link.dart';
 import '../data/store.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
+import '../widgets/home_shortcut.dart';
 import '../widgets/widgets.dart';
 import 'app_update_sheet.dart';
 import 'attendance_screen.dart';
@@ -215,7 +218,8 @@ class _AppShellState extends State<AppShell> {
             (store.isFeatureOn('evaluations') && store.can('evaluations')) ||
             (store.isFeatureOn('moodle') && store.can('moodle')) ||
             store.isMasterAdmin ||
-            AppUpdater.instance.supported;
+            AppUpdater.instance.supported ||
+            HomeShortcut.available;
         final sections = _sections(store);
         var index = sections.indexWhere((s) => s.id == current);
         if (index < 0) index = 0;
@@ -319,6 +323,8 @@ class _SideMenu extends StatelessWidget {
     final me = store.deviceUser;
     final role = me?.name.trim().isNotEmpty == true ? me!.name : store.roleName;
     final top = MediaQuery.paddingOf(context).top;
+    // اختصار المدرسة على الشاشة الرئيسية: لحساب مدرسة باسمها، لا للمطور
+    final shortcut = HomeShortcut.available && !store.isMasterAdmin && store.institutionName.trim().isNotEmpty;
 
     Widget sectionLabel(String text) => Padding(
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
@@ -522,8 +528,8 @@ class _SideMenu extends StatelessWidget {
                     onTap: onOpenDeveloper,
                   ),
                 ],
+                if (AppUpdater.instance.supported || shortcut) sectionLabel('التطبيق'),
                 if (AppUpdater.instance.supported) ...[
-                  sectionLabel('التطبيق'),
                   ListenableBuilder(
                     listenable: AppUpdater.instance,
                     builder: (context, _) {
@@ -544,6 +550,21 @@ class _SideMenu extends StatelessWidget {
                     },
                   ),
                 ],
+                if (shortcut)
+                  item(
+                    icon: Icons.add_to_home_screen_rounded,
+                    label: 'أضف للشاشة الرئيسية',
+                    onTap: () {
+                      final messenger = ScaffoldMessenger.maybeOf(context);
+                      onClose();
+                      unawaited(addSchoolShortcut(
+                        messenger,
+                        code: store.currentTenant?.code ?? SchoolBrand.instance.code ?? '',
+                        name: store.institutionName.trim(),
+                        logo: store.institutionLogo,
+                      ));
+                    },
+                  ),
               ],
             ),
           ),

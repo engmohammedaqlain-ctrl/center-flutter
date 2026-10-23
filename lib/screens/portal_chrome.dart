@@ -7,6 +7,7 @@ import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
+import '../widgets/home_shortcut.dart';
 import '../widgets/widgets.dart';
 import 'app_update_sheet.dart';
 
@@ -104,6 +105,11 @@ class PortalChromeHeader extends StatelessWidget {
                       ),
                     ),
                     ?action,
+                    HomeShortcutButton(
+                      name: branding.name,
+                      logo: branding.logo,
+                      color: Colors.white.withValues(alpha: 0.85),
+                    ),
                     IconButton(
                       tooltip: 'خروج',
                       onPressed: () async {

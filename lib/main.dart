@@ -17,6 +17,7 @@ import 'data/play_store.dart';
 import 'data/portal_offline.dart';
 import 'data/push.dart';
 import 'data/school_brand.dart';
+import 'data/school_link.dart';
 import 'data/share_inbox.dart';
 import 'data/store.dart';
 import 'data/supabase.dart';
@@ -32,6 +33,7 @@ import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 import 'widgets/auth_frame.dart';
 import 'widgets/animated_count.dart';
+import 'widgets/home_shortcut.dart';
 import 'widgets/platform_notices.dart';
 import 'widgets/subscription_banner.dart';
 import 'widgets/widgets.dart' show decodeLogo, launchWaWithText;
@@ -52,6 +54,8 @@ Future<void> main() async {
   // هوية المدرسة من ملفٍ داخل النسخة نفسها (ميلي ثوانٍ، بلا قرص ولا شبكة): شاشة
   // الإقلاع تُرسم من أول إطار بشعار المدرسة وألوانها بدل شعار النظام ثم التبدّل
   await SchoolBrand.instance.readBundled();
+  // فُتح برابط المدرسة (/d/<الكود>) أو اختصارها: مدرستها من أول إطار
+  await SchoolLinks.start(SchoolBrand.instance);
   AppStore.instance.applyBrandColors();
   // ألوان أحدث من السحابة تُطبع فور وصولها — ما لم تكن للجهاز ألوان محفوظة من دخول
   SchoolBrand.instance.addListener(AppStore.instance.applyBrandColors);
@@ -207,6 +211,7 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
     AppStore.instance.addListener(_maybePrompt);
     AppStore.instance.addListener(_onTenant);
     AppStore.instance.addListener(_onShared);
+    AppStore.instance.addListener(_offerShortcut);
     ShareInbox.instance.addListener(_onShared);
     unawaited(ClientConfig.instance.refresh(force: true));
     // قبل تثبيت بناء جديد: ارفع المعلّق حتى لا تضيع البيانات بعد المسح
@@ -244,8 +249,28 @@ class _RootState extends State<_Root> with WidgetsBindingObserver {
     AppStore.instance.removeListener(_maybePrompt);
     AppStore.instance.removeListener(_onTenant);
     AppStore.instance.removeListener(_onShared);
+    AppStore.instance.removeListener(_offerShortcut);
     ShareInbox.instance.removeListener(_onShared);
     super.dispose();
+  }
+
+  /// اختصار المدرسة على الشاشة الرئيسية: يُعرض مرة على الجهاز بعد دخول الإدارة،
+  /// وبعدها من القائمة. البوابات تعرضه من ترويستها (`HomeShortcutButton`).
+  void _offerShortcut() {
+    final store = AppStore.instance;
+    if (!HomeShortcut.available || !store.ready || !store.loggedIn || store.isMasterAdmin) return;
+    if (store.needsInitialSetup || store.institutionName.trim().isEmpty) return;
+    store.removeListener(_offerShortcut);
+    // بعد أن تستقر الشاشة الأولى، لا فوق انتقالها
+    unawaited(Future<void>.delayed(const Duration(seconds: 2), () async {
+      if (!mounted || !store.loggedIn) return;
+      await offerSchoolShortcut(
+        _messengerKey.currentState,
+        code: store.currentTenant?.code ?? SchoolBrand.instance.code ?? '',
+        name: store.institutionName.trim(),
+        logo: store.institutionLogo,
+      );
+    }));
   }
 
   bool _sharing = false;
@@ -800,11 +825,13 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  /// هوية الجهاز إن عُرفت من دخولٍ سابق، وإلا مدرسة هذه النسخة.
+  /// هوية الجهاز إن عُرفت من دخولٍ سابق، وإلا مدرسة هذه النسخة أو رابطها.
   Widget _frame(AppStore store) {
     final brand = SchoolBrand.instance;
-    final name = store.institutionName.isNotEmpty ? store.institutionName : brand.name;
-    final logo = store.institutionLogo.isNotEmpty ? store.institutionLogo : brand.logo;
+    // فُتح برابط مدرسة أو اختصارها: هي لا آخر مدرسة دخل إليها الجهاز
+    final useBrand = brand.linked && brand.name.isNotEmpty;
+    final name = store.institutionName.isNotEmpty && !useBrand ? store.institutionName : brand.name;
+    final logo = store.institutionLogo.isNotEmpty && !useBrand ? store.institutionLogo : brand.logo;
     return AuthFrame(
       title: name.isEmpty ? appName : name,
       subtitle: portalTab ? 'تسجيل الدخول' : 'دخول الإدارة',
