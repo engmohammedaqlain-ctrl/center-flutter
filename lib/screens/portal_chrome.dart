@@ -34,7 +34,7 @@ class PortalNavItem {
   final bool dot;
 }
 
-//// ترويسة البوابة كترويسة كشف رسمي (`NPortalHeader` في الويب): شريط بالحبر عليه شعار
+/// ترويسة البوابة كترويسة كشف رسمي (`NPortalHeader` في الويب): شريط بالحبر عليه شعار
 /// المدرسة واسمها وسطر صغير (الدور والاسم) مخففاً، و«تثبيت» و«خروج»، وتحته خط رفيع بلون
 /// الإجراء. رقم الهوية لا يُعرض: الشاشة قد تكون مفتوحة أمام الآخرين.
 class PortalChromeHeader extends StatelessWidget {
@@ -141,7 +141,7 @@ class PortalChromeHeader extends StatelessWidget {
   }
 }
 
-// سطر هوية: مرحلة · شعبة بلا تكرار كلمة «شعبة».
+/// سطر هوية: مرحلة · شعبة بلا تكرار كلمة «شعبة».
 String portalGradeLine({
   required PortalUser user,
   Student? student,
@@ -161,7 +161,7 @@ String portalGradeLine({
   return '$grade · $section';
 }
 
-//// الشريط السفلي (`NBottomNav` في الويب): حد علوي وظل صاعد خفيف وفاصل رفيع بين الخانات،
+/// الشريط السفلي (`NBottomNav` في الويب): حد علوي وظل صاعد خفيف وفاصل رفيع بين الخانات،
 /// أيقونة 24 وتسمية 11، والنشط بمستطيل مظلّل بـ `mist` خلف الأيقونة وتسمية عريضة بلون
 /// العنصر النشط، والباقي خافت، وتبديل فوري. هامش الآيفون في حشوته.
 class PortalBottomNav extends StatelessWidget {

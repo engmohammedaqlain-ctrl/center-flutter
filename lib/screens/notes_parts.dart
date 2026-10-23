@@ -5,21 +5,21 @@ import 'package:flutter/material.dart';
 import '../data/notes.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/noon_ui.dart';
 import '../widgets/widgets.dart';
 
-/// الملاحظات بشكل المحادثات — المقابل لـ `NotesParts.tsx` و`Announcements.tsx` في الويب.
+/// الملاحظات بشكل المحادثات — المقابل لـ `NotesParts.tsx` و`Announcements.tsx` في الويب،
+/// بهوية نون.
 ///
 /// قائمة محادثات (طالب عند المعلم، أو معلم عند الأسرة) تُفتح على فقاعات بترتيب
 /// الزمن وخانة كتابة في أسفلها، كالواتساب. الملاحظة من المدرسة، والرد من ولي
 /// الأمر على آخرها.
 
-const _teal = Color(0xFF0E7C86);
-const _mine = Color(0xFFE7F3F4);
-
 String _errText(Object e, String fallback) => e is NotesException ? e.message : fallback;
 
 // ── الأشرطة ─────────────────────────────────────────────────────────────────
 
+/// لوح بشريط بلون الإجراء على بدايته: أيقونة، وعنوان وسطر، و«فتح».
 class _Banner extends StatelessWidget {
   const _Banner({required this.icon, required this.title, required this.text, required this.onOpen});
 
@@ -30,53 +30,47 @@ class _Banner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(Corner.card),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(Corner.card),
-        onTap: onOpen,
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(Corner.card),
-            border: Border.all(color: AppColors.line),
-          ),
-          child: Row(
-            children: [
-              // خط بلون الإجراء في البداية: حدّ بلونين لا يجتمع مع زوايا مدوّرة
-              Container(
-                width: 4,
-                height: 34,
-                decoration: BoxDecoration(color: AppColors.amber, borderRadius: BorderRadius.circular(2)),
-              ),
-              const SizedBox(width: 10),
-              Icon(icon, size: 20, color: _teal),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppColors.text, fontSize: 13, fontWeight: FontWeight.w700),
+    final radius = BorderRadius.circular(NoonRadius.panel);
+    return Container(
+      decoration: nPanelDecoration(),
+      child: ClipRRect(
+        borderRadius: radius,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onOpen,
+            highlightColor: Noon.mist2,
+            child: IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(width: 4, color: Noon.action),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsetsDirectional.fromSTEB(12, 12, 16, 12),
+                      child: Row(
+                        children: [
+                          Icon(icon, size: 20, color: Noon.teal),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(14, weight: FontWeight.w700)),
+                                Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(12, weight: FontWeight.w500, color: Noon.muted)),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text('فتح', style: nText(12, weight: FontWeight.w700, color: Noon.tealD)),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      text,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              const Text('فتح', style: TextStyle(color: _teal, fontSize: 12, fontWeight: FontWeight.w700)),
-            ],
+            ),
           ),
         ),
       ),
@@ -96,7 +90,7 @@ class NewNotesBanner extends StatelessWidget {
     final fresh = threads.where((t) => !t.read).toList();
     if (fresh.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: NoonSize.gap),
       child: _Banner(
         icon: Icons.chat_bubble_outline_rounded,
         title: fresh.length > 1 ? '${fresh.length} ملاحظات جديدة' : 'ملاحظة من ${authorLabel(fresh.first.note)}',
@@ -132,91 +126,77 @@ class NoteChatRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initial = title.trim().isEmpty ? '؟' : title.trim().characters.first;
     final hot = unread > 0;
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          border: last ? null : const Border(bottom: BorderSide(color: AppColors.hover)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 38,
-              height: 38,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(color: _mine, shape: BoxShape.circle),
-              child: Text(initial, style: const TextStyle(color: _teal, fontSize: 14, fontWeight: FontWeight.w700)),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text.rich(
-                          TextSpan(
-                            text: title,
-                            children: [
-                              if (subtitle.isNotEmpty)
-                                TextSpan(
-                                  text: ' · $subtitle',
-                                  style: const TextStyle(color: AppColors.muted, fontWeight: FontWeight.w500),
-                                ),
-                            ],
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AppColors.text, fontSize: 13, fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                      if (time.isNotEmpty) ...[
-                        const SizedBox(width: 6),
-                        Text(
-                          time,
-                          style: TextStyle(
-                            color: hot ? _teal : AppColors.faint,
-                            fontSize: 10.5,
-                            fontWeight: hot ? FontWeight.w700 : FontWeight.w500,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        highlightColor: Noon.mist,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(border: last ? null : Border(bottom: BorderSide(color: Noon.line))),
+          child: Row(
+            children: [
+              NInitial(name: title.trim().isEmpty ? '؟' : title, size: 40, fontSize: 14),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Expanded(
+                          child: Text.rich(
+                            TextSpan(
+                              text: title,
+                              children: [
+                                if (subtitle.isNotEmpty)
+                                  TextSpan(text: ' · $subtitle', style: TextStyle(color: Noon.muted, fontWeight: FontWeight.w500)),
+                              ],
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: nText(14, weight: FontWeight.w700),
                           ),
                         ),
+                        if (time.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            time,
+                            style: nText(11, weight: hot ? FontWeight.w700 : FontWeight.w500, color: hot ? Noon.tealD : Noon.muted),
+                          ),
+                        ],
                       ],
-                    ],
-                  ),
-                  const SizedBox(height: 3),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          preview,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: hot ? AppColors.text : AppColors.muted,
-                            fontSize: 11.5,
-                            fontWeight: hot ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            preview,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: nText(12, weight: hot ? FontWeight.w700 : FontWeight.w500, color: hot ? Noon.text : Noon.muted),
                           ),
                         ),
-                      ),
-                      if (hot) ...[const SizedBox(width: 6), UnreadBadge(count: unread)],
-                    ],
-                  ),
-                ],
+                        if (hot) ...[const SizedBox(width: 8), UnreadBadge(count: unread)],
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// عدد الجديد في دائرة.
+/// عدد الجديد في دائرة بلون العنصر النشط (أو أبيض على زر ممتلئ).
 class UnreadBadge extends StatelessWidget {
   const UnreadBadge({super.key, required this.count, this.onDark = false});
 
@@ -225,15 +205,16 @@ class UnreadBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final h = onDark ? 18.0 : 20.0;
     return Container(
-      constraints: const BoxConstraints(minWidth: 18),
-      height: 18,
-      padding: const EdgeInsets.symmetric(horizontal: 5),
+      constraints: BoxConstraints(minWidth: h),
+      height: h,
+      padding: EdgeInsets.symmetric(horizontal: onDark ? 4 : 6),
       alignment: Alignment.center,
-      decoration: BoxDecoration(color: onDark ? Colors.white : _teal, borderRadius: BorderRadius.circular(9)),
+      decoration: BoxDecoration(color: onDark ? Colors.white : Noon.teal, borderRadius: BorderRadius.circular(h / 2)),
       child: Text(
         '$count',
-        style: TextStyle(color: onDark ? _teal : Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700),
+        style: nText(onDark ? 10 : 11, weight: FontWeight.w700, color: onDark ? Noon.tealD : Noon.onTeal, height: 1),
       ),
     );
   }
@@ -255,9 +236,9 @@ class FamilyOtherChats extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (convs.isEmpty) return const SizedBox.shrink();
-    return AppCard(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: EdgeInsets.zero,
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: nPanelDecoration(),
       child: Column(
         children: [
           for (var i = 0; i < convs.length; i++)
@@ -286,29 +267,23 @@ class SubjectChatButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hot = unread > 0;
+    final radius = BorderRadius.circular(NoonRadius.btn);
+    final fg = hot ? Colors.white : Noon.text;
     return Material(
-      color: hot ? _teal : Colors.white,
-      borderRadius: BorderRadius.circular(Corner.field),
+      color: hot ? Noon.teal : Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: radius, side: BorderSide(color: hot ? Noon.teal : Noon.line)),
       child: InkWell(
-        borderRadius: BorderRadius.circular(Corner.field),
+        borderRadius: radius,
         onTap: onTap,
-        child: Container(
-          height: 30,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(Corner.field),
-            border: Border.all(color: hot ? _teal : AppColors.lineStrong),
-          ),
+        child: SizedBox(
+          height: 32,
           child: Row(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.chat_bubble_outline_rounded, size: 14, color: hot ? Colors.white : AppColors.text),
-              const SizedBox(width: 5),
-              Text(
-                'رسائل',
-                style: TextStyle(color: hot ? Colors.white : AppColors.text, fontSize: 11.5, fontWeight: FontWeight.w700),
-              ),
-              if (hot) ...[const SizedBox(width: 5), UnreadBadge(count: unread, onDark: true)],
+              Icon(Icons.chat_bubble_outline_rounded, size: 16, color: fg),
+              const SizedBox(width: 6),
+              Text('رسائل', style: nText(12, weight: FontWeight.w700, color: fg)),
+              if (hot) ...[const SizedBox(width: 6), UnreadBadge(count: unread, onDark: true)],
             ],
           ),
         ),
@@ -319,7 +294,7 @@ class SubjectChatButton extends StatelessWidget {
 
 // ── المحادثة ────────────────────────────────────────────────────────────────
 
-/// فقاعة: رسائل صاحب الشاشة في جهة النهاية بلون فاتح، والطرف الآخر أبيض. ملاحظة
+/// فقاعة: رسائل صاحب الشاشة في جهة النهاية بتظليل `mist`، والطرف الآخر أبيض. ملاحظة
 /// المدرسة تحمل لمن كُتبت، وعند كاتبها علامتا القراءة. لمس فقاعة يمكن حذفها يُظهر «حذف».
 class _Bubble extends StatefulWidget {
   const _Bubble({
@@ -354,26 +329,26 @@ class _BubbleState extends State<_Bubble> {
     final mine = widget.mine;
     const r = Radius.circular(12);
     const tip = Radius.circular(4);
+    final metaStyle = nText(10, weight: FontWeight.w500, color: Noon.muted);
     final meta = <Widget>[
-      if (m.fromSchool && widget.school && m.audience == 'student')
-        const Text('للطالب', style: TextStyle(color: AppColors.faint, fontSize: 10)),
-      if (m.fromSchool && !widget.school && m.subject.isNotEmpty)
-        Text(m.subject, style: const TextStyle(color: AppColors.faint, fontSize: 10)),
-      Text(noteTime(m.createdAt), style: const TextStyle(color: AppColors.faint, fontSize: 10)),
+      if (m.fromSchool && widget.school && m.audience == 'student') Text('للطالب', style: metaStyle),
+      if (m.fromSchool && !widget.school && m.subject.isNotEmpty) Text(m.subject, style: metaStyle),
+      Text(noteTime(m.createdAt), style: metaStyle),
       if (m.fromSchool && widget.school)
         Tooltip(
           message: m.readAt.isNotEmpty ? 'قُرئت' : 'لم تُقرأ',
           child: Icon(
             m.readAt.isNotEmpty ? Icons.done_all_rounded : Icons.done_rounded,
             size: 14,
-            color: m.readAt.isNotEmpty ? AppColors.success : AppColors.faint,
+            color: m.readAt.isNotEmpty ? Noon.green600 : Noon.muted,
           ),
         ),
     ];
     final bubble = Container(
-      padding: const EdgeInsets.fromLTRB(11, 8, 11, 6),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
       decoration: BoxDecoration(
-        color: mine ? _mine : Colors.white,
+        color: mine ? Noon.mist : Colors.white,
+        // ذيل الفقاعة في ركنها العلوي من جهة كاتبها
         borderRadius: BorderRadiusDirectional.only(
           topStart: mine ? r : tip,
           topEnd: mine ? tip : r,
@@ -381,9 +356,10 @@ class _BubbleState extends State<_Bubble> {
           bottomEnd: r,
         ),
         border: Border.all(
-          color: widget.fresh ? AppColors.amber : (mine ? const Color(0xFFCFE5E7) : AppColors.line),
-          width: widget.fresh ? 1.6 : 1,
+          color: widget.fresh ? Noon.action : (mine ? Noon.headLine : Noon.line),
+          width: widget.fresh ? 2 : 1,
         ),
+        boxShadow: const [BoxShadow(color: Color(0x0F0A3336), blurRadius: 0.9, offset: Offset(0, 1))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -392,15 +368,18 @@ class _BubbleState extends State<_Bubble> {
           if (widget.showAuthor)
             Padding(
               padding: const EdgeInsets.only(bottom: 2),
-              child: Text(m.author, style: const TextStyle(color: _teal, fontSize: 10.5, fontWeight: FontWeight.w700)),
+              child: Text(m.author, style: nText(11, weight: FontWeight.w700, color: Noon.tealD)),
             ),
-          Text(m.body, style: const TextStyle(color: AppColors.text, fontSize: 13.5, height: 1.5)),
-          const SizedBox(height: 3),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (var i = 0; i < meta.length; i++) ...[if (i > 0) const SizedBox(width: 6), meta[i]],
-            ],
+          Text(m.body, style: nText(14, height: 24 / 14)),
+          const SizedBox(height: 2),
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < meta.length; i++) ...[if (i > 0) const SizedBox(width: 6), meta[i]],
+              ],
+            ),
           ),
         ],
       ),
@@ -408,7 +387,7 @@ class _BubbleState extends State<_Bubble> {
     return Align(
       alignment: mine ? AlignmentDirectional.centerEnd : AlignmentDirectional.centerStart,
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.82),
+        constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.85),
         child: Column(
           crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
@@ -416,12 +395,7 @@ class _BubbleState extends State<_Bubble> {
             if (picked && widget.onDelete != null)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
-                child: TextButton.icon(
-                  onPressed: widget.onDelete,
-                  style: TextButton.styleFrom(foregroundColor: AppColors.danger, visualDensity: VisualDensity.compact),
-                  icon: const Icon(Icons.delete_outline_rounded, size: 16),
-                  label: const Text('حذف', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                ),
+                child: NBtn(tone: NBtnTone.danger, small: true, icon: Icons.delete_outline_rounded, label: 'حذف', onTap: widget.onDelete),
               ),
           ],
         ),
@@ -484,17 +458,9 @@ class _ChatListState extends State<_ChatList> {
     final msgs = widget.messages;
     return ListView(
       controller: _scroll,
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
-        if (msgs.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 48),
-            child: Text(
-              'لا رسائل بعد',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.faint, fontSize: 12),
-            ),
-          ),
+        if (msgs.isEmpty) const NEmpty(text: 'لا رسائل بعد', icon: Icons.chat_bubble_outline_rounded, dashed: false),
         for (final m in msgs)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -569,130 +535,122 @@ class _NoteComposerState extends State<NoteComposer> {
 
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.paddingOf(context).bottom;
-    return Container(
-      padding: EdgeInsets.fromLTRB(10, 8, 10, 8 + bottom),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: AppColors.line)),
-      ),
-      child: widget.disabledText.isNotEmpty
-          ? Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Text(
-                widget.disabledText,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.muted, fontSize: 12),
+    if (widget.disabledText.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Text(widget.disabledText, textAlign: TextAlign.center, style: nText(12, weight: FontWeight.w500, color: Noon.muted)),
+      );
+    }
+    final radius = BorderRadius.circular(NoonRadius.btn);
+    final canSend = _text.text.trim().isNotEmpty && !busy;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.quick) ...[
+          SizedBox(
+            height: 28,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: quickNotes.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 6),
+              itemBuilder: (context, i) => Material(
+                color: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: radius, side: BorderSide(color: Noon.line)),
+                child: InkWell(
+                  borderRadius: radius,
+                  onTap: () => _text.text = quickNotes[i],
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Center(child: Text(quickNotes[i], style: nText(11, weight: FontWeight.w700, color: Noon.muted))),
+                  ),
+                ),
               ),
-            )
-          : Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (widget.quick)
-                  SizedBox(
-                    height: 30,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      children: [
-                        for (final q in quickNotes)
-                          Padding(
-                            padding: const EdgeInsetsDirectional.only(end: 6),
-                            child: ActionChip(
-                              label: Text(q),
-                              onPressed: () => _text.text = q,
-                              visualDensity: VisualDensity.compact,
-                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              labelStyle: const TextStyle(color: AppColors.muted, fontSize: 11, fontWeight: FontWeight.w700),
-                              backgroundColor: Colors.white,
-                              side: const BorderSide(color: AppColors.line),
-                              shape: const StadiumBorder(),
-                            ),
-                          ),
-                      ],
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (widget.withAudience) ...[
+              Tooltip(
+                message: 'لمن تُرسل',
+                child: Material(
+                  color: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: radius, side: BorderSide(color: Noon.line)),
+                  child: InkWell(
+                    borderRadius: radius,
+                    onTap: () => setState(() => audience = audience == 'parent' ? 'student' : 'parent'),
+                    child: SizedBox(
+                      height: 40,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(audience == 'parent' ? Icons.people_alt_outlined : Icons.person_outline_rounded, size: 16, color: Noon.teal),
+                            const SizedBox(width: 6),
+                            Text(audienceLabels[audience]!, style: nText(11, weight: FontWeight.w700)),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                if (widget.quick) const SizedBox(height: 8),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    if (widget.withAudience) ...[
-                      Tooltip(
-                        message: 'لمن تُرسل',
-                        child: OutlinedButton.icon(
-                          onPressed: () => setState(() => audience = audience == 'parent' ? 'student' : 'parent'),
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size(0, 42),
-                            padding: const EdgeInsets.symmetric(horizontal: 9),
-                            foregroundColor: AppColors.text,
-                            side: const BorderSide(color: AppColors.lineStrong),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                          icon: Icon(
-                            audience == 'parent' ? Icons.people_alt_outlined : Icons.person_outline,
-                            size: 16,
-                            color: _teal,
-                          ),
-                          label: Text(
-                            audienceLabels[audience]!,
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                    ],
-                    Expanded(
-                      child: TextField(
-                        controller: _text,
-                        minLines: 1,
-                        maxLines: 4,
-                        maxLength: noteMax,
-                        textInputAction: TextInputAction.newline,
-                        style: const TextStyle(fontSize: 13.5, color: AppColors.text),
-                        decoration: InputDecoration(
-                          hintText: widget.placeholder,
-                          counterText: '',
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-                          filled: true,
-                          fillColor: Colors.white,
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: AppColors.lineStrong),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: _teal),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    SizedBox(
-                      width: 42,
-                      height: 42,
-                      child: IconButton.filled(
-                        tooltip: 'إرسال',
-                        onPressed: _text.text.trim().isEmpty || busy ? null : _send,
-                        style: IconButton.styleFrom(backgroundColor: _teal, disabledBackgroundColor: _teal.withValues(alpha: 0.4)),
-                        icon: busy
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            // السهم يشير إلى جهة الإرسال في العربية
-                            : Transform.flip(flipX: true, child: const Icon(Icons.send_rounded, size: 19, color: Colors.white)),
-                      ),
-                    ),
-                  ],
                 ),
-              ],
+              ),
+              const SizedBox(width: 8),
+            ],
+            Expanded(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 40, maxHeight: 112),
+                child: TextField(
+                  controller: _text,
+                  minLines: 1,
+                  maxLines: 4,
+                  maxLength: noteMax,
+                  textInputAction: TextInputAction.newline,
+                  style: nText(14, height: 24 / 14),
+                  decoration: nInputDecoration(hint: widget.placeholder).copyWith(
+                    counterText: '',
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
+                ),
+              ),
             ),
+            const SizedBox(width: 8),
+            Tooltip(
+              message: 'إرسال',
+              child: Opacity(
+                opacity: canSend ? 1 : 0.4,
+                child: Material(
+                  color: Noon.teal,
+                  borderRadius: radius,
+                  child: InkWell(
+                    borderRadius: radius,
+                    onTap: canSend ? _send : null,
+                    child: SizedBox(
+                      width: 40,
+                      height: 40,
+                      child: busy
+                          ? Center(
+                              child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Noon.onTeal)),
+                            )
+                          // السهم يشير إلى جهة الإرسال في العربية
+                          : Transform.flip(flipX: true, child: Icon(Icons.send_rounded, size: 18, color: Noon.onTeal)),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
 
-/// صفحة محادثة: العنوان، والفقاعات، وخانة الكتابة في أسفلها.
+/// صفحة محادثة (`NPage`): ترويسة الحبر بالعنوان، والفقاعات، وخانة الكتابة في تذييلها.
 class _ChatScaffold extends StatelessWidget {
   const _ChatScaffold({required this.title, this.subtitle = '', required this.body, this.composer});
 
@@ -703,40 +661,7 @@ class _ChatScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14.5),
-            ),
-            if (subtitle.isNotEmpty)
-              Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontFamily: AppText.family, color: Colors.white.withValues(alpha: 0.75), fontSize: 11.5),
-              ),
-          ],
-        ),
-      ),
-      body: DefaultTextStyle.merge(
-        style: const TextStyle(fontFamily: AppText.family),
-        child: Column(
-          children: [
-            Expanded(child: body),
-            ?composer,
-          ],
-        ),
-      ),
-    );
+    return NPageScaffold(title: title, subtitle: subtitle, body: body, footer: composer, children: const []);
   }
 }
 
@@ -864,29 +789,27 @@ class _FamilyAnnouncementsCardState extends State<FamilyAnnouncementsCard> {
     final i = index.clamp(0, shown.length - 1);
     final a = shown[i];
     final dim = Colors.white.withValues(alpha: 0.8);
-    Widget arrow(IconData icon, String tip, VoidCallback onTap) => IconButton(
-          tooltip: tip,
-          onPressed: onTap,
-          visualDensity: VisualDensity.compact,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-          icon: Icon(icon, size: 18, color: dim),
+    final stops = Noon.hero(NoonHeroTone.theme);
+    Widget arrow(IconData icon, String tip, VoidCallback onTap) => Tooltip(
+          message: tip,
+          child: InkWell(
+            onTap: onTap,
+            child: SizedBox(width: 28, height: 28, child: Icon(icon, size: 16, color: dim)),
+          ),
         );
+    // بطاقة واحدة بتدرّج ثيم المدرسة (كبطاقات الأرقام المهمة)، والإعلانات الأخرى بالتنقل بينها
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: NoonSize.gap),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(Corner.card + 2),
-        gradient: LinearGradient(
-          begin: AlignmentDirectional.topStart,
-          end: AlignmentDirectional.bottomEnd,
-          colors: [AppColors.navy, AppColors.navyMid],
-        ),
+        borderRadius: NoonRadius.hero,
+        gradient: LinearGradient(begin: Alignment.topRight, end: Alignment.bottomLeft, stops: const [0, 0.58, 1], colors: stops),
+        boxShadow: [BoxShadow(color: stops.first.withValues(alpha: 0.28), blurRadius: 14.7, offset: const Offset(0, 8))],
       ),
       child: Stack(
         children: [
-          PositionedDirectional(
-            end: -40,
+          Positioned(
+            left: -40,
             top: -60,
             child: Container(
               width: 150,
@@ -894,8 +817,9 @@ class _FamilyAnnouncementsCardState extends State<FamilyAnnouncementsCard> {
               decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.07)),
             ),
           ),
+          Positioned(left: 0, right: 0, top: 0, child: Container(height: 1, color: Colors.white.withValues(alpha: 0.12))),
           Padding(
-            padding: const EdgeInsetsDirectional.fromSTEB(14, 8, 4, 14),
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 8, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -906,7 +830,7 @@ class _FamilyAnnouncementsCardState extends State<FamilyAnnouncementsCard> {
                       height: 26,
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(Corner.field),
+                        borderRadius: BorderRadius.circular(NoonRadius.tile),
                       ),
                       child: const Icon(Icons.campaign_outlined, size: 16, color: Colors.white),
                     ),
@@ -916,29 +840,27 @@ class _FamilyAnnouncementsCardState extends State<FamilyAnnouncementsCard> {
                         'إعلان من المدرسة · ${noteTime(a.createdAt)}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: dim, fontSize: 11.5, fontWeight: FontWeight.w600),
+                        style: nText(12.5, weight: FontWeight.w500, color: dim),
                       ),
                     ),
                     if (shown.length > 1) ...[
                       arrow(Icons.chevron_right_rounded, 'السابق', () => setState(() => index = i == 0 ? shown.length - 1 : i - 1)),
-                      Text('${i + 1}/${shown.length}', style: TextStyle(color: dim, fontSize: 11, fontWeight: FontWeight.w700)),
+                      Text('${i + 1}/${shown.length}', style: nText(11, weight: FontWeight.w700, color: dim)),
                       arrow(Icons.chevron_left_rounded, 'التالي', () => setState(() => index = (i + 1) % shown.length)),
                     ],
-                    IconButton(
-                      tooltip: 'إخفاء',
-                      onPressed: () => _dismiss(a.id),
-                      visualDensity: VisualDensity.compact,
-                      icon: Icon(Icons.close_rounded, size: 18, color: dim),
+                    Tooltip(
+                      message: 'إخفاء',
+                      child: InkWell(
+                        onTap: () => _dismiss(a.id),
+                        child: SizedBox(width: 32, height: 32, child: Icon(Icons.close_rounded, size: 16, color: dim)),
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 8),
                 Padding(
-                  padding: const EdgeInsetsDirectional.only(end: 10),
-                  child: Text(
-                    a.body,
-                    style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w700, height: 1.6),
-                  ),
+                  padding: const EdgeInsetsDirectional.only(end: 8),
+                  child: Text(a.body, style: nText(15, weight: FontWeight.w700, color: Colors.white, height: 28 / 15)),
                 ),
               ],
             ),
@@ -1046,13 +968,11 @@ class _SchoolChatPageState extends State<SchoolChatPage> {
       title: widget.title,
       subtitle: widget.subtitle,
       body: loading
-          ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+          ? ListView(children: const [NLoading(text: 'جارٍ تحميل الملاحظات')])
           : error.isNotEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(error, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.muted, fontSize: 12.5)),
-                  ),
+              ? ListView(
+                  padding: const EdgeInsets.all(NoonSize.page),
+                  children: [NNotice(text: error, sun: true)],
                 )
               : _ChatList(
                   messages: chatMessages(threads),
@@ -1092,22 +1012,11 @@ class ClassMessagePage extends StatelessWidget {
       title: 'رسالة للصف',
       subtitle: subject,
       body: ListView(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
-          AppCard(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                const Icon(Icons.campaign_outlined, size: 20, color: _teal),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'تصل كل أسرة من ${studentIds.length} نسخة خاصة، وردّها يظهر في محادثة ابنها',
-                    style: const TextStyle(color: AppColors.text, fontSize: 12.5, height: 1.5),
-                  ),
-                ),
-              ],
-            ),
+          NNotice(
+            icon: Icons.campaign_outlined,
+            text: 'تصل كل أسرة من ${studentIds.length} نسخة خاصة، وردّها يظهر في محادثة ابنها',
           ),
         ],
       ),

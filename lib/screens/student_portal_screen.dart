@@ -484,9 +484,10 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                           child: ListView(
                             padding: const EdgeInsets.all(NoonSize.page),
                             children: [
+                              // الإعلان وشريط الملاحظة الجديدة يحملان فراغهما: لا فراغ حين يغيبان
+                              ..._familyTop(),
                               NColumn(
                                 children: [
-                                  ..._familyTop(),
                                   ...switch (tab) {
                                     'subjects' => _subjectsTab(),
                                     'attendance' => _attendanceTab(),
