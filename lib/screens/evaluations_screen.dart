@@ -236,8 +236,9 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
           action: store.can('evaluations')
               ? ThumbAction(
                   label: 'رصد درجات',
-                  icon: Icons.edit_note,
+                  icon: Icons.add,
                   color: AppColors.navy,
+                  noon: true,
                   onPressed: () => _record(context, store),
                 )
               : null,
@@ -1030,7 +1031,7 @@ class _GroupSectionState extends State<_GroupSection> {
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(Corner.card),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppColors.line),
         boxShadow: cardShadow,
       ),
