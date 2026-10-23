@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import 'admin_ui.dart';
 import 'animated_count.dart';
 
 /// عناصر كشف الحضور المرئية — تستعملها شاشة الإدارة وبوابة المعلم معاً، فيرى
@@ -108,59 +109,14 @@ class AttendanceDaySummary extends StatelessWidget {
     final marked = total - unmarked;
     final done = total > 0 && unmarked == 0;
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(Corner.card),
-        border: Border.all(color: AppColors.line),
-        boxShadow: cardShadow,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${day.dayName} ${day.date.day} ${gregorianMonths[day.date.month - 1]}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: AppText.family,
-                    color: AppColors.heading,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  done ? 'اكتمل الرصد' : '$marked من $total مرصود',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: AppText.family,
-                    color: done ? attendancePresentColor : AppColors.muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // رقم مختصر: حاضر من الإجمالي — بدل بطاقات الحاضر/الغائب الأربع
-          Text(
-            '$present من $total',
-            style: TextStyle(
-              fontFamily: AppText.family,
-              color: AppColors.heading,
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-        ],
-      ),
+    return AdminHero(
+      tone: HeroTone.paid,
+      icon: Icons.fact_check_outlined,
+      label: '${day.dayName} ${day.date.day} ${gregorianMonths[day.date.month - 1]}',
+      value: '$present',
+      unit: 'حاضر من $total',
+      end: done ? 'اكتمل الرصد' : '$marked من $total مرصود',
+      chips: ['غائب $absent', 'مأذون $excused'],
     );
   }
 }
