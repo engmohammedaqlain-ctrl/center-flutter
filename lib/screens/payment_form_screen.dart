@@ -26,11 +26,15 @@ class PaymentFormScreen extends StatefulWidget {
     this.studentId,
     this.installmentId,
     this.amount,
+    this.initialNotice = '',
   });
 
   final String? studentId;
   final String? installmentId;
   final double? amount;
+
+  /// صورة إشعار وصلت بـ«مشاركة» (`data:`): السند يُفتح بها وبوسيلة تحويل.
+  final String initialNotice;
 
   @override
   State<PaymentFormScreen> createState() => _PaymentFormScreenState();
@@ -85,6 +89,18 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
     amount = TextEditingController(
       text: widget.amount == null ? '' : widget.amount!.toStringAsFixed(0),
     );
+    notice = widget.initialNotice;
+    if (notice.isNotEmpty) {
+      // الإشعار تحويل: أول وسيلة بنك أو محفظة بدل «نقداً»
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final store = StoreScope.of(context);
+        final transfer = store.activePaymentMethods
+            .where((m) => m.type == 'bank' || m.type == 'wallet')
+            .firstOrNull;
+        if (transfer != null) _onMethod(transfer.id);
+      });
+    }
     // البند الافتراضي يحتاج أقساط الطالب، وهي في المخزن لا في الوسائط
     if (studentId != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {

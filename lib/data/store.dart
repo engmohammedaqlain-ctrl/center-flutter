@@ -5376,25 +5376,33 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       syncStudentRoomEnrollments([incoming.id]);
     }
 
-    if (attachments != null) {
-      final existed = attachmentsByStudent.containsKey(incoming.id);
-      final hasAny = !attachments.isEmpty;
-      if (!hasAny) {
-        if (existed) {
-          final gone = attachmentsByStudent.remove(incoming.id);
-          markDirty('student_attachments');
-          unawaited(_removeCloudAttachments(incoming.id, gone?.paths ?? const []));
-        }
-      } else {
-        final previous = attachmentsByStudent[incoming.id];
-        attachments.updatedAt = _nowIso();
-        attachments.syncStatus = 'pending';
-        attachmentsByStudent[incoming.id] = attachments;
-        markDirty('student_attachments');
-        unawaited(_pushAttachments(incoming.id, attachments, previous: previous));
-      }
-    }
+    if (attachments != null) _applyAttachments(incoming.id, attachments);
     markDirty('students');
+  }
+
+  /// مرفقات طالب وحدها بلا حفظ بياناته — صورة وصلت بـ«مشاركة» من المعرض.
+  void saveStudentAttachments(String studentId, StudentAttachments attachments) {
+    requireSection('students');
+    _applyAttachments(studentId, attachments);
+    notifyListeners();
+  }
+
+  void _applyAttachments(String studentId, StudentAttachments attachments) {
+    final existed = attachmentsByStudent.containsKey(studentId);
+    if (attachments.isEmpty) {
+      if (existed) {
+        final gone = attachmentsByStudent.remove(studentId);
+        markDirty('student_attachments');
+        unawaited(_removeCloudAttachments(studentId, gone?.paths ?? const []));
+      }
+      return;
+    }
+    final previous = attachmentsByStudent[studentId];
+    attachments.updatedAt = _nowIso();
+    attachments.syncStatus = 'pending';
+    attachmentsByStudent[studentId] = attachments;
+    markDirty('student_attachments');
+    unawaited(_pushAttachments(studentId, attachments, previous: previous));
   }
 
   /// ما استُحق على الطالب ولم يُسدَّد حتى اليوم.

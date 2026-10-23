@@ -249,38 +249,64 @@ class _StorageLine extends StatelessWidget {
 }
 
 /// نتيجة صفحة المشاركة: أين رُفعت الملفات، لتفتح البوابة عليها.
-typedef _SharedUploadResult = ({String groupId, String term, int count});
+typedef MoodleShareResult = ({String groupId, String term, int count});
 
-/// ملفات مشارَكة من تطبيق آخر ← مادة ← وحدة (أو وحدة جديدة) ← دروس.
-class _ShareToMoodlePage extends StatefulWidget {
-  const _ShareToMoodlePage({
+/// مادة يُرفع إليها: للمعلم من مواده، وللإدارة من كل مواد المدرسة.
+class MoodleShareTarget {
+  const MoodleShareTarget({required this.groupId, required this.label, this.rooms = const []});
+
+  final String groupId;
+
+  /// «رياضيات — علمي 1 (الحادي عشر)».
+  final String label;
+
+  /// شعب المادة: أكثر من واحدة تُظهر اختيار الشعبة.
+  final List<PortalRoom> rooms;
+}
+
+/// وحدات الشعبة: العامة لكل الشعب والمخصصة لها. بلا شعبة: كل الوحدات.
+List<CourseSection> sectionsForRoom(List<CourseSection> sections, String roomId) => roomId.isEmpty
+    ? sections
+    : [
+        for (final s in sections)
+          if (s.roomIds.isEmpty || s.roomIds.contains(roomId)) s,
+      ];
+
+/// ملفات مشارَكة من تطبيق آخر ← مادة ← شعبة ← وحدة (أو وحدة جديدة) ← دروس.
+/// للمعلم ولحساب المدرسة. [offline] كاش وحدات المعلم، ولا كاش للإدارة.
+class ShareToMoodlePage extends StatefulWidget {
+  const ShareToMoodlePage({
+    super.key,
     required this.service,
-    required this.offline,
     required this.tenantId,
-    required this.classes,
-    required this.initialGroupId,
-    required this.initialTerm,
+    required this.targets,
     required this.files,
     required this.color,
+    this.offline,
+    this.initialGroupId = '',
+    this.initialTerm = 'term_1',
   });
 
   final PortalService service;
-  final PortalOffline offline;
+  final PortalOffline? offline;
   final String tenantId;
-  final List<TeacherClass> classes;
+  final List<MoodleShareTarget> targets;
   final String initialGroupId;
   final String initialTerm;
   final List<MaterialDraft> files;
   final Color color;
 
   @override
-  State<_ShareToMoodlePage> createState() => _ShareToMoodlePageState();
+  State<ShareToMoodlePage> createState() => _ShareToMoodlePageState();
 }
 
-class _ShareToMoodlePageState extends State<_ShareToMoodlePage> {
-  late String groupId = widget.classes.any((c) => c.group.id == widget.initialGroupId)
+class _ShareToMoodlePageState extends State<ShareToMoodlePage> {
+  late String groupId = widget.targets.any((c) => c.groupId == widget.initialGroupId)
       ? widget.initialGroupId
-      : widget.classes.first.group.id;
+      : widget.targets.first.groupId;
+
+  /// الشعبة المختارة، وفارغ لكل الشعب.
+  String roomId = '';
   late String term = widget.initialTerm == 'general' ? 'other' : widget.initialTerm;
   late List<MaterialDraft> files = [...widget.files];
   final failures = <MaterialDraft, String>{};
@@ -312,24 +338,35 @@ class _ShareToMoodlePageState extends State<_ShareToMoodlePage> {
     super.dispose();
   }
 
+  MoodleShareTarget get _target => widget.targets.firstWhere((t) => t.groupId == groupId, orElse: () => widget.targets.first);
+
+  /// وحدات الشعبة المختارة — منها يُختار.
+  List<CourseSection> get _shown => sectionsForRoom(sections, roomId);
+
+  /// الوحدة المختارة إن لم تعد ظاهرة: آخر وحدة في الشعبة.
+  void _keepSection() {
+    final shown = _shown;
+    if (!shown.any((s) => s.id == sectionId)) sectionId = shown.isEmpty ? '' : shown.last.id;
+  }
+
   Future<void> _loadSections() async {
     final token = ++_token;
-    final cached = widget.offline.loadSections(groupId, term);
+    final cached = widget.offline?.loadSections(groupId, term);
     setState(() {
       sections = cached ?? const [];
       loadingSections = cached == null;
-      if (!sections.any((s) => s.id == sectionId)) sectionId = sections.isEmpty ? '' : sections.last.id;
+      _keepSection();
     });
     try {
       final list = await widget.service
           .groupSections(tenantId: widget.tenantId, groupId: groupId, term: term, includeHidden: true)
           .timeout(const Duration(seconds: 10));
-      await widget.offline.saveSections(groupId, term, list);
+      await widget.offline?.saveSections(groupId, term, list);
       if (!mounted || token != _token) return;
       setState(() {
         sections = list;
         loadingSections = false;
-        if (!sections.any((s) => s.id == sectionId)) sectionId = sections.isEmpty ? '' : sections.last.id;
+        _keepSection();
       });
     } catch (_) {
       if (mounted && token == _token) setState(() => loadingSections = false);
@@ -350,6 +387,8 @@ class _ShareToMoodlePageState extends State<_ShareToMoodlePage> {
         term: term,
         title: title,
         sortOrder: sections.length,
+        // وحدة من شعبة مختارة لها وحدها، وإلا لكل الشعب
+        roomIds: roomId.isEmpty ? null : [roomId],
       );
       if (!mounted) return;
       newUnit.clear();
@@ -358,7 +397,7 @@ class _ShareToMoodlePageState extends State<_ShareToMoodlePage> {
         sectionId = created.id;
         creatingUnit = false;
       });
-      await widget.offline.saveSections(groupId, term, sections);
+      await widget.offline?.saveSections(groupId, term, sections);
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -409,10 +448,10 @@ class _ShareToMoodlePageState extends State<_ShareToMoodlePage> {
     final failedNames = {for (final f in result.failed) f.name: f.error};
     final updated = section.copyWith(items: [...section.items, ...result.created]);
     sections = [for (final s in sections) s.id == section.id ? updated : s];
-    await widget.offline.saveSections(groupId, term, sections);
+    await widget.offline?.saveSections(groupId, term, sections);
     if (!mounted) return;
     if (result.failed.isEmpty) {
-      Navigator.pop<_SharedUploadResult>(context, (groupId: groupId, term: term, count: uploaded));
+      Navigator.pop<MoodleShareResult>(context, (groupId: groupId, term: term, count: uploaded));
       return;
     }
     final storageNow = await widget.service.storageStatus();
@@ -451,7 +490,7 @@ class _ShareToMoodlePageState extends State<_ShareToMoodlePage> {
             tooltip: 'إغلاق',
             onPressed: busy
                 ? null
-                : () => Navigator.pop<_SharedUploadResult>(
+                : () => Navigator.pop<MoodleShareResult>(
                       context,
                       uploaded > 0 ? (groupId: groupId, term: term, count: uploaded) : null,
                     ),
@@ -469,10 +508,10 @@ class _ShareToMoodlePageState extends State<_ShareToMoodlePage> {
                     value: groupId,
                     height: 36,
                     items: [
-                      for (final k in widget.classes)
+                      for (final k in widget.targets)
                         DropdownMenuItem(
-                          value: k.group.id,
-                          child: Text(_classLabel(k), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          value: k.groupId,
+                          child: Text(k.label, maxLines: 1, overflow: TextOverflow.ellipsis),
                         ),
                     ],
                     onChanged: busy
@@ -481,6 +520,7 @@ class _ShareToMoodlePageState extends State<_ShareToMoodlePage> {
                             if (v == null || v == groupId) return;
                             setState(() {
                               groupId = v;
+                              roomId = '';
                               sectionId = '';
                             });
                             _loadSections();
@@ -498,6 +538,28 @@ class _ShareToMoodlePageState extends State<_ShareToMoodlePage> {
                       _loadSections();
                     },
                   ),
+                  if (_target.rooms.length > 1) ...[
+                    const SizedBox(height: 10),
+                    const _Label('الشعبة:'),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final r in [const PortalRoom(id: '', name: 'كل الشعب'), ..._target.rooms])
+                          _RoomChip(
+                            label: r.name,
+                            selected: r.id == roomId,
+                            color: widget.color,
+                            onTap: busy || r.id == roomId
+                                ? null
+                                : () => setState(() {
+                                      roomId = r.id;
+                                      _keepSection();
+                                    }),
+                          ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -514,12 +576,13 @@ class _ShareToMoodlePageState extends State<_ShareToMoodlePage> {
                         child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: _C.navy)),
                       ),
                     ),
-                  for (var i = 0; i < sections.length; i++) ...[
+                  // الرقم واللون من ترتيب الوحدة في المادة كلها، كما في المودل
+                  for (final sec in _shown) ...[
                     _UnitChoice(
-                      section: sections[i],
-                      index: i,
-                      selected: sections[i].id == sectionId,
-                      onTap: busy ? null : () => setState(() => sectionId = sections[i].id),
+                      section: sec,
+                      index: sections.indexOf(sec),
+                      selected: sec.id == sectionId,
+                      onTap: busy ? null : () => setState(() => sectionId = sec.id),
                     ),
                     const SizedBox(height: 6),
                   ],
@@ -578,6 +641,39 @@ class _ShareToMoodlePageState extends State<_ShareToMoodlePage> {
               onTap: readyCount == 0 || sectionId.isEmpty ? null : _upload,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// شعبة قابلة للاختيار.
+class _RoomChip extends StatelessWidget {
+  const _RoomChip({required this.label, required this.selected, required this.color, required this.onTap});
+
+  final String label;
+  final bool selected;
+  final Color color;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? color : Colors.white,
+      borderRadius: BorderRadius.circular(Corner.box),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(Corner.box),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(Corner.box),
+            border: Border.all(color: selected ? color : _C.line),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(color: selected ? Colors.white : _C.text, fontSize: 12, fontWeight: FontWeight.w800),
+          ),
         ),
       ),
     );

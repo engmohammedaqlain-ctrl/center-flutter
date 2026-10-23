@@ -147,7 +147,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     if (!mounted || _readingShare || !inbox.hasFiles || data == null) return;
     if (!isParent) {
       inbox.take();
-      showAppSnack(context, 'المشاركة للمعلم وولي الأمر', error: true);
+      showAppSnack(context, 'المشاركة لولي الأمر', error: true);
       return;
     }
     if (!_navItems.any((n) => n.id == 'financial')) {
@@ -162,6 +162,18 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     if (got.images.isEmpty) {
       showAppSnack(context, 'الإشعار صورة أو PDF', error: true);
     } else {
+      // أكثر من ابن: الدفعة لمن؟
+      final child = await _pickChildForPayment();
+      if (!mounted) return;
+      if (child == null) {
+        if (inbox.hasFiles) unawaited(_onShared());
+        return;
+      }
+      if (child.id != user.id) {
+        await _switchChild(child);
+        if (!mounted) return;
+        if (user.id != child.id) return;
+      }
       if (got.skipped > 0) showAppSnack(context, 'أُرفق ${got.images.length} من ${got.images.length + got.skipped}');
       setState(() {
         tab = 'financial';
@@ -169,6 +181,44 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       });
     }
     if (inbox.hasFiles) unawaited(_onShared());
+  }
+
+  /// الابن الذي يخصه إشعار التحويل: الحالي إن كان وحده، وإلا يختاره ولي الأمر.
+  Future<PortalChild?> _pickChildForPayment() async {
+    final kids = user.children;
+    final current = kids.where((c) => c.id == user.id).firstOrNull ??
+        PortalChild(id: user.id, name: user.name, gradeLevel: user.gradeLevel);
+    if (kids.length <= 1) return current;
+    return showModalBottomSheet<PortalChild>(
+      context: context,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                'الدفعة لمين؟',
+                style: TextStyle(fontFamily: AppText.family, color: AppColors.heading, fontSize: 15, fontWeight: FontWeight.w800),
+              ),
+            ),
+            for (final c in [current, ...kids.where((k) => k.id != current.id)])
+              ListTile(
+                leading: const Icon(Icons.person_outline, color: AppColors.muted),
+                title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+                subtitle: c.gradeLevel.trim().isEmpty
+                    ? null
+                    : Text(c.gradeLevel.trim(), style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
+                onTap: () => Navigator.pop(ctx, c),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
   }
 
   @override

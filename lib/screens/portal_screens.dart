@@ -1007,13 +1007,15 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     }
     final files = [for (final f in inbox.take()) f.toDraft()];
     _sharing = true;
-    final result = await Navigator.of(context).push<_SharedUploadResult>(
+    final result = await Navigator.of(context).push<MoodleShareResult>(
       MaterialPageRoute(
-        builder: (_) => _ShareToMoodlePage(
+        builder: (_) => ShareToMoodlePage(
           service: _service,
           offline: _offline,
           tenantId: widget.user.tenantId,
-          classes: d.classes,
+          targets: [
+            for (final k in d.classes) MoodleShareTarget(groupId: k.group.id, label: _classLabel(k), rooms: k.rooms),
+          ],
           initialGroupId: groupId,
           initialTerm: term,
           files: files,
