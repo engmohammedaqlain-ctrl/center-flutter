@@ -744,7 +744,7 @@ class _Tally extends StatelessWidget {
   }
 }
 
-/// ملخص مالي في كارد واحد — «مجدول» فقط عند وجود متبقٍ غير مستحق.
+/// ملخص مالي في كارد واحد — «قادم» فقط عند وجود متبقٍ غير مستحق.
 class _FinanceStrip extends StatelessWidget {
   const _FinanceStrip({
     required this.student,
@@ -777,12 +777,12 @@ class _FinanceStrip extends StatelessWidget {
       dueValue = money(dueNow);
       dueColor = AppColors.danger;
     } else if (student.balance > cent) {
-      dueLabel = 'له';
+      dueLabel = 'رصيد له';
       dueValue = money(student.balance);
       dueColor = AppColors.amberDark;
     } else {
       dueLabel = 'الحالة';
-      dueValue = 'مسدد';
+      dueValue = showScheduled ? 'مسدد حتى الآن' : 'مسدد';
       dueColor = AppColors.success;
     }
 
@@ -790,7 +790,7 @@ class _FinanceStrip extends StatelessWidget {
       (label: 'مقبوض', value: money(totalPaid), color: AppColors.success),
       (label: dueLabel, value: dueValue, color: dueColor),
       if (showScheduled)
-        (label: 'مجدول', value: money(scheduledRemaining), color: AppColors.muted),
+        (label: 'قادم', value: money(scheduledRemaining), color: AppColors.muted),
     ];
 
     final hasFooter =
@@ -2133,7 +2133,7 @@ class _InstallmentTile extends StatelessWidget {
                   else if (inst.isPaid)
                     StatusChip.success('مسدد')
                   else if (future)
-                    StatusChip.muted('مجدول')
+                    StatusChip.muted('قادم')
                   else
                     StatusChip.danger('مستحق'),
                 ],

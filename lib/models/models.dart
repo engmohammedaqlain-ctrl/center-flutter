@@ -1651,7 +1651,8 @@ class FinanceRequest {
 
 const paymentRequestStatusLabels = <String, String>{
   'pending': 'قيد المراجعة',
-  'approved': 'مقبول',
+  // لا «مقبول»: في المدرسة هي تقدير علامة
+  'approved': 'اعتُمد',
   'rejected': 'مرفوض',
 };
 
@@ -2816,7 +2817,8 @@ class DueItem {
 
   String get stageLabel {
     if (late) return 'متأخر عن السداد';
-    if (scheduled) return 'مجدول';
+    // «قادم» لا «مجدول»: الكلمة المحاسبية لا يفهمها الأهل
+    if (scheduled) return 'قادم';
     return 'مستحق';
   }
 }

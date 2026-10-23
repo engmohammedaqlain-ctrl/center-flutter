@@ -20,6 +20,7 @@ const featureKeys = <String>[
   'portal.attendance',
   'portal.grades',
   'portal.finance',
+  'portal.notes',
   'notify.absence',
   'notify.installments',
   'notify.payments',
@@ -157,6 +158,13 @@ const features = <String, FeatureDef>{
     defaultOn: true,
     requiresAny: _familyPortals,
   ),
+  'portal.notes': FeatureDef(
+    label: 'الملاحظات',
+    description: 'ملاحظات المعلم والإدارة للأسرة، ورد ولي الأمر',
+    group: FeatureGroup.familyPortal,
+    defaultOn: true,
+    requiresAny: _familyPortals,
+  ),
   'notify.absence': FeatureDef(
     label: 'إشعار الغياب',
     description: 'إشعار جوال لولي الأمر يوم غياب ابنه',
@@ -170,7 +178,8 @@ const features = <String, FeatureDef>{
     group: FeatureGroup.familyPortal,
     defaultOn: true,
     requires: ['portal.parent'],
-  ),  'notify.payments': FeatureDef(
+  ),
+  'notify.payments': FeatureDef(
     label: 'إشعار الدفعات',
     description: 'إشعار جوال بكل دفعة وبقبول الحوالة أو رفضها',
     group: FeatureGroup.familyPortal,
@@ -247,6 +256,7 @@ List<String> teacherPortalTabs(FeatureState state) {
   if (state['portal.teacher.attendance'] == true) tabs.add('attendance');
   if (state['portal.teacher.grades'] == true) tabs.add('evaluations');
   if (state['portal.teacher.moodle'] == true) tabs.add('moodle');
+  if (state['portal.teacher'] == true && state['portal.notes'] == true) tabs.add('notes');
   return tabs;
 }
 

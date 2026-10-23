@@ -20,12 +20,16 @@ class PortalNavItem {
     required this.label,
     required this.icon,
     this.activeIcon,
+    this.dot = false,
   });
 
   final String id;
   final String label;
   final IconData icon;
   final IconData? activeIcon;
+
+  /// نقطة تنبيه: جديد لم يُقرأ (ردود الأهل على «الملاحظات»).
+  final bool dot;
 }
 
 /// ترويسة البوابة: شعار المدرسة، واسم صاحب الحساب (أو اسم المدرسة إن وُجدت
@@ -241,10 +245,29 @@ class _PortalNavTile extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              icon,
-              size: 22,
-              color: active ? AppColors.amber : AppColors.faint,
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  icon,
+                  size: 22,
+                  color: active ? AppColors.amber : AppColors.faint,
+                ),
+                if (item.dot)
+                  PositionedDirectional(
+                    top: -1,
+                    end: -3,
+                    child: Container(
+                      width: 9,
+                      height: 9,
+                      decoration: BoxDecoration(
+                        color: AppColors.amber,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 4),
             Text(

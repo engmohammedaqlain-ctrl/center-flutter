@@ -32,24 +32,37 @@ const pushAppId = playStore ? 'com.noonschool.app' : 'com.center.center_mobile';
 
 /// إشعار لُمس أو وصل والتطبيق مفتوح.
 class PushNotice {
-  const PushNotice({required this.kind, required this.studentId, this.title = '', this.body = ''});
+  const PushNotice({
+    required this.kind,
+    required this.studentId,
+    this.noteId = '',
+    this.title = '',
+    this.body = '',
+  });
 
-  /// `absence` أو `installments` أو `payment` لولي الأمر، `approval` للمدير، أو `test`.
+  /// `absence` أو `installments` أو `payment` لولي الأمر، و`note` للأسرة،
+  /// و`announcement` لولي الأمر والطالب، و`note_reply` للمعلم والمدير،
+  /// و`approval` للمدير، أو `test`.
   final String kind;
   final String studentId;
+
+  /// الملاحظة الأصل (المحادثة) مع `note` و`note_reply`.
+  final String noteId;
   final String title;
   final String body;
 
-  /// التبويب الذي يُفتح عليه ملف الطالب.
+  /// التبويب الذي يُفتح عليه ملف الطالب. الملاحظة: «المواد»، وعليها محادثة المعلم.
   String? get tab => switch (kind) {
         'absence' => 'attendance',
         'installments' || 'payment' => 'financial',
+        'note' => 'subjects',
         _ => null,
       };
 
   static PushNotice fromMessage(RemoteMessage m) => PushNotice(
         kind: '${m.data['kind'] ?? ''}',
         studentId: '${m.data['student_id'] ?? ''}',
+        noteId: '${m.data['note_id'] ?? ''}',
         title: m.notification?.title ?? '',
         body: m.notification?.body ?? '',
       );
@@ -78,15 +91,33 @@ class ParentPush {
   /// إشعار وصل والتطبيق على الشاشة: أندرويد لا يعرضه، فتعرضه البوابة.
   Stream<PushNotice> get received => _received.stream;
 
+  PushNotice? _pendingOpen;
+
+  /// إشعار لُمس ولا شاشة تستمع بعد (بوابة المعلم تُفتح بعد صفحة التجهيز التي
+  /// تسجّل الجهاز): يبقى لأول شاشة تأخذه بـ [takePendingOpen].
+  void _open(PushNotice n) {
+    if (_opened.hasListener) {
+      _opened.add(n);
+    } else {
+      _pendingOpen = n;
+    }
+  }
+
+  PushNotice? takePendingOpen() {
+    final n = _pendingOpen;
+    _pendingOpen = null;
+    return n;
+  }
+
   Future<bool> _init() async {
     if (_ready) return true;
     if (!supported) return false;
     try {
       await Firebase.initializeApp();
-      FirebaseMessaging.onMessageOpenedApp.listen((m) => _opened.add(PushNotice.fromMessage(m)));
+      FirebaseMessaging.onMessageOpenedApp.listen((m) => _open(PushNotice.fromMessage(m)));
       FirebaseMessaging.onMessage.listen((m) => _received.add(PushNotice.fromMessage(m)));
       final initial = await FirebaseMessaging.instance.getInitialMessage();
-      if (initial != null) _opened.add(PushNotice.fromMessage(initial));
+      if (initial != null) _open(PushNotice.fromMessage(initial));
       _ready = true;
     } catch (e) {
       debugPrint('push init: $e');

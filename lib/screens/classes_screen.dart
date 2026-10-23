@@ -1637,7 +1637,7 @@ class _RosterRow extends StatelessWidget {
                         : DueStatusKind.credit,
                 amount: shown.abs(),
                 scheduled: scheduled,
-                clearLabel: hasPlan ? 'مسدد' : 'خالص',
+                clearLabel: hasPlan ? (scheduled > 0 ? 'مسدد حتى الآن' : 'مسدد') : 'خالص',
                 compact: true,
               )
             else

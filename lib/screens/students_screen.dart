@@ -1020,7 +1020,7 @@ class _FinanceChip extends StatelessWidget {
         if (scheduled > 0) ...[
           const SizedBox(height: 4),
           Text(
-            'مجدول ${money(scheduled)}',
+            'قادم ${money(scheduled)}',
             style: TextStyle(
               fontFamily: AppText.family,
               color: AppColors.faint,
