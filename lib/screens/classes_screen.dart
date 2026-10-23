@@ -7,6 +7,7 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/admin_tokens.dart';
 import '../widgets/admin_ui.dart';
 import '../widgets/due_status.dart';
 import '../widgets/list_paging.dart';
@@ -37,7 +38,6 @@ class _ClassesScreenState extends State<ClassesScreen> {
   String tier = 'all';
 
   /// مراحل مفتوحة — فارغة = الكل مطوي حتى يفتح المستخدم.
-  final _openGrades = <String>{};
 
   static const _tierLabels = {
     'all': 'الكل',
@@ -88,126 +88,47 @@ class _ClassesScreenState extends State<ClassesScreen> {
             action: canEdit
                 ? ThumbAction(label: 'صف جديد', icon: Icons.add, onPressed: () => _openRoomForm(context, null))
                 : null,
-            child: Column(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, thumbActionClearance),
               children: [
-                _tierBar(tabs, countOf),
-                if (rooms.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                    child: AdminHero(
-                      icon: Icons.meeting_room_outlined,
-                      label: 'الصفوف',
-                      value: '${rooms.length}',
-                      unit: 'شعبة',
-                      chips: [
-                        '${rooms.fold<int>(0, (n, r) => n + store.studentsOf(r).length)} طالب',
-                        tier == 'all' ? '${orderedGrades.length} مرحلة' : 'في هذه المرحلة',
-                      ],
-                    ),
-                  ),
-                Expanded(
-                  child: rooms.isEmpty
-                      ? const EmptyState(message: 'لا توجد شعب أو صفوف مسجلة في هذه المرحلة.')
-                      : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 10, 16, thumbActionClearance),
-                          itemCount: orderedGrades.length,
-                          itemBuilder: (context, i) {
-                            final grade = orderedGrades[i];
-                            final gradeRooms = byGrade[grade]!;
-                            final open = _openGrades.contains(grade);
-                            return Padding(
-                              padding: EdgeInsets.only(bottom: i == orderedGrades.length - 1 ? 0 : 10),
-                              child: _GradeFold(
-                                title: grade,
-                                roomCount: gradeRooms.length,
-                                open: open,
-                                onToggle: () => setState(() {
-                                  if (open) {
-                                    _openGrades.remove(grade);
-                                  } else {
-                                    _openGrades.add(grade);
-                                  }
-                                }),
-                                child: open
-                                    ? Column(
-                                        children: [
-                                          for (var j = 0; j < gradeRooms.length; j++) ...[
-                                            if (j > 0)
-                                              const Divider(height: 1, thickness: 1, color: AppColors.line, indent: 14, endIndent: 14),
-                                            _RoomRow(
-                                              room: gradeRooms[j],
-                                              teacher: store.teacherById(gradeRooms[j].teacherId),
-                                              students: store.studentsOf(gradeRooms[j]),
-                                              canEdit: canEdit,
-                                              onOpen: () => Navigator.of(context).push(
-                                                MaterialPageRoute(
-                                                  builder: (_) => _ClassDetailScreen(roomId: gradeRooms[j].id),
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      )
-                                    : null,
-                              ),
-                            );
-                          },
-                        ),
+                AdminHero(
+                  icon: Icons.school_outlined,
+                  label: 'الصفوف',
+                  value: '${store.roomsInViewedYear.length}',
+                  unit: 'شعبة',
+                  chips: [
+                    '${rooms.fold<int>(0, (n, r) => n + store.studentsOf(r).length)} طالب',
+                    tier == 'all' ? '${orderedGrades.length} مرحلة' : '${rooms.length} في هذه المرحلة',
+                  ],
                 ),
+                const SizedBox(height: 12),
+                // تمرير المراحل أفقياً ليس تمريراً للقائمة: لا يُخفي زر «صف جديد»
+                NotificationListener<ScrollNotification>(
+                  onNotification: (_) => true,
+                  child: NoonSegment<String>(
+                    scroll: true,
+                    value: tier,
+                    options: [for (final id in tabs) (id, '${_tierLabels[id]} (${countOf(id)})')],
+                    onChanged: (id) => setState(() => tier = id),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (rooms.isEmpty)
+                  const NoonEmpty('لا توجد صفوف في هذه المرحلة')
+                else
+                  for (var i = 0; i < orderedGrades.length; i++)
+                    Padding(
+                      padding: EdgeInsets.only(bottom: i == orderedGrades.length - 1 ? 0 : 12),
+                      child: _GradeTable(
+                        grade: orderedGrades[i],
+                        rooms: byGrade[orderedGrades[i]]!,
+                        canEdit: canEdit,
+                      ),
+                    ),
               ],
             ),
           );
         },
-      ),
-    );
-  }
-
-  /// شريط المراحل: أزرار أفقية تتمرّر، المختار منها ممتلئ بلون الهوية.
-  Widget _tierBar(List<String> tabs, int Function(String) countOf) {
-    return Container(
-      height: 54,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: AppColors.line)),
-      ),
-      // تمرير المراحل أفقياً ليس تمريراً للقائمة: لا يُخفي زر «صف جديد»
-      child: NotificationListener<ScrollNotification>(
-        onNotification: (_) => true,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          itemCount: tabs.length,
-          separatorBuilder: (_, _) => const SizedBox(width: 6),
-          itemBuilder: (_, i) {
-            final id = tabs[i];
-            final on = tier == id;
-            return InkWell(
-              onTap: () => setState(() {
-                tier = id;
-                _openGrades.clear();
-              }),
-              borderRadius: BorderRadius.circular(Corner.field),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: on ? AppColors.amberSoft : Colors.white,
-                  borderRadius: BorderRadius.circular(Corner.field),
-                  border: Border.all(color: on ? AppColors.amberBorder : AppColors.line),
-                ),
-                child: Text(
-                  '${_tierLabels[id]} (${countOf(id)})',
-                  style: TextStyle(
-                    fontFamily: AppText.family,
-                    color: on ? AppColors.amberDark : AppColors.muted,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 11.5,
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
       ),
     );
   }
@@ -299,12 +220,6 @@ Future<void> _assignTeacher(BuildContext context, Classroom room) async {
 }
 
 /// «٣ معلمين» بصيغة عربية سليمة — الرقم وحده يقرأ ركيكاً في البطاقة.
-String _teachersLabel(int n) => switch (n) {
-      1 => 'معلم واحد',
-      2 => 'معلمان',
-      <= 10 => '$n معلمين',
-      _ => '$n معلماً',
-    };
 
 /// إسناد معلمي مواد الشعبة — المقابل لـ `SectionSubjectTeachersModal`.
 ///
@@ -679,104 +594,72 @@ PopupMenuItem<String> _menuItem(String value, IconData icon, String label, {bool
 
 /// إدارة الصف: التعديل والتعيين والحذف لمن يملك تعديل الجداول وحده.
 List<PopupMenuEntry<String>> _manageItems(Teacher? teacher) => [
-      _menuItem('edit', Icons.edit_outlined, 'تعديل بيانات الصف'),
+      _menuItem('edit', Icons.edit_outlined, 'تعديل الصف'),
       _menuItem('assign', Icons.school_outlined, teacher == null ? 'تعيين مربي' : 'تغيير المربي'),
-      _menuItem('subjects', Icons.menu_book_outlined, 'معلمو مواد الصف'),
+      _menuItem('subjects', Icons.menu_book_outlined, 'معلمو المواد'),
       const PopupMenuDivider(height: 8),
       _menuItem('delete', Icons.delete_outline, 'حذف الصف', danger: true),
     ];
 
-// ═══ بطاقة المرحلة القابلة للطي ═══════════════════════════════════════════════
+/// مرحلة: عنوان القسم بعدد شعبها، وجدول «الشعبة | الطلاب» — `NSectionTitle` و`NTable` في الويب.
+class _GradeTable extends StatelessWidget {
+  const _GradeTable({required this.grade, required this.rooms, required this.canEdit});
 
-/// مرحلة دراسية تُطوى وتُفتح — بنفس روح أقسام ملف الطالب.
-class _GradeFold extends StatelessWidget {
-  const _GradeFold({
-    required this.title,
-    required this.roomCount,
-    required this.open,
-    required this.onToggle,
-    this.child,
-  });
-
-  final String title;
-  final int roomCount;
-  final bool open;
-  final VoidCallback onToggle;
-  final Widget? child;
-
-  String get _roomsLabel => switch (roomCount) {
-        1 => 'شعبة واحدة',
-        2 => 'شعبتان',
-        <= 10 => '$roomCount شعب',
-        _ => '$roomCount شعبة',
-      };
+  final String grade;
+  final List<Classroom> rooms;
+  final bool canEdit;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(Corner.card),
-        border: Border.all(color: AppColors.line),
-        boxShadow: cardShadow,
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          InkWell(
-            onTap: onToggle,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
-              child: Row(
-                children: [
-                  Container(
-                    width: 3,
-                    height: 18,
-                    decoration: BoxDecoration(
-                      color: AppColors.amber,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.cardTitle.copyWith(fontSize: 13.5, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  Text(
-                    _roomsLabel,
-                    style: const TextStyle(
-                      fontFamily: AppText.family,
-                      color: AppColors.muted,
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  AnimatedRotation(
-                    turns: open ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 160),
-                    child: const Icon(Icons.expand_more, size: 22, color: AppColors.faint),
-                  ),
-                ],
+    final store = StoreScope.of(context);
+    final head = NoonText.style(11, weight: FontWeight.w700);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        NoonSectionTitle(grade, count: rooms.length),
+        const SizedBox(height: 8),
+        Container(
+          decoration: noonPanel(),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AdminNoon.head,
+                  border: Border(bottom: BorderSide(color: AdminNoon.headLine)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(child: Text('الشعبة', style: head)),
+                    SizedBox(width: 72, child: Text('الطلاب', style: head)),
+                    const SizedBox(width: 32),
+                  ],
+                ),
               ),
-            ),
+              for (var j = 0; j < rooms.length; j++)
+                Container(
+                  decoration: j > 0 ? BoxDecoration(border: Border(top: BorderSide(color: AdminNoon.line))) : null,
+                  child: _RoomRow(
+                    room: rooms[j],
+                    teacher: store.teacherById(rooms[j].teacherId),
+                    students: store.studentsOf(rooms[j]),
+                    canEdit: canEdit,
+                    onOpen: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => _ClassDetailScreen(roomId: rooms[j].id)),
+                    ),
+                  ),
+                ),
+            ],
           ),
-          if (open && child != null) ...[
-            const Divider(height: 1, thickness: 1, color: AppColors.line),
-            child!,
-          ],
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
-/// صف شعبة داخل المرحلة المفتوحة — صف قائمة بلا ظل داخلي.
+/// صف شعبة في جدول المرحلة: اسمها ومربيها، وعدد طلابها من سعتها، و«⋯».
 class _RoomRow extends StatelessWidget {
   const _RoomRow({
     required this.room,
@@ -795,59 +678,45 @@ class _RoomRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    final teacherCount = store.sectionTeacherIds(room).length;
-    final meta = [
-      if (teacher != null) teacher!.name,
-      if (teacher == null) 'بدون مربي',
-      if (teacherCount > 0) _teachersLabel(teacherCount),
-    ].join('  ·  ');
-
+    final capacity = room.capacity > 0 ? room.capacity : 30;
     return Material(
       color: Colors.white,
       child: InkWell(
         onTap: onOpen,
+        highlightColor: AdminNoon.mist2,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+          padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 8, 10),
           child: Row(
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(room.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: _titleStyle),
-                    const SizedBox(height: 3),
-                    Text(meta, maxLines: 1, overflow: TextOverflow.ellipsis, style: _metaStyle),
+                    Text(room.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: NoonText.style(14, weight: FontWeight.w700)),
+                    Text(
+                      teacher?.name ?? 'بلا مربي',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: NoonText.style(11, color: AdminNoon.muted),
+                    ),
                   ],
                 ),
               ),
-              Text(
-                '${students.length}/${room.capacity > 0 ? room.capacity : 30}',
-                textDirection: TextDirection.ltr,
-                style: TextStyle(
-                  fontFamily: AppText.family,
-                  color: AppColors.heading,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  fontFeatures: const [FontFeature.tabularFigures()],
+              SizedBox(
+                width: 72,
+                child: Text(
+                  '${students.length} / $capacity',
+                  textDirection: TextDirection.ltr,
+                  textAlign: TextAlign.right,
+                  style: NoonText.style(12, weight: FontWeight.w700, color: students.length > capacity ? AdminNoon.red700 : AdminNoon.text)
+                      .copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
                 ),
               ),
-              if (students.isEmpty && canEdit) ...[
-                const SizedBox(width: 6),
-                IconButton(
-                  tooltip: 'إضافة طلاب',
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                  icon: Icon(Icons.group_add_outlined, size: 20, color: AppColors.navy),
-                  onPressed: () => _addStudents(context, room),
-                ),
-              ],
-              IconButton(
+              NoonButton(
+                icon: Icons.more_horiz,
+                tone: NoonTone.ghost,
+                small: true,
                 tooltip: 'خيارات الصف',
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                icon: const Icon(Icons.more_horiz, size: 22, color: AppColors.muted),
                 onPressed: () => _showRoomActionsSheet(
                   context,
                   store: store,
@@ -864,8 +733,6 @@ class _RoomRow extends StatelessWidget {
     );
   }
 }
-
-TextStyle get _titleStyle => TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.heading);
 
 const _metaStyle = TextStyle(color: AppColors.muted, fontSize: 12.5, height: 1.25);
 
@@ -949,7 +816,7 @@ Future<void> _showRoomActionsSheet(
             ),
             ListTile(
               leading: const Icon(Icons.edit_outlined, color: AppColors.muted),
-              title: const Text('تعديل بيانات الصف'),
+              title: const Text('تعديل الصف'),
               dense: true,
               visualDensity: VisualDensity.compact,
               onTap: () => Navigator.pop(ctx, 'edit'),
@@ -963,7 +830,7 @@ Future<void> _showRoomActionsSheet(
             ),
             ListTile(
               leading: const Icon(Icons.menu_book_outlined, color: AppColors.muted),
-              title: const Text('معلمو مواد الصف'),
+              title: const Text('معلمو المواد'),
               dense: true,
               visualDensity: VisualDensity.compact,
               onTap: () => Navigator.pop(ctx, 'subjects'),
@@ -1061,33 +928,32 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
         // لكل صفّ يُبنى، فصار المسح يتكرر بعدد الصفوف مع كل تمريرة
         final seatOf = {for (var i = 0; i < roster.length; i++) roster[i].id: i + 1};
         final buckets = store.installmentBuckets;
-        final meta = [
-          if (room.gradeLevel.trim().isNotEmpty) room.gradeLevel.trim(),
-          teacher == null ? 'بدون مربي' : 'المربي: ${teacher.name}',
-          '${roster.length} طالب',
-        ].join('  ·  ');
 
         return Scaffold(
-          backgroundColor: Colors.white,
+          backgroundColor: AdminNoon.paper,
           appBar: AppBar(
             titleSpacing: 0,
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  room.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14.5),
+                const Text(
+                  'الصفوف والشعب',
+                  style: TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w700, fontSize: 17, height: 1.2),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  meta,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 11, fontWeight: FontWeight.w500),
-                ),
+                if (store.institutionName.trim().isNotEmpty)
+                  Text(
+                    store.institutionName.trim(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: AppText.family,
+                      color: Colors.white.withValues(alpha: 0.55),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      height: 1.2,
+                    ),
+                  ),
               ],
             ),
             actions: [
@@ -1128,16 +994,31 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
               : null,
           body: Column(
             children: [
+              // رأس الصف: اسمه وسطر حقائقه — `NMetaLine` في الويب
+              Container(
+                margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                padding: const EdgeInsets.all(12),
+                decoration: noonPanel(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(room.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: NoonText.style(16, weight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    NoonMetaLine([
+                      ('المرحلة', room.gradeLevel.trim()),
+                      ('المربي', teacher?.name ?? 'بلا مربي'),
+                      ('الطلاب', '${roster.length} / ${room.capacity > 0 ? room.capacity : 30}'),
+                    ]),
+                  ],
+                ),
+              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-                child: SearchField(
+                child: NoonSearchField(
                   controller: search,
-                  hint: 'ابحث باسم الطالب أو الهاتف...',
+                  hint: 'ابحث باسم الطالب أو الهاتف',
                   onChanged: (_) => setState(() => visibleCount = kListPageSize),
-                  trailing: Text(
-                    q.isEmpty ? '${roster.length}' : '${list.length}/${roster.length}',
-                    style: const TextStyle(color: AppColors.muted, fontSize: 11, fontWeight: FontWeight.w700),
-                  ),
+                  count: q.isEmpty ? '${roster.length}' : '${list.length}/${roster.length}',
                 ),
               ),
               Expanded(
@@ -1165,10 +1046,13 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
                     ),
                     if (list.isEmpty)
                       SliverToBoxAdapter(
-                        child: SizedBox(
-                          height: 220,
-                          child: EmptyState(
-                            message: q.isEmpty ? 'لا يوجد طلاب مسجلين في هذا الصف' : 'لا يوجد طلاب يطابقون البحث',
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: NoonEmpty(
+                            q.isEmpty ? 'لا يوجد طلاب في هذا الصف' : 'لا يوجد طلاب يطابقون البحث',
+                            action: q.isEmpty && canEdit ? 'إضافة طلاب' : null,
+                            actionIcon: Icons.person_add_alt_1_outlined,
+                            onAction: q.isEmpty && canEdit ? () => _addStudents(context, room) : null,
                           ),
                         ),
                       )
@@ -1177,10 +1061,7 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
                         padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
                         // كشف واحد بإطار رفيع، صف لكل طالب — يُقرأ كقائمة الصف الورقية
                         sliver: DecoratedSliver(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(Corner.card),
-                            border: Border.all(color: AppColors.line),
-                          ),
+                          decoration: noonPanel(),
                           sliver: SliverList.builder(
                             itemCount: visible.length,
                             itemBuilder: (context, i) => _RosterRow(
@@ -1227,27 +1108,25 @@ class _ClassActionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
+    return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        border: const Border(top: BorderSide(color: AppColors.line)),
-        boxShadow: [
-          BoxShadow(color: AppColors.navy.withValues(alpha: 0.06), blurRadius: 16, offset: const Offset(0, -4)),
-        ],
+        border: Border(top: BorderSide(color: AdminNoon.line)),
+        boxShadow: const [BoxShadow(color: Color(0x140A3336), blurRadius: 16, offset: Offset(0, -6))],
       ),
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             children: [
               if (onAttendance != null)
                 Expanded(
                   flex: 3,
-                  child: PrimaryButton(
+                  child: NoonButton(
                     label: 'رصد الحضور',
                     icon: Icons.fact_check_outlined,
-                    height: 48,
+                    tone: NoonTone.sun,
                     expand: true,
                     onPressed: onAttendance,
                   ),
@@ -1256,24 +1135,11 @@ class _ClassActionBar extends StatelessWidget {
               if (onAddStudent != null)
                 Expanded(
                   flex: 2,
-                  child: SizedBox(
-                    height: 48,
-                    child: OutlinedButton.icon(
-                      onPressed: onAddStudent,
-                      icon: const Icon(Icons.person_add_alt_1_outlined, size: 17),
-                      label: const Text('إضافة طالب', maxLines: 1, overflow: TextOverflow.ellipsis),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.heading,
-                        side: const BorderSide(color: AppColors.lineStrong),
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Corner.field)),
-                        textStyle: const TextStyle(
-                          fontFamily: AppText.family,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
+                  child: NoonButton(
+                    label: 'إضافة طلاب',
+                    icon: Icons.person_add_alt_1_outlined,
+                    expand: true,
+                    onPressed: onAddStudent,
                   ),
                 ),
             ],

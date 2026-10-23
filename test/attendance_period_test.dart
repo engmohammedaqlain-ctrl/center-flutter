@@ -61,7 +61,7 @@ void main() {
     await s.flush();
   });
 
-  testWidgets('بطاقة الصف تُظهر عدد معلميه', (tester) async {
+  testWidgets('صف الشعبة يُظهر مربيها كالويب', (tester) async {
     final s = await _store();
     final room = s.rooms.firstWhere((r) => r.teacherId.isNotEmpty);
     s.saveSectionSubjectAssignments(
@@ -75,7 +75,7 @@ void main() {
     );
 
     await _pump(tester, s, const Scaffold(body: ClassesScreen()));
-    expect(find.textContaining('معلمان'), findsWidgets);
+    expect(find.text(s.teacherById(room.teacherId)!.name), findsWidgets);
 
     await s.flush();
   });
