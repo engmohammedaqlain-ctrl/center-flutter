@@ -11,7 +11,6 @@ import '../data/tenant_service.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
-import '../widgets/dev_ui.dart';
 import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
 import 'app_installs_screen.dart';
@@ -94,12 +93,6 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
         }).toList()
           ..sort((a, b) => a.name.compareTo(b.name));
 
-        final live = store.tenants.where((t) => t.active && !t.isDemo).length;
-        final now = DateTime.now();
-        final soon = store.tenants
-            .where((t) => t.active && !t.isDemo && !t.isLifetime && t.expiresAt.difference(now).inDays <= 30)
-            .length;
-
         return Scaffold(
           backgroundColor: Colors.white,
           body: Column(
@@ -109,7 +102,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                 child: RefreshIndicator(
                   onRefresh: _refresh,
                   child: ListView(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 20),
                     children: [
                       if (notice != null)
                         Container(
@@ -117,43 +110,50 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                           padding: const EdgeInsets.all(9),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(Corner.box),
-                            color: AppColors.warnSoft,
-                            border: Border.all(color: const Color(0xFFF5CD47)),
+                            color: AppColors.amberSoft,
+                            border: Border.all(color: AppColors.amberBorder),
                           ),
-                          child: Text(notice!, style: const TextStyle(fontSize: 11.5, color: AppColors.warn)),
+                          child: Text(notice!, style: const TextStyle(fontSize: 11.5, color: Color(0xFF9A4F05))),
                         ),
-                      DevHero(
-                        label: 'منشآت نشطة',
-                        value: '$live',
-                        unit: 'من ${store.tenants.length}',
-                        chips: [if (soon > 0) '$soon تنتهي خلال شهر'],
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: SearchField(
+                      AppCard(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('الاشتراكات والمنشآت',
+                                          style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.heading)),
+                                      Text('المعروض: ${list.length} من ${store.tenants.length}',
+                                          style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+                                    ],
+                                  ),
+                                ),
+                                PrimaryButton(
+                                  label: 'منشأة',
+                                  icon: Icons.add,
+                                  onPressed: () => _edit(context, null),
+                                ),
+                                const SizedBox(width: 6),
+                                GhostButton(
+                                  label: 'تحديث',
+                                  icon: Icons.refresh,
+                                  onPressed: loading ? null : _refresh,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            SearchField(
                               controller: search,
-                              hint: 'بحث',
+                              hint: 'ابحث بالاسم أو الرمز أو المالك...',
                               onChanged: (_) => setState(() {}),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            tooltip: 'تحديث',
-                            icon: const Icon(Icons.refresh, color: AppColors.muted, size: 20),
-                            onPressed: loading ? null : _refresh,
-                          ),
-                          const SizedBox(width: 8),
-                          PrimaryButton(
-                            label: 'منشأة',
-                            icon: Icons.add,
-                            onPressed: () => _edit(context, null),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 14),
-                      DevSectionTitle('المنشآت', count: list.length),
                       const SizedBox(height: 8),
                       if (loading && store.tenants.isEmpty)
                         Padding(
@@ -161,21 +161,20 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                           child: Center(child: CircularProgressIndicator(color: AppColors.amber)),
                         )
                       else if (list.isEmpty)
-                        const EmptyState(message: 'لا نتائج')
+                        const EmptyState(message: 'لا توجد منشآت مسجلة مطابقة للبحث')
                       else
-                        DevPanel(
-                          rows: [
-                            for (final t in list)
-                              _TenantRow(
-                                tenant: t,
-                                onEdit: () => _edit(context, t),
-                                onExtend: () => _extend(context, t),
-                                onToggle: () => _toggleStatus(context, t),
-                                onEnter: () => _enterTenant(context, t),
-                                onDelete: () => _delete(context, t),
-                              ),
-                          ],
-                        ),
+                        for (final t in list)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _TenantCard(
+                              tenant: t,
+                              onEdit: () => _edit(context, t),
+                              onExtend: () => _extend(context, t),
+                              onToggle: () => _toggleStatus(context, t),
+                              onEnter: () => _enterTenant(context, t),
+                              onDelete: () => _delete(context, t),
+                            ),
+                          ),
                     ],
                   ),
                 ),
@@ -190,43 +189,43 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
   Widget _header(BuildContext context, AppStore store) {
     final top = MediaQuery.paddingOf(context).top;
     return Container(
-      padding: EdgeInsets.fromLTRB(14, top + 10, 8, 12),
+      padding: EdgeInsets.fromLTRB(14, top + 10, 12, 12),
       decoration: BoxDecoration(
         color: AppColors.navy,
-        border: Border(bottom: BorderSide(color: AppColors.amber, width: 2)),
+        border: Border(bottom: BorderSide(color: AppColors.navyMid)),
       ),
       child: Row(
         children: [
           Container(
             width: 32,
             height: 32,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(Corner.box),
-              color: Colors.white.withValues(alpha: 0.12),
-            ),
-            child: const Icon(Icons.tune, color: Colors.white, size: 18),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), color: AppColors.amberSoft, border: Border.all(color: AppColors.amber)),
+            child: Icon(Icons.tune, color: AppColors.navy, size: 18),
           ),
-          const SizedBox(width: 10),
-          const Expanded(
-            child: Text('بوابة المطور',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('بوابة المطور والاشتراكات',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12.5)),
+                Text('لوحة التحكم المركزية', style: TextStyle(color: AppColors.amber, fontSize: 10)),
+              ],
+            ),
           ),
           IconButton(
             tooltip: 'المتابعة',
-            icon: const Icon(Icons.monitor_heart_outlined, color: Colors.white, size: 20),
+            icon: Icon(Icons.monitor_heart_outlined, color: AppColors.amber, size: 20),
             onPressed: () => openDeveloperHealth(context),
           ),
           IconButton(
             tooltip: 'الأجهزة',
-            icon: const Icon(Icons.devices_outlined, color: Colors.white, size: 20),
+            icon: Icon(Icons.devices_outlined, color: AppColors.amber, size: 20),
             onPressed: () => openAppInstalls(context),
           ),
-          IconButton(
-            tooltip: 'خروج',
-            icon: Icon(Icons.logout_rounded, color: Colors.white.withValues(alpha: 0.85), size: 19),
-            onPressed: () async {
+          const SizedBox(width: 4),
+          InkWell(
+            onTap: () async {
               final ok = await confirmSheet(
                 context,
                 title: 'تسجيل الخروج',
@@ -235,6 +234,22 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
               );
               if (ok) await store.logout();
             },
+            child: Container(
+              height: 32,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(Corner.box),
+                color: const Color(0xFF4C0519).withValues(alpha: 0.6),
+                border: Border.all(color: const Color(0xFFF43F5E).withValues(alpha: 0.4)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.logout, size: 14, color: Color(0xFFFB7185)),
+                  SizedBox(width: 4),
+                  Text('خروج', style: TextStyle(color: Color(0xFFFECDD3), fontSize: 10, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -850,8 +865,8 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
   }
 }
 
-class _TenantRow extends StatelessWidget {
-  const _TenantRow({
+class _TenantCard extends StatelessWidget {
+  const _TenantCard({
     required this.tenant,
     required this.onEdit,
     required this.onExtend,
@@ -871,96 +886,83 @@ class _TenantRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final expired = !tenant.isLifetime && tenant.expiresAt.isBefore(DateTime.now());
     final daysLeft = tenant.expiresAt.difference(DateTime.now()).inDays;
-    final meta = [tenant.code, if (tenant.username != tenant.code) tenant.username].where((e) => e.isNotEmpty).join('  ·  ');
 
-    return Container(
-      color: expired || !tenant.active ? AppColors.dangerSoft.withValues(alpha: 0.5) : null,
-      padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 2, 10),
-      child: Row(
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(tenant.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.heading)),
-                    ),
-                    const SizedBox(width: 8),
-                    if (tenant.isDemo)
-                      StatusChip.amber(
-                          'تجريبية · ${(tenant.demoExpiresAt ?? tenant.expiresAt).difference(DateTime.now()).inDays.clamp(0, 999)} يوم')
-                    else if (!tenant.active)
-                      StatusChip.danger('موقوف')
-                    else if (expired)
-                      StatusChip.danger('منتهٍ')
-                    else if (tenant.isLifetime)
-                      StatusChip.muted('دائم')
-                    else if (daysLeft <= 30)
-                      StatusChip.amber('باقٍ $daysLeft يوماً'),
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Text(meta,
-                    textDirection: TextDirection.ltr,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppColors.muted, fontSize: 11, fontFamily: 'monospace')),
-                if (!tenant.isLifetime)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text('ينتهي ${formatDate(tenant.expiresAt)}',
-                        style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: expired ? AppColors.danger : AppColors.muted)),
-                  ),
-                if (tenant.ownerName.isNotEmpty || tenant.ownerPhone.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text([tenant.ownerName, tenant.ownerPhone].where((e) => e.isNotEmpty).join('  ·  '),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 11, color: AppColors.muted)),
-                  ),
-                if (tenant.notes.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(tenant.notes,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 11, color: AppColors.faint)),
-                  ),
-              ],
-            ),
-          ),
-          PopupMenuButton<String>(
-            padding: EdgeInsets.zero,
-            icon: const Icon(Icons.more_vert, size: 18, color: AppColors.muted),
-            onSelected: (v) => switch (v) {
-              'enter' => onEnter(),
-              'edit' => onEdit(),
-              'extend' => onExtend(),
-              'toggle' => onToggle(),
-              _ => onDelete(),
-            },
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: 'enter', child: Text('دخول للمنشأة')),
-              const PopupMenuItem(value: 'edit', child: Text('تعديل البيانات')),
-              const PopupMenuItem(value: 'extend', child: Text('تمديد الاشتراك')),
-              PopupMenuItem(value: 'toggle', child: Text(tenant.active ? 'إيقاف الاشتراك' : 'تفعيل الاشتراك')),
-              PopupMenuItem(value: 'delete', child: Text('حذف نهائياً', style: TextStyle(color: AppColors.danger))),
+          Row(
+            children: [
+              Expanded(
+                child: Text(tenant.name,
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.heading)),
+              ),
+              if (tenant.isDemo)
+                StatusChip.amber(
+                    'تجريبية · ${(tenant.demoExpiresAt ?? tenant.expiresAt).difference(DateTime.now()).inDays.clamp(0, 999)} يوم')
+              else if (!tenant.active)
+                StatusChip.danger('موقوف')
+              else if (expired)
+                StatusChip.danger('منتهٍ')
+              else if (tenant.isLifetime)
+                StatusChip.success('دائم')
+              else
+                StatusChip.success('ساري'),
+              PopupMenuButton<String>(
+                padding: EdgeInsets.zero,
+                icon: const Icon(Icons.more_vert, size: 18, color: AppColors.muted),
+                onSelected: (v) => switch (v) {
+                  'enter' => onEnter(),
+                  'edit' => onEdit(),
+                  'extend' => onExtend(),
+                  'toggle' => onToggle(),
+                  _ => onDelete(),
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'enter', child: Text('دخول للمنشأة')),
+                  const PopupMenuItem(value: 'edit', child: Text('تعديل البيانات')),
+                  const PopupMenuItem(value: 'extend', child: Text('تمديد الاشتراك')),
+                  PopupMenuItem(value: 'toggle', child: Text(tenant.active ? 'إيقاف الاشتراك' : 'تفعيل الاشتراك')),
+                  const PopupMenuItem(value: 'delete', child: Text('حذف نهائياً')),
+                ],
+              ),
             ],
           ),
+          const SizedBox(height: 4),
+          _line('المعرّف', tenant.code),
+          // كلمة المرور محفوظة مشفّرة في Supabase Auth ولا تصل الجهاز
+          _line('الدخول', tenant.username),
+          if (tenant.isLifetime)
+            _line('الاشتراك', 'دائم (غير محدد بتاريخ انتهاء)')
+          else
+            _line(
+              'الانتهاء',
+              '${formatDate(tenant.expiresAt)}'
+              '${expired ? '  (منتهٍ)' : daysLeft <= 30 ? '  (باقٍ $daysLeft يوماً)' : ''}',
+              color: expired ? AppColors.danger : (daysLeft <= 30 ? AppColors.amber : null),
+            ),
+          if (tenant.ownerName.isNotEmpty || tenant.ownerPhone.isNotEmpty)
+            _line('المالك', [tenant.ownerName, tenant.ownerPhone].where((e) => e.isNotEmpty).join('  ·  ')),
+          if (tenant.notes.isNotEmpty) _line('ملاحظات', tenant.notes),
         ],
       ),
     );
   }
+
+  Widget _line(String k, String v, {Color? color}) => Padding(
+        padding: const EdgeInsets.only(bottom: 3),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(width: 62, child: Text(k, style: const TextStyle(color: AppColors.faint, fontSize: 11))),
+            Expanded(
+              child: Text(v,
+                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: color ?? AppColors.muted)),
+            ),
+          ],
+        ),
+      );
 }
 
 /// شعار مدرسة من سجل هويتها السحابي (لوحة المطور، خارج جلسة المدرسة) — `fetchTenantLogo`.
