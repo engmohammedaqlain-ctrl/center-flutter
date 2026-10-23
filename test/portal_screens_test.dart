@@ -3,6 +3,7 @@ import 'package:center_mobile/data/portal.dart';
 import 'package:center_mobile/models/models.dart';
 import 'package:center_mobile/screens/portal_screens.dart';
 import 'package:center_mobile/widgets/attendance_view.dart';
+import 'package:center_mobile/widgets/noon_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -279,9 +280,11 @@ void main() {
       expect(find.text('المادة:'), findsNothing, reason: 'الحضور للشعبة لا للمادة');
       expect(find.text('ثاني عشر أدبي  ·  شعبة (1)'), findsOneWidget);
       expect(find.byType(DropdownButton<String>), findsNothing);
-      // كشف الإدارة نفسه: شريط الأيام وملخّص اليوم وصفوف الطلاب
+      // شريط الأيام، وبطاقة اليوم بعدد الطلاب وشرائحه كالويب، وصفوف الطلاب
       expect(find.byType(AttendanceDayChip), findsNWidgets(6));
-      expect(find.byType(AttendanceDaySummary), findsOneWidget);
+      expect(find.byType(NHeroCard), findsOneWidget);
+      expect(find.text('بلا رصد 2'), findsOneWidget);
+      expect(find.text('كشف الطلاب'), findsOneWidget);
       expect(find.byType(AttendanceStudentRow), findsNWidgets(2));
       expect(find.text('علي أبو حسنين'), findsOneWidget);
       expect(find.text('حفظ الرصد'), findsNothing, reason: 'زر الحفظ يظهر بعد التعديل');
@@ -292,24 +295,25 @@ void main() {
       // الدرجات: زر يفتح صفحة الرصد + اختيار النطاق للسجل
       await tester.tap(find.text('الدرجات'));
       await tester.pumpAndSettle();
-      expect(find.text('رصد درجات'), findsOneWidget, reason: 'الإجراء في منطقة الإبهام');
-      expect(find.text('المادة:'), findsWidgets);
+      expect(find.text('رصد درجات'), findsOneWidget, reason: 'الإجراء الرئيسي في لوح المادة كالويب');
+      expect(find.text('المادة'), findsWidgets);
+      expect(find.text('لا كشوف سابقة'), findsOneWidget);
 
       await tester.tap(find.text('رصد درجات'));
       await tester.pumpAndSettle();
       expect(find.text('الفصل'), findsWidgets);
       expect(find.text('رصد الدرجة الكاملة للجميع'), findsOneWidget);
       expect(find.text('حفظ كشف الدرجات'), findsOneWidget);
-      await tester.pageBack();
+      await tester.tap(find.byTooltip('رجوع'));
       await tester.pumpAndSettle();
 
       // المودل: فارغ بإطار متقطع ودعوة لإضافة أول وحدة
       await tester.tap(find.text('المودل'));
       await tester.pumpAndSettle();
-      expect(find.text('المادة / المجموعة:'), findsOneWidget);
-      expect(find.text('إضافة وحدة / قسم'), findsOneWidget);
+      expect(find.text('المادة والصف'), findsOneWidget);
+      expect(find.text('إضافة وحدة / قسم'), findsOneWidget, reason: 'زر واحد للإضافة');
       expect(find.text('الفصل الأول'), findsOneWidget);
-      expect(find.text('لا توجد وحدات مضافة لهذه المادة في هذا الفصل'), findsOneWidget);
+      expect(find.text('لا وحدات'), findsOneWidget);
     });
 
     testWidgets('مودل المعلم: الوحدات المخفية تظهر له بإجراءاتها بلا طفح — عرض ${width.toInt()}', (tester) async {
@@ -327,11 +331,11 @@ void main() {
       // كل وحدة تفتح صفحتها المنفصلة
       await tester.tap(find.text('الوحدة الأولى - النحو والصرف'));
       await tester.pumpAndSettle();
-      expect(find.text('ورقة عمل / ملخص'), findsOneWidget);
-      expect(find.text('واجب منزلي'), findsOneWidget);
-      expect(find.text('فتح'), findsOneWidget, reason: 'زر فتح للمادة ذات الرابط وحدها');
+      expect(find.text('النوع PDF'), findsOneWidget);
+      expect(find.text('النوع واجب'), findsOneWidget);
+      expect(find.byTooltip('خيارات الدرس'), findsNWidgets(2), reason: 'إجراءات كل درس في قائمة «⋯» واحدة');
       expect(find.text('مادة'), findsWidgets, reason: 'زر إضافة مادة في رأس الوحدة');
-      await tester.pageBack();
+      await tester.tap(find.byTooltip('رجوع'));
       await tester.pumpAndSettle();
     });
   }
@@ -471,6 +475,9 @@ void main() {
       matching: find.text('حاضر'),
     ));
     await tester.pump();
+    // زر الحفظ يختفي مع التمرير لأسفل ويعود بالتمرير لأعلى
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, 400));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('حفظ الرصد'));
     await tester.pumpAndSettle();
     expect(fake.savedAttendance, {'s2': 'present'});

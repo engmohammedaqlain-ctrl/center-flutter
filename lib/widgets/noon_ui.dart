@@ -667,6 +667,60 @@ class NSegment<T> extends StatelessWidget {
   }
 }
 
+/// عنصر في قائمة «⋯».
+class NMenuItem {
+  const NMenuItem({required this.label, required this.icon, required this.onTap, this.danger = false, this.enabled = true});
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool danger;
+  final bool enabled;
+}
+
+/// زر «⋯» يفتح الإجراءات الثانوية، فيبقى الرئيسي منها وحده ظاهراً (`NMenu`).
+class NMenu extends StatelessWidget {
+  const NMenu({super.key, required this.items, this.tooltip = 'المزيد'});
+
+  final List<NMenuItem> items;
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<int>(
+      tooltip: tooltip,
+      padding: EdgeInsets.zero,
+      color: Colors.white,
+      surfaceTintColor: Colors.white,
+      elevation: 8,
+      shadowColor: const Color(0x4D0A3336),
+      menuPadding: const EdgeInsets.all(4),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(NoonRadius.panel), side: BorderSide(color: Noon.line)),
+      onSelected: (i) => items[i].onTap(),
+      itemBuilder: (_) => [
+        for (var i = 0; i < items.length; i++)
+          PopupMenuItem<int>(
+            value: i,
+            enabled: items[i].enabled,
+            height: 36,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Opacity(
+              opacity: items[i].enabled ? 1 : 0.4,
+              child: Row(
+                children: [
+                  Icon(items[i].icon, size: 16, color: items[i].danger ? Noon.red600 : Noon.text),
+                  const SizedBox(width: 10),
+                  Text(items[i].label, style: nText(13, weight: FontWeight.w700, color: items[i].danger ? Noon.red600 : Noon.text)),
+                ],
+              ),
+            ),
+          ),
+      ],
+      child: SizedBox(width: 32, height: 32, child: Icon(Icons.more_horiz_rounded, size: 18, color: Noon.muted)),
+    );
+  }
+}
+
 // ── الحالات ──────────────────────────────────────────────────────────────────
 
 /// تحميل: دائرة تدور بلون العنصر النشط، وتحتها النص.

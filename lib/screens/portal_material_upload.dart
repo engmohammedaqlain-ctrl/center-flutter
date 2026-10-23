@@ -127,7 +127,7 @@ class _MaterialFilesBox extends StatelessWidget {
                 message: 'PDF أو صورة أو Word أو PowerPoint أو Excel، حتى 25 ميجا للملف',
                 child: Text(
                   '${files.length}/$materialBatchMax',
-                  style: const TextStyle(color: _C.faint, fontSize: 11, fontWeight: FontWeight.w800),
+                  style: TextStyle(color: _C.faint, fontSize: 11, fontWeight: FontWeight.w800),
                 ),
               ),
           ],
@@ -150,7 +150,7 @@ class _MaterialFilesBox extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             'جارٍ الرفع ${p.done < p.total ? p.done + 1 : p.total} من ${p.total}',
-            style: const TextStyle(color: _C.muted, fontSize: 11, fontWeight: FontWeight.w800),
+            style: TextStyle(color: _C.muted, fontSize: 11, fontWeight: FontWeight.w800),
           ),
         ],
       ],
@@ -188,7 +188,7 @@ class _MaterialFileRow extends StatelessWidget {
                   file.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: _C.text, fontSize: 12, fontWeight: FontWeight.w700),
+                  style: TextStyle(color: _C.text, fontSize: 12, fontWeight: FontWeight.w700),
                 ),
                 Text(
                   reason ?? formatBytes(file.size),
@@ -205,7 +205,7 @@ class _MaterialFileRow extends StatelessWidget {
               visualDensity: VisualDensity.compact,
               constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
               padding: EdgeInsets.zero,
-              icon: const Icon(Icons.close, size: 16, color: _C.muted),
+              icon: Icon(Icons.close, size: 16, color: _C.muted),
               onPressed: onRemove,
             ),
         ],
@@ -570,7 +570,7 @@ class _ShareToMoodlePageState extends State<ShareToMoodlePage> {
                 children: [
                   const _Label('الوحدة:'),
                   if (loadingSections)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.symmetric(vertical: 10),
                       child: Center(
                         child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: _C.navy)),
@@ -716,7 +716,7 @@ class _UnitChoice extends StatelessWidget {
                   style: TextStyle(fontFamily: AppText.family, color: color, fontSize: 13, fontWeight: FontWeight.w800),
                 ),
               ),
-              Text('${section.items.length}', style: const TextStyle(color: _C.faint, fontSize: 11, fontWeight: FontWeight.w700)),
+              Text('${section.items.length}', style: TextStyle(color: _C.faint, fontSize: 11, fontWeight: FontWeight.w700)),
               const SizedBox(width: 6),
               Icon(selected ? Icons.radio_button_checked : Icons.radio_button_off, size: 18, color: selected ? color : _C.faint),
             ],
