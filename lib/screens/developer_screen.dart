@@ -13,6 +13,7 @@ import '../theme/app_theme.dart';
 import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
 import 'app_installs_screen.dart';
+import 'developer_health_screen.dart';
 
 /// مطابق لـ USERNAME_RULE في دالة السيرفر `admin-tenants`.
 const _usernameRule = 'اسم المستخدم: 3 إلى 32 من الأحرف الإنجليزية الصغيرة والأرقام و . _ -';
@@ -197,6 +198,11 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                 Text('لوحة التحكم المركزية', style: TextStyle(color: AppColors.amber, fontSize: 10)),
               ],
             ),
+          ),
+          IconButton(
+            tooltip: 'المتابعة',
+            icon: Icon(Icons.monitor_heart_outlined, color: AppColors.amber, size: 20),
+            onPressed: () => openDeveloperHealth(context),
           ),
           IconButton(
             tooltip: 'الأجهزة',
