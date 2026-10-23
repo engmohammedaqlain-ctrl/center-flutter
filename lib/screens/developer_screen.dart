@@ -884,7 +884,10 @@ class _TenantCard extends StatelessWidget {
                 child: Text(tenant.name,
                     style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.heading)),
               ),
-              if (!tenant.active)
+              if (tenant.isDemo)
+                StatusChip.amber(
+                    'تجريبية · ${(tenant.demoExpiresAt ?? tenant.expiresAt).difference(DateTime.now()).inDays.clamp(0, 999)} يوم')
+              else if (!tenant.active)
                 StatusChip.danger('موقوف')
               else if (expired)
                 StatusChip.danger('منتهٍ')

@@ -2406,6 +2406,8 @@ class Tenant {
     this.updatedAt,
     this.features,
     this.limits,
+    this.isDemo = false,
+    this.demoExpiresAt,
   });
 
   final String id;
@@ -2429,6 +2431,11 @@ class Tenant {
 
   /// حدود الاشتراك (`max_students` / `max_storage_mb`).
   Map<String, dynamic>? limits;
+
+  /// مدرسة تجريبية لمدير يجرّب (تُنشأ من لوحة الويب، وتُحذف تلقائياً بعد [demoExpiresAt]).
+  /// للقراءة وحدها: لا تُرفع في [toCloud].
+  final bool isDemo;
+  final DateTime? demoExpiresAt;
 
   String get plan => planType;
   set plan(String v) => planType = v;
@@ -2477,6 +2484,8 @@ class Tenant {
     updatedAt: m['updated_at']?.toString(),
     features: m['features'] is Map ? Map<String, dynamic>.from(m['features'] as Map) : null,
     limits: m['limits'] is Map ? Map<String, dynamic>.from(m['limits'] as Map) : null,
+    isDemo: m['is_demo'] == true,
+    demoExpiresAt: parseIsoDate(m['demo_expires_at']?.toString()),
   );
 }
 
