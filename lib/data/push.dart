@@ -142,9 +142,12 @@ class ParentPush {
 
   /// بلا أي أثر عند الفشل: قاعدة لم تُنفَّذ عليها الهجرة بعد، أو بلا شبكة، والبوابة
   /// تعمل كما كانت. الدخول التالي أو تبديل الابن يعيد المحاولة.
+  /// المطور جهازه بلا منشأة، فتسجيله بدالة وحدها (`register_dev_push_device`):
+  /// تصله إنذارات الأعطال (`kind: client_error`، 20261103_client_errors.sql).
   Future<void> _send(String token) async {
     try {
-      await supabaseRpc('register_push_device', {'p_token': token, 'p_platform': 'android', 'p_app_id': pushAppId});
+      final fn = SupabaseAuth.isDeveloper ? 'register_dev_push_device' : 'register_push_device';
+      await supabaseRpc(fn, {'p_token': token, 'p_platform': 'android', 'p_app_id': pushAppId});
     } catch (e) {
       debugPrint('push register: $e');
     }
