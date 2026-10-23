@@ -155,13 +155,26 @@ class ParentPush {
     await _serial(_register);
   }
 
+  /// يزيد مع كل خروج: إعادة محاولة تسجيلٍ قبله لا تُسجّل الجهاز بعده.
+  int _generation = 0;
+  Timer? _retry;
+
+  /// تسجيل فشل بالشبكة (لا رفض الخادم) يُعاد مرة بعد هذه المدة.
+  static const _retryAfter = Duration(seconds: 30);
+
   Future<void> _register() async {
+    _retry?.cancel();
     try {
       final messaging = FirebaseMessaging.instance;
       final token = await messaging.getToken();
       if (token == null || token.isEmpty) return;
       _token = token;
-      await _send(token);
+      if (await _send(token) == null) {
+        final generation = _generation;
+        _retry = Timer(_retryAfter, () {
+          if (generation == _generation && _token == token) unawaited(_serial(() => _send(token)));
+        });
+      }
       _refresh ??= messaging.onTokenRefresh.listen((t) {
         _token = t;
         unawaited(_serial(() => _send(t)));
@@ -171,16 +184,35 @@ class ParentPush {
     }
   }
 
+  /// إذن الإشعارات على الجهاز: مرفوضاً يبعث الخادم ولا يظهر شيء، فيُحفظ معه
+  /// (`notifications_enabled`، 20261106_push_audit_fixes.sql). null إن تعذّرت معرفته.
+  Future<bool?> _permitted() async {
+    try {
+      final status = (await FirebaseMessaging.instance.getNotificationSettings()).authorizationStatus;
+      if (status == AuthorizationStatus.notDetermined) return null;
+      return status == AuthorizationStatus.authorized || status == AuthorizationStatus.provisional;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// بلا أي أثر عند الفشل: قاعدة لم تُنفَّذ عليها الهجرة بعد، أو بلا شبكة، والبوابة
-  /// تعمل كما كانت. الدخول التالي أو تبديل الابن يعيد المحاولة.
+  /// تعمل كما كانت. فشل الشبكة يُعاد مرة بعد [_retryAfter]، والدخول التالي أو تبديل
+  /// الابن يعيد المحاولة.
   /// المطور جهازه بلا منشأة، فتسجيله بدالة وحدها (`register_dev_push_device`):
   /// تصله إنذارات الأعطال (`kind: client_error`، 20261103_client_errors.sql).
-  Future<void> _send(String token) async {
+  ///
+  /// يعيد رد الخادم (true مسجّل، false رفض الدور)، أو null عند فشل الطلب.
+  Future<Object?> _send(String token) async {
     try {
-      final fn = SupabaseAuth.isDeveloper ? 'register_dev_push_device' : 'register_push_device';
-      await supabaseRpc(fn, {'p_token': token, 'p_platform': 'android', 'p_app_id': pushAppId});
+      final args = {'p_token': token, 'p_platform': 'android', 'p_app_id': pushAppId};
+      if (SupabaseAuth.isDeveloper) return await supabaseRpc('register_dev_push_device', args);
+      final res = await supabaseRpc('register_push_device', {...args, 'p_enabled': await _permitted()});
+      // قاعدة قبل 20261106: الدالة بلا p_enabled
+      return res ?? await supabaseRpc('register_push_device', args);
     } catch (e) {
       debugPrint('push register: $e');
+      return null;
     }
   }
 
@@ -190,6 +222,8 @@ class ParentPush {
   /// الحذف نفسه (حتى [_unregisterCap]).
   Future<void> unregister() async {
     if (!supported) return;
+    _generation++;
+    _retry?.cancel();
     try {
       await _serial(_unregister).timeout(const Duration(seconds: 4));
     } catch (e) {
