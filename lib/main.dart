@@ -9,6 +9,7 @@ import 'data/app_update.dart';
 import 'data/client_config.dart';
 import 'data/play_update.dart';
 import 'data/db_platform.dart';
+import 'data/error_report.dart';
 import 'data/local_db.dart';
 import 'data/portal.dart';
 import 'data/phone.dart';
@@ -37,6 +38,8 @@ import 'widgets/widgets.dart' show decodeLogo, launchWaWithText;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // كل خطأ غير معالج بعدها يصل المطور (أخطاء الشبكة تُتجاهل)
+  ErrorReport.instance.install();
   configureDatabaseFactory();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,

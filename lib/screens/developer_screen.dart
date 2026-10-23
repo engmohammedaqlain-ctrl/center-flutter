@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../data/push.dart';
 import '../data/store.dart';
 import '../data/supabase.dart';
 import '../data/tenant_service.dart';
@@ -39,16 +40,29 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
   bool loading = false;
   String? notice;
 
+  StreamSubscription<PushNotice>? _alerts;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+    // جهاز المطور تصله إنذارات الأعطال؛ والتطبيق مفتوح لا يعرضها أندرويد فتظهر هنا
+    _alerts = ParentPush.instance.received.listen(_showAlert);
+    unawaited(ParentPush.instance.register());
   }
 
   @override
   void dispose() {
+    unawaited(_alerts?.cancel());
     search.dispose();
     super.dispose();
+  }
+
+  void _showAlert(PushNotice n) {
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text([n.title, n.body].where((s) => s.isNotEmpty).join('\n'))),
+    );
   }
 
   Future<void> _refresh() async {
