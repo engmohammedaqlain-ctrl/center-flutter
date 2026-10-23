@@ -59,10 +59,10 @@ class InstitutionColors {
   // الافتراضي مطابق لـ `DEFAULT_COLORS` في الويب — اختلاف القيم هنا كان يجعل
   // الجوال كحملياً/برتقالي والويب أزرق سماوي قبل وصول ألوان السحابة.
   const InstitutionColors({
-    this.sidebarBg = '#0F172A',
-    this.activeItem = '#0284C7',
-    this.primaryButton = '#0F172A',
-    this.actionButton = '#0EA5E9',
+    this.sidebarBg = '#052E2B',
+    this.activeItem = '#10B981',
+    this.primaryButton = '#052E2B',
+    this.actionButton = '#059669',
     this.appBg = '#F8FAFC',
   });
 

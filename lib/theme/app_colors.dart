@@ -12,28 +12,28 @@ import '../data/institution.dart';
 /// أما ألوان الدلالة — النجاح والخطر والنص — فثابتة لأن معناها لا يتغيّر.
 abstract final class AppColors {
   // ── ألوان الهوية (تتبع إعدادات المنشأة) ──────────────────────────────────
-  /// خلفية الترويسة والقوائم — `sidebarBg` (افتراضي الويب `#0F172A`).
-  static Color navy = const Color(0xFF0F172A);
-  static Color navyDark = const Color(0xFF0B1220);
-  static Color navyMid = const Color(0xFF1E293B);
+  /// خلفية الترويسة والقوائم — `sidebarBg` (افتراضي الويب `#052E2B`).
+  static Color navy = const Color(0xFF052E2B);
+  static Color navyDark = const Color(0xFF04211F);
+  static Color navyMid = const Color(0xFF07433E);
 
-  /// لون الإجراء وسندات القبض — `actionButton` (افتراضي الويب `#0EA5E9`).
-  static Color amber = const Color(0xFF0EA5E9);
-  static Color amberDark = const Color(0xFF0284C7);
+  /// لون الإجراء وسندات القبض — `actionButton` (افتراضي الويب `#059669`).
+  static Color amber = const Color(0xFF059669);
+  static Color amberDark = const Color(0xFF04815A);
 
   /// لون التمييز على الهاتف: القسم المفتوح — `activeItem`.
-  static Color accent = const Color(0xFF0284C7);
+  static Color accent = const Color(0xFF10B981);
 
   /// خلفية وحدّ فاتحان مشتقّان من لون العمليات — مطابق لـ
   /// `color-mix(in srgb, var(--theme-action-btn) 10%/25%, white)` في index.css.
-  static Color amberSoft = _mix(const Color(0xFF0EA5E9), 0.10);
-  static Color amberBorder = _mix(const Color(0xFF0EA5E9), 0.25);
+  static Color amberSoft = _mix(const Color(0xFF059669), 0.10);
+  static Color amberBorder = _mix(const Color(0xFF059669), 0.25);
 
   /// خلفية مساحة العمل — `appBg`.
   static Color bg = const Color(0xFFF8FAFC);
 
   /// لون العناوين والأزرار الأساسية — `primaryButton`.
-  static Color heading = const Color(0xFF0F172A);
+  static Color heading = const Color(0xFF052E2B);
 
   // ── ألوان ثابتة المعنى (سلم Atlassian/Jira — الدلالة لا تتبع المنشأة) ───
   static const surface = Color(0xFFFFFFFF);
@@ -65,10 +65,10 @@ abstract final class AppColors {
   /// طبع ألوان المنشأة على الواجهة. الدرجات المشتقة تُحسب من اللون الأساس
   /// فيبقى التدرّج متناسقاً مهما اختار المدير.
   static void apply(InstitutionColors c) {
-    final side = parseHexColor(c.sidebarBg) ?? const Color(0xFF0F172A);
+    final side = parseHexColor(c.sidebarBg) ?? const Color(0xFF052E2B);
     // لون ناقص أو تالف يعود إلى أقرب لون من هوية المنشأة نفسها — لا إلى لون
     // النظام الافتراضي، فمنشأة ضبطت لونين فقط لا تظهر بنصف هويتها
-    final action = parseHexColor(c.actionButton) ?? const Color(0xFF0EA5E9);
+    final action = parseHexColor(c.actionButton) ?? const Color(0xFF059669);
     final highlight = parseHexColor(c.activeItem) ?? action;
     final primary = parseHexColor(c.primaryButton) ?? side;
     final surfaceBg = parseHexColor(c.appBg) ?? const Color(0xFFF8FAFC);
@@ -155,43 +155,43 @@ abstract final class Noon {
 
   // ── من ثيم المدرسة ───────────────────────────────────────────────────────
   /// شريط الترويسة والإطارات الداكنة.
-  static Color ink = const Color(0xFF0F172A);
+  static Color ink = const Color(0xFF052E2B);
   static Color onInk = _white;
 
   /// سطر فرعي على شريط الحبر.
-  static Color onInkSoft = noonMix(_white, 0.72, const Color(0xFF0F172A));
+  static Color onInkSoft = noonMix(_white, 0.72, const Color(0xFF052E2B));
 
   /// التبويب النشط وأشرطة التمييز.
-  static Color teal = const Color(0xFF0284C7);
+  static Color teal = const Color(0xFF10B981);
   static Color onTeal = _white;
-  static Color tealD = noonMix(const Color(0xFF0284C7), 0.78, _black);
+  static Color tealD = noonMix(const Color(0xFF10B981), 0.78, _black);
 
   /// الإجراء الرئيسي الوحيد في الشاشة.
-  static Color action = const Color(0xFF0EA5E9);
+  static Color action = const Color(0xFF059669);
   static Color onAction = _white;
-  static Color actionH = noonMix(const Color(0xFF0EA5E9), 0.88);
+  static Color actionH = noonMix(const Color(0xFF059669), 0.88);
 
   /// تدرجات فاتحة من العنصر النشط.
-  static Color mist = noonMix(const Color(0xFF0284C7), 0.14);
-  static Color mist2 = noonMix(const Color(0xFF0284C7), 0.07);
-  static Color band = noonMix(const Color(0xFF0284C7), 0.05);
+  static Color mist = noonMix(const Color(0xFF10B981), 0.14);
+  static Color mist2 = noonMix(const Color(0xFF10B981), 0.07);
+  static Color band = noonMix(const Color(0xFF10B981), 0.05);
 
   /// رأس الجدول وحدّه.
-  static Color head = noonMix(const Color(0xFF0284C7), 0.24);
-  static Color headLine = noonMix(const Color(0xFF0284C7), 0.38);
+  static Color head = noonMix(const Color(0xFF10B981), 0.24);
+  static Color headLine = noonMix(const Color(0xFF10B981), 0.38);
 
   /// خلفية الصفحة.
   static Color paper = const Color(0xFFF8FAFC);
 
   /// محايدات بميل خفيف نحو الحبر.
-  static Color line = noonMix(const Color(0xFF0F172A), 0.14);
-  static Color rule = noonMix(const Color(0xFF0F172A), 0.62);
-  static Color ruleSoft = noonMix(const Color(0xFF0F172A), 0.42);
-  static Color muted = noonMix(const Color(0xFF0F172A), 0.25, const Color(0xFF64757A));
-  static Color faint = noonMix(const Color(0xFF0F172A), 0.40);
+  static Color line = noonMix(const Color(0xFF052E2B), 0.14);
+  static Color rule = noonMix(const Color(0xFF052E2B), 0.62);
+  static Color ruleSoft = noonMix(const Color(0xFF052E2B), 0.42);
+  static Color muted = noonMix(const Color(0xFF052E2B), 0.25, const Color(0xFF64757A));
+  static Color faint = noonMix(const Color(0xFF052E2B), 0.40);
 
   /// نص الجسم والعناوين: داكن دائماً.
-  static Color text = noonMix(const Color(0xFF0F172A), 0.55, _black);
+  static Color text = noonMix(const Color(0xFF052E2B), 0.55, _black);
 
   // ── ثابتة الدلالة ────────────────────────────────────────────────────────
   /// التنبيه الكهرماني (معلّق، مأذون، مقفل).
@@ -215,7 +215,7 @@ abstract final class Noon {
   static const red700 = Color(0xFFBE123C);
   static const red800 = Color(0xFF9F1239);
 
-  static List<Color> _heroTheme = _themeStops(const Color(0xFF0F172A), const Color(0xFF0284C7));
+  static List<Color> _heroTheme = _themeStops(const Color(0xFF052E2B), const Color(0xFF10B981));
 
   static List<Color> _themeStops(Color ink, Color teal) => [
         noonMix(ink, 0.66, _black),

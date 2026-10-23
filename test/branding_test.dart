@@ -31,7 +31,7 @@ void main() {
   tearDownAll(AppColors.reset);
 
   test('the palette follows the institution colours', () {
-    expect(AppColors.amber, const Color(0xFF0EA5E9));
+    expect(AppColors.amber, const Color(0xFF059669));
 
     AppColors.apply(_red);
     expect(AppColors.amber, const Color(0xFFB91C1C), reason: 'لون الإجراء');
@@ -111,8 +111,8 @@ void main() {
 
   test('a bad colour value falls back instead of blanking the screen', () {
     AppColors.apply(const InstitutionColors(sidebarBg: 'not-a-colour', actionButton: '#ZZZZZZ'));
-    expect(AppColors.navy, const Color(0xFF0F172A));
-    expect(AppColors.amber, const Color(0xFF0EA5E9));
+    expect(AppColors.navy, const Color(0xFF052E2B));
+    expect(AppColors.amber, const Color(0xFF059669));
   });
 
   test('saving the identity repaints and reaches the cloud row', () async {
@@ -157,7 +157,7 @@ void main() {
 
   test('colours arriving from another device are applied on pull', () async {
     final s = await school(FakeDisk());
-    expect(AppColors.amber, const Color(0xFF0EA5E9));
+    expect(AppColors.amber, const Color(0xFF059669));
 
     // صف الهوية كما يصل من السحابة بعد تغييره على سطح المكتب
     s.putRows('institution_settings', [

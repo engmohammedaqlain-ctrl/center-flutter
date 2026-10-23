@@ -18,7 +18,7 @@ void main() {
     await tester.pumpWidget(StoreScope(store: s, child: const CenterApp()));
     await tester.pump();
     Color? appBar() => Theme.of(tester.element(find.byType(Navigator))).appBarTheme.backgroundColor;
-    expect(appBar(), const Color(0xFF0F172A), reason: 'افتراضي الويب sidebarBg');
+    expect(appBar(), const Color(0xFF052E2B), reason: 'افتراضي الويب sidebarBg');
 
     AppColors.apply(const InstitutionColors(sidebarBg: '#1C3124', primaryButton: '#1C3124', actionButton: '#15803D'));
     s.notifyListeners();
