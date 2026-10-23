@@ -1902,15 +1902,46 @@ class _SubjectsTabState extends State<_SubjectsTab> {
           onChanged: (_) => setState(() {}),
         ),
         Expanded(
-          child: _cardList(
-            count: list.length,
-            empty: EmptyState(
-              message: q.isEmpty
-                  ? 'لا توجد مواد دراسية مسجلة.'
-                  : 'لا توجد مواد مطابقة للبحث.',
-            ),
-            item: (context, i) => _SubjectCard(subject: list[i]),
-          ),
+          child: list.isEmpty
+              ? EmptyState(
+                  message: q.isEmpty
+                      ? 'لا توجد مواد دراسية مسجلة.'
+                      : 'لا توجد مواد مطابقة للبحث.',
+                )
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, thumbActionClearance),
+                  children: [
+                    // جدول واحد بإطار رفيع: رأس أعمدة وصف لكل مادة
+                    Container(
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(Corner.card),
+                        border: Border.all(color: AppColors.line),
+                        boxShadow: cardShadow,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Container(
+                            color: AppColors.sunken,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            child: Row(
+                              children: [
+                                const Expanded(child: Text('المادة', style: _metaStyle)),
+                                Text('${list.length}', style: _metaStyle),
+                              ],
+                            ),
+                          ),
+                          for (final s in list) ...[
+                            const Divider(height: 1, thickness: 1, color: AppColors.line),
+                            _SubjectCard(subject: s),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
         ),
       ],
     );
@@ -1931,8 +1962,9 @@ class _SubjectCard extends StatelessWidget {
         .where((t) => t.subjectIds.contains(s.id) || t.subject == s.name)
         .length;
 
-    return AppCard(
+    return InkWell(
       onTap: () => _open(context, SubjectFormScreen(subject: s)),
+      child: Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       child: Row(
         children: [
@@ -1964,6 +1996,7 @@ class _SubjectCard extends StatelessWidget {
             ),
           ],
         ],
+      ),
       ),
     );
   }
