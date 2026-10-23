@@ -13,5 +13,18 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" tools:node="remove"/>
     <application>
         <service android:name="com.center.center_mobile.DownloadService" tools:node="remove"/>
+        <!-- رابط المدرسة (/d/<الكود>) يفتح التطبيق عليها مباشرة (App Links). التحقق من
+             .well-known/assetlinks.json على الدومينين، وفيه بصمة توقيع Google Play -->
+        <activity android:name="com.center.center_mobile.MainActivity">
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https"/>
+                <data android:host="noonschool.app"/>
+                <data android:host="noon-school.pages.dev"/>
+                <data android:pathPrefix="/d/"/>
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

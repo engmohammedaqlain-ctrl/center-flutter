@@ -17,10 +17,13 @@ class MainActivity : FlutterActivity() {
     /** ملفات مشارَكة نسخها [ShareActivity] تنتظر أن يأخذها Flutter (`take`). */
     private val shared = mutableListOf<Map<String, Any?>>()
     private var shareChannel: MethodChannel? = null
+    private var schoolLinks: SchoolLinks? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         createSchoolChannel()
+        // رابط المدرسة أو اختصارها: يُفتح التطبيق على مدرستها
+        schoolLinks?.receive(intent, initial = true)
         // فتحٌ من «الأخيرة» يعيد آخر Intent: المشاركة نفسها لا تُستقبل مرتين
         val fromHistory = (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
         if (savedInstanceState == null && !fromHistory) receiveShared(intent)
@@ -30,6 +33,7 @@ class MainActivity : FlutterActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         receiveShared(intent)
+        schoolLinks?.receive(intent, initial = false)
     }
 
     private fun receiveShared(intent: Intent?) {
@@ -74,6 +78,7 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, DocumentsBridge.CHANNEL)
             .setMethodCallHandler(DocumentsBridge(this))
         StoreReferrer.register(this, flutterEngine)
+        schoolLinks = SchoolLinks(this, flutterEngine)
         shareChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SHARE_CHANNEL).apply {
             setMethodCallHandler { call, result ->
                 when (call.method) {

@@ -39,6 +39,9 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- رابط المدرسة واختصارها يفتحان النشاط برابط /d/<الكود> يقرؤه SchoolLinks.kt.
+                 بلا هذا يدفعه Flutter مساراً للتنقّل لا وجود له -->
+            <meta-data android:name="flutter_deeplinking_enabled" android:value="false"/>
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>

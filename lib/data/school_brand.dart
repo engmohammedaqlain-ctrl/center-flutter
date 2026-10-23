@@ -75,7 +75,8 @@ class SchoolBrand extends ChangeNotifier {
   static const _kColors = 'school_brand_colors';
   static const _kCode = 'school_brand_code';
 
-  /// كود رابط التنزيل في نسخة المتجر؛ فارغ = قُرئ ولم يحمل مدرسة.
+  /// كود رابط التنزيل في نسخة المتجر، أو آخر رابط مدرسة فُتح به التطبيق؛
+  /// فارغ = قُرئ رابط التنزيل ولم يحمل مدرسة.
   static const _kReferrer = 'school_referrer_code';
 
   final Future<String> Function() _readAsset;
@@ -97,6 +98,10 @@ class SchoolBrand extends ChangeNotifier {
   /// ألوان المدرسة، أو `null` للنسخة العامة أو مدرسةٍ بلا ألوان مضبوطة.
   InstitutionColors? colors;
 
+  /// فُتح التطبيق الآن برابط المدرسة أو اختصارها (`school_link.dart`): شاشة الدخول
+  /// تعرضها هي، لا آخر مدرسة دخل إليها الجهاز.
+  bool linked = false;
+
   Future<void>? _bundled;
   Future<void>? _loading;
 
@@ -114,7 +119,8 @@ class SchoolBrand extends ChangeNotifier {
     code = parseSchoolAsset(raw);
     bundled = code != null;
     if (code == null) {
-      if (_readReferrer != null) await _savedReferrer();
+      // من رابط التنزيل في المتجر، أو من رابط المدرسة واختصارها في أي نسخة عامة
+      await _savedReferrer();
       return;
     }
     final identity = parseSchoolAssetIdentity(raw);
@@ -132,6 +138,8 @@ class SchoolBrand extends ChangeNotifier {
 
     try {
       final prefs = await SharedPreferences.getInstance();
+      // رابط مدرسة أخرى وصل أثناء التحميل: تحميله هو الذي يكمل
+      if (c != code) return;
       // هوية مدرسةٍ أخرى من نسخةٍ سابقة على الجهاز لا تُعرض تحت هذا الكود
       if (prefs.getString(_kCode) == c && (prefs.getString(_kName) ?? '').isNotEmpty) {
         InstitutionColors? saved;
@@ -174,9 +182,32 @@ class SchoolBrand extends ChangeNotifier {
 
   static String _colorsKey(InstitutionColors? c) => c == null ? '' : jsonEncode(c.toMap());
 
+  /// رابط المدرسة أو اختصارها فتح التطبيق: مدرسة الرابط هي مدرسة الجهاز من الآن،
+  /// وتبقى في الفتح التالي. نسخة المدرسة الخاصة لا تتبدّل.
+  Future<void> openLink(String linkCode) async {
+    await readBundled();
+    if (bundled) return;
+    linked = true;
+    if (linkCode == code) {
+      notifyListeners();
+      return;
+    }
+    code = linkCode;
+    name = '';
+    logo = '';
+    colors = null;
+    try {
+      await (await SharedPreferences.getInstance()).setString(_kReferrer, linkCode);
+    } catch (_) {}
+    notifyListeners();
+    // تحميلٌ سابق كان لمدرسة أخرى: يُعاد للكود الجديد (المحفوظ ثم السحابة)
+    _loading = null;
+    unawaited(load());
+  }
+
   Future<void> _refresh(String c) async {
     final identity = await _fetch(c);
-    if (identity == null || identity.name.isEmpty) return;
+    if (identity == null || identity.name.isEmpty || c != code) return;
     if (identity.name == name && identity.logo == logo && _colorsKey(identity.colors) == _colorsKey(colors)) return;
     _set(identity);
     notifyListeners();
