@@ -262,10 +262,10 @@ void main() {
       final fake = _FakePortal(teacher: _teacherData());
       await _pump(tester, TeacherPortalScreen(user: _teacherUser, onExit: () {}, service: fake), width: width);
 
-      // الترويسة: اسم المعلم بجانب الشعار وزر خروج (بلا اسم المدرسة في المساحة الفاضية)
-      expect(find.text('أ. وفاء الأشقر'), findsOneWidget);
-      expect(find.text('مدرسة أبو عقلين الخاصة'), findsNothing);
-      expect(find.byIcon(Icons.logout_rounded), findsOneWidget);
+      // الترويسة كالويب: اسم المدرسة، وتحته «المعلم: اسمه»، وزر «خروج»
+      expect(find.text('مدرسة أبو عقلين الخاصة'), findsOneWidget);
+      expect(find.text('المعلم: أ. وفاء الأشقر'), findsOneWidget);
+      expect(find.text('خروج'), findsOneWidget);
 
       // التبويبات الثلاثة، ولا إعلانات: جدولها حُذف في النسخة المكتبية
       // التبويبات شريط سفلي كبوابة الطالب
@@ -527,8 +527,9 @@ void main() {
       final fake = _FakePortal(student: _studentData());
       await _pump(tester, StudentPortalScreen(user: _studentUser, onExit: () {}, service: fake), width: width);
 
+      expect(find.text('مدرسة أبو عقلين الخاصة'), findsOneWidget, reason: 'اسم المدرسة في الترويسة كالويب');
       expect(find.textContaining('علي أبو حسنين'), findsOneWidget, reason: 'الاسم مرة واحدة في الترويسة');
-      // سطر واحد تحت الاسم: الصف والشعبة، والشعبة لا تتكرر فيه
+      // سطر واحد تحت اسم المدرسة: الطالب وصفه وشعبته، والشعبة لا تتكرر فيه
       expect(
         find.textContaining('ثاني عشر علمي ذكور · شعبة (1)'),
         findsOneWidget,
@@ -539,15 +540,18 @@ void main() {
         expect(find.text(t), findsOneWidget, reason: t);
       }
 
-      // المودل: شرائح المواد وفلتر الفصل
+      // المودل: كبسولات المواد ومفتاح الفصل
       expect(find.text('الكيمياء'), findsOneWidget);
       expect(find.text('الفصل الأول'), findsOneWidget);
-      expect(find.text('لا توجد وحدات أو دروس منشورة لهذه المادة في هذا الفصل'), findsOneWidget);
+      expect(find.text('أخرى'), findsOneWidget);
+      expect(find.text('لا وحدات منشورة'), findsOneWidget);
 
       await tester.tap(find.text('مواد'));
       await tester.pumpAndSettle();
-      expect(find.text('المواد والمعلمون (1):'), findsOneWidget);
-      expect(find.text('القاعة: شعبة (1)'), findsOneWidget);
+      expect(find.text('المواد والمعلمون'), findsOneWidget);
+      expect(find.text('(1)'), findsOneWidget);
+      expect(find.text('أ. محمود الزهار'), findsOneWidget);
+      expect(find.text('شعبة (1)'), findsOneWidget);
 
       await tester.tap(find.text('حضور'));
       await tester.pumpAndSettle();
@@ -557,18 +561,25 @@ void main() {
 
       await tester.tap(find.text('درجات'));
       await tester.pumpAndSettle();
-      expect(find.text('لم يتم رصد أي درجات أو تقييمات لك بعد'), findsOneWidget);
+      expect(find.text('لا درجات بعد'), findsOneWidget);
 
       await tester.tap(find.text('رسوم'));
       await tester.pumpAndSettle();
-      expect(find.text('المقبوض'), findsOneWidget);
+      expect(find.text('كشف الحساب'), findsOneWidget);
+      expect(find.text('مسدد حتى الآن'), findsOneWidget);
+      expect(find.text('المدفوع 230 شيكل'), findsOneWidget);
       expect(find.text('مسدد'), findsOneWidget);
-      expect(find.text('قادم'), findsNWidgets(2), reason: 'القسط الذي لم يحن موعده ليس مطلوباً الآن: شارته وسطر الملخص');
-      await tester.scrollUntilVisible(find.text('عرض الوصل'), 200, scrollable: find.byType(Scrollable).last);
-      expect(find.text('سند #2026/1062'), findsOneWidget);
-      expect(find.text('محفظة بال بي'), findsOneWidget);
+      expect(find.text('قادم'), findsOneWidget, reason: 'القسط الذي لم يحن موعده ليس مطلوباً الآن');
+      expect(find.text('إجمالي الرسوم'), findsOneWidget);
+      // سندات القبض مطوية: رأسها بعددها وتاريخ آخرها
+      await tester.scrollUntilVisible(find.textContaining('سندات القبض'), 200, scrollable: find.byType(Scrollable).last);
+      await tester.tap(find.textContaining('سندات القبض'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('سند 2026/1062'), 200, scrollable: find.byType(Scrollable).last);
+      expect(find.text('سند 2026/1062'), findsOneWidget, reason: 'الرقم بلا #');
+      expect(find.textContaining('محفظة بال بي'), findsOneWidget);
 
-      await tester.tap(find.text('عرض الوصل'));
+      await tester.tap(find.byTooltip('معاينة الوصل'));
       await tester.pumpAndSettle();
       expect(find.text('سند قبض'), findsOneWidget);
       // السند بشكله المطبوع: رقمه وترويسة المدرسة وتوقيع المستلم
@@ -577,32 +588,34 @@ void main() {
       expect(find.textContaining('المستلم:'), findsOneWidget);
     });
 
-    testWidgets('مودل الطالب: المنشور وحده، صفحة منفصلة، بلا شارة «جديد» — عرض ${width.toInt()}', (tester) async {
+    testWidgets('مودل الطالب: المنشور وحده، صفحة منفصلة، وشارة «جديد» كالويب — عرض ${width.toInt()}', (tester) async {
       final fake = _FakePortal(student: _studentData(), sections: _sections());
       await _pump(tester, StudentPortalScreen(user: _studentUser, onExit: () {}, service: fake), width: width);
 
       expect(fake.lastIncludeHidden, isFalse, reason: 'الطالب لا يرى المخفي');
       expect(find.text('الوحدة الأولى - النحو والصرف'), findsOneWidget);
       expect(find.text('الوحدة الثانية - البلاغة'), findsNothing);
-      expect(find.text('2 عنصر'), findsOneWidget);
-      expect(find.text('جديد'), findsNothing, reason: 'أُزيلت شارة جديد');
+      expect(find.text('الدروس 2'), findsOneWidget, reason: 'سطر حقائق الوحدة');
 
-      // فتح صفحة الوحدة يعرض موادها
+      // فتح صفحة الوحدة يعرض دروسها بلون نوعها
       await tester.tap(find.text('الوحدة الأولى - النحو والصرف'));
       await tester.pumpAndSettle();
-      expect(find.byIcon(Icons.picture_as_pdf_outlined), findsOneWidget, reason: 'الملف يُفتح بلمس سطره');
-      await tester.pageBack();
+      expect(find.text('النوع PDF'), findsOneWidget, reason: 'نوع الدرس من امتداد ملفه');
+      expect(find.text('النوع واجب'), findsOneWidget);
+      expect(find.text('جديد'), findsWidgets, reason: 'درس أُضيف خلال 48 ساعة');
+      await tester.tap(find.byTooltip('رجوع'));
       await tester.pumpAndSettle();
-      expect(find.byIcon(Icons.picture_as_pdf_outlined), findsNothing);
+      expect(find.text('النوع PDF'), findsNothing);
     });
 
     testWidgets('ولي الأمر يتابع ملف ابنه بلا المودل — عرض ${width.toInt()}', (tester) async {
       final fake = _FakePortal(student: _studentData(), sections: _sections());
       await _pump(tester, StudentPortalScreen(user: _parentUser, onExit: () {}, service: fake), width: width);
 
-      // اسم وليّ الأمر لا يُعرض: الترويسة مفتوحة على شاشة يراها غيره
-      expect(find.textContaining('ولي الأمر: أبو علي'), findsNothing);
-      expect(find.textContaining('علي أبو حسنين'), findsOneWidget, reason: 'الترويسة باسم الابن');
+      // كالويب: «ولي الأمر: اسمه» في الترويسة، والابن في الشريط تحتها
+      expect(find.text('ولي الأمر: أبو علي'), findsOneWidget);
+      expect(find.text('علي أبو حسنين'), findsOneWidget, reason: 'شريط الابن تحت الترويسة');
+      expect(find.textContaining('401334845'), findsNothing);
       expect(find.text('مودل'), findsNothing);
       expect(find.text('المودل'), findsNothing);
       for (final t in ['مواد', 'حضور', 'درجات', 'رسوم']) {
@@ -640,7 +653,7 @@ void main() {
     expect(find.text('ريم'), findsOneWidget);
   });
 
-  testWidgets('ابن واحد: لا شريط تبديل', (tester) async {
+  testWidgets('ابن واحد: اسمه بلا أزرار تبديل', (tester) async {
     const parent = PortalUser(
       id: 's1',
       name: 'أبو علي',
@@ -655,7 +668,8 @@ void main() {
     final fake = _FakePortal(student: _studentData());
     await _pump(tester, StudentPortalScreen(user: parent, onExit: () {}, service: fake));
 
-    expect(find.text('علي'), findsNothing, reason: 'شريط لابن واحد لا معنى له');
+    expect(find.text('علي'), findsNothing, reason: 'لا أزرار تبديل لابن واحد');
+    expect(find.text('علي أبو حسنين'), findsOneWidget, reason: 'الابن المعروض ظاهر تحت الترويسة');
   });
 
 }

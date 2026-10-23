@@ -8,10 +8,11 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/home_shortcut.dart';
+import '../widgets/noon_ui.dart';
 import '../widgets/widgets.dart';
 import 'app_update_sheet.dart';
 
-/// ترويسة مضغوطة + شريط سفلي + وصل — هوية الجوال لبوابة الطالب/ولي الأمر.
+/// ترويسة نون + شريط سفلي + وصل — هيكل بوابات الطالب وولي الأمر والمعلم.
 
 
 /// عنصر تنقّل سفلي.
@@ -33,128 +34,106 @@ class PortalNavItem {
   final bool dot;
 }
 
-/// ترويسة البوابة: شعار المدرسة، واسم صاحب الحساب (أو اسم المدرسة إن وُجدت
-/// تفاصيل تحته)، والخروج — بدل ترويسة وبطاقة منفصلتين.
+//// ترويسة البوابة كترويسة كشف رسمي (`NPortalHeader` في الويب): شريط بالحبر عليه شعار
+/// المدرسة واسمها وسطر صغير (الدور والاسم) مخففاً، و«تثبيت» و«خروج»، وتحته خط رفيع بلون
+/// الإجراء. رقم الهوية لا يُعرض: الشاشة قد تكون مفتوحة أمام الآخرين.
 class PortalChromeHeader extends StatelessWidget {
   const PortalChromeHeader({
     super.key,
     required this.branding,
-    required this.displayName,
-    required this.gradeLine,
+    required this.sub,
     required this.onExit,
     this.action,
   });
 
   final PortalBranding branding;
-  final String displayName;
-  final String gradeLine;
+
+  /// السطر الصغير تحت اسم المدرسة: «المعلم: …»، «ولي الأمر: …»، أو اسم الطالب وصفه.
+  final String sub;
   final VoidCallback onExit;
 
-  /// زر يسبق زر الخروج — المزامنة في بوابة المعلم، كترويسة الإدارة.
+  /// إجراء يسبق «تثبيت» و«خروج» — حالة الرفع في بوابة المعلم.
   final Widget? action;
 
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.paddingOf(context).top;
-    // الصف والشعبة وحدهما. الهوية واسم وليّ الأمر لا يُعرضان: الترويسة تبقى
-    // مفتوحة على الشاشة أمام الصف ومن يمرّ بجانبها.
-    final details = gradeLine.trim();
-    // بلا تفاصيل (بوابة المعلم): الاسم بجانب الشعار يستغل عرض الترويسة
-    // بدل سطر فارغ تحتها. مع التفاصيل (طالب/ولي أمر): اسم المدرسة فوق والاسم تحته.
-    final nameBesideLogo = details.isEmpty;
-    final title = nameBesideLogo ? displayName : branding.name;
+    final logo = decodeLogo(branding.logo);
     return Container(
+      padding: EdgeInsets.fromLTRB(16, top + 12, 16, 12),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: AlignmentDirectional.topStart,
-          end: AlignmentDirectional.bottomEnd,
-          colors: [AppColors.navy, AppColors.navyMid],
-        ),
+        color: Noon.ink,
+        border: Border(bottom: BorderSide(color: Noon.action, width: 2)),
       ),
-      child: Stack(
+      child: Row(
         children: [
-          PositionedDirectional(
-            end: -30,
-            top: -40,
-            child: Container(
-              width: 150,
-              height: 150,
-              decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.06)),
+          Container(
+            width: 44,
+            height: 44,
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(NoonRadius.tile),
+              border: Border.all(color: Noon.line),
             ),
+            child: logo == null
+                ? Icon(Icons.school_outlined, size: 20, color: Noon.teal)
+                : Image.memory(
+                    logo,
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
+                    cacheWidth: (36 * MediaQuery.devicePixelRatioOf(context)).round(),
+                  ),
           ),
-          Padding(
-            padding: EdgeInsets.fromLTRB(14, top + 10, 8, 14),
+          const SizedBox(width: 12),
+          Expanded(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  children: [
-                    InstitutionBadge(logo: branding.logo, size: 32, radius: 10, onDark: true),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: AppText.family,
-                          color: Colors.white.withValues(alpha: nameBesideLogo ? 1 : 0.92),
-                          fontSize: nameBesideLogo ? 16 : 12.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    ?action,
-                    HomeShortcutButton(
-                      name: branding.name,
-                      logo: branding.logo,
-                      color: Colors.white.withValues(alpha: 0.85),
-                    ),
-                    IconButton(
-                      tooltip: 'خروج',
-                      onPressed: () async {
-                        if (await confirmLogout(context)) onExit();
-                      },
-                      visualDensity: VisualDensity.compact,
-                      icon: Icon(Icons.logout_rounded, size: 19, color: Colors.white.withValues(alpha: 0.85)),
-                    ),
-                  ],
+                Text(
+                  branding.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: nText(14, weight: FontWeight.w700, color: Noon.onInk, height: 1.25),
                 ),
-                if (!nameBesideLogo) ...[
-                  const SizedBox(height: 8),
-                  // الاسم وتفاصيله في سطر واحد يمتدّ بعرض الترويسة، وينكسر إلى
-                  // سطر ثانٍ عند الحاجة فقط — لا سطر شبه فارغ تحت كل سطر
-                  Padding(
-                    padding: const EdgeInsetsDirectional.only(end: 6),
-                    child: Text.rich(
-                      TextSpan(
-                        text: displayName,
-                        style: const TextStyle(
-                          fontFamily: AppText.family,
-                          color: Colors.white,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w600,
-                          height: 1.35,
-                        ),
-                        children: [
-                          TextSpan(
-                            text: '  ·  $details',
-                            style: TextStyle(
-                              fontFamily: AppText.family,
-                              color: Colors.white.withValues(alpha: 0.72),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                if (sub.trim().isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    sub.trim(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: nText(12, weight: FontWeight.w500, color: Noon.onInkSoft),
                   ),
                 ],
               ],
             ),
+          ),
+          const SizedBox(width: 8),
+          if (action != null) ...[action!, const SizedBox(width: 6)],
+          HomeShortcutButton(
+            name: branding.name,
+            logo: branding.logo,
+            builder: (pin) => Padding(
+              padding: const EdgeInsetsDirectional.only(end: 6),
+              child: NBtn(
+                tone: NBtnTone.onDark,
+                small: true,
+                icon: Icons.download_rounded,
+                label: 'تثبيت',
+                tooltip: 'أضف للشاشة الرئيسية',
+                onTap: pin,
+              ),
+            ),
+          ),
+          NBtn(
+            tone: NBtnTone.onDark,
+            small: true,
+            icon: Icons.logout_rounded,
+            label: 'خروج',
+            onTap: () async {
+              if (await confirmLogout(context)) onExit();
+            },
           ),
         ],
       ),
@@ -162,7 +141,7 @@ class PortalChromeHeader extends StatelessWidget {
   }
 }
 
-/// سطر هوية: مرحلة · شعبة بلا تكرار كلمة «شعبة».
+// سطر هوية: مرحلة · شعبة بلا تكرار كلمة «شعبة».
 String portalGradeLine({
   required PortalUser user,
   Student? student,
@@ -182,7 +161,9 @@ String portalGradeLine({
   return '$grade · $section';
 }
 
-/// شريط تنقّل سفلي بهوية الشل.
+//// الشريط السفلي (`NBottomNav` في الويب): حد علوي وظل صاعد خفيف وفاصل رفيع بين الخانات،
+/// أيقونة 24 وتسمية 11، والنشط بمستطيل مظلّل بـ `mist` خلف الأيقونة وتسمية عريضة بلون
+/// العنصر النشط، والباقي خافت، وتبديل فوري. هامش الآيفون في حشوته.
 class PortalBottomNav extends StatelessWidget {
   const PortalBottomNav({
     super.key,
@@ -203,31 +184,29 @@ class PortalBottomNav extends StatelessWidget {
       children: [
         // يظهر وأنت داخل البوابة — بلا انتظار الخروج لشاشة الدخول
         const UpdateStatusStrip(),
-        Container(
-          padding: EdgeInsets.only(top: 4, bottom: bottom > 0 ? bottom : 4),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: AppColors.line)),
-            boxShadow: [
-              BoxShadow(color: Color(0x0A000000), blurRadius: 16, offset: Offset(0, -4)),
-            ],
-          ),
-          child: Row(
-            children: [
-              for (var i = 0; i < items.length; i++) ...[
-                // فاصل رفيع بين كل قسمين، كشريط الإدارة
-                if (i > 0) Container(width: 1, height: 28, color: AppColors.line),
-                Expanded(
-                  child: _PortalNavTile(
-                    item: items[i],
-                    active: items[i].id == activeId,
-                    onTap: () => onSelect(items[i].id),
+        if (items.length > 1)
+          Container(
+            padding: EdgeInsets.only(top: 4, bottom: bottom > 4 ? bottom : 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Noon.line)),
+              boxShadow: const [BoxShadow(color: Color(0x140A3336), blurRadius: 14.7, offset: Offset(0, -6))],
+            ),
+            child: Row(
+              children: [
+                for (var i = 0; i < items.length; i++) ...[
+                  if (i > 0) Container(width: 1, height: 28, color: Noon.line),
+                  Expanded(
+                    child: _PortalNavTile(
+                      item: items[i],
+                      active: items[i].id == activeId,
+                      onTap: () => onSelect(items[i].id),
+                    ),
                   ),
-                ),
+                ],
               ],
-            ],
+            ),
           ),
-        ),
       ],
     );
   }
@@ -242,52 +221,55 @@ class _PortalNavTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final icon = active ? (item.activeIcon ?? item.icon) : item.icon;
+    final color = active ? Noon.teal : Noon.muted;
     return PressableScale(
-      scale: 0.96,
+      scale: 0.95,
       onTap: onTap,
       child: SizedBox(
         height: 56,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Icon(
-                  icon,
-                  size: 22,
-                  color: active ? AppColors.amber : AppColors.faint,
-                ),
-                if (item.dot)
-                  PositionedDirectional(
-                    top: -1,
-                    end: -3,
-                    child: Container(
-                      width: 9,
-                      height: 9,
+        child: LayoutBuilder(
+          builder: (context, box) => Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned.fill(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 56,
+                      height: 28,
                       decoration: BoxDecoration(
-                        color: AppColors.amber,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 1.5),
+                        color: active ? Noon.mist : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
                       ),
+                      child: Icon(active ? (item.activeIcon ?? item.icon) : item.icon, size: 24, color: color),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      item.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: nText(11, weight: active ? FontWeight.w700 : FontWeight.w500, color: color, height: 1),
+                    ),
+                  ],
+                ),
+              ),
+              if (item.dot)
+                PositionedDirectional(
+                  top: 6,
+                  end: box.maxWidth * 0.28,
+                  child: Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: Noon.action,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
                     ),
                   ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              item.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: AppText.family,
-                color: active ? AppColors.amber : AppColors.faint,
-                fontSize: 10.5,
-                fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-              ),
-            ),
-          ],
+                ),
+            ],
+          ),
         ),
       ),
     );

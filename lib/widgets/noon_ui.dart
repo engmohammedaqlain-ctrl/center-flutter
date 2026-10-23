@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/models.dart' show gregorianMonths, parseIsoDate;
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 
@@ -1340,3 +1341,58 @@ class NInitial extends StatelessWidget {
     );
   }
 }
+
+// ── تنسيق الأرقام والتواريخ (portalFormat.ts) ─────────────────────────────────
+
+const _dayNames = ['الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد'];
+
+DateTime? _day(String raw) => parseIsoDate(raw.length >= 10 ? raw.substring(0, 10) : raw);
+
+/// «12 أكتوبر»، والسنة إن لم تكن الحالية.
+String nDayLabel(String raw) {
+  final d = _day(raw);
+  if (d == null) return raw;
+  final base = '${d.day} ${gregorianMonths[d.month - 1]}';
+  return d.year == DateTime.now().year ? base : '$base ${d.year}';
+}
+
+/// «18 أكتوبر 2026»: بالسنة دائماً (للسندات).
+String nFullDayLabel(String raw) {
+  final d = _day(raw);
+  return d == null ? raw : '${d.day} ${gregorianMonths[d.month - 1]} ${d.year}';
+}
+
+/// «الثلاثاء 21»: يوم السجل داخل مجموعة شهره.
+String nWeekdayLabel(String raw) {
+  final d = _day(raw);
+  return d == null ? raw : '${_dayNames[d.weekday - 1]} ${d.day}';
+}
+
+/// «أكتوبر 2026» لتجميع السجل بالشهر.
+String nMonthLabel(String raw) {
+  final d = _day(raw);
+  return d == null ? raw : '${gregorianMonths[d.month - 1]} ${d.year}';
+}
+
+/// رقم بفواصل الآلاف (`toLocaleString('en-US')`): 1,250 و87.5.
+String nAmount(num n) {
+  final neg = n < 0;
+  final v = n.abs();
+  final whole = v.truncate();
+  final frac = v - whole;
+  final digits = whole.toString();
+  final buf = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) buf.write(',');
+    buf.write(digits[i]);
+  }
+  var s = buf.toString();
+  if (frac > 0.0005) {
+    final f = frac.toStringAsFixed(3).substring(1).replaceFirst(RegExp(r'0+$'), '');
+    if (f != '.') s += f;
+  }
+  return neg ? '-$s' : s;
+}
+
+/// «1,250 شيكل»: العملة بعد المبلغ.
+String nMoney(num n) => '${nAmount(n)} شيكل';

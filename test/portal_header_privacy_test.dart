@@ -10,7 +10,7 @@ String _headerText(WidgetTester tester) => tester
     .map((t) => t.data ?? t.textSpan?.toPlainText() ?? '')
     .join(' | ');
 
-/// ترويسة البوابة تُعرض على شاشة يراها غير صاحبها — فلا هوية ولا اسم وليّ أمر.
+/// ترويسة البوابة تُعرض على شاشة يراها غير صاحبها — فلا رقم هوية.
 
 Future<void> _pump(WidgetTester tester, Widget child) async {
   await tester.pumpWidget(
@@ -22,37 +22,35 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
 }
 
 void main() {
-  testWidgets('الترويسة تُظهر الصف والشعبة بلا رقم هوية', (tester) async {
+  testWidgets('الترويسة: اسم المدرسة وسطر الطالب وصفه بلا رقم هوية', (tester) async {
     await _pump(
       tester,
       PortalChromeHeader(
         branding: const PortalBranding(name: 'نون - نظام الإدارة المدرسي'),
-        displayName: 'محمود أسعد محمد جعرور',
-        gradeLine: 'حادي عشر علمي · شعبة (2)',
+        sub: 'محمود أسعد محمد جعرور · حادي عشر علمي · شعبة (2)',
         onExit: () {},
       ),
     );
 
     final shown = _headerText(tester);
-    expect(shown, contains('محمود أسعد محمد جعرور'));
-    expect(shown, contains('حادي عشر علمي · شعبة (2)'));
+    expect(shown, contains('نون - نظام الإدارة المدرسي'));
+    expect(shown, contains('محمود أسعد محمد جعرور · حادي عشر علمي · شعبة (2)'));
+    expect(shown, contains('خروج'));
     expect(shown, isNot(contains('431309616')));
   });
 
-  testWidgets('ترويسة وليّ الأمر بلا اسمه ولا هوية ابنته', (tester) async {
+  testWidgets('ترويسة وليّ الأمر كالويب: «ولي الأمر: اسمه» بلا هوية ابنته', (tester) async {
     await _pump(
       tester,
       PortalChromeHeader(
         branding: const PortalBranding(name: 'نون - نظام الإدارة المدرسي'),
-        displayName: 'زينة محمد عبد الكريم أبو عطايا',
-        gradeLine: 'سادس · شعبة (1)',
+        sub: 'ولي الأمر: محمد أبو عطايا',
         onExit: () {},
       ),
     );
 
     final shown = _headerText(tester);
-    expect(shown, contains('زينة محمد عبد الكريم أبو عطايا'));
-    expect(shown, isNot(contains('ولي الأمر')));
+    expect(shown, contains('ولي الأمر: محمد أبو عطايا'));
     expect(shown, isNot(contains('435877733')));
   });
 

@@ -2263,8 +2263,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         children: [
           PortalChromeHeader(
             branding: branding,
-            displayName: widget.user.name,
-            gradeLine: '',
+            sub: 'المعلم: ${widget.user.name}',
             onExit: widget.onExit,
             action: _PortalSyncButton(
               offline: offline,
