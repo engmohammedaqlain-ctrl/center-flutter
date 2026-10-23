@@ -13,6 +13,7 @@ import '../data/share_inbox.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/noon_ui.dart';
 import '../widgets/widgets.dart';
 
 /// تسديد دفعة من بوابة ولي الأمر — المقابل لـ `ParentPayments.tsx`.
@@ -103,140 +104,104 @@ class _ParentPaymentsSectionState extends State<ParentPaymentsSection> {
 
   @override
   Widget build(BuildContext context) {
-    final pending = requests.where((r) => r.status == 'pending').length;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    // الأحدث أولاً
+    final sorted = [...requests]..sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
+    // طلب معلّق أو مرفوض في آخر 7 أيام: يبدأ القسم مفتوحاً ليراه ولي الأمر
+    final weekAgo = DateTime.now().subtract(const Duration(days: 7));
+    final needsAttention = sorted.any((r) {
+      if (r.status != 'pending' && r.status != 'rejected') return false;
+      final at = DateTime.tryParse(r.decidedAt ?? r.createdAt ?? '');
+      return at != null && !at.isBefore(weekAgo);
+    });
+    final approvedTotal = requests.where((r) => r.status == 'approved').fold<double>(0, (s, r) => s + r.amount);
+    return NColumn(
+      gap: 12,
       children: [
-        PrimaryButton(
-          label: 'تسديد دفعة',
+        NBtn(
+          tone: NBtnTone.sun,
           icon: Icons.send_rounded,
-          color: widget.accent,
-          height: 44,
-          onPressed: () => _openForm(),
+          label: 'تسديد دفعة بإرسال إشعار التحويل',
+          tooltip: 'تُحسب الدفعة بعد مراجعة المالية للإشعار',
+          expand: true,
+          onTap: () => _openForm(),
         ),
-        if (sent) ...[
-          const SizedBox(height: 8),
-          _Note(
-            text: 'أُرسل الطلب. يُحسب بعد مراجعة المالية.',
-            fg: const Color(0xFF047857),
-            bg: const Color(0xFFECFDF5),
+        if (sent)
+          const NNotice(
+            icon: Icons.check_rounded,
+            text: 'أُرسل الطلب للمراجعة',
+            tooltip: 'يُحسب في حسابك بعد مراجعة المالية للإشعار',
           ),
-        ],
-        if (requests.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'طلبات الدفع (${requests.length})',
-                    style: TextStyle(fontFamily: AppText.family, color: AppColors.heading, fontSize: 12.5, fontWeight: FontWeight.w600),
-                  ),
-                ),
-                if (pending > 0)
-                  Text(
-                    '$pending قيد المراجعة',
-                    style: const TextStyle(fontFamily: AppText.family, color: Color(0xFFB45309), fontSize: 11.5, fontWeight: FontWeight.w700),
-                  ),
-              ],
-            ),
+        if (requests.isNotEmpty)
+          NFold(
+            key: ValueKey('requests:$needsAttention'),
+            title: 'طلبات الدفع',
+            count: requests.length,
+            summary: 'آخرها ${sorted.first.statusLabel}',
+            defaultOpen: needsAttention,
+            foot: approvedTotal > 0 ? NFootRow(label: 'إجمالي المعتمد', value: nMoney(approvedTotal), tone: Noon.green700, horizontal: 16) : null,
+            rows: [for (final r in sorted) _RequestRow(request: r)],
           ),
-          const SizedBox(height: 8),
-          for (final r in requests) _RequestCard(request: r),
-        ],
-        const SizedBox(height: Gap.lg),
       ],
     );
   }
 }
 
-class _Note extends StatelessWidget {
-  const _Note({required this.text, required this.fg, required this.bg});
-
-  final String text;
-  final Color fg;
-  final Color bg;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(Corner.box)),
-      child: Text(text, style: TextStyle(fontFamily: AppText.family, color: fg, fontSize: 12, fontWeight: FontWeight.w700, height: 1.5)),
-    );
-  }
-}
-
-class _RequestCard extends StatelessWidget {
-  const _RequestCard({required this.request});
+/// طلب دفع: المبلغ وتحته المحوِّل وجهته والتاريخ، ووسم الحالة، وسبب الرفض أو «أُضيفت».
+class _RequestRow extends StatelessWidget {
+  const _RequestRow({required this.request});
 
   final PaymentRequest request;
 
   @override
   Widget build(BuildContext context) {
     final r = request;
-    final (fg, bg, icon) = switch (r.status) {
-      'approved' => (const Color(0xFF047857), const Color(0xFFECFDF5), Icons.check_circle_outline),
-      'rejected' => (const Color(0xFFBE123C), const Color(0xFFFFF1F2), Icons.cancel_outlined),
-      _ => (const Color(0xFFB45309), const Color(0xFFFFFBEB), Icons.schedule_rounded),
+    final (tone, icon) = switch (r.status) {
+      'approved' => (NTone.green, Icons.check_circle_outline_rounded),
+      'rejected' => (NTone.red, Icons.cancel_outlined),
+      _ => (NTone.sun, Icons.schedule_rounded),
     };
-    final date = (r.transferDate.isNotEmpty ? r.transferDate : (r.createdAt ?? '')).split('T').first;
+    final date = nFullDayLabel(r.transferDate.isNotEmpty ? r.transferDate : (r.createdAt ?? ''));
+    final who = '${r.senderName}${r.transferChannel.isNotEmpty ? ' ← ${r.transferChannel}' : ''}';
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(Corner.card),
-          border: Border.all(color: AppColors.line),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: NColumn(
+        gap: 8,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(nMoney(r.amount), style: nText(14, weight: FontWeight.w700)),
+                    Text('$who · $date', maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(11, weight: FontWeight.w500, color: Noon.muted)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              NBadge(r.statusLabel, tone: tone, icon: icon),
+            ],
+          ),
+          if (r.status == 'rejected' && r.rejectionReason.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Noon.red50,
+                borderRadius: BorderRadius.circular(NoonRadius.tile),
+                border: Border.all(color: Noon.red200),
+              ),
+              child: Text('سبب الرفض: ${r.rejectionReason}', style: nText(12, weight: FontWeight.w700, color: Noon.red700, height: 1.625)),
+            ),
+          if (r.status == 'approved')
             Row(
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(money(r.amount), style: TextStyle(fontFamily: AppText.family, color: AppColors.heading, fontSize: 13, fontWeight: FontWeight.w800)),
-                      const SizedBox(height: 2),
-                      Text(
-                        [
-                          'من ${r.senderName}',
-                          if (r.transferChannel.isNotEmpty) 'إلى ${r.transferChannel}',
-                          if (date.isNotEmpty) date,
-                        ].join(' · '),
-                        style: const TextStyle(fontFamily: AppText.family, color: AppColors.muted, fontSize: 11),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(icon, size: 13, color: fg),
-                      const SizedBox(width: 4),
-                      Text(r.statusLabel, style: TextStyle(fontFamily: AppText.family, color: fg, fontSize: 11, fontWeight: FontWeight.w700)),
-                    ],
-                  ),
-                ),
+                Icon(Icons.inbox_outlined, size: 14, color: Noon.green700),
+                const SizedBox(width: 4),
+                Text('أُضيفت إلى سجل الدفعات', style: nText(11, weight: FontWeight.w700, color: Noon.green700)),
               ],
             ),
-            if (r.status == 'rejected' && r.rejectionReason.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              _Note(text: 'سبب الرفض: ${r.rejectionReason}', fg: const Color(0xFF9F1239), bg: const Color(0xFFFFF1F2)),
-            ],
-            if (r.status == 'approved') ...[
-              const SizedBox(height: 6),
-              const Text('أُضيفت إلى سجل الدفعات', style: TextStyle(fontFamily: AppText.family, color: Color(0xFF047857), fontSize: 11)),
-            ],
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -384,181 +349,217 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(title: const Text('تسديد دفعة')),
-      body: GestureDetector(
-        onTap: () => FocusScope.of(context).unfocus(),
-        child: ListView(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + MediaQuery.viewInsetsOf(context).bottom),
+    final account = _method?.accountNumber ?? '';
+    final radius = BorderRadius.circular(NoonRadius.btn);
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: NPageScaffold(
+        title: 'تسديد دفعة',
+        footer: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            const FieldLabel('حوّل إلى'),
-            if (methods.isNotEmpty)
-              AppDropdown<String>(
-                value: methodId,
-                items: [
-                  for (final m in methods) DropdownMenuItem(value: m.id, child: Text(m.name)),
-                ],
-                onChanged: (v) => setState(() {
-                  methodId = v ?? '';
-                  copied = false;
-                }),
-              )
-            else
-              TextField(
-                controller: channel,
-                decoration: const InputDecoration(hintText: 'اسم البنك أو المحفظة'),
-                onChanged: (_) => setState(() {}),
-              ),
-            // رقم الحساب أو المحفظة: يحوّل إليه ولي الأمر دون أن يسأل المدرسة عنه
-            if ((_method?.accountNumber ?? '').isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsetsDirectional.fromSTEB(12, 6, 8, 6),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.line),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: SelectableText(
-                        _method!.accountNumber,
-                        textDirection: TextDirection.ltr,
-                        textAlign: TextAlign.right,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          fontFamily: 'monospace',
-                          color: widget.accent,
+            NBtn(label: 'إلغاء', onTap: busy ? null : () => Navigator.pop(context)),
+            const SizedBox(width: 8),
+            NBtn(
+              tone: NBtnTone.ink,
+              icon: Icons.send_rounded,
+              label: 'إرسال للمراجعة',
+              busy: busy,
+              onTap: _ready ? _submit : null,
+            ),
+          ],
+        ),
+        children: [
+          NField(
+            label: 'حوّل إلى',
+            hint: 'تُحسب الدفعة بعد مراجعة المالية للإشعار',
+            child: NColumn(
+              gap: 8,
+              children: [
+                if (methods.isNotEmpty)
+                  NFieldBox(
+                    trailing: Icons.keyboard_arrow_down_rounded,
+                    onTap: _pickMethod,
+                    child: Text(_method?.name ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
+                  )
+                else
+                  TextField(
+                    controller: channel,
+                    style: nText(14, weight: FontWeight.w500),
+                    decoration: nInputDecoration(hint: 'اسم البنك أو المحفظة'),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                // رقم الحساب أو المحفظة: يحوّل إليه ولي الأمر دون أن يسأل المدرسة عنه
+                if (account.isNotEmpty)
+                  Container(
+                    height: 48,
+                    padding: const EdgeInsetsDirectional.fromSTEB(14, 0, 6, 0),
+                    decoration: BoxDecoration(color: Noon.mist2, borderRadius: radius, border: Border.all(color: Noon.line)),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: SelectableText(
+                            account,
+                            textDirection: TextDirection.ltr,
+                            textAlign: TextAlign.right,
+                            style: nText(16, weight: FontWeight.w700),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        NBtn(small: true, icon: copied ? Icons.check_rounded : Icons.copy_rounded, label: copied ? 'نُسخ' : 'نسخ', onTap: _copyNumber),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      onPressed: _copyNumber,
-                      style: OutlinedButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        foregroundColor: AppColors.muted,
-                        side: const BorderSide(color: AppColors.line),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      icon: Icon(copied ? Icons.check : Icons.copy, size: 15, color: copied ? AppColors.success : null),
-                      label: Text(copied ? 'نُسخ' : 'نسخ', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
-                    ),
-                  ],
+                  ),
+              ],
+            ),
+          ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: NField(
+                  label: 'المبلغ (شيكل)',
+                  child: TextField(
+                    controller: amount,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    style: nText(14, weight: FontWeight.w500),
+                    decoration: nInputDecoration(),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: NField(
+                  label: 'اسم المحوِّل',
+                  child: TextField(
+                    controller: sender,
+                    style: nText(14, weight: FontWeight.w500),
+                    decoration: nInputDecoration(),
+                    onChanged: (_) => setState(() {}),
+                  ),
                 ),
               ),
             ],
-            const SizedBox(height: 12),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const FieldLabel('المبلغ (شيكل)'),
-                      TextField(
-                        controller: amount,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        onChanged: (_) => setState(() {}),
+          ),
+          NField(
+            label: 'صورة الإشعار',
+            child: LayoutBuilder(
+              builder: (context, box) {
+                final w = (box.maxWidth - 16) / 3;
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (var i = 0; i < images.length; i++)
+                      SizedBox(
+                        width: w,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Container(
+                              height: 88,
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(color: Colors.white, borderRadius: radius, border: Border.all(color: Noon.line)),
+                              child: Image.memory(base64Decode(images[i].split(',').last), width: double.infinity, fit: BoxFit.contain),
+                            ),
+                            PositionedDirectional(
+                              top: -8,
+                              start: -8,
+                              child: Tooltip(
+                                message: 'حذف',
+                                child: GestureDetector(
+                                  onTap: () => setState(() => images.removeAt(i)),
+                                  child: Container(
+                                    width: 24,
+                                    height: 24,
+                                    decoration: BoxDecoration(color: Noon.red600, borderRadius: BorderRadius.circular(NoonRadius.tag)),
+                                    child: const Icon(Icons.close_rounded, size: 14, color: Colors.white),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const FieldLabel('اسم المحوِّل'),
-                      TextField(controller: sender, onChanged: (_) => setState(() {})),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const FieldLabel('صورة الإشعار'),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (var i = 0; i < images.length; i++)
-                  Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(Corner.box),
-                        child: Image.memory(base64Decode(images[i].split(',').last), width: 84, height: 84, fit: BoxFit.cover),
-                      ),
-                      PositionedDirectional(
-                        top: -6,
-                        end: -6,
-                        child: GestureDetector(
-                          onTap: () => setState(() => images.removeAt(i)),
-                          child: const CircleAvatar(
-                            radius: 11,
-                            backgroundColor: AppColors.danger,
-                            child: Icon(Icons.close, size: 13, color: Colors.white),
+                    if (images.length < maxRequestImages)
+                      SizedBox(
+                        width: w,
+                        height: 88,
+                        child: InkWell(
+                          onTap: _pickImage,
+                          borderRadius: BorderRadius.circular(NoonRadius.tile),
+                          child: CustomPaint(
+                            painter: NDashedBorder(color: Noon.line, radius: NoonRadius.tile),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.add_photo_alternate_outlined, size: 20, color: Noon.teal),
+                                const SizedBox(height: 4),
+                                Text(
+                                  images.isEmpty ? 'أرفق صورة الإشعار' : 'صورة إضافية',
+                                  textAlign: TextAlign.center,
+                                  style: nText(11, weight: FontWeight.w700, color: Noon.teal),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                if (images.length < maxRequestImages)
-                  InkWell(
-                    onTap: _pickImage,
-                    borderRadius: BorderRadius.circular(Corner.box),
-                    child: Container(
-                      width: 84,
-                      height: 84,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(Corner.box),
-                        border: Border.all(color: AppColors.line),
-                      ),
-                      child: const Icon(Icons.add_photo_alternate_outlined, color: AppColors.faint),
-                    ),
-                  ),
-              ],
+                  ],
+                );
+              },
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Expanded(child: Text('تاريخ التحويل', style: TextStyle(fontSize: 11.5, color: AppColors.muted))),
-                OutlinedButton(
-                  onPressed: _pickDate,
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    foregroundColor: AppColors.muted,
-                    side: const BorderSide(color: AppColors.line),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  child: Text(date, textDirection: TextDirection.ltr, style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
-                ),
-              ],
+          ),
+          NField(
+            label: 'تاريخ التحويل',
+            child: NFieldBox(
+              onTap: _pickDate,
+              trailing: Icons.calendar_today_outlined,
+              child: Text(date, textDirection: TextDirection.ltr, textAlign: TextAlign.right),
             ),
-            const SizedBox(height: 12),
-            const FieldLabel('ملاحظة'),
-            TextField(controller: notes, minLines: 1, maxLines: 3, decoration: const InputDecoration(hintText: 'مثال: عن قسط شهر 10')),
-            if (error.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              _Note(text: error, fg: const Color(0xFFBE123C), bg: const Color(0xFFFFF1F2)),
-            ],
-            const SizedBox(height: 16),
-            PrimaryButton(
-              label: busy ? 'جارِ الإرسال...' : 'إرسال للمراجعة',
-              icon: Icons.send_rounded,
-              color: widget.accent,
-              height: 44,
-              onPressed: busy || !_ready ? null : _submit,
+          ),
+          NField(
+            label: 'ملاحظة',
+            child: TextField(
+              controller: notes,
+              minLines: 2,
+              maxLines: 3,
+              style: nText(14, weight: FontWeight.w500),
+              decoration: nInputDecoration(hint: 'مثال: عن قسط شهر 10'),
             ),
+          ),
+          if (error.isNotEmpty) NNotice(text: error, sun: true),
+        ],
+      ),
+    );
+  }
+
+  /// اختيار الوسيلة من ورقة سفلية.
+  Future<void> _pickMethod() async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final m in methods)
+              ListTile(
+                title: Text(m.name, style: nText(14, weight: FontWeight.w700)),
+                trailing: m.id == methodId ? Icon(Icons.check_rounded, color: Noon.teal) : null,
+                onTap: () => Navigator.pop(ctx, m.id),
+              ),
           ],
         ),
       ),
     );
+    if (picked == null || !mounted) return;
+    setState(() {
+      methodId = picked;
+      copied = false;
+    });
   }
 }
 

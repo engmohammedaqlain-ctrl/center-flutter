@@ -167,7 +167,7 @@ class _HomeroomClassViewState extends State<HomeroomClassView> {
                         : Text(room.label, style: AppText.title),
                   ),
                   const SizedBox(width: 8),
-                  Text('${roomStudents.length} طالب', style: const TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w700)),
+                  Text('${roomStudents.length} طالب', style: TextStyle(color: Noon.muted, fontSize: 12, fontWeight: FontWeight.w700)),
                 ],
               ),
               const SizedBox(height: 10),
@@ -184,12 +184,12 @@ class _HomeroomClassViewState extends State<HomeroomClassView> {
                   IconButton(
                     tooltip: 'بطاقات الدخول',
                     onPressed: roomStudents.isEmpty ? null : () => _print(room, roomStudents),
-                    icon: const Icon(Icons.print_outlined, color: AppColors.muted),
+                    icon: Icon(Icons.print_outlined, color: Noon.muted),
                   ),
                   IconButton(
                     tooltip: 'تحديث',
                     onPressed: widget.loading ? null : widget.onReload,
-                    icon: const Icon(Icons.refresh_rounded, color: AppColors.muted),
+                    icon: Icon(Icons.refresh_rounded, color: Noon.muted),
                   ),
                 ],
               ),
@@ -254,7 +254,7 @@ class _StudentCardState extends State<_StudentCard> {
   @override
   Widget build(BuildContext context) {
     final s = widget.student;
-    final accent = parseHexColor(widget.branding.colors.primaryButton) ?? AppColors.heading;
+    final accent = parseHexColor(widget.branding.colors.primaryButton) ?? Noon.text;
     return AppCard(
       padding: EdgeInsets.zero,
       child: Column(
@@ -279,18 +279,18 @@ class _StudentCardState extends State<_StudentCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(s.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)),
-                        Text(s.nationalId.isEmpty ? '—' : s.nationalId, style: const TextStyle(color: AppColors.muted, fontSize: 11, fontFamily: 'monospace')),
+                        Text(s.nationalId.isEmpty ? '—' : s.nationalId, style: TextStyle(color: Noon.muted, fontSize: 11, fontFamily: 'monospace')),
                       ],
                     ),
                   ),
-                  Icon(widget.open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: AppColors.faint),
+                  Icon(widget.open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: Noon.faint),
                 ],
               ),
             ),
           ),
           if (widget.open)
             Container(
-              decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.line))),
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: Noon.line))),
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -311,16 +311,16 @@ class _StudentCardState extends State<_StudentCard> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: AppColors.sunken,
-                      borderRadius: BorderRadius.circular(Corner.box),
-                      border: Border.all(color: AppColors.line),
+                      color: Noon.band,
+                      borderRadius: BorderRadius.circular(NoonRadius.tile),
+                      border: Border.all(color: Noon.line),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.key_outlined, size: 15, color: AppColors.heading),
+                            Icon(Icons.key_outlined, size: 15, color: Noon.text),
                             const SizedBox(width: 6),
                             const Expanded(child: Text('بيانات الدخول', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
                             TextButton.icon(
@@ -334,7 +334,7 @@ class _StudentCardState extends State<_StudentCard> {
                         _Info('كلمة مرور الطالب', _mask(s.portalCode), mono: true),
                         _Info('كلمة مرور ولي الأمر', _mask(s.parentPortalCode), mono: true),
                         if (s.portalCode.isEmpty || s.parentPortalCode.isEmpty)
-                          Text('كلمة مرور غير مولّدة', style: TextStyle(color: AppColors.amberDark, fontSize: 10.5)),
+                          Text('كلمة مرور غير مولّدة', style: TextStyle(color: Noon.tealD, fontSize: 10.5)),
                         const SizedBox(height: 8),
                         Row(
                           children: [
@@ -382,7 +382,7 @@ class _Info extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
+          Text(label, style: TextStyle(color: Noon.muted, fontSize: 11.5)),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -416,7 +416,7 @@ class _Grades extends StatelessWidget {
     if (summaries.isEmpty) {
       final monthly = [for (final e in evaluations) if (e.type == 'monthly' && e.subjectId.isEmpty) e]
         ..sort((a, b) => b.evaluationDate.compareTo(a.evaluationDate));
-      if (monthly.isEmpty) return const Text('لا درجات بعد', style: TextStyle(color: AppColors.faint, fontSize: 11));
+      if (monthly.isEmpty) return Text('لا درجات بعد', style: TextStyle(color: Noon.faint, fontSize: 11));
       return Wrap(
         spacing: 6,
         runSpacing: 6,
@@ -432,16 +432,16 @@ class _Grades extends StatelessWidget {
 
     String term(TermGrade t) =>
         t.components.isEmpty || t.currentScore == null ? '—' : '${(t.isComplete ? t.termScore : t.currentScore!).round()}';
-    const head = TextStyle(color: AppColors.muted, fontSize: 10.5, fontWeight: FontWeight.w700);
+    final head = TextStyle(color: Noon.muted, fontSize: 10.5, fontWeight: FontWeight.w700);
     const cell = TextStyle(fontSize: 11.5, fontFamily: 'monospace');
     return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(Corner.box), border: Border.all(color: AppColors.line)),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(NoonRadius.tile), border: Border.all(color: Noon.line)),
       child: Column(
         children: [
           Container(
-            color: AppColors.sunken,
+            color: Noon.band,
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            child: const Row(
+            child: Row(
               children: [
                 Expanded(child: Text('المادة', style: head)),
                 SizedBox(width: 40, child: Text('ف1', textAlign: TextAlign.center, style: head)),
@@ -452,7 +452,7 @@ class _Grades extends StatelessWidget {
           ),
           for (final r in summaries)
             Container(
-              decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.line))),
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: Noon.line))),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               child: Row(
                 children: [

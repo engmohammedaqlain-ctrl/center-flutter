@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../data/features.dart';
 import '../data/grading.dart';
-import '../data/institution.dart';
 import '../data/notes.dart';
 import '../data/portal.dart';
 import '../data/push.dart';
@@ -15,12 +14,15 @@ import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/moodle_style.dart';
+import '../widgets/noon_moodle.dart';
+import '../widgets/noon_ui.dart';
+import '../widgets/subject_style.dart';
 import '../widgets/widgets.dart';
 import 'notes_parts.dart';
 import 'parent_payments.dart';
 import 'portal_chrome.dart';
 
-/// بوابة الطالب وولي الأمر — تخطيط جوال بهوية AppColors وشريط سفلي.
+/// بوابة الطالب وولي الأمر بهوية نون — المقابل لـ `pages/StudentPortal.tsx` و`FamilyPortalParts.tsx`.
 class StudentPortalScreen extends StatefulWidget {
   const StudentPortalScreen({
     super.key,
@@ -56,7 +58,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
   /// الابن الذي يُفتح ملفه الآن، أثناء انتظار تبديله.
   String? switchingChildId;
 
-  /// توسيع قائمة الأقساط — الافتراضي أول ثلاثة؛ الأهم ملخّص الدفع أعلاه.
+  /// توسيع قائمة الأقساط — الافتراضي أول أربعة؛ الأهم ملخّص الدفع أعلاه.
   bool _feesExpanded = false;
 
   late String tab = isParent ? 'attendance' : 'moodle';
@@ -443,68 +445,69 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
   Widget build(BuildContext context) {
     final branding = data?.branding ?? const PortalBranding();
     final student = data?.student;
-    final displayName = isParent
+    final studentName = isParent
         ? (user.studentName.isNotEmpty ? user.studentName : (student?.fullName ?? user.name))
         : user.name;
+    final details = portalGradeLine(user: user, student: student);
+    final parentName = user.name.trim().isNotEmpty ? user.name.trim() : 'ولي الأمر';
 
     return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: Column(
-        children: [
-          PortalChromeHeader(
-            branding: branding,
-            // بلا اسم وليّ الأمر: الترويسة تُعرض على شاشة يراها غير صاحبها
-            displayName: displayName,
-            gradeLine: portalGradeLine(user: user, student: student),
-            onExit: widget.onExit,
-          ),
-          // أبناء وليّ الأمر: لمس اسم يفتح ملفه — دخولٌ بهويته وكلمة وليّ
-          // الأمر نفسها، فلا تتغيّر صلاحية ولا يُطلب منه رمز من جديد
-          if (isParent && user.children.length > 1)
-            _ChildrenBar(
-              children: user.children,
-              currentId: user.id,
-              busyId: switchingChildId,
-              color: parseHexColor(branding.colors.activeItem) ?? AppColors.amber,
-              onPick: _switchChild,
+      backgroundColor: Noon.paper,
+      body: DefaultTextStyle.merge(
+        style: nText(14),
+        child: Column(
+          children: [
+            PortalChromeHeader(
+              branding: branding,
+              // رقم الهوية لا يُعرض: الشاشة قد تكون مفتوحة أمام الآخرين
+              sub: isParent ? 'ولي الأمر: $parentName' : [studentName, details].where((s) => s.isNotEmpty).join(' · '),
+              onExit: widget.onExit,
             ),
-          Expanded(
-            child: loading
-                ? const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(40),
-                      child: Text(
-                        'جارِ تحميل البيانات...',
-                        style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  )
-                : error != null
-                    ? _ErrorBody(message: error!, onRetry: _load)
-                    : RefreshIndicator(
-                        onRefresh: _load,
-                        color: AppColors.accent,
-                        child: ListView(
-                          padding: const EdgeInsets.fromLTRB(14, 12, 14, 18),
-                          children: [
-                            ..._familyTop(),
-                            ...switch (tab) {
-                              'subjects' => _subjectsTab(),
-                              'attendance' => _attendanceTab(),
-                              'evaluations' => _evaluationsTab(),
-                              'financial' => _financialTab(),
-                              _ => _moodleTab(),
-                            },
-                          ],
+            // ولي الأمر: الابن المعروض وأشقاؤه للتبديل — دخولٌ بهويته وكلمة وليّ الأمر نفسها
+            if (isParent)
+              _ChildBand(
+                studentName: studentName,
+                details: details,
+                kids: user.children,
+                currentId: user.id,
+                busyId: switchingChildId,
+                onPick: _switchChild,
+              ),
+            Expanded(
+              child: loading
+                  ? ListView(children: const [NLoading(text: 'جارٍ تحميل البيانات')])
+                  : error != null
+                      ? _ErrorBody(message: error!, onRetry: _load)
+                      : RefreshIndicator(
+                          onRefresh: _load,
+                          color: Noon.teal,
+                          child: ListView(
+                            padding: const EdgeInsets.all(NoonSize.page),
+                            children: [
+                              // الإعلان وشريط الملاحظة الجديدة يحملان فراغهما: لا فراغ حين يغيبان
+                              ..._familyTop(),
+                              NColumn(
+                                children: [
+                                  ...switch (tab) {
+                                    'subjects' => _subjectsTab(),
+                                    'attendance' => _attendanceTab(),
+                                    'evaluations' => _evaluationsTab(),
+                                    'financial' => _financialTab(),
+                                    _ => _moodleTab(),
+                                  },
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-          ),
-          PortalBottomNav(
-            items: _navItems,
-            activeId: tab,
-            onSelect: _selectTab,
-          ),
-        ],
+            ),
+            PortalBottomNav(
+              items: _navItems,
+              activeId: tab,
+              onSelect: _selectTab,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -514,129 +517,58 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
   List<Widget> _moodleTab() {
     final subjects = data!.subjects;
     return [
-      // المواد شرائح تُمرَّر، والفصل مفتاح مقسّم — بلا بطاقة ولا عناوين تشرح الظاهر
-      if (subjects.isEmpty)
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 6),
-          child: Text(
-            'لا توجد مواد مسجلة حالياً',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.faint, fontSize: 12, fontWeight: FontWeight.w700),
-          ),
-        )
-      else
-        SizedBox(
-          height: 34,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: [
-              for (final s in subjects)
-                Padding(
-                  padding: const EdgeInsetsDirectional.only(end: 6),
-                  child: _PortalPill(
-                    label: s.subjectName,
-                    selected: moodleGroupId == s.groupId,
-                    onTap: () {
-                      setState(() => moodleGroupId = s.groupId);
-                      _loadMoodle();
-                    },
-                  ),
-                ),
-            ],
-          ),
-        ),
-      const SizedBox(height: 10),
-      _TermSwitch(
-        value: term,
-        onChanged: (t) {
-          setState(() => term = t);
-          _loadMoodle();
-        },
-      ),
-      const SizedBox(height: Gap.lg),
-      if (loadingMoodle)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 40),
-          child: Column(
-            children: [
-              SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.heading),
+      // مواد الطالب كبسولات قابلة للتمرير، والفصل تحتها
+      NPanel(
+        padding: const EdgeInsets.all(16),
+        child: NColumn(
+          gap: 12,
+          children: [
+            if (subjects.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text('لا مواد مسجلة', textAlign: TextAlign.center, style: nText(14, weight: FontWeight.w500, color: Noon.muted)),
+              )
+            else
+              NSubjectPills<String>(
+                items: [for (final s in subjects) (s.groupId, s.subjectName)],
+                selected: moodleGroupId,
+                onSelect: (id) {
+                  setState(() => moodleGroupId = id);
+                  _loadMoodle();
+                },
               ),
-              const SizedBox(height: 8),
-              const Text(
-                'جارٍ تحميل المحتوى الدراسي...',
-                style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600),
-              ),
-            ],
-          ),
-        )
-      else if (sections.isEmpty)
-        EmptyState(message: 'لا توجد وحدات أو دروس منشورة لهذه المادة في هذا الفصل',
-          icon: Icons.layers_outlined,
-        )
-      else
-        for (final (i, sec) in sections.indexed)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Material(
-              color: unitHeaderBg(unitColor(sec, i)),
-              borderRadius: BorderRadius.circular(Corner.card),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(Corner.card),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => _StudentSectionPage(
-                      section: sec,
-                      color: unitColor(sec, i),
-                      service: _service,
-                    ),
-                  ),
-                ),
-                child: Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(Corner.card),
-                    border: Border.all(color: unitBorder(unitColor(sec, i))),
-                  ),
-                  child: Row(
-                    children: [
-                      UnitNumber(n: i + 1, color: unitColor(sec, i)),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              sec.title,
-                              style: TextStyle(
-                                fontFamily: AppText.family,
-                                color: unitColor(sec, i),
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${sec.items.length} عنصر',
-                              style: TextStyle(
-                                fontFamily: AppText.family,
-                                color: AppColors.muted,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const AppChevron(color: AppColors.faint),
-                    ],
-                  ),
-                ),
-              ),
+            NSegment<String>(
+              value: term,
+              options: noonTermOptions,
+              onChanged: (t) {
+                setState(() => term = t);
+                _loadMoodle();
+              },
             ),
-          ),
+          ],
+        ),
+      ),
+      if (loadingMoodle)
+        const NLoading(text: 'جارٍ تحميل الوحدات')
+      else if (sections.isEmpty)
+        const NEmpty(text: 'لا وحدات منشورة', icon: Icons.layers_outlined)
+      else
+        NColumn(
+          gap: 10,
+          children: [
+            for (final (i, sec) in sections.indexed)
+              NUnitRow(
+                section: sec,
+                index: i,
+                color: unitColor(sec, i),
+                onOpen: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => _StudentSectionPage(section: sec, service: _service),
+                  ),
+                ),
+              ),
+          ],
+        ),
     ];
   }
 
@@ -649,102 +581,34 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     final subjectKeys = {for (final s in subjects) teacherChatKey(s.teacherName, s.subjectName)};
     Conversation? chatOf(PortalSubject s) =>
         chats.where((c) => c.key == teacherChatKey(s.teacherName, s.subjectName)).firstOrNull;
+    final others = [for (final c in chats) if (!subjectKeys.contains(c.key)) c];
     return [
-      FamilyOtherChats(convs: [for (final c in chats) if (!subjectKeys.contains(c.key)) c], onOpen: _openChat),
-      Text(
-        'المواد والمعلمون (${subjects.length}):',
-        style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600),
-      ),
-      const SizedBox(height: Gap.md),
+      if (others.isNotEmpty) FamilyOtherChats(convs: others, onOpen: _openChat),
+      NSectionTitle(title: 'المواد والمعلمون', count: subjects.length),
       if (subjects.isEmpty)
-        EmptyState(message: 'لا توجد مواد مسجلة حالياً')
+        const NEmpty(text: 'لا مواد مسجلة', icon: Icons.school_outlined)
       else
-        for (final s in subjects)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: AppCard(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          s.subjectName,
-                          style: TextStyle(color: AppColors.heading, fontSize: 12.5, fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            Icon(Icons.person_outline, size: 13, color: AppColors.accent),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text.rich(
-                                TextSpan(
-                                  text: 'المعلم: ',
-                                  children: [
-                                    TextSpan(
-                                      text: s.teacherName,
-                                      style: TextStyle(color: AppColors.text, fontWeight: FontWeight.w600),
-                                    ),
-                                  ],
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(color: AppColors.muted, fontSize: 11),
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (s.roomName.isNotEmpty) ...[
-                          const SizedBox(height: 3),
-                          Text('القاعة: ${s.roomName}', style: TextStyle(color: AppColors.faint, fontSize: 10.5)),
-                        ],
-                        if (chatOf(s) case final chat?) ...[
-                          const SizedBox(height: 8),
-                          SubjectChatButton(unread: chat.unread, onTap: () => _openChat(chat)),
-                        ],
-                      ],
+        // عمودان على الجوال
+        LayoutBuilder(
+          builder: (context, box) {
+            final w = (box.maxWidth - 12) / 2;
+            return Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                for (final s in subjects)
+                  SizedBox(
+                    width: w,
+                    child: _SubjectTile(
+                      subject: s,
+                      chat: chatOf(s),
+                      onChat: chatOf(s) == null ? null : () => _openChat(chatOf(s)!),
                     ),
                   ),
-                  if (s.days.isNotEmpty) ...[
-                    const SizedBox(width: 10),
-                    Flexible(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          StatusChip.amber(daysNames(s.days)),
-                          if (s.startTime.length >= 5 && s.endTime.length >= 5) ...[
-                            const SizedBox(height: 4),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.schedule, size: 11, color: AppColors.muted),
-                                const SizedBox(width: 3),
-                                Flexible(
-                                  child: Text(
-                                    '${s.startTime.substring(0, 5)} - ${s.endTime.substring(0, 5)}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    textDirection: TextDirection.ltr,
-                                    style: TextStyle(
-                                      color: AppColors.muted,
-                                      fontSize: 10.5,
-                                      fontFamily: 'monospace',
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
+              ],
+            );
+          },
+        ),
     ];
   }
 
@@ -753,74 +617,85 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
   List<Widget> _attendanceTab() {
     final a = data!.attendance;
     final total = a.present + a.absent + a.excused;
-    final rate = total == 0 ? 0.0 : a.present / total;
+    final percent = total == 0 ? 0 : (a.present / total * 100).round();
+    final tone = _percentTone(percent);
 
-    // السجل مجموع بالشهر: صفٌّ واحد لكل يوم بحالته
+    // السجل مجموع بالشهر بترتيبه الوارد (الأحدث أولاً)
     final byMonth = <String, List<AttendanceMark>>{};
     for (final r in a.records) {
-      final d = parseIsoDate(r.date.length >= 10 ? r.date.substring(0, 10) : r.date);
-      final key = d == null ? r.date : '${gregorianMonths[d.month - 1]} ${d.year}';
-      byMonth.putIfAbsent(key, () => []).add(r);
+      byMonth.putIfAbsent(nMonthLabel(r.date), () => []).add(r);
     }
 
     return [
-      _PortalSummary(
+      NHeroCard(
         label: 'نسبة الحضور',
-        value: '${(rate * 100).round()}%',
-        ratio: rate,
-        parts: [
-          (label: 'حاضر', value: '${a.present}', color: const Color(0xFF2E7D57)),
-          (label: 'غائب', value: '${a.absent}', color: const Color(0xFFA5484A)),
-          (label: 'مأذون', value: '${a.excused}', color: const Color(0xFF9A6700)),
-        ],
+        icon: Icons.event_available_rounded,
+        value: '$percent',
+        unit: '%',
+        tone: tone == NTone.green ? NoonHeroTone.paid : (tone == NTone.red ? NoonHeroTone.due : NoonHeroTone.theme),
+        chips: ['حاضر ${a.present}', 'غائب ${a.absent}', 'مأذون ${a.excused}'],
+        child: NHeroBar(percent: percent),
       ),
-      const SizedBox(height: Gap.lg),
       if (a.records.isEmpty)
-        EmptyState(message: 'لا توجد سجلات حضور مسجلة بعد')
-      else
-        for (final entry in byMonth.entries) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 6, 4, 8),
-            child: Text(
-              entry.key,
-              style: TextStyle(
-                fontFamily: AppText.family,
-                color: AppColors.heading,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
+        const NEmpty(text: 'لا سجل حضور', icon: Icons.event_available_rounded)
+      else ...[
+        NSectionTitle(title: 'سجل الحضور', count: a.records.length),
+        for (final entry in byMonth.entries)
+          NColumn(
+            gap: 8,
+            children: [
+              NSectionTitle(title: entry.key, count: entry.value.length),
+              Container(
+                clipBehavior: Clip.antiAlias,
+                decoration: nPanelDecoration(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const NTableHead(cells: [('اليوم', 1), ('الحالة', -112)]),
+                    NDivided(
+                      children: [
+                        for (final r in entry.value)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(nWeekdayLabel(r.date), style: nText(14, weight: FontWeight.w700)),
+                                      if (r.notes.trim().isNotEmpty)
+                                        Text(r.notes.trim(), style: nText(11, weight: FontWeight.w500, color: Noon.muted)),
+                                    ],
+                                  ),
+                                ),
+                                SizedBox(width: 112, child: Align(alignment: AlignmentDirectional.centerStart, child: _attendanceBadge(r.status))),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                    NFootRow(label: 'عدد الأيام', value: '${entry.value.length}'),
+                  ],
+                ),
               ),
-            ),
+            ],
           ),
-          Container(
-            clipBehavior: Clip.antiAlias,
-            margin: const EdgeInsets.only(bottom: 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(Corner.card),
-              border: Border.all(color: AppColors.line),
-              boxShadow: cardShadow,
-            ),
-            child: Column(
-              children: [
-                for (var i = 0; i < entry.value.length; i++)
-                  _PortalRow(
-                    title: portalDayLabel(entry.value[i].date),
-                    meta: entry.value[i].notes.trim(),
-                    last: i == entry.value.length - 1,
-                    trailing: switch (entry.value[i].status) {
-                      'present' => const _PortalBadge('حاضر', Color(0xFF2E7D57)),
-                      'excused' => const _PortalBadge('مأذون', Color(0xFF9A6700)),
-                      _ => const _PortalBadge('غائب', Color(0xFFA5484A)),
-                    },
-                  ),
-              ],
-            ),
-          ),
-        ],
+      ],
     ];
   }
 
+  static Widget _attendanceBadge(String status) => switch (status) {
+        'present' => const NBadge('حاضر', tone: NTone.green, icon: Icons.check_rounded),
+        'excused' => const NBadge('مأذون', tone: NTone.sun, icon: Icons.schedule_rounded),
+        _ => const NBadge('غائب', tone: NTone.red, icon: Icons.close_rounded),
+      };
+
   // ── الدرجات ───────────────────────────────────────────────────────────────
+
+  /// المادة المفتوحة في الدرجات؛ الوحيدة مفتوحة افتراضياً.
+  final _openSubjects = <String, bool>{};
 
   List<Widget> _evaluationsTab() {
     final list = data!.evaluations;
@@ -836,7 +711,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       },
     );
 
-    // التقييمات تتبع موادّها كما في ملف الطالب، لا قائمة واحدة طويلة بعد الملخص
+    // التقييمات تتبع موادّها، لا قائمة واحدة طويلة
     final bySubject = <String, List<StudentEvaluation>>{};
     for (final e in list) {
       bySubject.putIfAbsent(e.subjectName.trim().isEmpty ? 'غير محدد' : e.subjectName.trim(), () => []).add(e);
@@ -851,26 +726,37 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     }.toList()
       ..sort();
 
-    if (names.isEmpty) {
-      return [
-        EmptyState(
-          message: 'لم يتم رصد أي درجات أو تقييمات لك بعد',
-          icon: Icons.workspace_premium_outlined,
-        ),
-      ];
-    }
+    if (names.isEmpty) return const [NEmpty(text: 'لا درجات بعد', icon: Icons.workspace_premium_outlined)];
+
+    // المتوسط البسيط لا يُعرض حين يتوفر معدل موزون: يساوي بين واجب ونهائي
+    final average = summaries.isEmpty ? _averagePercent(list)?.round() : null;
+    final best = list.isEmpty ? 0 : list.map(_pct).reduce((a, b) => a > b ? a : b).round();
+    bool isOpen(String name) => _openSubjects[name] ?? names.length == 1;
 
     return [
-      for (final name in names)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: _SubjectGradesCard(
-            name: name,
-            summary: summaries.where((x) => x.subjectName == name).firstOrNull,
-            rows: bySubject[name] ?? const [],
-            scheme: scheme,
-          ),
+      if (list.isNotEmpty)
+        NHeroCard(
+          label: average != null ? 'المعدل' : 'الاختبارات',
+          icon: Icons.workspace_premium_rounded,
+          value: '${average ?? list.length}',
+          unit: average != null ? '%' : null,
+          chips: [if (average != null) 'الاختبارات ${list.length}', 'أعلى علامة $best%'],
         ),
+      NSectionTitle(title: 'كشف الدرجات والتقييمات', count: list.length),
+      NColumn(
+        gap: 12,
+        children: [
+          for (final name in names)
+            _SubjectGradesCard(
+              key: ValueKey('grades:$name'),
+              name: name,
+              summary: summaries.where((x) => x.subjectName == name).firstOrNull,
+              rows: bySubject[name] ?? const [],
+              open: isOpen(name),
+              onToggle: () => setState(() => _openSubjects[name] = !isOpen(name)),
+            ),
+        ],
+      ),
     ];
   }
 
@@ -879,210 +765,209 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
   List<Widget> _financialTab() {
     final f = data!.finance;
     final owes = f.currentDue > 0;
-    const previewCount = 3;
+    const preview = 4;
     final all = f.installments;
-    final showAll = _feesExpanded || all.length <= previewCount;
-    final visible = showAll ? all : all.take(previewCount).toList();
+    final visible = !_feesExpanded && all.length > preview ? all.take(preview).toList() : all;
     final hidden = all.length - visible.length;
+    final totalAmount = all.fold<double>(0, (s, i) => s + i.amount);
+    final remaining = f.currentDue + f.scheduledRemaining;
+    final paidInFull = !owes && remaining <= 0;
+
+    // أقرب قسط غير مسدد بتاريخ استحقاقه
+    final open = [for (final i in all) if (!_isPaid(i)) i]
+      ..sort((a, b) => (a.dueDate.isEmpty ? '9999' : a.dueDate).compareTo(b.dueDate.isEmpty ? '9999' : b.dueDate));
+    final next = open.firstOrNull;
+    final nextLeft = next?.remaining ?? 0;
+    final nextParts = next == null
+        ? const <String>[]
+        : [if (next.dueDate.isNotEmpty) nDayLabel(next.dueDate), if (nextLeft > 0) nMoney(nextLeft)];
+    // لا رقم صفري يُعرض: المدفوع والقسط القادم حين لهما قيمة فقط
+    final chips = [
+      if (f.totalPaid > 0) '${paidInFull ? 'إجمالي المسدد' : 'المدفوع'} ${nMoney(f.totalPaid)}',
+      if (!paidInFull && nextParts.isNotEmpty) 'القسط القادم ${nextParts.join(' · ')}',
+    ];
+
+    // الأحدث أولاً
+    final payments = [...f.payments]..sort((a, b) => b.date.compareTo(a.date));
 
     return [
+      // ولي الأمر: زر «تسديد دفعة» وطلباته أعلى التبويب
       if (isParent)
         ParentPaymentsSection(
           user: user,
           suggestedAmount: f.currentDue,
-          accent: parseHexColor(data!.branding.colors.primaryButton) ?? AppColors.amber,
+          accent: Noon.action,
           refreshTick: _realtimeTick,
           sharedReceipts: sharedReceipts,
           onSharedReceiptsUsed: () => sharedReceipts = const [],
         ),
-      _PortalSummary(
-        label: owes ? 'المستحق حالياً' : 'حالة الحساب',
-        value: owes ? money(f.currentDue) : (f.scheduledRemaining > 0 ? 'مسدد حتى الآن' : 'مسدد بالكامل'),
-        valueColor: owes ? const Color(0xFFA5484A) : const Color(0xFF2E7D57),
-        parts: [
-          (label: 'المقبوض', value: money(f.totalPaid), color: const Color(0xFF2E7D57)),
-          if (f.scheduledRemaining > 0)
-            (label: 'قادم', value: money(f.scheduledRemaining), color: AppColors.muted),
-        ],
+      const NSectionTitle(title: 'الرسوم'),
+      NHeroCard(
+        label: owes ? 'مستحق الآن' : 'كشف الحساب',
+        icon: Icons.credit_card_rounded,
+        value: paidInFull ? 'مسدد بالكامل' : (owes ? nAmount(f.currentDue) : 'مسدد حتى الآن'),
+        unit: owes ? 'شيكل' : null,
+        tone: owes ? NoonHeroTone.due : NoonHeroTone.paid,
+        chips: chips,
       ),
-      const SizedBox(height: Gap.lg),
-      if (all.isEmpty)
-        EmptyState(message: 'لا توجد أقساط مسجلة حالياً')
-      else ...[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-          child: Text(
-            'الرسوم (${all.length})',
-            style: TextStyle(
-              fontFamily: AppText.family,
-              color: AppColors.heading,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        Container(
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(Corner.card),
-            border: Border.all(color: AppColors.line),
-            boxShadow: cardShadow,
-          ),
-          child: Column(
-            children: [
-              for (var i = 0; i < visible.length; i++)
-                _PortalRow(
-                  title: visible[i].title,
-                  meta: 'استحقاق ${portalDayLabel(visible[i].dueDate)}',
-                  last: i == visible.length - 1 && hidden == 0,
-                  trailing: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    mainAxisSize: MainAxisSize.min,
+      NColumn(
+        gap: 8,
+        children: [
+          NSubTitle('الأقساط (${all.length})'),
+          if (all.isEmpty)
+            const NEmpty(text: 'لا رسوم', icon: Icons.credit_card_rounded, dashed: false)
+          else
+            Container(
+              clipBehavior: Clip.antiAlias,
+              decoration: nPanelDecoration(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  NDivided(
                     children: [
-                      Text(
-                        money(visible[i].amount),
-                        style: TextStyle(
-                          fontFamily: AppText.family,
-                          color: AppColors.heading,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      _installmentChip(visible[i]),
-                    ],
-                  ),
-                ),
-              if (hidden > 0 || (_feesExpanded && all.length > previewCount))
-                InkWell(
-                  onTap: () => setState(() => _feesExpanded = !_feesExpanded),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          _feesExpanded ? 'عرض أقل' : 'عرض المزيد ($hidden)',
-                          style: TextStyle(
-                            fontFamily: AppText.family,
-                            color: AppColors.amberDark,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(
-                          _feesExpanded ? Icons.expand_less : Icons.expand_more,
-                          size: 18,
-                          color: AppColors.amberDark,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ],
-      const SizedBox(height: Gap.lg),
-      const SizedBox(height: Gap.sm),
-      Text(
-        'سجل الدفعات وسندات القبض (${f.payments.length}):',
-        style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600),
-      ),
-      const SizedBox(height: Gap.sm),
-      if (f.payments.isEmpty)
-        EmptyState(message: 'لا توجد سندات قبض مسجلة بعد')
-      else
-        for (final p in f.payments)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () => showPortalReceipt(
-                  context: context,
-                  payment: p,
-                  student: data!.student,
-                  branding: data!.branding,
-                ),
-                borderRadius: BorderRadius.circular(Corner.card),
-                child: AppCard(
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 4,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                Text(
-                                  'سند #${p.receiptNumber}',
-                                  style: TextStyle(
-                                    color: AppColors.heading,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    fontFamily: 'monospace',
-                                  ),
+                      for (final inst in visible)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(inst.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(14, weight: FontWeight.w700)),
+                                    if (inst.dueDate.isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Tooltip(
+                                        message: 'الاستحقاق',
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.schedule_rounded, size: 12, color: Noon.muted),
+                                            const SizedBox(width: 4),
+                                            Text(nDayLabel(inst.dueDate), style: nText(11, weight: FontWeight.w500, color: Noon.muted)),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
-                                StatusChip.muted(data!.branding.methodLabel(p.method)),
-                              ],
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              isoDate(p.date),
-                              style: TextStyle(color: AppColors.faint, fontSize: 10.5, fontFamily: 'monospace'),
-                            ),
-                            if (p.purpose.isNotEmpty)
-                              Text(
-                                paymentPurposeNames[p.purpose] ?? p.purpose,
-                                style: TextStyle(color: AppColors.muted, fontSize: 10.5),
                               ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          StatusChip.success('+ ${money(p.amount)}'),
-                          const SizedBox(height: 6),
-                          Text(
-                            'عرض الوصل',
-                            style: TextStyle(
-                              color: AppColors.accent,
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w600,
-                              decoration: TextDecoration.underline,
-                            ),
+                              const SizedBox(width: 12),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(nMoney(inst.amount), style: nText(14, weight: FontWeight.w700)),
+                                  const SizedBox(height: 6),
+                                  _installmentBadge(inst),
+                                ],
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
                     ],
                   ),
-                ),
+                  if (all.length > preview)
+                    NShowAll(
+                      label: _feesExpanded ? 'عرض أقل' : 'عرض الكل ($hidden)',
+                      onTap: () => setState(() => _feesExpanded = !_feesExpanded),
+                    ),
+                  NFootRow(label: 'إجمالي الرسوم', value: nMoney(totalAmount), horizontal: 16),
+                ],
               ),
             ),
-          ),
+        ],
+      ),
+      if (payments.isEmpty)
+        const NColumn(
+          gap: 8,
+          children: [
+            NSubTitle('سندات القبض (0)'),
+            NEmpty(text: 'لا سندات قبض', icon: Icons.receipt_long_outlined, dashed: false),
+          ],
+        )
+      else
+        NFold(
+          title: 'سندات القبض',
+          count: payments.length,
+          summary: 'آخرها ${nFullDayLabel(isoDate(payments.first.date))}',
+          rows: [for (final p in payments) _receiptRow(p)],
+        ),
     ];
   }
 
-  Widget _installmentChip(PortalInstallment i) {
-    if (i.status == 'unpaid') {
-      return i.isScheduled ? StatusChip.muted('قادم') : StatusChip.danger('مستحق');
-    }
-    if (i.status == 'partially_paid') {
-      return i.isScheduled
-          ? StatusChip.muted('قادم (باقي ${money(i.remaining)})')
-          : StatusChip.amber('باقي ${money(i.remaining)}');
-    }
-    return StatusChip.success('مسدد');
+  /// سند القبض صف يُلمس كله لفتح الوصل، وزر أيقونة «معاينة الوصل» في طرفه.
+  Widget _receiptRow(Payment p) {
+    final branding = data!.branding;
+    final how = [
+      branding.methodLabel(p.method),
+      if (p.purpose.isNotEmpty) paymentPurposeNames[p.purpose] ?? '',
+    ].where((s) => s.trim().isNotEmpty).join(' · ');
+    void open() => showPortalReceipt(context: context, payment: p, student: data!.student, branding: branding);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: open,
+        highlightColor: Noon.mist,
+        child: Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 10, 12, 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text.rich(
+                      TextSpan(
+                        text: 'سند ',
+                        children: [
+                          TextSpan(text: p.receiptNumber),
+                        ],
+                      ),
+                      style: nText(14, weight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      [nFullDayLabel(isoDate(p.date)), how].where((s) => s.isNotEmpty).join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: nText(11, color: Noon.muted),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(nMoney(p.amount), style: nText(14, weight: FontWeight.w700, color: Noon.green700)),
+              const SizedBox(width: 4),
+              NBtn(tone: NBtnTone.ghost, small: true, icon: Icons.description_outlined, tooltip: 'معاينة الوصل', fg: Noon.teal, onTap: open),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static bool _isPaid(PortalInstallment i) => i.status == 'paid' || i.paidAmount >= i.amount;
+
+  /// «قادم» بدل «مجدول»: الكلمة المحاسبية لا يفهمها الأهل.
+  static Widget _installmentBadge(PortalInstallment i) {
+    if (_isPaid(i)) return const NBadge('مسدد', tone: NTone.green);
+    if (i.isScheduled) return const NBadge('قادم');
+    if (i.status == 'unpaid') return const NBadge('مستحق', tone: NTone.red);
+    return NBadge('باقي ${nMoney(i.remaining)}', tone: NTone.sun);
   }
 }
+
+/// لون النسبة: أخضر من 85، وكهرماني من 60، وأحمر دونها.
+NTone _percentTone(num percent) => percent >= 85 ? NTone.green : (percent >= 60 ? NTone.sun : NTone.red);
+
+/// نسبة التقييم؛ بلا علامة صفر.
+double _pct(StudentEvaluation e) => e.maxScore > 0 ? (e.score ?? 0) / e.maxScore * 100 : 0;
+
+double? _averagePercent(List<StudentEvaluation> list) =>
+    list.isEmpty ? null : list.fold<double>(0, (s, e) => s + _pct(e)) / list.length;
 
 class _ErrorBody extends StatelessWidget {
   const _ErrorBody({required this.message, required this.onRetry});
@@ -1092,243 +977,259 @@ class _ErrorBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.cloud_off, size: 34, color: AppColors.faint),
-            const SizedBox(height: 10),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 12),
-            TextButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('إعادة المحاولة'),
-              style: TextButton.styleFrom(foregroundColor: AppColors.heading),
-            ),
-          ],
+    return ListView(
+      padding: const EdgeInsets.all(NoonSize.page),
+      children: [
+        NEmpty(
+          text: message,
+          icon: Icons.cloud_off_rounded,
+          dashed: false,
+          action: 'إعادة المحاولة',
+          actionIcon: Icons.refresh_rounded,
+          onAction: onRetry,
         ),
-      ),
+      ],
     );
   }
 }
 
-/// شريحة اختيار في البوابة — المادة المختارة تمتلئ بلون الهوية.
-class _PortalPill extends StatelessWidget {
-  const _PortalPill({required this.label, required this.selected, required this.onTap});
+/// ولي الأمر: الابن المعروض ملفه دائماً ظاهر تحت الترويسة، ومعه أشقاؤه أزراراً للتبديل بلمسة.
+class _ChildBand extends StatelessWidget {
+  const _ChildBand({
+    required this.studentName,
+    required this.details,
+    required this.kids,
+    required this.currentId,
+    required this.busyId,
+    required this.onPick,
+  });
 
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.amber : Colors.white,
-          borderRadius: BorderRadius.circular(17),
-          border: Border.all(color: selected ? AppColors.amber : AppColors.lineStrong),
-          boxShadow: selected
-              ? [BoxShadow(color: AppColors.amber.withValues(alpha: 0.25), blurRadius: 8, offset: const Offset(0, 2))]
-              : null,
-        ),
-        child: Text(
-          label,
-          maxLines: 1,
-          style: TextStyle(
-            fontFamily: AppText.family,
-            color: selected ? Colors.white : AppColors.heading,
-            fontSize: 12.5,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// مفتاح الفصل: خانتان متجاورتان بمؤشّر ينزلق.
-class _TermSwitch extends StatelessWidget {
-  const _TermSwitch({required this.value, required this.onChanged});
-
-  final String value;
-  final ValueChanged<String> onChanged;
-
-  static const _terms = [('term_1', 'الفصل الأول'), ('term_2', 'الفصل الثاني')];
+  final String studentName;
+  final String details;
+  final List<PortalChild> kids;
+  final String currentId;
+  final String? busyId;
+  final ValueChanged<PortalChild> onPick;
 
   @override
   Widget build(BuildContext context) {
-    final index = _terms.indexWhere((t) => t.$1 == value).clamp(0, _terms.length - 1);
+    final many = kids.length > 1;
     return Container(
-      height: 40,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(color: AppColors.hover, borderRadius: BorderRadius.circular(12)),
-      child: LayoutBuilder(
-        builder: (context, box) {
-          final w = box.maxWidth / _terms.length;
-          final rtl = Directionality.of(context) == TextDirection.rtl;
-          return Stack(
-            children: [
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 240),
-                curve: Curves.easeOutCubic,
-                top: 0,
-                bottom: 0,
-                width: w,
-                left: rtl ? box.maxWidth - w * (index + 1) : w * index,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(9),
-                    boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 6, offset: Offset(0, 2))],
-                  ),
-                ),
-              ),
-              Row(
-                children: [
-                  for (final (id, label) in _terms)
-                    Expanded(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => onChanged(id),
-                        child: Center(
-                          child: AnimatedDefaultTextStyle(
-                            duration: const Duration(milliseconds: 180),
-                            style: TextStyle(
-                              fontFamily: AppText.family,
-                              color: id == value ? AppColors.heading : AppColors.muted,
-                              fontSize: 12.5,
-                              fontWeight: id == value ? FontWeight.w600 : FontWeight.w600,
-                            ),
-                            child: Text(label),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(color: Colors.white, border: Border(bottom: BorderSide(color: Noon.line))),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (many)
+            SizedBox(
+              height: 40,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: kids.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
+                itemBuilder: (context, i) {
+                  final child = kids[i];
+                  final current = child.id == currentId;
+                  final radius = BorderRadius.circular(NoonRadius.btn);
+                  return Opacity(
+                    opacity: !current && busyId != null ? 0.6 : 1,
+                    child: Material(
+                      color: current ? Noon.mist : Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: radius, side: BorderSide(color: current ? Noon.teal : Noon.line)),
+                      child: InkWell(
+                        borderRadius: radius,
+                        onTap: current || busyId != null ? null : () => onPick(child),
+                        child: Padding(
+                          padding: const EdgeInsetsDirectional.only(start: 8, end: 16),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              NInitial(name: child.name, on: current),
+                              const SizedBox(width: 8),
+                              Text(
+                                busyId == child.id ? 'جارٍ الفتح' : child.shortName,
+                                style: nText(14, weight: FontWeight.w700),
+                              ),
+                            ],
                           ),
                         ),
                       ),
                     ),
+                  );
+                },
+              ),
+            )
+          else
+            Row(
+              children: [
+                NInitial(name: studentName, size: 36, fontSize: 14),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(studentName, maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(14, weight: FontWeight.w700)),
+                ),
+              ],
+            ),
+          if (many || details.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text.rich(
+              TextSpan(
+                children: [
+                  if (many) TextSpan(text: studentName, style: TextStyle(color: Noon.text)),
+                  if (many && details.isNotEmpty) const TextSpan(text: ' · '),
+                  TextSpan(text: details),
                 ],
               ),
-            ],
-          );
-        },
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: nText(12, weight: FontWeight.w500, color: Noon.muted),
+            ),
+          ],
+        ],
       ),
     );
   }
 }
 
-/// درجات مادة واحدة: اسمها ونسبتها، وفصلاها، ثم تقييماتها — كترتيب ملف الطالب.
-class _SubjectGradesCard extends StatelessWidget {
+/// بطاقة مادة: بلاطة بأيقونة المادة ولونها الثابت، واسمها، وتحتها المعلم بحرفه الأول،
+/// والشعبة خافتة، و«رسائل» حين كتب معلمها.
+class _SubjectTile extends StatelessWidget {
+  const _SubjectTile({required this.subject, this.chat, this.onChat});
+
+  final PortalSubject subject;
+  final Conversation? chat;
+  final VoidCallback? onChat;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = subject;
+    final tone = subjectTone(s.subjectName);
+    final icon = subjectIcon(s.subjectName);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: nPanelDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: noonMix(tone, 0.14), borderRadius: BorderRadius.circular(NoonRadius.tile)),
+                child: icon != null
+                    ? Icon(icon, size: 20, color: tone)
+                    : Text(subjectInitial(s.subjectName), style: nText(16, weight: FontWeight.w700, color: tone, height: 1)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  s.subjectName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: nText(15, weight: FontWeight.w700, height: 1.375),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Tooltip(
+            message: 'المعلم',
+            child: Row(
+              children: [
+                NInitial(name: s.teacherName, size: 18, fontSize: 10),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(s.teacherName, maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(12, weight: FontWeight.w500)),
+                ),
+              ],
+            ),
+          ),
+          if (s.roomName.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Tooltip(
+              message: 'الشعبة',
+              child: Text(s.roomName, maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(11, color: Noon.muted)),
+            ),
+          ],
+          if (chat != null) ...[
+            const SizedBox(height: 10),
+            SubjectChatButton(unread: chat!.unread, onTap: onChat!),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// المادة الواحدة في الدرجات: ترويستها تُطوى، وفيها مفتاح الفصلين فمكوّنات الفصل المختار
+/// وتقييمات كل مكوّن تحته (مطوية افتراضياً).
+class _SubjectGradesCard extends StatefulWidget {
   const _SubjectGradesCard({
+    super.key,
     required this.name,
     required this.summary,
     required this.rows,
-    required this.scheme,
+    required this.open,
+    required this.onToggle,
   });
 
   final String name;
   final SubjectGradeSummary? summary;
   final List<StudentEvaluation> rows;
-  final GradingScheme scheme;
+  final bool open;
+  final VoidCallback onToggle;
 
-  static Color _tone(double percent) {
-    if (percent >= 85) return const Color(0xFF2E7D57);
-    if (percent >= 60) return const Color(0xFF9A6700);
-    return const Color(0xFFA5484A);
+  @override
+  State<_SubjectGradesCard> createState() => _SubjectGradesCardState();
+}
+
+class _SubjectGradesCardState extends State<_SubjectGradesCard> {
+  final _expanded = <String, bool>{};
+
+  static bool _hasMarks(TermGrade t) => t.components.any((c) => c.achievedScore != null);
+
+  // الفصل الافتراضي: آخر فصل فيه علامات
+  late String term = widget.summary != null && _hasMarks(widget.summary!.term2) ? 'term_2' : 'term_1';
+
+  static Color _pctText(NTone t) => switch (t) {
+        NTone.green => Noon.green700,
+        NTone.red => Noon.red700,
+        _ => Noon.warn,
+      };
+
+  /// علامة الفصل: كاملة، أو «حالي» ما دام فيه مكوّنات لم تُعقد.
+  static String _termScoreText(TermGrade t) {
+    if (t.components.isEmpty || t.currentAverage == null) return '—';
+    final full = trimNum(t.fullMark);
+    return t.isComplete ? '${t.termScore.round()} / $full' : '${(t.currentScore ?? 0).round()} / $full حالي';
   }
 
   @override
   Widget build(BuildContext context) {
-    final percent = summary?.yearAverage ??
-        (rows.isEmpty ? null : rows.fold<double>(0, (a, e) => a + (e.percent ?? 0)) / rows.length);
-    final tone = percent == null ? AppColors.muted : _tone(percent);
-
-    String termLabel(TermGrade t) {
-      if (t.components.isEmpty || t.currentAverage == null) return 'لم تُرصد بعد';
-      return t.isComplete ? '${t.total.round()}%' : '${t.currentAverage!.round()}% حالي';
-    }
-
-    final terms = summary == null
-        ? ''
-        : [
-            if (scheme.isConfigured('term_1')) 'الفصل الأول ${termLabel(summary!.term1)}',
-            if (scheme.isConfigured('term_2')) 'الفصل الثاني ${termLabel(summary!.term2)}',
-          ].join('  ·  ');
+    final summary = widget.summary;
+    final rows = widget.rows;
+    final percent = summary?.yearGrade?.percent ?? _averagePercent(rows);
+    final rowsAverage = _averagePercent(rows)?.round();
+    final weighted = summary != null && (summary.term1.components.isNotEmpty || summary.term2.components.isNotEmpty);
+    final grade = summary == null ? null : (term == 'term_1' ? summary.term1 : summary.term2);
 
     return Container(
       clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(Corner.card),
-        border: Border.all(color: AppColors.line),
-        boxShadow: cardShadow,
-      ),
+      decoration: nPanelDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-            decoration: BoxDecoration(
-              color: AppColors.sunken,
-              border: BorderDirectional(start: BorderSide(color: tone, width: 3)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: AppText.family,
-                          color: AppColors.heading,
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    if (percent != null)
-                      Text(
-                        '${percent.round()}%',
-                        style: TextStyle(
-                          fontFamily: AppText.family,
-                          color: tone,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                  ],
-                ),
-                if (terms.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(terms, style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
-                ],
-              ],
-            ),
-          ),
-          if (rows.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Text('لا تقييمات في هذه المادة بعد', style: TextStyle(color: AppColors.faint, fontSize: 11.5)),
-            )
-          else
-            for (var i = 0; i < rows.length; i++)
-              Container(
-                padding: const EdgeInsets.fromLTRB(14, 9, 14, 9),
-                decoration: BoxDecoration(
-                  border: i == rows.length - 1 ? null : const Border(bottom: BorderSide(color: AppColors.hover)),
-                ),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: widget.onToggle,
+              highlightColor: Noon.mist2,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 child: Row(
                   children: [
                     Expanded(
@@ -1336,330 +1237,194 @@ class _SubjectGradesCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                            rows[i].title.isEmpty ? 'تقييم دراسي' : rows[i].title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: AppColors.text, fontSize: 12.5, fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            rows[i].typeLabel,
-                            style: const TextStyle(color: AppColors.faint, fontSize: 10.5),
-                          ),
+                          Text(widget.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(16, weight: FontWeight.w700)),
+                          if (summary != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              summary.yearGrade != null
+                                  ? 'السنة ${summary.yearGrade!.score.round()} / ${trimNum(summary.yearGrade!.yearFullMark)}'
+                                  : 'من ${trimNum(summary.fullMark)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: nText(11, weight: FontWeight.w500, color: Noon.muted),
+                            ),
+                          ],
                         ],
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '${rows[i].score == null ? '—' : trimNum(rows[i].score!)} / ${trimNum(rows[i].maxScore)}',
-                      textDirection: TextDirection.ltr,
-                      style: TextStyle(
-                        fontFamily: AppText.family,
-                        color: rows[i].passed ? AppColors.text : const Color(0xFFA5484A),
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    if (percent != null) ...[
+                      const SizedBox(width: 12),
+                      NBadge('${percent.round()}%', tone: _percentTone(percent), height: 24, fontSize: 14),
+                    ],
+                    const SizedBox(width: 12),
+                    NFoldArrow(open: widget.open, size: 20),
                   ],
                 ),
               ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StudentSectionPage extends StatelessWidget {
-  const _StudentSectionPage({required this.section, required this.color, required this.service});
-
-  final CourseSection section;
-
-  /// لون الوحدة: يرقّم دروسها.
-  final Color color;
-  final PortalService service;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: Text(
-          section.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14.5),
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 28),
-        children: [
-          if (section.items.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 40),
-              child: Text(
-                'لا توجد مواد أو واجبات مضافة في هذه الوحدة',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontFamily: AppText.family, color: AppColors.faint, fontSize: 12),
-              ),
-            )
-          else
-            for (final (i, it) in section.items.indexed)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _ContentTile(
-                  item: it,
-                  number: i + 1,
-                  color: color,
-                  service: service,
-                  onOpen: it.contentUrl.isEmpty
-                      ? null
-                      : () => openPortalMaterial(
-                            context,
-                            it.contentUrl,
-                            service: service,
-                            fileName: it.fileName,
+            ),
+          ),
+          if (widget.open)
+            Container(
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: Noon.line))),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: weighted && grade != null
+                    ? [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          child: NSegment<String>(
+                            value: term,
+                            options: const [('term_1', 'الفصل الأول'), ('term_2', 'الفصل الثاني')],
+                            onChanged: (t) => setState(() => term = t),
                           ),
-                ),
+                        ),
+                        if (_hasMarks(grade)) ...[
+                          _TotalRow(
+                            label: 'المجموع',
+                            value: _termScoreText(grade),
+                            tone: grade.currentAverage == null ? null : _pctText(_percentTone(grade.currentAverage!.round())),
+                          ),
+                          for (final c in grade.components) _componentGroup(c, rows),
+                          ..._othersGroup(grade, rows),
+                        ] else
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                            child: Text('لا علامات بعد', style: nText(12, weight: FontWeight.w500, color: Noon.muted)),
+                          ),
+                      ]
+                    : rows.isEmpty
+                        ? [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              child: Text('لا تقييمات', style: nText(12, weight: FontWeight.w500, color: Noon.muted)),
+                            ),
+                          ]
+                        : [
+                            if (rowsAverage != null)
+                              _TotalRow(label: 'المعدل', value: '$rowsAverage%', tone: _pctText(_percentTone(rowsAverage))),
+                            for (final (i, e) in rows.indexed) _EvaluationRow(e: e, first: i == 0 && rowsAverage == null),
+                          ],
               ),
+            ),
         ],
       ),
     );
   }
-}
 
-class _ContentTile extends StatelessWidget {
-  const _ContentTile({
-    required this.item,
-    required this.number,
-    required this.color,
-    this.onOpen,
-    this.service = const PortalService(),
-  });
-
-  final CourseItem item;
-
-  /// رقم الدرس داخل وحدته، ولون وحدته.
-  final int number;
-  final Color color;
-  final VoidCallback? onOpen;
-  final PortalService service;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(Corner.card),
-      child: InkWell(
-        onTap: onOpen,
-        borderRadius: BorderRadius.circular(Corner.card),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(Corner.card),
-            border: Border.all(color: AppColors.line),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        ItemNumber(n: number, color: color),
-                        ItemTitle.of(item, fontSize: 13.5, maxLines: 3),
-                        StatusChip.muted(item.typeLabel),
-                      ],
-                    ),
-                  ),
-                  if (onOpen != null)
-                    Icon(
-                      item.type == 'link' ? Icons.open_in_new_rounded : portalMaterialIcon(item),
-                      size: 18,
-                      color: AppColors.amberDark,
-                    ),
-                ],
-              ),
-              if (item.description.trim().isNotEmpty) ...[
-                const SizedBox(height: 10),
-                Text(
-                  item.description.trim(),
-                  style: TextStyle(
-                    fontFamily: AppText.family,
-                    color: AppColors.text,
-                    fontSize: 13,
-                    height: 1.65,
-                  ),
-                ),
-              ],
-              if (item.type == 'assignment' && item.dueDate.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'تاريخ التسليم: ${portalDayLabel(item.dueDate)}${item.isOverdue() ? ' (منتهٍ)' : ''}',
-                  style: TextStyle(
-                    fontFamily: AppText.family,
-                    color: item.isOverdue() ? AppColors.danger : const Color(0xFF2E7D57),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ],
-          ),
+  Widget _componentGroup(ComponentResult c, List<StudentEvaluation> rows) {
+    final own = [for (final e in rows) if (e.term == term && e.componentId == c.component.id) e];
+    final key = '$term:${c.component.id}';
+    final graded = c.achievedScore != null;
+    return _CollapsibleGroup(
+      open: _expanded[key] ?? false,
+      onToggle: own.isEmpty ? null : () => setState(() => _expanded[key] = !(_expanded[key] ?? false)),
+      title: Text.rich(
+        TextSpan(
+          text: c.component.name,
+          children: [
+            TextSpan(text: ' (${trimNum(c.component.weight)}%)', style: nText(12, color: Noon.muted)),
+          ],
         ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
+      end: Text(
+        graded ? '${c.achievedScore!.round()} / ${c.maxScore.round()}' : 'لم تُرصد بعد',
+        style: nText(14, weight: graded ? FontWeight.w700 : FontWeight.w400, color: graded ? Noon.text : Noon.muted),
+      ),
+      children: [for (final (i, e) in own.indexed) _EvaluationRow(e: e, first: i == 0)],
     );
+  }
+
+  List<Widget> _othersGroup(TermGrade grade, List<StudentEvaluation> rows) {
+    final ids = {for (final c in grade.components) c.component.id};
+    final others = [for (final e in rows) if (e.term.isEmpty || (e.term == term && !ids.contains(e.componentId))) e];
+    if (others.isEmpty) return const [];
+    final key = '$term:others';
+    return [
+      _CollapsibleGroup(
+        open: _expanded[key] ?? false,
+        onToggle: () => setState(() => _expanded[key] = !(_expanded[key] ?? false)),
+        title: const Text('تقييمات أخرى'),
+        end: Text('${others.length}', style: nText(12, color: Noon.muted)),
+        children: [for (final (i, e) in others.indexed) _EvaluationRow(e: e, first: i == 0)],
+      ),
+    ];
   }
 }
 
-/// عنوان يوم مقروء: «12 أكتوبر»، والسنة إن لم تكن الحالية.
-String portalDayLabel(String raw) {
-  final d = parseIsoDate(raw.length >= 10 ? raw.substring(0, 10) : raw);
-  if (d == null) return raw;
-  final base = '${d.day} ${gregorianMonths[d.month - 1]}';
-  return d.year == DateTime.now().year ? base : '$base ${d.year}';
-}
-
-/// ملخّص التبويب: رقمه الكبير، وشريط نسبته إن وُجدت، وتفاصيله تحته.
-class _PortalSummary extends StatelessWidget {
-  const _PortalSummary({
-    required this.label,
-    required this.value,
-    required this.parts,
-    this.ratio,
-    this.valueColor,
-  });
+/// سطر المجموع: تظليل محايد خفيف، والرقم وحده بلون حالته.
+class _TotalRow extends StatelessWidget {
+  const _TotalRow({required this.label, required this.value, this.tone});
 
   final String label;
   final String value;
-  final List<({String label, String value, Color color})> parts;
-
-  /// نسبة تُرسم شريطاً تحت الرقم — للحضور.
-  final double? ratio;
-  final Color? valueColor;
+  final Color? tone;
 
   @override
   Widget build(BuildContext context) {
-    final accent = valueColor ?? AppColors.heading;
     return Container(
-      clipBehavior: Clip.antiAlias,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(Corner.card),
-        border: Border.all(color: AppColors.line),
-        boxShadow: cardShadow,
+        color: Noon.band,
+        border: Border.symmetric(horizontal: BorderSide(color: Noon.line)),
       ),
+      child: Row(
+        children: [
+          Expanded(child: Text(label, style: nText(12, weight: FontWeight.w700))),
+          Text(value, style: nText(14, weight: FontWeight.w700, color: tone ?? Noon.text)),
+        ],
+      ),
+    );
+  }
+}
+
+/// جزء من الفصل (مكوّن أو «تقييمات أخرى»): سطر أبيض بعنوانه ومجموعه وسهم، يُفتح بلمسة على
+/// تقييماته مزاحةً. بلا [onToggle] (لم يُرصد) سطر خافت لا يُلمس.
+class _CollapsibleGroup extends StatelessWidget {
+  const _CollapsibleGroup({required this.title, required this.end, required this.open, this.onToggle, this.children = const []});
+
+  final Widget title;
+  final Widget end;
+  final bool open;
+  final VoidCallback? onToggle;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final tappable = onToggle != null;
+    final head = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: DefaultTextStyle.merge(
+              style: nText(14, weight: tappable ? FontWeight.w500 : FontWeight.w400, color: tappable ? Noon.text : Noon.muted),
+              child: title,
+            ),
+          ),
+          const SizedBox(width: 8),
+          end,
+          if (tappable) ...[const SizedBox(width: 8), NFoldArrow(open: open)],
+        ],
+      ),
+    );
+    return Container(
+      decoration: BoxDecoration(border: Border(top: BorderSide(color: Noon.line))),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // العنوان فوق الرقم لا بجانبه: الرقم هو ما يُقرأ أولاً، وكان
-                // يتزاحم مع عنوانه على سطر واحد فيصغر كلاهما
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: AppText.family,
-                    color: AppColors.muted,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: AlignmentDirectional.centerStart,
-                  child: Text(
-                    value,
-                    style: TextStyle(
-                      fontFamily: AppText.family,
-                      color: accent,
-                      fontSize: 34,
-                      fontWeight: FontWeight.w700,
-                      height: 1.05,
-                    ),
-                  ),
-                ),
-                if (ratio != null) ...[
-                  const SizedBox(height: 12),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(5),
-                    child: LinearProgressIndicator(
-                      value: ratio!.clamp(0.0, 1.0),
-                      minHeight: 8,
-                      backgroundColor: AppColors.sunken,
-                      color: accent,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          if (parts.isNotEmpty)
-            // شريط مقسوم بعدد التفاصيل: يملأ عرض البطاقة بدل شرائح صغيرة
-            // تترك نصفها فارغاً، وكل خانة تحمل رقمها فوق اسمها
-            Container(
-              decoration: const BoxDecoration(
-                color: AppColors.sunken,
-                border: Border(top: BorderSide(color: AppColors.line)),
-              ),
-              child: Row(
-                children: [
-                  for (var i = 0; i < parts.length; i++)
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
-                        decoration: BoxDecoration(
-                          border: i == parts.length - 1
-                              ? null
-                              : const BorderDirectional(end: BorderSide(color: AppColors.line)),
-                        ),
-                        child: Column(
-                          children: [
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                parts[i].value,
-                                maxLines: 1,
-                                style: TextStyle(
-                                  fontFamily: AppText.family,
-                                  color: parts[i].color,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                  height: 1.1,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                parts[i].label,
-                                maxLines: 1,
-                                style: const TextStyle(
-                                  color: AppColors.muted,
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+          if (tappable)
+            Material(
+              color: Colors.transparent,
+              child: InkWell(onTap: onToggle, highlightColor: Noon.mist2, child: head),
+            )
+          else
+            head,
+          if (open && tappable)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(start: 12, bottom: 4),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
             ),
         ],
       ),
@@ -1667,140 +1432,88 @@ class _PortalSummary extends StatelessWidget {
   }
 }
 
-/// صف في قوائم البوابة: عنوانه وتفصيله، وحالته أو مبلغه في الطرف.
-class _PortalRow extends StatelessWidget {
-  const _PortalRow({required this.title, required this.trailing, this.meta = '', this.last = false});
+/// سطر تقييم: العنوان، وتحته «التاريخ · المعلم» خافتاً، والملاحظة، والعلامة في الطرف بخط
+/// عريض وتحتها نسبتها صغيرة.
+class _EvaluationRow extends StatelessWidget {
+  const _EvaluationRow({required this.e, this.first = false});
 
-  final String title;
-  final Widget trailing;
-  final String meta;
-  final bool last;
+  final StudentEvaluation e;
+  final bool first;
 
   @override
   Widget build(BuildContext context) {
+    final p = _pct(e);
+    final small = nText(10.5, color: Noon.muted);
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
-      decoration: BoxDecoration(
-        border: last ? null : const Border(bottom: BorderSide(color: AppColors.hover)),
-      ),
+      padding: const EdgeInsetsDirectional.fromSTEB(24, 10, 16, 10),
+      decoration: first ? null : BoxDecoration(border: Border(top: BorderSide(color: Noon.line))),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.text, fontSize: 12.5, fontWeight: FontWeight.w700),
-                ),
-                if (meta.trim().isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    meta,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppColors.faint, fontSize: 10.5),
-                  ),
-                ],
+                Text(e.title.isEmpty ? 'تقييم دراسي' : e.title, style: nText(14, weight: FontWeight.w500)),
+                Text([nDayLabel(e.evaluationDate), e.teacherName].where((s) => s.trim().isNotEmpty).join(' · '), style: small),
+                if (e.notes.trim().isNotEmpty) Padding(padding: const EdgeInsets.only(top: 2), child: Text(e.notes.trim(), style: small)),
               ],
             ),
           ),
-          const SizedBox(width: 10),
-          trailing,
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text.rich(
+                TextSpan(
+                  text: e.score == null ? '—' : trimNum(e.score!),
+                  children: [
+                    TextSpan(text: ' / ${trimNum(e.maxScore)}', style: nText(12, weight: FontWeight.w500, color: Noon.muted)),
+                  ],
+                ),
+                textDirection: TextDirection.ltr,
+                style: nText(16, weight: FontWeight.w700, color: p >= 50 ? Noon.text : Noon.red600, height: 1),
+              ),
+              const SizedBox(height: 4),
+              Text('${p.round()}%', textDirection: TextDirection.ltr, style: small),
+            ],
+          ),
         ],
       ),
     );
   }
 }
 
-/// شارة حالة ناعمة في البوابة.
-class _PortalBadge extends StatelessWidget {
-  const _PortalBadge(this.label, this.color);
+/// وحدة المودل في صفحتها: دروسها بطاقات بلون نوعها، كل درس يُفتح بلمسة.
+class _StudentSectionPage extends StatelessWidget {
+  const _StudentSectionPage({required this.section, required this.service});
 
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.09),
-        borderRadius: BorderRadius.circular(7),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontFamily: AppText.family,
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-}
-
-/// شريط أبناء وليّ الأمر — لمس اسم يفتح ملفه.
-class _ChildrenBar extends StatelessWidget {
-  const _ChildrenBar({
-    required this.children,
-    required this.currentId,
-    required this.busyId,
-    required this.color,
-    required this.onPick,
-  });
-
-  final List<PortalChild> children;
-  final String currentId;
-  final String? busyId;
-  final Color color;
-  final ValueChanged<PortalChild> onPick;
+  final CourseSection section;
+  final PortalService service;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 46,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: AppColors.line)),
-      ),
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        itemCount: children.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 6),
-        itemBuilder: (context, i) {
-          final child = children[i];
-          final current = child.id == currentId;
-          final busy = busyId == child.id;
-          return Material(
-            color: current ? color : AppColors.sunken,
-            borderRadius: BorderRadius.circular(Corner.field),
-            child: InkWell(
-              onTap: current || busyId != null ? null : () => onPick(child),
-              borderRadius: BorderRadius.circular(Corner.field),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                child: Center(
-                  child: Text(
-                    busy ? 'جارٍ الفتح...' : child.shortName,
-                    style: TextStyle(
-                      fontFamily: AppText.family,
-                      color: current ? Colors.white : AppColors.muted,
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
+    return NPageScaffold(
+      title: section.title,
+      children: [
+        NLessonsList(
+          children: [
+            for (final it in section.items)
+              NLessonRow(
+                item: it,
+                dueLabel: nDayLabel,
+                onOpen: it.contentUrl.isEmpty
+                    ? null
+                    : () => openPortalMaterial(context, it.contentUrl, service: service, fileName: it.fileName),
               ),
-            ),
-          );
-        },
-      ),
+          ],
+        ),
+      ],
     );
   }
 }
+
+/// عنوان يوم مقروء: «12 أكتوبر»، والسنة إن لم تكن الحالية.
+String portalDayLabel(String raw) => nDayLabel(raw);

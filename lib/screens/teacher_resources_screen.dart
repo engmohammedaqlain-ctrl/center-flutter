@@ -181,7 +181,7 @@ class _TeacherResourcesScreenState extends State<TeacherResourcesScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontFamily: AppText.family,
-                  color: AppColors.navy,
+                  color: Noon.ink,
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
                   height: 1.1,
@@ -195,7 +195,7 @@ class _TeacherResourcesScreenState extends State<TeacherResourcesScreen> {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: AppText.family,
-              color: AppColors.heading,
+              color: Noon.text,
               fontSize: 14.5,
               fontWeight: FontWeight.w600,
             ),
@@ -204,14 +204,14 @@ class _TeacherResourcesScreenState extends State<TeacherResourcesScreen> {
           Text(
             progressLabel,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.muted, fontSize: 12.5, height: 1.5),
+            style: TextStyle(color: Noon.muted, fontSize: 12.5, height: 1.5),
           ),
           if (progressDetail.isNotEmpty) ...[
             const SizedBox(height: 2),
             Text(
               progressDetail,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.faint, fontSize: 12, fontWeight: FontWeight.w700),
+              style: TextStyle(color: Noon.faint, fontSize: 12, fontWeight: FontWeight.w700),
             ),
           ],
           if (records > 0) ...[
@@ -219,7 +219,7 @@ class _TeacherResourcesScreenState extends State<TeacherResourcesScreen> {
             Text(
               'وُحّد $records عنصراً حتى الآن',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.faint, fontSize: 11.5),
+              style: TextStyle(color: Noon.faint, fontSize: 11.5),
             ),
           ],
           const SizedBox(height: 18),
@@ -228,15 +228,15 @@ class _TeacherResourcesScreenState extends State<TeacherResourcesScreen> {
             child: LinearProgressIndicator(
               value: pct <= 0 ? null : pct / 100,
               minHeight: 6,
-              backgroundColor: AppColors.navy.withValues(alpha: 0.08),
-              color: AppColors.navy,
+              backgroundColor: Noon.ink.withValues(alpha: 0.08),
+              color: Noon.ink,
             ),
           ),
           const SizedBox(height: 14),
-          const Text(
+          Text(
             'يمكنك تصغير التطبيق — يظهر إشعار بالنسبة، ويُنبَّهك عند الانتهاء.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.muted, fontSize: 11.5, height: 1.45),
+            style: TextStyle(color: Noon.muted, fontSize: 11.5, height: 1.45),
           ),
         ],
       ),
@@ -266,7 +266,7 @@ class _TeacherResourcesScreenState extends State<TeacherResourcesScreen> {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: AppText.family,
-              color: AppColors.heading,
+              color: Noon.text,
               fontSize: 14.5,
               fontWeight: FontWeight.w600,
             ),
@@ -275,7 +275,7 @@ class _TeacherResourcesScreenState extends State<TeacherResourcesScreen> {
           Text(
             error!,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.muted, fontSize: 12.5, height: 1.55),
+            style: TextStyle(color: Noon.muted, fontSize: 12.5, height: 1.55),
           ),
           const SizedBox(height: 18),
           AuthSubmitButton(label: 'إعادة المحاولة', icon: Icons.refresh, onTap: _start),
@@ -296,7 +296,7 @@ class _TeacherResourcesScreenState extends State<TeacherResourcesScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.logout_rounded, size: 16, color: AppColors.muted),
+            Icon(Icons.logout_rounded, size: 16, color: Noon.muted),
             const SizedBox(width: 8),
             Flexible(
               child: Text(
@@ -306,7 +306,7 @@ class _TeacherResourcesScreenState extends State<TeacherResourcesScreen> {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontFamily: AppText.family,
-                  color: AppColors.muted,
+                  color: Noon.muted,
                   fontSize: 12.5,
                   fontWeight: FontWeight.w700,
                 ),
