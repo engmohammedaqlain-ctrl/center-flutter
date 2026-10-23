@@ -10,7 +10,6 @@ import '../models/models.dart';
 import 'report_cards_sheet.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
-import '../widgets/admin_ui.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/list_paging.dart';
 import '../widgets/table_gate.dart';
@@ -282,17 +281,6 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                         ? 'العلامات حتى ${store.settings.gradesLockedUntil.split('-').reversed.join('/')} مقفلة على غير المدير'
                         : gradeLockMessage(store.settings.gradesLockedUntil),
                     style: const TextStyle(color: Color(0xFF6B4A00), fontSize: 12, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              if (list.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-                  child: AdminHero(
-                    icon: Icons.workspace_premium_outlined,
-                    label: 'معدل الكشوف',
-                    value: '${(list.fold<int>(0, (a, e) => a + e.percent) / list.length).round()}',
-                    unit: '%',
-                    chips: ['${groupIds.length} كشف', '${list.length} علامة'],
                   ),
                 ),
               Expanded(
