@@ -1002,6 +1002,7 @@ class NFold extends StatefulWidget {
     this.summary,
     this.defaultOpen = false,
     this.head,
+    this.foot,
     this.limit = 3,
   });
 
@@ -1011,6 +1012,9 @@ class NFold extends StatefulWidget {
   final bool defaultOpen;
   final List<Widget> rows;
   final Widget? head;
+
+  /// سطر إجمالي تحت الصفوف.
+  final Widget? foot;
   final int limit;
 
   @override
@@ -1074,6 +1078,7 @@ class _NFoldState extends State<NFold> {
                   NDivided(children: shown),
                   if (widget.rows.length > widget.limit && !all)
                     NShowAll(label: 'عرض الكل (${widget.rows.length})', onTap: () => setState(() => all = true)),
+                  ?widget.foot,
                 ],
               ),
             ),
