@@ -9,6 +9,8 @@ import '../theme/app_theme.dart';
 import '../widgets/admin_ui.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/moodle_style.dart';
+import '../widgets/noon_moodle.dart';
+import '../widgets/noon_ui.dart';
 import '../widgets/widgets.dart';
 import 'portal_chrome.dart';
 
@@ -693,218 +695,97 @@ class _SectionCardState extends State<_SectionCard> {
     final visible = sec.isVisible;
     final color = unitColor(sec, widget.index);
 
-    return Opacity(
-      opacity: visible ? 1 : 0.8,
-      child: Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(Corner.card),
-        border: Border.all(color: unitBorder(color)),
-        boxShadow: cardShadow,
-      ),
+    // `UnitShell` في الويب: بطاقة بلون الوحدة، رقمها وعنوانها وحقائقها، والتنسيق
+    // والإظهار في طرفها، والدروس تحتها بطاقات بلون نوعها
+    return NTintCard(
+      color: color,
+      padding: EdgeInsets.zero,
+      dim: !visible,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          InkWell(
-            onTap: sec.items.isEmpty ? null : () => setState(() => open = !open),
-            child: Container(
-              color: unitHeaderBg(color),
-              padding: const EdgeInsetsDirectional.fromSTEB(12, 11, 4, 11),
-              child: Row(
-                children: [
-                  UnitNumber(n: widget.index + 1, color: color),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+          Padding(
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 8, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => open = !open),
+                    child: Row(
                       children: [
-                        Text(
-                          sec.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontFamily: AppText.family,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 14,
-                            color: color,
+                        NUnitChip(n: widget.index + 1, color: color),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(sec.title, style: nText(16, weight: FontWeight.w700, height: 1.375)),
+                              const SizedBox(height: 4),
+                              NUnitMeta(section: sec, showHidden: true),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${sec.items.length} مادة',
-                          style: const TextStyle(color: AppColors.faint, fontSize: 11),
+                        Icon(
+                          open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                          size: 20,
+                          color: Noon.muted,
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(width: 4),
-                  IconButton(
-                    onPressed: widget.onStyle,
-                    tooltip: 'تنسيق الوحدة',
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.palette_outlined, size: 18, color: AppColors.muted),
-                  ),
-                  // حالة الظهور شارة تُضغط فتتبدّل — لا أيقونة منفصلة
-                  PressableScale(
-                    onTap: widget.pending ? null : widget.onToggle,
-                    child: Container(
-                      padding: const EdgeInsetsDirectional.fromSTEB(8, 4, 8, 4),
-                      decoration: BoxDecoration(
-                        color: visible ? const Color(0xFFE8F3EE) : AppColors.hover,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            visible ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                            size: 13,
-                            color: visible ? const Color(0xFF2E7D57) : AppColors.muted,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            visible ? 'ظاهرة' : 'مخفية',
-                            style: TextStyle(
-                              fontFamily: AppText.family,
-                              color: visible ? const Color(0xFF2E7D57) : AppColors.muted,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (sec.items.isNotEmpty)
-                    AnimatedRotation(
-                      turns: open ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 200),
-                      child: const Padding(
-                        padding: EdgeInsetsDirectional.only(start: 2),
-                        child: Icon(Icons.keyboard_arrow_down_rounded, size: 22, color: AppColors.faint),
-                      ),
-                    ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 6),
+                NBtn(icon: Icons.palette_outlined, tone: NBtnTone.ghost, small: true, tooltip: 'تنسيق الوحدة', onTap: widget.onStyle),
+                NBtn(
+                  icon: visible ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                  tone: NBtnTone.ghost,
+                  small: true,
+                  tooltip: visible ? 'إخفاء القسم عن الطلاب' : 'إظهار القسم للطلاب',
+                  onTap: widget.pending ? null : widget.onToggle,
+                ),
+              ],
             ),
           ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOut,
-            alignment: Alignment.topCenter,
-            child: !open || sec.items.isEmpty
-                ? const SizedBox(width: double.infinity)
-                : Container(
-                    decoration: const BoxDecoration(
-                      color: AppColors.sunken,
-                      border: Border(top: BorderSide(color: AppColors.line)),
-                    ),
-                    child: Column(
+          if (open)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: color.withAlpha(0x33)))),
+              child: sec.items.isEmpty
+                  ? const NNoLessons(text: 'لا توجد مواد أو واجبات داخل هذه الوحدة')
+                  : NLessonsList(
                       children: [
-                        for (var i = 0; i < sec.items.length; i++)
+                        for (final item in sec.items)
                           Dismissible(
-                            key: ValueKey(sec.items[i].id),
+                            key: ValueKey(item.id),
                             direction: DismissDirection.endToStart,
                             background: Container(
-                              color: AppColors.dangerSoft,
+                              decoration: BoxDecoration(color: Noon.red50, borderRadius: BorderRadius.circular(NoonRadius.panel)),
                               alignment: AlignmentDirectional.centerEnd,
                               padding: const EdgeInsetsDirectional.only(end: 18),
-                              child: const Icon(Icons.delete_outline, color: AppColors.danger, size: 20),
+                              child: const Icon(Icons.delete_outline, color: Noon.red600, size: 20),
                             ),
                             // الحذف يُسحب ويُؤكَّد، فلا زرّ حذف في كل سطر
                             confirmDismiss: (_) async {
-                              widget.onDeleteItem(sec.items[i]);
+                              widget.onDeleteItem(item);
                               return false;
                             },
-                            child: _ItemRow(
-                              item: sec.items[i],
-                              number: i + 1,
-                              color: color,
-                              last: i == sec.items.length - 1,
-                              onOpen: () => widget.onOpen(sec.items[i]),
-                              onStyle: () => widget.onStyleItem(sec.items[i]),
+                            child: NLessonRow(
+                              item: item,
+                              student: false,
+                              onOpen: () => widget.onOpen(item),
+                              trailing: NBtn(
+                                icon: Icons.palette_outlined,
+                                tone: NBtnTone.ghost,
+                                small: true,
+                                tooltip: 'تعديل الدرس',
+                                onTap: () => widget.onStyleItem(item),
+                              ),
                             ),
                           ),
                       ],
                     ),
-                  ),
-          ),
+            ),
         ],
-      ),
-      ),
-    );
-  }
-}
-
-/// مادة داخل وحدة: رقمها، واسمها بتنسيقه، ونوعها — ولمسها يفتحها.
-class _ItemRow extends StatelessWidget {
-  const _ItemRow({
-    required this.item,
-    required this.number,
-    required this.color,
-    required this.last,
-    required this.onOpen,
-    required this.onStyle,
-  });
-
-  final CourseItem item;
-  final int number;
-  final Color color;
-  final bool last;
-  final VoidCallback onOpen;
-  final VoidCallback onStyle;
-
-  IconData get _icon => switch (item.type) {
-        'url' => Icons.link_rounded,
-        'page' => Icons.article_outlined,
-        'assign' => Icons.assignment_outlined,
-        'quiz' => Icons.quiz_outlined,
-        'video' => Icons.play_circle_outline,
-        _ => Icons.insert_drive_file_outlined,
-      };
-
-  @override
-  Widget build(BuildContext context) {
-    final openable = item.contentUrl.isNotEmpty;
-    return InkWell(
-      onTap: openable ? onOpen : null,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-        decoration: BoxDecoration(
-          color: AppColors.sunken,
-          border: last ? null : const Border(bottom: BorderSide(color: AppColors.hover)),
-        ),
-        child: Row(
-          children: [
-            ItemNumber(n: number, color: color),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ItemTitle.of(item, fontSize: 12.5),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      Icon(_icon, size: 12, color: AppColors.faint),
-                      const SizedBox(width: 4),
-                      Text(item.typeLabel, style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            IconButton(
-              onPressed: onStyle,
-              tooltip: 'تعديل الدرس',
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.palette_outlined, size: 17, color: AppColors.faint),
-            ),
-            if (openable) const Icon(Icons.open_in_new, size: 15, color: AppColors.faint),
-          ],
-        ),
       ),
     );
   }

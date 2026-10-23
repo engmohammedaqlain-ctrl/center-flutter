@@ -14,10 +14,18 @@ class ThumbAction {
     required this.icon,
     required this.onPressed,
     this.color,
+    this.foreground,
+    this.noon = false,
   });
 
   final String label;
   final IconData icon;
+
+  /// لون النص والأيقونة فوق [color] — المقروء على لون الإجراء (`on-action`).
+  final Color? foreground;
+
+  /// شكل زر الإدارة في الويب (`FlFab` داخل `noon-ui`): زاوية 8 وظل محايد.
+  final bool noon;
 
   /// `null` يعطّل الزر ويُبقيه ظاهراً — كزر «الكل حاضر» بلا طلاب.
   final VoidCallback? onPressed;
@@ -118,11 +126,11 @@ class _ThumbButton extends StatelessWidget {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: color,
-            borderRadius: BorderRadius.circular(Corner.field),
+            borderRadius: BorderRadius.circular(action.noon ? 8 : Corner.field),
             boxShadow: enabled
                 ? [
                     BoxShadow(
-                      color: color.withValues(alpha: 0.28),
+                      color: action.noon ? const Color(0x2E000000) : color.withValues(alpha: 0.28),
                       blurRadius: 12,
                       offset: const Offset(0, 4),
                     ),
@@ -135,15 +143,15 @@ class _ThumbButton extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(action.icon, size: 20, color: Colors.white),
+                Icon(action.icon, size: 20, color: action.foreground ?? Colors.white),
                 if (extended) ...[
                   const SizedBox(width: 8),
                   Text(
                     action.label,
                     maxLines: 1,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: AppText.family,
-                      color: Colors.white,
+                      color: action.foreground ?? Colors.white,
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
                     ),
