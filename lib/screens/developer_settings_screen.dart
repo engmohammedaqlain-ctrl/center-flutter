@@ -14,7 +14,6 @@ import '../data/user_message.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
-import '../widgets/dev_ui.dart';
 import '../widgets/form_layout.dart';
 import '../widgets/panels.dart';
 import '../widgets/widgets.dart';
@@ -123,14 +122,6 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
 
   // ── بوابة كلمة المرور ───────────────────────────────────────────────────
 
-  Widget _sec(String title, {String? note}) => Padding(
-        padding: const EdgeInsets.only(top: 20, bottom: 10),
-        child: DevSectionTitle(
-          title,
-          trailing: note == null ? null : Text(note, style: AppText.muted.copyWith(fontSize: 10)),
-        ),
-      );
-
   Widget _gate() {
     return Center(
       child: SingleChildScrollView(
@@ -156,9 +147,15 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
               ),
               const SizedBox(height: 14),
               Text(
-                'قسم المطور',
+                'هذا القسم خاص بالمطور',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: AppColors.heading),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'أدخل حساب المطور للوصول إلى الألوان والميزات والأدوات',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.muted, fontSize: 12, height: 1.5),
               ),
               const SizedBox(height: 18),
               const FieldLabel('اسم مستخدم المطور', requiredField: true),
@@ -258,7 +255,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
   }
 
   List<Widget> _identity() => [
-        _sec('اسم المنشأة وشعارها'),
+        const FormSection(icon: Icons.badge_outlined, title: 'اسم المنشأة وشعارها'),
         const FieldLabel('اسم المنشأة والترويسة الرسمية'),
         TextField(
           controller: name,
@@ -352,7 +349,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
     ];
 
     return [
-      _sec('ألوان هوية المنشأة', note: 'اضغط اللون لتغييره'),
+      const FormSection(icon: Icons.palette_outlined, title: 'ألوان هوية المنشأة', note: 'اضغط اللون لتغييره'),
       Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(Corner.card),
@@ -368,7 +365,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
                   decoration: BoxDecoration(
                     border: i == swatches.length - 1
                         ? null
-                        : const Border(bottom: BorderSide(color: AppColors.line)),
+                        : const Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
                   ),
                   child: Row(
                     children: [
@@ -447,7 +444,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
       );
 
   List<Widget> _financeRules() => [
-        _sec('القواعد المالية'),
+        const FormSection(icon: Icons.payments_outlined, title: 'القواعد المالية'),
         FieldLabel('رسم حجز المقعد (شيكل)', key: errors.key('seatFee')),
         TextField(
           controller: seatFee,
@@ -466,7 +463,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
       ];
 
   List<Widget> _connection() => [
-        _sec('الاتصال بالسحابة'),
+        const FormSection(icon: Icons.cloud_outlined, title: 'الاتصال بالسحابة'),
         FieldLabel('عنوان Supabase', key: errors.key('url')),
         TextField(
           controller: supabaseUrlCtrl,
@@ -500,7 +497,11 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
     final warnings = featureWarnings(raw);
 
     return [
-      _sec('ميزات المنشأة', note: 'تُحفظ في السحابة وتصل كل الأجهزة فوراً'),
+      const FormSection(
+        icon: Icons.toggle_on_outlined,
+        title: 'ميزات المنشأة',
+        note: 'تُحفظ في السحابة وتصل كل الأجهزة فوراً',
+      ),
       if (warnings.isNotEmpty)
         Padding(
           padding: const EdgeInsets.only(bottom: 10),
@@ -517,21 +518,17 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
             style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: AppColors.heading),
           ),
         ),
-        DevPanel(
-          rows: [
-            for (final key in featureKeys)
-              if (features[key]!.group == group.key)
-                _featureToggleRow(
-                  store: store,
-                  keyName: key,
-                  selected: selected[key] ?? false,
-                  effective: resolved[key] ?? false,
-                ),
-          ],
-        ),
+        for (final key in featureKeys)
+          if (features[key]!.group == group.key)
+            _featureToggleRow(
+              store: store,
+              keyName: key,
+              selected: selected[key] ?? false,
+              effective: resolved[key] ?? false,
+            ),
       ],
       const SizedBox(height: 12),
-      _sec('حدود الاشتراك', note: 'اتركه فارغاً بلا حد'),
+      const FormSection(icon: Icons.speed_outlined, title: 'حدود الاشتراك', note: 'اتركه فارغاً بلا حد'),
       const FieldLabel('أقصى عدد طلاب'),
       TextField(
         controller: maxStudentsCtrl,
@@ -568,7 +565,13 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
     final blockers = featureBlockers(keyName, store.currentTenant?.features);
     final blockedLabel = blockers.map((k) => features[k]?.label ?? k).join('، ');
     return Container(
+      margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 6, 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(Corner.card),
+        color: Colors.white,
+        border: Border.all(color: effective ? AppColors.successBorder : AppColors.line),
+      ),
       child: Row(
         children: [
           Expanded(
@@ -606,14 +609,14 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
   }
 
   List<Widget> _tools(BuildContext context, AppStore store) => [
-        _sec('أدوات الاختبار والبيانات'),
-        DevPanel(rows: [
+        const FormSection(icon: Icons.build_outlined, title: 'أدوات الاختبار والبيانات'),
         _toolTile(
           icon: Icons.devices_outlined,
           title: 'الأجهزة',
           subtitle: 'الإصدارات لكل مدرسة',
           onTap: () => openAppInstalls(context),
         ),
+        const SizedBox(height: 8),
         _toolTile(
           icon: Icons.science_outlined,
           title: 'حقن بيانات تجريبية',
@@ -631,6 +634,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
             if (context.mounted) showDemoDataResult(context, stats);
           },
         ),
+        const SizedBox(height: 8),
         _toolTile(
           icon: Icons.delete_forever_outlined,
           title: 'مسح وتصفير البيانات',
@@ -638,7 +642,6 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
           danger: true,
           onTap: () => _wipeAll(store),
         ),
-        ]),
       ];
 
   /// مسح شامل من الجهاز والسحابة — `handleClearData` في الويب: تأكيد بكتابة «مسح»،
@@ -709,9 +712,14 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
     final color = danger ? AppColors.danger : AppColors.amber;
     return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(Corner.card),
       child: Container(
         padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 6, 10),
-        color: danger ? AppColors.dangerSoft : null,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(Corner.card),
+          color: danger ? AppColors.dangerSoft : Colors.white,
+          border: Border.all(color: danger ? AppColors.dangerBorder : AppColors.line),
+        ),
         child: Row(
           children: [
             Icon(icon, size: 20, color: color),
@@ -756,12 +764,13 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
     ];
 
     return [
-      _sec('معلومات النظام وبيئة التشغيل'),
-      DevPanel(
-          rows: [
+      const FormSection(icon: Icons.info_outline, title: 'معلومات النظام وبيئة التشغيل'),
+      InfoStrip(
+        child: Column(
+          children: [
             for (final r in rows)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(vertical: 3),
                 child: Row(
                   children: [
                     Text(r.$1, style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
@@ -779,6 +788,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
                 ),
               ),
           ],
+        ),
       ),
     ];
   }
