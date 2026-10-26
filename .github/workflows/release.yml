@@ -37,6 +37,10 @@ on:
         description: Let users skip this build (build only)
         type: boolean
         default: true
+      schools:
+        description: School copies, comma separated (build only)
+        type: string
+        default: MISTER
 
 # نشران معاً يتسابقان على رقم الإصدار نفسه. التجريبي لا ينشر فلا ينتظرهما
 concurrency:
@@ -122,6 +126,7 @@ jobs:
           ACTION: ${{ inputs.action }}
           NOTES: ${{ inputs.notes }}
           OPTIONAL: ${{ inputs.optional }}
+          SCHOOLS: ${{ inputs.schools }}
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
           DEV_USERNAME: ${{ secrets.DEV_USERNAME }}
@@ -133,6 +138,8 @@ jobs:
             build)
               args=(--notes "$NOTES")
               [ "$OPTIONAL" = "true" ] && args+=(--optional)
+              # نسخ المشتركين وحدهم (المستر)، لا كل مدرسة نشطة
+              [ -n "$SCHOOLS" ] && args+=(--schools "$SCHOOLS")
               ;;
             patch)
               args=(--patch --notes "$NOTES")
