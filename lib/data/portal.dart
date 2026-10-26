@@ -7,6 +7,7 @@ import 'academic_matching.dart';
 import 'app_settings.dart';
 import 'attendance_days.dart';
 import 'balance.dart';
+import 'child_store.dart';
 import 'grading.dart';
 import 'image_shrink.dart';
 import 'institution.dart';
@@ -585,6 +586,7 @@ class StudentPortalData {
     this.attendance = const PortalAttendance(),
     this.finance = const PortalFinance(),
     this.features,
+    this.cachedAt,
   });
 
   final Student student;
@@ -593,6 +595,9 @@ class StudentPortalData {
   final List<StudentEvaluation> evaluations;
   final PortalAttendance attendance;
   final PortalFinance finance;
+
+  /// نسخة محفوظة على الجهاز بلا شبكة: وقت آخر تحديث من السحابة. `null` = حيّة.
+  final DateTime? cachedAt;
 
   /// ميزات المنشأة كما في `tenants.features` — لإخفاء تبويبات البوابة.
   final Map<String, dynamic>? features;
@@ -1261,25 +1266,35 @@ class PortalService {
   }
 
   /// هوية المنشأة للعرض داخل البوابة — مطابق لـ `getPortalBranding`.
-  Future<PortalBranding> branding(String tenantId) async {
+  Future<PortalBranding> branding(String tenantId) async => brandingFromRaw(await brandingRaw(tenantId));
+
+  /// صفوف الهوية كما وصلت من السحابة (قابلة للحفظ على الجهاز): `{settings, methods}`.
+  Future<Map<String, dynamic>> brandingRaw(String tenantId) async {
     final rows = await supabaseSelect(
       'institution_settings',
       filters: {'id': 'eq.$tenantId'},
       limit: 1,
     );
-    if (rows == null || rows.isEmpty) return const PortalBranding();
-    final row = rows.first;
-    final colors = row['colors'];
-    final colorMap = colors is Map ? Map<String, dynamic>.from(colors) : const <String, dynamic>{};
+    if (rows == null || rows.isEmpty) return const {};
     // وسائل الدفع من جدولها كالويب، والنسخة القديمة في الألوان احتياطاً
     final methodRows = await supabaseSelect(
       'payment_methods',
       filters: {'tenant_id': 'eq.$tenantId'},
       order: 'order_index.asc',
     );
+    return {'settings': rows.first, 'methods': methodRows ?? const <Map<String, dynamic>>[]};
+  }
+
+  PortalBranding brandingFromRaw(Map<String, dynamic> raw) {
+    final settings = raw['settings'];
+    if (settings is! Map) return const PortalBranding();
+    final row = Map<String, dynamic>.from(settings);
+    final colors = row['colors'];
+    final colorMap = colors is Map ? Map<String, dynamic>.from(colors) : const <String, dynamic>{};
     final tableMethods = [
-      for (final m in methodRows ?? const <Map<String, dynamic>>[])
-        if (PaymentMethodItem.fromMap(m) case final item?) item,
+      for (final m in (raw['methods'] as List? ?? const []))
+        if (m is Map)
+          if (PaymentMethodItem.fromMap(Map<String, dynamic>.from(m)) case final item?) item,
     ];
     return PortalBranding(
       name: customInstitutionName('${row['institution_name'] ?? ''}').isEmpty ? appName : customInstitutionName('${row['institution_name']}'),
@@ -1318,7 +1333,20 @@ class PortalService {
 
   // ── بوابة الطالب ───────────────────────────────────────────────────────────
 
+  /// بلا شبكة (أو بلا ردّ) تُعرض آخر نسخة محفوظة لهذا الابن على الجهاز، إن وُجدت.
   Future<StudentPortalData?> studentData(PortalUser user) async {
+    final store = ChildStore.instance;
+    final raw = await studentRaw(user);
+    if (raw != null) {
+      if (raw['complete'] == true && store != null) unawaited(store.saveData(user.id, raw));
+      return studentFromRaw(raw);
+    }
+    final cached = store?.loadData(user.id);
+    return cached == null ? null : studentFromRaw(cached.raw, cachedAt: cached.savedAt);
+  }
+
+  /// صفوف الطالب كما وصلت من السحابة، قابلة للحفظ؛ `complete` = وصلت كلها.
+  Future<Map<String, dynamic>?> studentRaw(PortalUser user) async {
     final tenant = {'tenant_id': 'eq.${user.tenantId}'};
 
     final rows = await supabaseSelect('students', filters: {'id': 'eq.${user.id}'}, limit: 1);
@@ -1341,8 +1369,8 @@ class PortalService {
     }
     final byStudent = {'student_id': _inList(ids)};
 
-    final results = await Future.wait([
-      branding(user.tenantId),
+    final results = await Future.wait<Object?>([
+      brandingRaw(user.tenantId),
       tenantFeatures(user.tenantId),
       supabaseSelect('enrollments', filters: byStudent),
       supabaseSelect('groups', filters: tenant),
@@ -1359,15 +1387,54 @@ class PortalService {
     List<Map<String, dynamic>> at(int i) =>
         (results[i] as List<Map<String, dynamic>>?) ?? const <Map<String, dynamic>>[];
 
+    // الحضور: تاريخه في الحصة المرتبطة، فتُجلب حصصه وحدها
+    final sessionIds = at(9).map((r) => '${r['session_id'] ?? ''}').where((s) => s.isNotEmpty).toSet();
+    List<Map<String, dynamic>>? sessionRows = const [];
+    if (sessionIds.isNotEmpty) {
+      sessionRows = await supabaseSelect(
+        'sessions',
+        filters: {'id': _inList(sessionIds)},
+        columns: 'id,session_date,group_id',
+      );
+    }
 
-    final groupById = {for (final g in at(3)) '${g['id']}': g};
-    final teacherName = {for (final t in at(4)) '${t['id']}': '${t['name'] ?? ''}'};
-    final subjectName = {for (final s in at(5)) '${s['id']}': '${s['name'] ?? ''}'};
-    final roomName = {for (final r in at(6)) '${r['id']}': '${r['name'] ?? ''}'};
+    return {
+      'student': rows.first,
+      'branding': results[0],
+      'features': results[1],
+      'enrollments': at(2),
+      'groups': at(3),
+      'teachers': at(4),
+      'subjects': at(5),
+      'rooms': at(6),
+      'installments': at(7),
+      'payments': at(8),
+      'attendance': at(9),
+      'evaluations': at(10),
+      'sessions': sessionRows ?? const <Map<String, dynamic>>[],
+      // نسخة ناقصة تُعرض ولا تُحفظ: لا تحلّ محل كاملة سابقة
+      'complete': results.skip(2).every((r) => r != null) && sessionRows != null,
+    };
+  }
+
+  /// بناء ما تعرضه البوابة من صفوف [studentRaw] — من السحابة أو من نسخة الجهاز.
+  StudentPortalData studentFromRaw(Map<String, dynamic> raw, {DateTime? cachedAt}) {
+    List<Map<String, dynamic>> at(String key) => [
+          for (final e in (raw[key] as List? ?? const []))
+            if (e is Map) Map<String, dynamic>.from(e),
+        ];
+    final student = Student.fromCloud(Map<String, dynamic>.from(raw['student'] as Map));
+    final brandingRow = raw['branding'];
+    final featuresRow = raw['features'];
+
+    final groupById = {for (final g in at('groups')) '${g['id']}': g};
+    final teacherName = {for (final t in at('teachers')) '${t['id']}': '${t['name'] ?? ''}'};
+    final subjectName = {for (final s in at('subjects')) '${s['id']}': '${s['name'] ?? ''}'};
+    final roomName = {for (final r in at('rooms')) '${r['id']}': '${r['name'] ?? ''}'};
 
     // مادة لكل تسجيل نشط، كما في `subjectsWithTeachers`
     final subjects = <PortalSubject>[];
-    for (final e in at(2)) {
+    for (final e in at('enrollments')) {
       if ('${e['status'] ?? 'active'}' != 'active') continue;
       final gid = '${e['group_id']}';
       final g = groupById[gid];
@@ -1401,19 +1468,8 @@ class PortalService {
       ));
     }
 
-    // الحضور: تاريخه في الحصة المرتبطة، فتُجلب حصصه وحدها
-    final sessionIds = at(9).map((r) => '${r['session_id'] ?? ''}').where((s) => s.isNotEmpty).toSet();
-    final sessionRows = <Map<String, dynamic>>[];
-    if (sessionIds.isNotEmpty) {
-      final sessions = await supabaseSelect(
-        'sessions',
-        filters: {'id': _inList(sessionIds)},
-        columns: 'id,session_date,group_id',
-      );
-      sessionRows.addAll(sessions ?? const []);
-    }
     final sessionObjs = [
-      for (final s in sessionRows)
+      for (final s in at('sessions'))
         ClassSession(
           id: '${s['id']}',
           groupId: '${s['group_id'] ?? ''}',
@@ -1422,10 +1478,10 @@ class PortalService {
         ),
     ];
     final rawMarks = <AttendanceMark>[];
-    for (final r in at(9)) {
-      final raw = '${r['status'] ?? ''}';
+    for (final r in at('attendance')) {
+      final rawStatus = '${r['status'] ?? ''}';
       // «متأخر» أُلغيت من النظام: كل ما ليس حاضراً أو مأذوناً غياب
-      final status = raw == 'present' ? 'present' : (raw == 'excused' ? 'excused' : 'absent');
+      final status = rawStatus == 'present' ? 'present' : (rawStatus == 'excused' ? 'excused' : 'absent');
       rawMarks.add(AttendanceMark.fromCloud({...r, 'status': status}));
     }
     // يوم بيوم: غياب يوم رصده ست مواد كان يُعدّ ستة أيام غياب
@@ -1444,7 +1500,7 @@ class PortalService {
     ];
 
     final evaluations = [
-      for (final r in at(10))
+      for (final r in at('evaluations'))
         () {
           final e = StudentEvaluation.fromCloud(r);
           return e.withNames(
@@ -1456,8 +1512,9 @@ class PortalService {
 
     return StudentPortalData(
       student: student,
-      branding: results[0] as PortalBranding,
-      features: results[1] as Map<String, dynamic>?,
+      branding: brandingFromRaw(brandingRow is Map ? Map<String, dynamic>.from(brandingRow) : const {}),
+      features: featuresRow is Map ? Map<String, dynamic>.from(featuresRow) : null,
+      cachedAt: cachedAt,
       subjects: subjects,
       evaluations: evaluations,
       attendance: PortalAttendance(
@@ -1469,8 +1526,8 @@ class PortalService {
       ),
       finance: PortalFinance.compute(
         studentBalance: student.balance,
-        installments: at(7).map(Installment.fromCloud).toList(),
-        payments: at(8).map(Payment.fromCloud).toList(),
+        installments: at('installments').map(Installment.fromCloud).toList(),
+        payments: at('payments').map(Payment.fromCloud).toList(),
       ),
     );
   }

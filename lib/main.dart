@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'data/activity_ping.dart';
 import 'data/app_installs.dart';
 import 'data/app_update.dart';
+import 'data/child_store.dart';
 import 'data/client_config.dart';
 import 'data/play_update.dart';
 import 'data/db_platform.dart';
@@ -43,6 +44,7 @@ Future<void> main() async {
   // كل خطأ غير معالج بعدها يصل المطور (أخطاء الشبكة تُتجاهل)
   ErrorReport.instance.install();
   configureDatabaseFactory();
+  ChildStore.instance = ChildStore(db: () => AppStore.instance.db);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
@@ -648,6 +650,7 @@ class _LoginScreenState extends State<LoginScreen> {
       await ParentPush.instance.unregister();
       await _appStore.clearPortalSession();
       await PortalOffline(_appStore.db).clear();
+      await ChildStore.instance?.forgetAll();
       await supabaseSignOut();
       if (mounted && Navigator.of(context).canPop()) Navigator.of(context).pop();
       return;
@@ -866,7 +869,7 @@ class _LoginScreenState extends State<LoginScreen> {
             // arrow_back يُعكس مع الاتجاه: في العربية يشير يميناً، اتجاه الرجوع
             icon: Icon(portalTab ? Icons.lock_outline : Icons.arrow_back, size: 15),
             label: Text(portalTab ? 'دخول الإدارة' : 'رجوع'),
-            style: TextButton.styleFrom(foregroundColor: AppColors.navy, textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+            style: TextButton.styleFrom(foregroundColor: AppColors.navy, textStyle: const TextStyle(fontSize: 14)),
           ),
         ),
         // نسخة المتجر وحدها: صغير وباهت حتى لا يراسلنا الطلاب
@@ -910,8 +913,6 @@ class _LoginScreenState extends State<LoginScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        authLabel('اسم المستخدم:'),
-        const SizedBox(height: 6),
         TextField(
           controller: user,
           focusNode: _userFocus,
@@ -926,23 +927,21 @@ class _LoginScreenState extends State<LoginScreen> {
               (previous, next) => next.copyWith(text: next.text.toLowerCase()),
             ),
           ],
-          textAlign: TextAlign.start,
+          textAlign: TextAlign.center,
           style: _fieldText,
-          decoration: authFieldDecoration('أدخل اسم المستخدم...', Icons.person_outline),
+          decoration: authFieldDecoration('اسم المستخدم', Icons.person_outline),
         ),
-        const SizedBox(height: 14),
-        authLabel('كلمة المرور:'),
-        const SizedBox(height: 6),
+        const SizedBox(height: 12),
         TextField(
           controller: pass,
           obscureText: !showPass,
           autocorrect: false,
           enableSuggestions: false,
           onSubmitted: (_) => _submit(),
-          textAlign: TextAlign.start,
+          textAlign: TextAlign.center,
           style: _fieldText.copyWith(fontFamily: 'monospace'),
           decoration: authFieldDecoration(
-            'أدخل كلمة المرور...',
+            'كلمة المرور',
             Icons.lock_outline,
             suffix: AuthRevealButton(visible: showPass, onTap: () => setState(() => showPass = !showPass)),
           ),
@@ -966,8 +965,6 @@ class _LoginScreenState extends State<LoginScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        authLabel('رقم الهوية:'),
-        const SizedBox(height: 6),
         TextField(
           controller: portalId,
           keyboardType: TextInputType.number,
@@ -978,13 +975,11 @@ class _LoginScreenState extends State<LoginScreen> {
             setState(() => error = null);
             if (digitsOnly(v).length == _idLength) _codeFocus.requestFocus();
           },
-          textAlign: TextAlign.start,
+          textAlign: TextAlign.center,
           style: _fieldText.copyWith(fontFamily: 'monospace', letterSpacing: 1),
-          decoration: authFieldDecoration('9 أرقام', Icons.badge_outlined).copyWith(counterText: ''),
+          decoration: authFieldDecoration('رقم الهوية', Icons.badge_outlined).copyWith(counterText: ''),
         ),
-        const SizedBox(height: 14),
-        authLabel('كلمة المرور:'),
-        const SizedBox(height: 6),
+        const SizedBox(height: 12),
         TextField(
           controller: portalCode,
           focusNode: _codeFocus,
@@ -994,10 +989,10 @@ class _LoginScreenState extends State<LoginScreen> {
           inputFormatters: [_digitsOnly],
           onChanged: (_) => setState(() => error = null),
           onSubmitted: (_) => _portalSubmit(),
-          textAlign: TextAlign.start,
+          textAlign: TextAlign.center,
           style: _fieldText.copyWith(fontFamily: 'monospace', letterSpacing: 2),
           decoration: authFieldDecoration(
-            '6 أرقام',
+            'كلمة المرور',
             Icons.vpn_key_outlined,
             suffix: AuthRevealButton(visible: showCode, onTap: () => setState(() => showCode = !showCode)),
           ).copyWith(counterText: ''),
@@ -1068,7 +1063,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const SizedBox(height: 16),
         AuthSubmitButton(
           busy: busy,
-          label: busy ? 'جارِ التحقق...' : 'تسجيل الدخول',
+          label: busy ? 'جارِ التحقق...' : 'دخول',
           icon: Icons.login,
           onTap: busy || !_portalReady ? null : _portalSubmit,
         ),

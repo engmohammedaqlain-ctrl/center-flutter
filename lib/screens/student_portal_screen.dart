@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../data/child_store.dart';
 import '../data/features.dart';
 import '../data/grading.dart';
 import '../data/notes.dart';
@@ -140,13 +141,21 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     final result = await _service.switchToChild(user, child.id);
     if (!mounted) return;
 
-    if (!result.ok) {
+    PortalUser? next = result.ok ? result.users.first : null;
+    var fromDevice = false;
+    if (next == null && result.offline) {
+      // بلا نت: الابن المحفوظ على الجهاز يُفتح بنسخته
+      next = await ChildStore.instance?.account(child.id);
+      fromDevice = next != null;
+      if (!mounted) return;
+    }
+    if (next == null) {
       setState(() => switchingChildId = null);
-      showAppSnack(context, result.error ?? 'تعذّر فتح ملف الابن', error: true);
+      final msg = result.offline ? 'بلا نت، وهذا الابن لم يُحفظ على الجهاز بعد' : result.error;
+      showAppSnack(context, msg ?? 'تعذّر فتح ملف الابن', error: true);
       return;
     }
 
-    final next = result.users.first;
     // الجلسة المحفوظة تتبع الابن المفتوح: إغلاق التطبيق وفتحه يعيده على ملفه
     unawaited(AppStore.instance.savePortalSession(
       nationalId: next.nationalId.isEmpty ? user.nationalId : next.nationalId,
@@ -154,16 +163,76 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       userId: next.id,
       user: next,
     ));
+    if (!fromDevice) _rememberAccount(next, code: user.portalCode);
     setState(() {
-      user = next;
+      user = next!;
       switchingChildId = null;
       loading = true;
       sections = const [];
       noteThreads = const [];
     });
+    // الجلسة على الخادم لم تتبدّل بعد: تُجدَّد أول ما يتوفر الاتصال
+    _setStale(fromDevice);
     // الجلسة الآن على هذا الابن: الجهاز يُسجَّل معه
-    unawaited(ParentPush.instance.register());
+    if (!fromDevice) unawaited(ParentPush.instance.register());
     await _load();
+  }
+
+  /// وليّ الأمر فقط: حساب الابن وكلمة المرور إلى التخزين المشفّر.
+  void _rememberAccount(PortalUser account, {required String code}) {
+    if (!account.isParent) return;
+    final parentId = account.parentNationalId.trim().isNotEmpty
+        ? account.parentNationalId.trim()
+        : account.nationalId.trim();
+    unawaited(ChildStore.instance?.saveAccount(account, parentId: parentId, code: code) ?? Future.value());
+  }
+
+  /// فُتح ابن من نسخة الجهاز بلا خادم: توكن الجلسة ما زال لابن سابق، فيُعاد الدخول
+  /// كل نصف دقيقة حتى ينجح، ثم تُحمَّل البيانات الحيّة.
+  bool _staleSession = false;
+  bool _refreshingSession = false;
+  Timer? _staleTimer;
+
+  void _setStale(bool stale) {
+    _staleSession = stale;
+    _staleTimer?.cancel();
+    _staleTimer = stale ? Timer.periodic(const Duration(seconds: 30), (_) => _refreshSession()) : null;
+  }
+
+  Future<void> _refreshSession({bool reload = true}) async {
+    if (!_staleSession || _refreshingSession || !mounted) return;
+    _refreshingSession = true;
+    try {
+      final result = await _service.switchToChild(user, user.id);
+      if (!mounted || !result.ok) return;
+      final fresh = result.users.first;
+      unawaited(AppStore.instance.savePortalSession(
+        nationalId: fresh.nationalId.isEmpty ? user.nationalId : fresh.nationalId,
+        code: fresh.portalCode.isEmpty ? user.portalCode : fresh.portalCode,
+        userId: fresh.id,
+        user: fresh,
+      ));
+      _rememberAccount(fresh, code: user.portalCode);
+      _setStale(false);
+      setState(() => user = fresh);
+      unawaited(ParentPush.instance.register());
+      if (reload) await _load(silent: true);
+    } finally {
+      _refreshingSession = false;
+    }
+  }
+
+  /// نسيان الجهاز: حسابات الأبناء وكلمة المرور ونسخ بياناتهم، ثم خروج.
+  Future<void> _forgetDevice() async {
+    final ok = await confirmSheet(
+      context,
+      title: 'نسيان هذا الجهاز',
+      message: 'تُمسح حسابات الأبناء وكلمة المرور وبياناتهم من هذا الجهاز، ويلزم الدخول من جديد.',
+      confirmLabel: 'نسيان',
+    );
+    if (!ok || !mounted) return;
+    await ChildStore.instance?.forgetAll();
+    widget.onExit();
   }
 
   List<PortalNavItem> get _navItems {
@@ -292,6 +361,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
   void initState() {
     super.initState();
     ShareInbox.instance.addListener(_onShared);
+    _rememberAccount(user, code: user.portalCode);
     _load();
     _startPortalRealtime();
     // ولي الأمر والطالب: الخادم يقرر ما يصل كلاً منهما
@@ -360,6 +430,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
   @override
   void dispose() {
     ShareInbox.instance.removeListener(_onShared);
+    _staleTimer?.cancel();
     for (final sub in _pushSubs) {
       unawaited(sub.cancel());
     }
@@ -376,6 +447,8 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       });
     }
     try {
+      if (_staleSession) await _refreshSession(reload: false);
+      if (!mounted) return;
       final result = await _service.studentData(user);
       if (!mounted) return;
       if (result != null) {
@@ -463,6 +536,16 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
               sub: isParent ? 'ولي الأمر: $parentName' : [studentName, details].where((s) => s.isNotEmpty).join(' · '),
               onExit: widget.onExit,
             ),
+            if (data?.cachedAt case final at?)
+              Container(
+                width: double.infinity,
+                color: Noon.ink,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Text(
+                  'بلا اتصال · آخر تحديث ${at.hour.toString().padLeft(2, '0')}:${at.minute.toString().padLeft(2, '0')} ${at.day}/${at.month}',
+                  style: nText(11, color: Noon.onInkSoft),
+                ),
+              ),
             // ولي الأمر: الابن المعروض وأشقاؤه للتبديل — دخولٌ بهويته وكلمة وليّ الأمر نفسها
             if (isParent)
               _ChildBand(
@@ -497,6 +580,20 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                                   },
                                 ],
                               ),
+                              // صغير ومنزوٍ في آخر الصفحة: نادر الاستعمال
+                              if (isParent)
+                                Align(
+                                  alignment: AlignmentDirectional.centerStart,
+                                  child: TextButton(
+                                    onPressed: _forgetDevice,
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: Noon.onInkSoft,
+                                      visualDensity: VisualDensity.compact,
+                                      textStyle: nText(11),
+                                    ),
+                                    child: const Text('نسيان هذا الجهاز'),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
