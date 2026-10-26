@@ -342,7 +342,7 @@ Uint8List renderLauncherIcon(img.Image logo, int size, {bool round = false}) {
     img.fill(canvas, color: white);
   }
   // الدائرة تقصّ الزوايا: الشعار فيها أصغر كي لا تُقصّ أطرافه
-  final box = size * (round ? 0.68 : 0.84);
+  final box = size * (round ? 0.72 : 1.0);
   final scale = math.min(box / logo.width, box / logo.height);
   final w = math.max(1, (logo.width * scale).round());
   final h = math.max(1, (logo.height * scale).round());
