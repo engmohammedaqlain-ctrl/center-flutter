@@ -15,9 +15,8 @@ abstract class SecretStore {
 class PlatformSecretStore implements SecretStore {
   const PlatformSecretStore();
 
-  static const _storage = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
+  // الافتراضي منذ الإصدار 10 مشفّر بمفتاح في Keystore
+  static const _storage = FlutterSecureStorage();
 
   // تعطّل الـKeystore (بعد استعادة نسخة مثلاً) لا يُسقط البوابة: كأن لا حسابات محفوظة
   @override
