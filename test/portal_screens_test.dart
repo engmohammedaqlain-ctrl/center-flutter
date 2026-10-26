@@ -378,7 +378,7 @@ void main() {
     final fake = _FakePortal(teacher: _teacherData());
     await _pump(tester, TeacherPortalScreen(user: _teacherUser, onExit: () {}, service: fake, notes: notes));
 
-    await tester.tap(find.text('ملاحظات'));
+    await tester.tap(find.text('الرسائل'));
     await tester.pumpAndSettle();
     expect(find.text('رسالة للصف (2)'), findsOneWidget);
     expect(find.text('ولي الأمر: سنتابعه'), findsOneWidget);
@@ -555,16 +555,14 @@ void main() {
 
       await tester.tap(find.text('مواد'));
       await tester.pumpAndSettle();
-      expect(find.text('المواد والمعلمون'), findsOneWidget);
+      expect(find.text('المواد'), findsOneWidget);
       expect(find.text('(1)'), findsOneWidget);
       expect(find.text('أ. محمود الزهار'), findsOneWidget);
-      expect(find.text('شعبة (1)'), findsOneWidget);
 
       await tester.tap(find.text('حضور'));
       await tester.pumpAndSettle();
-      expect(find.text('نسبة الحضور'), findsOneWidget);
-      expect(find.text('حاضر'), findsWidgets);
-      expect(find.text('غائب'), findsWidgets);
+      expect(find.text('الحضور'), findsOneWidget);
+      expect(find.textContaining('غياب'), findsWidgets);
 
       await tester.tap(find.text('درجات'));
       await tester.pumpAndSettle();
@@ -572,7 +570,6 @@ void main() {
 
       await tester.tap(find.text('رسوم'));
       await tester.pumpAndSettle();
-      expect(find.text('كشف الحساب'), findsOneWidget);
       expect(find.text('مسدد حتى الآن'), findsOneWidget);
       expect(find.text('المدفوع 230 شيكل'), findsOneWidget);
       expect(find.text('مسدد'), findsOneWidget);
@@ -631,7 +628,7 @@ void main() {
       expect(fake.lastIncludeHidden, isNull, reason: 'لا يُطلب محتوى المودل أصلاً');
 
       // يبدأ من الحضور
-      expect(find.text('نسبة الحضور'), findsOneWidget);
+      expect(find.text('الحضور'), findsOneWidget);
     });
   }
 

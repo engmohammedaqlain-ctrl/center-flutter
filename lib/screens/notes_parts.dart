@@ -93,7 +93,7 @@ class NewNotesBanner extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: NoonSize.gap),
       child: _Banner(
         icon: Icons.chat_bubble_outline_rounded,
-        title: fresh.length > 1 ? '${fresh.length} ملاحظات جديدة' : 'ملاحظة من ${authorLabel(fresh.first.note)}',
+        title: fresh.length > 1 ? '${fresh.length} رسائل جديدة' : 'رسالة من ${authorLabel(fresh.first.note)}',
         text: fresh.first.note.body,
         onOpen: onOpen,
       ),
@@ -719,7 +719,7 @@ class _FamilyChatPageState extends State<FamilyChatPage> {
       composer: widget.canReply
           ? NoteComposer(
               placeholder: 'اكتب ردك',
-              disabledText: latest.replies.length >= replyLimit ? 'وصلت حد الردود على هذه الملاحظة' : '',
+              disabledText: latest.replies.length >= replyLimit ? 'وصلت حد الردود' : '',
               onSend: (body, _) => _reply(body),
             )
           : null,
@@ -946,19 +946,19 @@ class _SchoolChatPageState extends State<SchoolChatPage> {
       if (!mounted) return;
       setState(() {
         loading = false;
-        if (threads.isEmpty) error = _errText(e, 'تعذّر تحميل الملاحظات');
+        if (threads.isEmpty) error = _errText(e, 'تعذّر تحميل الرسائل');
       });
     }
   }
 
   Future<void> _remove(String id) async {
-    final ok = await confirmSheet(context, title: 'حذف الملاحظة؟', message: 'تختفي عند الأسرة أيضاً', confirmLabel: 'حذف');
+    final ok = await confirmSheet(context, title: 'حذف الرسالة؟', message: 'تختفي عند الأسرة أيضاً', confirmLabel: 'حذف');
     if (!ok || !mounted) return;
     try {
       await widget.service.remove(id);
       await _reload();
     } catch (e) {
-      if (mounted) showAppSnack(context, _errText(e, 'تعذّر حذف الملاحظة'), error: true);
+      if (mounted) showAppSnack(context, _errText(e, 'تعذّر الحذف'), error: true);
     }
   }
 
@@ -968,7 +968,7 @@ class _SchoolChatPageState extends State<SchoolChatPage> {
       title: widget.title,
       subtitle: widget.subtitle,
       body: loading
-          ? ListView(children: const [NLoading(text: 'جارٍ تحميل الملاحظات')])
+          ? ListView(children: const [NLoading(text: 'جارٍ التحميل')])
           : error.isNotEmpty
               ? ListView(
                   padding: const EdgeInsets.all(NoonSize.page),

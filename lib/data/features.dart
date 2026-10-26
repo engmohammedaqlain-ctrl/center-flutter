@@ -159,8 +159,8 @@ const features = <String, FeatureDef>{
     requiresAny: _familyPortals,
   ),
   'portal.notes': FeatureDef(
-    label: 'الملاحظات',
-    description: 'ملاحظات المعلم والإدارة للأسرة، ورد ولي الأمر',
+    label: 'الرسائل',
+    description: 'رسائل المعلم والإدارة للأسرة',
     group: FeatureGroup.familyPortal,
     defaultOn: true,
     requiresAny: _familyPortals,

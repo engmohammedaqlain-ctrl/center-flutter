@@ -31,10 +31,14 @@ class StudentPortalScreen extends StatefulWidget {
     required this.onExit,
     this.service = const PortalService(),
     this.notes = const NotesService(),
+    this.offlineStart = false,
   });
 
   final PortalUser user;
   final VoidCallback onExit;
+
+  /// فُتح من حساب محفوظ بلا نت: الجلسة تتجدد أول ما يعود الاتصال.
+  final bool offlineStart;
 
   /// قابلة للاستبدال في الاختبارات كي لا تمسّ السحابة.
   final PortalService service;
@@ -203,9 +207,11 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     if (!_staleSession || _refreshingSession || !mounted) return;
     _refreshingSession = true;
     try {
-      final result = await _service.switchToChild(user, user.id);
+      final result = user.isParent
+          ? await _service.switchToChild(user, user.id)
+          : await _service.login(user.nationalId, user.portalCode);
       if (!mounted || !result.ok) return;
-      final fresh = result.users.first;
+      final fresh = result.users.where((u) => u.id == user.id).firstOrNull ?? result.users.first;
       unawaited(AppStore.instance.savePortalSession(
         nationalId: fresh.nationalId.isEmpty ? user.nationalId : fresh.nationalId,
         code: fresh.portalCode.isEmpty ? user.portalCode : fresh.portalCode,
@@ -362,6 +368,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     super.initState();
     ShareInbox.instance.addListener(_onShared);
     _rememberAccount(user, code: user.portalCode);
+    if (widget.offlineStart) _setStale(true);
     _load();
     _startPortalRealtime();
     // ولي الأمر والطالب: الخادم يقرر ما يصل كلاً منهما
@@ -681,30 +688,21 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     final others = [for (final c in chats) if (!subjectKeys.contains(c.key)) c];
     return [
       if (others.isNotEmpty) FamilyOtherChats(convs: others, onOpen: _openChat),
-      NSectionTitle(title: 'المواد والمعلمون', count: subjects.length),
+      NSectionTitle(title: 'المواد', count: subjects.length),
       if (subjects.isEmpty)
         const NEmpty(text: 'لا مواد مسجلة', icon: Icons.school_outlined)
       else
-        // عمودان على الجوال
-        LayoutBuilder(
-          builder: (context, box) {
-            final w = (box.maxWidth - 12) / 2;
-            return Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                for (final s in subjects)
-                  SizedBox(
-                    width: w,
-                    child: _SubjectTile(
-                      subject: s,
-                      chat: chatOf(s),
-                      onChat: chatOf(s) == null ? null : () => _openChat(chatOf(s)!),
-                    ),
-                  ),
-              ],
-            );
-          },
+        // عمود واحد بأسماء كاملة، كالويب
+        NColumn(
+          gap: 8,
+          children: [
+            for (final s in subjects)
+              _SubjectTile(
+                subject: s,
+                chat: chatOf(s),
+                onChat: chatOf(s) == null ? null : () => _openChat(chatOf(s)!),
+              ),
+          ],
         ),
     ];
   }
@@ -717,26 +715,27 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     final percent = total == 0 ? 0 : (a.present / total * 100).round();
     final tone = _percentTone(percent);
 
-    // السجل مجموع بالشهر بترتيبه الوارد (الأحدث أولاً)
+    // السجل مجموع بالشهر بترتيبه الوارد (الأحدث أولاً) — الغياب والإذن وحدهما
     final byMonth = <String, List<AttendanceMark>>{};
-    for (final r in a.records) {
+    for (final r in a.records.where((r) => r.status != 'present')) {
       byMonth.putIfAbsent(nMonthLabel(r.date), () => []).add(r);
     }
 
     return [
       NHeroCard(
-        label: 'نسبة الحضور',
+        label: 'الحضور',
         icon: Icons.event_available_rounded,
         value: '$percent',
         unit: '%',
         tone: tone == NTone.green ? NoonHeroTone.paid : (tone == NTone.red ? NoonHeroTone.due : NoonHeroTone.theme),
-        chips: ['حاضر ${a.present}', 'غائب ${a.absent}', 'مأذون ${a.excused}'],
-        child: NHeroBar(percent: percent),
+        end: '$total يوم',
+        chips: ['غياب ${a.absent}', 'إذن ${a.excused}'],
       ),
       if (a.records.isEmpty)
         const NEmpty(text: 'لا سجل حضور', icon: Icons.event_available_rounded)
+      else if (byMonth.isEmpty)
+        Text('لا غياب ولا إذن', style: nText(12, weight: FontWeight.w500, color: const Color(0xFF047857)))
       else ...[
-        NSectionTitle(title: 'سجل الحضور', count: a.records.length),
         for (final entry in byMonth.entries)
           NColumn(
             gap: 8,
@@ -825,21 +824,27 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
 
     if (names.isEmpty) return const [NEmpty(text: 'لا درجات بعد', icon: Icons.workspace_premium_outlined)];
 
-    // المتوسط البسيط لا يُعرض حين يتوفر معدل موزون: يساوي بين واجب ونهائي
-    final average = summaries.isEmpty ? _averagePercent(list)?.round() : null;
-    final best = list.isEmpty ? 0 : list.map(_pct).reduce((a, b) => a > b ? a : b).round();
+    // نسبة كل مادة: معدلها الموزون إن وُجد، وإلا متوسط تقييماتها
+    final subjectPct = <({String name, int pct})>[
+      for (final name in names)
+        if ((summaries.where((x) => x.subjectName == name).firstOrNull?.yearGrade?.percent ??
+                _averagePercent(bySubject[name] ?? const [])) case final p?)
+          (name: name, pct: p.round()),
+    ];
+    final average = subjectPct.isEmpty ? null : (subjectPct.fold<int>(0, (a, x) => a + x.pct) / subjectPct.length).round();
+    final weakest = subjectPct.length > 1 ? subjectPct.reduce((m, x) => x.pct < m.pct ? x : m) : null;
     bool isOpen(String name) => _openSubjects[name] ?? names.length == 1;
 
     return [
       if (list.isNotEmpty)
         NHeroCard(
-          label: average != null ? 'المعدل' : 'الاختبارات',
+          label: 'المعدل',
           icon: Icons.workspace_premium_rounded,
-          value: '${average ?? list.length}',
+          value: average == null ? '—' : '$average',
           unit: average != null ? '%' : null,
-          chips: [if (average != null) 'الاختبارات ${list.length}', 'أعلى علامة $best%'],
+          end: '${list.length} اختبار',
+          chips: [if (weakest != null) 'الأقل: ${weakest.name} ${weakest.pct}%'],
         ),
-      NSectionTitle(title: 'كشف الدرجات والتقييمات', count: list.length),
       NColumn(
         gap: 12,
         children: [
@@ -887,8 +892,21 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     // الأحدث أولاً
     final payments = [...f.payments]..sort((a, b) => b.date.compareTo(a.date));
 
+    // سطر الملخص بدل البطاقة الكبيرة، وزر «تسديد دفعة» بجانبه لولي الأمر
+    final summaryLine = Wrap(
+      spacing: 12,
+      runSpacing: 2,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text(
+          paidInFull ? 'مسدد بالكامل' : (owes ? 'مستحق الآن ${nAmount(f.currentDue)} شيكل' : 'مسدد حتى الآن'),
+          style: nText(14, weight: FontWeight.w700, color: owes ? const Color(0xFFBE123C) : const Color(0xFF047857)),
+        ),
+        for (final c in chips) Text(c, style: nText(12, weight: FontWeight.w500, color: Noon.muted)),
+      ],
+    );
+
     return [
-      // ولي الأمر: زر «تسديد دفعة» وطلباته أعلى التبويب
       if (isParent)
         ParentPaymentsSection(
           user: user,
@@ -897,16 +915,10 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
           refreshTick: _realtimeTick,
           sharedReceipts: sharedReceipts,
           onSharedReceiptsUsed: () => sharedReceipts = const [],
-        ),
-      const NSectionTitle(title: 'الرسوم'),
-      NHeroCard(
-        label: owes ? 'مستحق الآن' : 'كشف الحساب',
-        icon: Icons.credit_card_rounded,
-        value: paidInFull ? 'مسدد بالكامل' : (owes ? nAmount(f.currentDue) : 'مسدد حتى الآن'),
-        unit: owes ? 'شيكل' : null,
-        tone: owes ? NoonHeroTone.due : NoonHeroTone.paid,
-        chips: chips,
-      ),
+          summary: summaryLine,
+        )
+      else
+        summaryLine,
       NColumn(
         gap: 8,
         children: [
@@ -1204,54 +1216,38 @@ class _SubjectTile extends StatelessWidget {
     final tone = subjectTone(s.subjectName);
     final icon = subjectIcon(s.subjectName);
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: nPanelDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
+          // رمز المادة واسمها والمعلم بخط صغير تحتها: بلا شعبة (هي نفسها في كل المواد)
           Row(
             children: [
               Container(
-                width: 40,
-                height: 40,
+                width: 36,
+                height: 36,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(color: noonMix(tone, 0.14), borderRadius: BorderRadius.circular(NoonRadius.tile)),
                 child: icon != null
-                    ? Icon(icon, size: 20, color: tone)
-                    : Text(subjectInitial(s.subjectName), style: nText(16, weight: FontWeight.w700, color: tone, height: 1)),
+                    ? Icon(icon, size: 18, color: tone)
+                    : Text(subjectInitial(s.subjectName), style: nText(14, weight: FontWeight.w700, color: tone, height: 1)),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                  s.subjectName,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: nText(15, weight: FontWeight.w700, height: 1.375),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(s.subjectName, style: nText(14, weight: FontWeight.w700, height: 1.35)),
+                    if (s.teacherName.isNotEmpty)
+                      Text(s.teacherName, maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(11, weight: FontWeight.w500, color: Noon.muted)),
+                  ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          Tooltip(
-            message: 'المعلم',
-            child: Row(
-              children: [
-                NInitial(name: s.teacherName, size: 18, fontSize: 10),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(s.teacherName, maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(12, weight: FontWeight.w500)),
-                ),
-              ],
-            ),
-          ),
-          if (s.roomName.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Tooltip(
-              message: 'الشعبة',
-              child: Text(s.roomName, maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(11, color: Noon.muted)),
-            ),
-          ],
           if (chat != null) ...[
             const SizedBox(height: 10),
             SubjectChatButton(unread: chat!.unread, onTap: onChat!),
@@ -1302,7 +1298,7 @@ class _SubjectGradesCardState extends State<_SubjectGradesCard> {
   static String _termScoreText(TermGrade t) {
     if (t.components.isEmpty || t.currentAverage == null) return '—';
     final full = trimNum(t.fullMark);
-    return t.isComplete ? '${t.termScore.round()} / $full' : '${(t.currentScore ?? 0).round()} / $full حالي';
+    return t.isComplete ? '${t.termScore.round()} من $full' : '${(t.currentScore ?? 0).round()} من $full حالي';
   }
 
   @override
@@ -1339,7 +1335,7 @@ class _SubjectGradesCardState extends State<_SubjectGradesCard> {
                             const SizedBox(height: 2),
                             Text(
                               summary.yearGrade != null
-                                  ? 'السنة ${summary.yearGrade!.score.round()} / ${trimNum(summary.yearGrade!.yearFullMark)}'
+                                  ? 'السنة ${summary.yearGrade!.score.round()} من ${trimNum(summary.yearGrade!.yearFullMark)}'
                                   : 'من ${trimNum(summary.fullMark)}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -1426,7 +1422,7 @@ class _SubjectGradesCardState extends State<_SubjectGradesCard> {
         overflow: TextOverflow.ellipsis,
       ),
       end: Text(
-        graded ? '${c.achievedScore!.round()} / ${c.maxScore.round()}' : 'لم تُرصد بعد',
+        graded ? '${c.achievedScore!.round()} من ${c.maxScore.round()}' : 'لم تُرصد بعد',
         style: nText(14, weight: graded ? FontWeight.w700 : FontWeight.w400, color: graded ? Noon.text : Noon.muted),
       ),
       children: [for (final (i, e) in own.indexed) _EvaluationRow(e: e, first: i == 0)],
@@ -1567,10 +1563,10 @@ class _EvaluationRow extends StatelessWidget {
                 TextSpan(
                   text: e.score == null ? '—' : trimNum(e.score!),
                   children: [
-                    TextSpan(text: ' / ${trimNum(e.maxScore)}', style: nText(12, weight: FontWeight.w500, color: Noon.muted)),
+                    TextSpan(text: ' من ${trimNum(e.maxScore)}', style: nText(12, weight: FontWeight.w500, color: Noon.muted)),
                   ],
                 ),
-                textDirection: TextDirection.ltr,
+                textDirection: TextDirection.rtl,
                 style: nText(16, weight: FontWeight.w700, color: p >= 50 ? Noon.text : Noon.red600, height: 1),
               ),
               const SizedBox(height: 4),

@@ -111,20 +111,11 @@ class PortalChromeHeader extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           if (action != null) ...[action!, const SizedBox(width: 6)],
+          // بلا زر «تثبيت»: التطبيق مثبَّت أصلاً. عرض اختصار المدرسة مرة واحدة يبقى
           HomeShortcutButton(
             name: branding.name,
             logo: branding.logo,
-            builder: (pin) => Padding(
-              padding: const EdgeInsetsDirectional.only(end: 6),
-              child: NBtn(
-                tone: NBtnTone.onDark,
-                small: true,
-                icon: Icons.download_rounded,
-                label: 'تثبيت',
-                tooltip: 'أضف للشاشة الرئيسية',
-                onTap: pin,
-              ),
-            ),
+            builder: (_) => const SizedBox.shrink(),
           ),
           NBtn(
             tone: NBtnTone.onDark,

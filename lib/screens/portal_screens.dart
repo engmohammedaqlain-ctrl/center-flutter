@@ -598,6 +598,9 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
 
   /// الأسبوع المعروض في شريط الأيام — صفر أسبوع اليوم.
   int weekOffset = 0;
+
+  /// يوم سابق أكّد المعلم تعديله — تأكيد واحد لكل يوم، كالويب.
+  String? _unlockedDay;
   /// رصد الأسبوع المعروض: `{تاريخ: {معرّف الطالب: الحالة}}`.
   Map<String, Map<String, String>> weekMarks = {};
 
@@ -765,7 +768,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         notesError = '';
       });
     } catch (e) {
-      if (mounted) setState(() => notesError = e is NotesException ? e.message : 'تعذّر تحميل الملاحظات');
+      if (mounted) setState(() => notesError = e is NotesException ? e.message : 'تعذّر تحميل الرسائل');
     }
   }
 
@@ -1418,10 +1421,24 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   /// يجعل صفاً لم يُفتح كشفه يبدو مكتمل الحضور.
   String? _statusOf(String studentId) => marks[studentId];
 
+  /// يوم مضى: تعديل رصده بعد تأكيد.
+  Future<bool> _canEditDay() async {
+    if (sessionDate.compareTo(isoDate(DateTime.now())) >= 0 || _unlockedDay == sessionDate) return true;
+    final ok = await confirmSheet(
+      context,
+      title: 'يوم سابق',
+      message: 'تعديل رصد $sessionDate؟',
+      confirmLabel: 'تعديل',
+      confirmColor: AppColors.amber,
+    );
+    if (ok && mounted) _unlockedDay = sessionDate;
+    return ok && mounted;
+  }
+
   /// لمسة الرصد تُحدّث المسودّة فقط — الحفظ دفعة واحدة بزر «حفظ الرصد».
-  void _setMark(String studentId, String? status) {
+  Future<void> _setMark(String studentId, String? status) async {
     final roomId = _attendanceRoomId;
-    if (roomId.isEmpty) return;
+    if (roomId.isEmpty || _statusOf(studentId) == status || !await _canEditDay()) return;
 
     final day = {...marks};
     if (status == null) {
@@ -1956,9 +1973,9 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       );
 
   /// من لم يُرصد بعد حاضراً في المسودّة، ولا يمسح غياباً رُصد قبله — يُحفظ بزر الحفظ.
-  void _markAllPresent() {
+  Future<void> _markAllPresent() async {
     final roomId = _attendanceRoomId;
-    if (roomId.isEmpty) return;
+    if (roomId.isEmpty || !await _canEditDay()) return;
     final added = [
       for (final s in _students())
         if (_statusOf(s.id) == null) s.id,
@@ -2050,7 +2067,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                 else if (id == 'notes')
                   PortalNavItem(
                     id: 'notes',
-                    label: 'ملاحظات',
+                    label: 'الرسائل',
                     icon: Icons.chat_bubble_outline_rounded,
                     activeIcon: Icons.chat_bubble_rounded,
                     // ردود أهل لم تُقرأ
@@ -2176,7 +2193,9 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       }
     }
 
-    final week = _schoolWeek(weekOffset);
+    // لا رصد ليوم لم يأتِ: الشريط ينتهي باليوم
+    final today = isoDate(DateTime.now());
+    final week = _schoolWeek(weekOffset).where((d) => d.dateStr.compareTo(today) <= 0).toList();
     // اكتمال رصد كل يوم في الشريط، كشريط الإدارة
     final dayProgress = <String, double>{
       for (final d in week)
@@ -2209,6 +2228,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                 final v = d.primaryVelocity ?? 0;
                 if (v.abs() < 200) return;
                 // في العربية الأسبوع التالي على اليسار: السحب لليمين يُظهره
+                if (v > 0 && weekOffset >= 0) return;
                 setState(() => weekOffset += v > 0 ? 1 : -1);
                 _loadMarks();
               },
@@ -2246,7 +2266,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                         ),
                       ),
                     ),
-                    _weekArrow(Icons.chevron_right, () {
+                    _weekArrow(Icons.chevron_right, weekOffset >= 0 ? null : () {
                       setState(() => weekOffset++);
                       _loadMarks();
                     }),
@@ -2386,7 +2406,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     ];
   }
 
-  Widget _weekArrow(IconData icon, VoidCallback onTap) {
+  Widget _weekArrow(IconData icon, VoidCallback? onTap) {
     return IconButton(
       onPressed: onTap,
       visualDensity: VisualDensity.compact,

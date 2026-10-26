@@ -1,7 +1,7 @@
 import '../data/phone.dart';
 
 const currency = 'شيكل';
-const appName = 'نون - النظام المدرسي';
+const appName = 'النظام المدرسي';
 const appVersion = '2.11';
 
 /// مطابق لقائمة الأحياء في StudentForm.tsx

@@ -329,7 +329,7 @@ class NotesService {
   }
 
   Future<List<StudentNote>> _rows(String fn, Map<String, dynamic> args) async {
-    final data = await _call(fn, args, 'تعذّر تحميل الملاحظات');
+    final data = await _call(fn, args, 'تعذّر تحميل الرسائل');
     return [
       if (data is List)
         for (final r in data)
@@ -360,7 +360,7 @@ class NotesService {
           'p_audience': audience,
           'p_subject': subject.trim().isEmpty ? null : subject.trim(),
         },
-        'تعذّر إرسال الملاحظة',
+        'تعذّر الإرسال',
       );
 
   /// رسالة للصف: لكل أسرة نسختها. يعيد عدد من وصلتهم.
@@ -379,7 +379,7 @@ class NotesService {
         'p_audience': audience,
         'p_subject': subject.trim().isEmpty ? null : subject.trim(),
       },
-      'تعذّر إرسال الملاحظة',
+      'تعذّر الإرسال',
     );
     return data is num ? data.toInt() : int.tryParse('$data') ?? 0;
   }
@@ -391,7 +391,7 @@ class NotesService {
         'تعذّر إرسال الرد',
       );
 
-  Future<void> remove(String id) => _call('delete_student_note', {'p_id': id}, 'تعذّر حذف الملاحظة');
+  Future<void> remove(String id) => _call('delete_student_note', {'p_id': id}, 'تعذّر الحذف');
 
   /// «قُرئت» لمحادثة واحدة فتحتها الأسرة. الفشل بلا أثر: تُعلَّم في الفتحة التالية.
   Future<void> markFamilyRead(List<String> ids) async {

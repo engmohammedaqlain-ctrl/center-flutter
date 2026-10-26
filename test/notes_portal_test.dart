@@ -104,7 +104,7 @@ void main() {
     await _pump(tester, StudentPortalScreen(user: _user('parent'), onExit: () {}, service: _Portal(), notes: notes));
 
     expect(find.text('الدوام غداً الساعة التاسعة'), findsOneWidget);
-    expect(find.text('ملاحظة من أ. عيسى'), findsOneWidget);
+    expect(find.text('رسالة من أ. عيسى'), findsOneWidget);
 
     await tester.tap(find.text('مواد'));
     await tester.pumpAndSettle();
@@ -127,7 +127,7 @@ void main() {
     final notes = _Notes(_rows);
     await _pump(tester, StudentPortalScreen(user: _user('student'), onExit: () {}, service: _Portal(), notes: notes));
 
-    await tester.tap(find.text('ملاحظة من أ. عيسى'));
+    await tester.tap(find.text('رسالة من أ. عيسى'));
     await tester.pumpAndSettle();
     expect(find.byType(TextField), findsNothing);
     await tester.tap(find.byTooltip('رجوع'));

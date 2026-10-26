@@ -31,9 +31,13 @@ class ParentPaymentsSection extends StatefulWidget {
     this.service = const PortalService(),
     this.sharedReceipts = const [],
     this.onSharedReceiptsUsed,
+    this.summary,
   });
 
   final PortalUser user;
+
+  /// سطر ملخص الرسوم بجانب الزر.
+  final Widget? summary;
 
   /// إشعار تحويل شورك من تطبيق البنك أو المحفظة: يفتح نموذج الدفع به مرفقاً.
   final List<String> sharedReceipts;
@@ -117,13 +121,19 @@ class _ParentPaymentsSectionState extends State<ParentPaymentsSection> {
     return NColumn(
       gap: 12,
       children: [
-        NBtn(
-          tone: NBtnTone.sun,
-          icon: Icons.send_rounded,
-          label: 'تسديد دفعة بإرسال إشعار التحويل',
-          tooltip: 'تُحسب الدفعة بعد مراجعة المالية للإشعار',
-          expand: true,
-          onTap: () => _openForm(),
+        Row(
+          children: [
+            if (widget.summary != null) Expanded(child: widget.summary!) else const Spacer(),
+            const SizedBox(width: 12),
+            NBtn(
+              tone: NBtnTone.sun,
+              small: true,
+              icon: Icons.send_rounded,
+              label: 'تسديد دفعة',
+              tooltip: 'تُحسب بعد مراجعة المالية للإشعار',
+              onTap: () => _openForm(),
+            ),
+          ],
         ),
         if (sent)
           const NNotice(

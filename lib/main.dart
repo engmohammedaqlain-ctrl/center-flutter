@@ -37,7 +37,7 @@ import 'widgets/animated_count.dart';
 import 'widgets/home_shortcut.dart';
 import 'widgets/platform_notices.dart';
 import 'widgets/subscription_banner.dart';
-import 'widgets/widgets.dart' show decodeLogo, launchWaWithText;
+import 'widgets/widgets.dart' show confirmSheet, decodeLogo, launchWaWithText;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -502,8 +502,31 @@ class SplashScreen extends StatelessWidget {
                   Text(
                     brand.name.isNotEmpty ? brand.name : appName,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: AppColors.text, fontSize: 16, fontWeight: FontWeight.w600),
+                    style: const TextStyle(color: AppColors.text, fontSize: 20, fontWeight: FontWeight.w800),
                   ),
+                  // كسبلاش الويب: شارة الاعتماد تحت اسم المدرسة
+                  if (brand.name.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: const Color(0xFFBBF7D0)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.verified_user_outlined, size: 15, color: Color(0xFF059669)),
+                          SizedBox(width: 6),
+                          Text(
+                            'معتمدة من وزارة التربية والتعليم',
+                            style: TextStyle(color: Color(0xFF166534), fontSize: 12, fontWeight: FontWeight.w700),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   SizedBox(height: 16),
                   SizedBox(
                     width: 20,
@@ -560,6 +583,55 @@ class _LoginScreenState extends State<LoginScreen> {
   /// حسابات مطابقة لرقم الهوية والرمز — قد يكون الرقم في أكثر من منشأة.
   List<PortalUser> choices = const [];
 
+  /// حسابات دخلت على هذا الجهاز: لمسة تفتحها بلا كتابة الهوية وكلمة المرور.
+  List<SavedLogin> saved = const [];
+
+  Future<void> _loadSaved() async {
+    final list = await ChildStore.instance?.logins() ?? const <SavedLogin>[];
+    if (mounted) setState(() => saved = list);
+  }
+
+  /// دخول بحساب محفوظ. بلا نت يُفتح بنسخة الجهاز ويتجدد حين يعود الاتصال.
+  Future<void> _useSaved(SavedLogin login) async {
+    if (busy) return;
+    portalId.text = login.nationalId;
+    portalCode.text = login.code;
+    setState(() {
+      busy = true;
+      error = null;
+      choices = const [];
+    });
+    final result = await const PortalService().login(login.nationalId, login.code);
+    if (!mounted) return;
+    setState(() => busy = false);
+    if (!result.ok) {
+      if (result.offline && !login.user.isTeacher) {
+        _openPortal(login.user, code: login.code, offline: true);
+      } else {
+        setState(() => error = result.error);
+      }
+      return;
+    }
+    if (result.users.length == 1) {
+      _openPortal(result.users.first);
+      return;
+    }
+    final match = result.users.where((u) => u.id == login.user.id).firstOrNull ??
+        result.users.where((u) => u.tenantId == login.user.tenantId && u.role == login.user.role).firstOrNull;
+    if (match != null) {
+      await _chooseAccount(match);
+    } else {
+      setState(() => choices = result.users);
+    }
+  }
+
+  Future<void> _removeSaved(SavedLogin login) async {
+    final ok = await confirmSheet(context, title: 'إزالة الحساب؟', message: login.user.name, confirmLabel: 'إزالة');
+    if (!ok) return;
+    await ChildStore.instance?.removeLogin(login);
+    await _loadSaved();
+  }
+
   @override
   void dispose() {
     user.dispose();
@@ -587,6 +659,7 @@ class _LoginScreenState extends State<LoginScreen> {
     user.text = _appStore.lastUsername;
     portalId.text = _appStore.lastPortalNationalId;
     restoring = _appStore.portalSession != null;
+    unawaited(_loadSaved());
     unawaited(_restorePortal());
   }
 
@@ -650,7 +723,10 @@ class _LoginScreenState extends State<LoginScreen> {
       await ParentPush.instance.unregister();
       await _appStore.clearPortalSession();
       await PortalOffline(_appStore.db).clear();
-      await ChildStore.instance?.forgetAll();
+      // رُفضت الهوية: يُزال هذا الحساب وحده من المحفوظة
+      if (saved.user != null) {
+        await ChildStore.instance?.removeLogin(SavedLogin(nationalId: saved.nationalId, code: saved.code, user: saved.user!));
+      }
       await supabaseSignOut();
       if (mounted && Navigator.of(context).canPop()) Navigator.of(context).pop();
       return;
@@ -723,7 +799,7 @@ class _LoginScreenState extends State<LoginScreen> {
   /// [restored] جلسة محفوظة تُفتح عند الإقلاع: بلا حركة انتقال، وشاشة الإقلاع
   /// تبقى تحتها حتى يخرج المستخدم. بغير ذلك تنزلق البوابة فوق نموذج الدخول
   /// فيراه المستخدم ثانيةً كاملة بعد الشعار وكأنه مطالَب بالدخول من جديد.
-  void _openPortal(PortalUser account, {String? code, bool restored = false}) {
+  void _openPortal(PortalUser account, {String? code, bool restored = false, bool offline = false}) {
     // موظف إدارة: يفتح النظام بصلاحياته لا البوابة
     if (account.isStaff) {
       unawaited(_openStaff(account));
@@ -736,6 +812,12 @@ class _LoginScreenState extends State<LoginScreen> {
       userId: account.id,
       user: account,
     ));
+    unawaited(ChildStore.instance?.saveLogin(
+          account,
+          nationalId: digitsOnly(portalId.text).isNotEmpty ? digitsOnly(portalId.text) : account.nationalId,
+          code: code ?? digitsOnly(portalCode.text),
+        ) ??
+        Future.value());
 
     // الخروج يُنهي جلسة البوابة: لا تبقى صلاحيات طالب أو ولي أمر على الجهاز
     Future<void> exit() async {
@@ -749,11 +831,12 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() => restoring = false);
         Navigator.of(context).pop();
       }
+      await _loadSaved();
     }
 
     Widget page(BuildContext _) => account.isTeacher
         ? TeacherResourcesScreen(user: account, onExit: exit)
-        : StudentPortalScreen(user: account, onExit: exit);
+        : StudentPortalScreen(user: account, onExit: exit, offlineStart: offline);
 
     final route = restored
         ? PageRouteBuilder<void>(
@@ -965,6 +1048,61 @@ class _LoginScreenState extends State<LoginScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
+        // حسابات هذا الجهاز: لمسة بدل الهوية وكلمة المرور
+        for (final login in saved)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: PressableScale(
+              onTap: busy ? null : () => _useSaved(login),
+              child: Container(
+                padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 4, 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      login.user.isTeacher
+                          ? Icons.school_outlined
+                          : login.user.isParent
+                              ? Icons.family_restroom
+                              : Icons.person_outline,
+                      size: 18,
+                      color: AppColors.navy,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            login.user.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: AppColors.heading, fontSize: 13.5, fontWeight: FontWeight.w700),
+                          ),
+                          Text(
+                            login.user.roleLabel,
+                            style: const TextStyle(color: AppColors.muted, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: busy ? null : () => _removeSaved(login),
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'إزالة',
+                      icon: const Icon(Icons.close_rounded, size: 16, color: AppColors.faint),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        if (saved.isNotEmpty) const SizedBox(height: 4),
         TextField(
           controller: portalId,
           keyboardType: TextInputType.number,

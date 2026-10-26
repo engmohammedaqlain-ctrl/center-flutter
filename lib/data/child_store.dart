@@ -114,12 +114,62 @@ class ChildStore {
     }
   }
 
+  // ── حسابات الدخول المحفوظة: أكثر من طالب أو ولي أمر على الجوال نفسه ─────
+
+  static const _kLogins = 'noon_saved_logins';
+
+  Future<List<SavedLogin>> logins() async {
+    final raw = await _secrets.read(_kLogins);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      return [
+        for (final e in jsonDecode(raw) as List)
+          if (e is Map) SavedLogin.fromJson(Map<String, dynamic>.from(e)),
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// آخر دخول أولاً. الحساب نفسه (الهوية والمدرسة والدور) يُستبدل ولا يتكرر.
+  Future<void> saveLogin(PortalUser user, {required String nationalId, required String code}) async {
+    if (nationalId.isEmpty || code.isEmpty || user.id.isEmpty) return;
+    final next = SavedLogin(nationalId: nationalId, code: code, user: user);
+    final all = [next, ...(await logins()).where((l) => l.key != next.key)];
+    await _secrets.write(_kLogins, jsonEncode([for (final l in all) l.toJson()]));
+  }
+
+  Future<void> removeLogin(SavedLogin login) async {
+    final all = (await logins()).where((l) => l.key != login.key).toList();
+    await _secrets.write(_kLogins, jsonEncode([for (final l in all) l.toJson()]));
+  }
+
   /// نسيان الجهاز: كل الحسابات وكلمات المرور ونسخ البيانات.
   Future<void> forgetAll() async {
     await _secrets.delete(_kAccounts);
+    await _secrets.delete(_kLogins);
     final db = _db();
     for (final key in db.settings.keys.where((k) => k.startsWith(_kDataPrefix)).toList()) {
       await db.setSetting(key, null);
     }
   }
+}
+
+/// دخول محفوظ: الهوية وكلمة المرور كما أُدخلتا، والحساب كما فُتح (لفتحه بلا نت).
+class SavedLogin {
+  const SavedLogin({required this.nationalId, required this.code, required this.user});
+
+  final String nationalId;
+  final String code;
+  final PortalUser user;
+
+  String get key => '$nationalId|${user.tenantId}|${user.role}';
+
+  Map<String, dynamic> toJson() => {'national_id': nationalId, 'code': code, 'user': user.toJson()};
+
+  factory SavedLogin.fromJson(Map<String, dynamic> m) => SavedLogin(
+        nationalId: '${m['national_id'] ?? ''}',
+        code: '${m['code'] ?? ''}',
+        user: PortalUser.fromJson(m['user'] is Map ? Map<String, dynamic>.from(m['user'] as Map) : const {}),
+      );
 }

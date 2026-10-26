@@ -92,7 +92,7 @@ class _AppShellState extends State<AppShell> {
           MaterialPageRoute<void>(
             builder: (_) => SchoolChatPage(
               studentId: notice.studentId,
-              title: name.isEmpty ? 'ملاحظات الطالب' : name,
+              title: name.isEmpty ? 'رسائل الطالب' : name,
               showAuthor: true,
             ),
           ),
