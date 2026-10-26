@@ -42,25 +42,27 @@ class AuthFrame extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      body: Stack(
-        children: [
-          PositionedDirectional(
-            top: 0,
-            start: 0,
-            end: 0,
-            height: bandHeight,
-            child: ColoredBox(color: AppColors.navy),
-          ),
-          SafeArea(
-            top: false,
-            child: LayoutBuilder(
-              builder: (context, box) => SingleChildScrollView(
-                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                padding: EdgeInsets.fromLTRB(16, top + logoTop, 16, 40),
-                // ارتفاع أدنى بقدر الشاشة: المحتوى يُمرَّر حين تأخذ لوحة المفاتيح
-                // نصفه — بدل أن يُعصر ويقفز مع كل فتح لها
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: (box.maxHeight - top - logoTop - 40).clamp(0.0, double.infinity)),
+      body: SafeArea(
+        top: false,
+        child: LayoutBuilder(
+          builder: (context, box) => SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            // ارتفاع أدنى بقدر الشاشة: المحتوى يُمرَّر حين تأخذ لوحة المفاتيح
+            // نصفه — بدل أن يُعصر ويقفز مع كل فتح لها
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: box.maxHeight),
+              // الشريط داخل التمرير: يتحرك مع الشعار فلا ينفصل عنه
+              child: Stack(
+                children: [
+                  PositionedDirectional(
+                    top: 0,
+                    start: 0,
+                    end: 0,
+                    height: bandHeight,
+                    child: ColoredBox(color: AppColors.navy),
+                  ),
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(16, top + logoTop, 16, 40),
                   child: Align(
                     alignment: Alignment.topCenter,
                     child: ConstrainedBox(
@@ -147,11 +149,12 @@ class AuthFrame extends StatelessWidget {
                       ),
                     ),
                   ),
-                ),
+                  ),
+                ],
               ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }

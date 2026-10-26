@@ -2232,11 +2232,12 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                 setState(() => weekOffset += v > 0 ? 1 : -1);
                 _loadMarks();
               },
+              // كالويب: من اليمين لليسار — السابق يميناً، والأيام، ثم التالي يساراً
               child: Directionality(
-                textDirection: TextDirection.ltr,
+                textDirection: TextDirection.rtl,
                 child: Row(
                 children: [
-                    _weekArrow(Icons.chevron_left, () {
+                    _weekArrow(Icons.chevron_right, () {
                       setState(() => weekOffset--);
                       _loadMarks();
                     }),
@@ -2266,7 +2267,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                         ),
                       ),
                     ),
-                    _weekArrow(Icons.chevron_right, weekOffset >= 0 ? null : () {
+                    _weekArrow(Icons.chevron_left, weekOffset >= 0 ? null : () {
                       setState(() => weekOffset++);
                       _loadMarks();
                     }),

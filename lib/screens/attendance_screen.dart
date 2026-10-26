@@ -444,11 +444,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               setState(() => weekOffset += v > 0 ? 1 : -1);
             },
             child: Directionality(
-              // الأسهم باتجاه ثابت (يسار/يمين الشاشة) لا ينعكس مع العربية
+              // الأسهم باتجاه ثابت: السابق يميناً والتالي يساراً، كالعربية
               textDirection: TextDirection.ltr,
               child: Row(
                 children: [
-                  _plainIcon(Icons.chevron_left, () => setState(() => weekOffset--), tooltip: 'الأسبوع السابق'),
+                  _plainIcon(Icons.chevron_left, () => setState(() => weekOffset++), tooltip: 'الأسبوع التالي'),
                   Expanded(
                     child: Directionality(
                       textDirection: TextDirection.rtl,
@@ -475,7 +475,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       ),
                     ),
                   ),
-                  _plainIcon(Icons.chevron_right, () => setState(() => weekOffset++), tooltip: 'الأسبوع التالي'),
+                  _plainIcon(Icons.chevron_right, () => setState(() => weekOffset--), tooltip: 'الأسبوع السابق'),
                 ],
               ),
             ),

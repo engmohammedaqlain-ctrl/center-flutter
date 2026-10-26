@@ -586,9 +586,17 @@ class _LoginScreenState extends State<LoginScreen> {
   /// حسابات دخلت على هذا الجهاز: لمسة تفتحها بلا كتابة الهوية وكلمة المرور.
   List<SavedLogin> saved = const [];
 
+  /// مع الحسابات المحفوظة تُطوى الحقول خلف «حساب آخر».
+  bool _otherAccount = false;
+
+  bool get _showFields => saved.isEmpty || _otherAccount;
+
   Future<void> _loadSaved() async {
     final list = await ChildStore.instance?.logins() ?? const <SavedLogin>[];
-    if (mounted) setState(() => saved = list);
+    if (mounted) setState(() {
+      saved = list;
+      _otherAccount = false;
+    });
   }
 
   /// دخول بحساب محفوظ. بلا نت يُفتح بنسخة الجهاز ويتجدد حين يعود الاتصال.
@@ -834,9 +842,16 @@ class _LoginScreenState extends State<LoginScreen> {
       await _loadSaved();
     }
 
-    Widget page(BuildContext _) => account.isTeacher
-        ? TeacherResourcesScreen(user: account, onExit: exit)
-        : StudentPortalScreen(user: account, onExit: exit, offlineStart: offline);
+    // زر الرجوع لا يُخرج من الحساب: يُصغّر التطبيق، والخروج بزر «خروج» وحده
+    Widget page(BuildContext _) => PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) SystemNavigator.pop();
+          },
+          child: account.isTeacher
+              ? TeacherResourcesScreen(user: account, onExit: exit)
+              : StudentPortalScreen(user: account, onExit: exit, offlineStart: offline),
+        );
 
     final route = restored
         ? PageRouteBuilder<void>(
@@ -1102,7 +1117,17 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
-        if (saved.isNotEmpty) const SizedBox(height: 4),
+        if (!_showFields)
+          Center(
+            child: TextButton.icon(
+              onPressed: busy ? null : () => setState(() => _otherAccount = true),
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('حساب آخر'),
+              style: TextButton.styleFrom(foregroundColor: AppColors.navy, textStyle: const TextStyle(fontSize: 14)),
+            ),
+          ),
+        if (saved.isNotEmpty && _showFields) const SizedBox(height: 4),
+        if (_showFields) ...[
         TextField(
           controller: portalId,
           keyboardType: TextInputType.number,
@@ -1135,6 +1160,7 @@ class _LoginScreenState extends State<LoginScreen> {
             suffix: AuthRevealButton(visible: showCode, onTap: () => setState(() => showCode = !showCode)),
           ).copyWith(counterText: ''),
         ),
+        ],
         AuthErrorBox(message: error),
         // أكثر من حساب لنفس الرقم: يختار المستخدم منشأته أو دوره
         if (choices.isNotEmpty) ...[
@@ -1198,13 +1224,15 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
         ],
-        const SizedBox(height: 16),
-        AuthSubmitButton(
-          busy: busy,
-          label: busy ? 'جارِ التحقق...' : 'دخول',
-          icon: Icons.login,
-          onTap: busy || !_portalReady ? null : _portalSubmit,
-        ),
+        if (_showFields) ...[
+          const SizedBox(height: 16),
+          AuthSubmitButton(
+            busy: busy,
+            label: busy ? 'جارِ التحقق...' : 'دخول',
+            icon: Icons.login,
+            onTap: busy || !_portalReady ? null : _portalSubmit,
+          ),
+        ],
       ],
     );
   }
