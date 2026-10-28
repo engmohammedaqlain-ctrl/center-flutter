@@ -1,6 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../data/material_cache.dart';
 import '../data/portal.dart';
 import '../data/printing.dart';
 import '../models/models.dart';
@@ -305,14 +308,15 @@ Future<void> openPortalMaterial(
   }
 
   final polished = polishExternalLink(target);
-  final isStorage = PortalService.materialPath(url) != null;
+  final storagePath = PortalService.materialPath(url);
+  final isStorage = storagePath != null;
 
   if (_looksLikeImage(polished, fileName: fileName) ||
       (isStorage && _looksLikeImage(url, fileName: fileName))) {
     await showDialog<void>(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.92),
-      builder: (ctx) => _InAppImageViewer(url: polished),
+      builder: (ctx) => _InAppImageViewer(url: polished, cachePath: storagePath),
     );
     return;
   }
@@ -348,10 +352,63 @@ Future<void> openPortalMaterial(
 }
 
 /// معاينة صورة داخل التطبيق مع تكبير/تصغير — بلا متصفح خارجي.
-class _InAppImageViewer extends StatelessWidget {
-  const _InAppImageViewer({required this.url});
+///
+/// صورة المودل (`cachePath`) تُعرض من نسخة الجهاز إن عُرضت قبل (`MaterialCache`)؛
+/// الرابط الخارجي يُعرض من الشبكة كما هو.
+class _InAppImageViewer extends StatefulWidget {
+  const _InAppImageViewer({required this.url, this.cachePath});
 
   final String url;
+  final String? cachePath;
+
+  @override
+  State<_InAppImageViewer> createState() => _InAppImageViewerState();
+}
+
+class _InAppImageViewerState extends State<_InAppImageViewer> {
+  Future<Uint8List?>? _bytes;
+
+  static const _spinner = SizedBox(
+    width: 36,
+    height: 36,
+    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+  );
+
+  static const _failed = Padding(
+    padding: EdgeInsets.all(24),
+    child: Text(
+      'تعذّر عرض الصورة',
+      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+    ),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    final path = widget.cachePath;
+    if (path != null) _bytes = MaterialCache.imageBytes(path, widget.url);
+  }
+
+  Widget _image() {
+    final bytes = _bytes;
+    if (bytes == null) {
+      return Image.network(
+        widget.url,
+        fit: BoxFit.contain,
+        loadingBuilder: (context, child, progress) => progress == null ? child : _spinner,
+        errorBuilder: (_, _, _) => _failed,
+      );
+    }
+    return FutureBuilder<Uint8List?>(
+      future: bytes,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) return _spinner;
+        final data = snap.data;
+        if (data == null) return _failed;
+        return Image.memory(data, fit: BoxFit.contain, errorBuilder: (_, _, _) => _failed);
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -364,27 +421,7 @@ class _InAppImageViewer extends StatelessWidget {
             child: InteractiveViewer(
               minScale: 0.8,
               maxScale: 4,
-              child: Center(
-                child: Image.network(
-                  url,
-                  fit: BoxFit.contain,
-                  loadingBuilder: (context, child, progress) {
-                    if (progress == null) return child;
-                    return const SizedBox(
-                      width: 36,
-                      height: 36,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    );
-                  },
-                  errorBuilder: (_, _, _) => const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text(
-                      'تعذّر عرض الصورة',
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ),
-              ),
+              child: Center(child: _image()),
             ),
           ),
           PositionedDirectional(

@@ -11,6 +11,7 @@ import 'child_store.dart';
 import 'grading.dart';
 import 'image_shrink.dart';
 import 'institution.dart';
+import 'material_cache.dart';
 import 'material_limits.dart';
 import 'payment_methods.dart';
 import 'supabase.dart';
@@ -2323,17 +2324,22 @@ class PortalService {
 
   /// رابط فتح مادة — مطابق لـ `MoodleService.openMaterial`.
   ///
-  /// حاوية المواد صارت خاصة: الرابط المحفوظ في `content_url` لا يُفتح مباشرةً،
-  /// بل يُوقَّع لساعة عند كل فتح، وكان أي ملف دراسي يفتحه من يملك رابطه بلا
-  /// تسجيل دخول. الروابط الخارجية (يوتيوب وغيره) تعود كما هي.
+  /// حاوية المواد خاصة: الرابط المحفوظ في `content_url` لا يُفتح مباشرةً بل
+  /// يُوقَّع، والرابط الموقّع يُعاد أسبوعاً على الجهاز (`MaterialCache`) فيُفتح
+  /// الملف من نسخته لا من السحابة. الروابط الخارجية (يوتيوب وغيره) تعود كما هي.
   Future<String?> materialOpenUrl(String contentUrl) async {
     final url = contentUrl.trim();
     if (url.isEmpty) return null;
     final path = materialPath(url);
     if (path == null) return url;
-    final signed = await storageSignedUrl(materialsBucket, path);
-    // كل فتح يُحسب عند المطور: نقل ملفات المودل يكبر مع عدد الطلاب
-    if (signed != null) unawaited(logMaterialOpen(path));
+    final reused = await MaterialCache.reusableUrl(path);
+    if (reused != null) return reused;
+    final signed = await storageSignedUrl(materialsBucket, path, expiresIn: MaterialCache.signedUrlTtl.inSeconds);
+    if (signed != null) {
+      await MaterialCache.rememberUrl(path, signed);
+      // يُحسب عند المطور مع الرابط الجديد وحده: الفتح برابط سابق من نسخة الجهاز
+      unawaited(logMaterialOpen(path));
+    }
     return signed;
   }
 
