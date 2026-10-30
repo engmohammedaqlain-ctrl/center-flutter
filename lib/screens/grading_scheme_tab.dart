@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/academic_matching.dart';
+import '../data/grade_publish.dart';
 import '../data/grading.dart';
 import '../data/store.dart';
 import '../models/models.dart';
@@ -87,19 +88,52 @@ class _GradingSchemeTabState extends State<GradingSchemeTab> {
         ListView(
           padding: EdgeInsets.fromLTRB(12, 12, 12, dirty ? 92 : 24),
           children: [
-            // الطريقة: مفتاح مقسّم لا قائمة منسدلة
+            // سطور قصيرة على نهج «المتابعة»: الطريقة والنشر والنتيجة والنجاح سطراً سطراً
             AppCard(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('الطريقة', style: AppText.label),
-                  const SizedBox(height: 8),
-                  _Segmented(
-                    value: s.mode,
-                    options: const {'weighted': 'علامات بمكوّنات', 'monthly': 'معدل شهري عام'},
-                    onPick: (v) => _patch((x) => x.copyWith(mode: v)),
+                  _Line(
+                    label: 'الطريقة',
+                    child: _Pick(
+                      value: s.mode,
+                      options: const {'weighted': 'علامات بمكوّنات', 'monthly': 'معدل شهري عام'},
+                      onPick: (v) => _patch((x) => x.copyWith(mode: v)),
+                    ),
                   ),
+                  _Line(
+                    label: 'تظهر العلامات للأهل',
+                    tooltip: 'بعد الاعتماد: يرصد المعلم، وتراجع الإدارة ثم تنشر من صفحة الدرجات',
+                    child: _Pick(
+                      value: store.settings.gradesPublishManual ? 'manual' : 'auto',
+                      options: const {'auto': 'فور الرصد', 'manual': 'بعد اعتماد الإدارة'},
+                      // يُحفظ فوراً، بلا «حفظ»
+                      onPick: (v) => store.writeSettingsPatch({'grades_publish_manual': v == 'manual' ? true : null}),
+                    ),
+                  ),
+                  if (s.mode != 'monthly') ...[
+                    _Line(
+                      label: 'نتيجة السنة',
+                      child: _Pick(
+                        value: s.yearResultMode,
+                        options: _yearResultLabels,
+                        onPick: (v) => _patch((x) => x.copyWith(yearResultMode: v)),
+                      ),
+                    ),
+                    _Line(
+                      label: 'علامة النجاح',
+                      last: true,
+                      child: SizedBox(
+                        width: 74,
+                        child: _NumberField(
+                          value: s.passPercent,
+                          suffix: '%',
+                          onChanged: (v) => _patch((x) => x.copyWith(passPercent: v <= 0 ? defaultPassPercent : v)),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -119,7 +153,7 @@ class _GradingSchemeTabState extends State<GradingSchemeTab> {
               _Section(
                 icon: Icons.percent_rounded,
                 title: 'توزيع العلامات',
-                summary: termsAreSame(scheme) ? '${scheme.term1.length} مكوّنات' : 'لكل فصل توزيعه',
+                summary: 'من ${trimNum(defaultFullMark)} · ${termsAreSame(scheme) ? '${scheme.term1.length} مكوّنات' : 'لكل فصل توزيعه'}',
                 initiallyOpen: true,
                 child: _SchemeEditor(
                   scheme: scheme,
@@ -130,50 +164,9 @@ class _GradingSchemeTabState extends State<GradingSchemeTab> {
               ),
               const SizedBox(height: 10),
               _Section(
-                icon: Icons.emoji_events_outlined,
-                title: 'النتيجة',
-                summary: '${_yearResultLabels[s.yearResultMode] ?? ''} · النجاح ${trimNum(s.passPercent)}%',
-                initiallyOpen: true,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-                      child: Text('نتيجة السنة', style: AppText.label),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                      child: _Segmented(
-                        value: s.yearResultMode,
-                        options: _yearResultLabels,
-                        onPick: (v) => _patch((x) => x.copyWith(yearResultMode: v)),
-                      ),
-                    ),
-                    const Divider(height: 1, color: AppColors.line),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-                      child: Row(
-                        children: [
-                          Expanded(child: Text('علامة النجاح', style: AppText.label)),
-                          SizedBox(
-                            width: 74,
-                            child: _NumberField(
-                              value: s.passPercent,
-                              suffix: '%',
-                              onChanged: (v) => _patch((x) => x.copyWith(passPercent: v <= 0 ? defaultPassPercent : v)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              _Section(
                 icon: Icons.menu_book_outlined,
                 title: 'علامات المواد',
-                summary: customized == 0 ? 'كلها من ${trimNum(defaultFullMark)}' : '$customized مخصصة',
+                summary: customized == 0 ? 'كلها من ${trimNum(defaultFullMark)} بتوزيع المدرسة' : '$customized مخصصة',
                 child: _SubjectMarks(
                   grades: grades,
                   grade: grade,
@@ -347,9 +340,34 @@ class _SectionState extends State<_Section> {
   }
 }
 
-/// مفتاح مقسّم بخيارات قصيرة.
-class _Segmented extends StatelessWidget {
-  const _Segmented({required this.value, required this.options, required this.onPick});
+/// سطر إعداد: اسمه في أوله وقيمته في آخره — `SettingRow`.
+class _Line extends StatelessWidget {
+  const _Line({required this.label, required this.child, this.tooltip, this.last = false});
+
+  final String label;
+  final Widget child;
+  final String? tooltip;
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Text(label, style: AppText.label);
+    return Container(
+      constraints: const BoxConstraints(minHeight: 48),
+      decoration: BoxDecoration(border: last ? null : const Border(bottom: BorderSide(color: AppColors.line))),
+      child: Row(
+        children: [
+          Expanded(child: tooltip == null ? text : Tooltip(message: tooltip, child: text)),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+/// قائمة منسدلة قصيرة داخل السطر.
+class _Pick extends StatelessWidget {
+  const _Pick({required this.value, required this.options, required this.onPick});
 
   final String value;
   final Map<String, String> options;
@@ -357,48 +375,15 @@ class _Segmented extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 40,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(color: AppColors.hover, borderRadius: BorderRadius.circular(12)),
-      child: Row(
-        children: [
-          for (final e in options.entries)
-            Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => onPick(e.key),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: e.key == value ? Colors.white : Colors.transparent,
-                    borderRadius: BorderRadius.circular(9),
-                    boxShadow: e.key == value
-                        ? const [BoxShadow(color: Color(0x14000000), blurRadius: 5, offset: Offset(0, 1))]
-                        : null,
-                  ),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      child: Text(
-                        e.value,
-                        maxLines: 1,
-                        style: TextStyle(
-                          fontFamily: AppText.family,
-                          color: e.key == value ? AppColors.heading : AppColors.muted,
-                          fontSize: 12.5,
-                          fontWeight: e.key == value ? FontWeight.w600 : FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
+    return DropdownButton<String>(
+      value: options.containsKey(value) ? value : options.keys.first,
+      underline: const SizedBox.shrink(),
+      isDense: true,
+      style: TextStyle(fontFamily: AppText.family, color: AppColors.heading, fontSize: 12.5, fontWeight: FontWeight.w700),
+      items: [for (final e in options.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
+      onChanged: (v) {
+        if (v != null && v != value) onPick(v);
+      },
     );
   }
 }

@@ -18,6 +18,7 @@ import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import 'evaluation_form_sheet.dart';
 import 'evaluations_print.dart';
+import 'publish_grades_sheet.dart';
 
 /// الدرجات والتقييمات الأكاديمية — المقابل لـ `pages/Evaluations.tsx`.
 ///
@@ -204,6 +205,8 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
               PopupMenuItem(value: true, child: Text('كشف النتائج')),
             ],
           ),
+          // اعتماد العلامات قبل ظهورها للأهل، حين تختار المدرسة «بعد اعتماد الإدارة»
+          if (store.can('evaluations')) PublishGradesButton(store: store),
           // إقفال العلامات بعد تسليم الشهادات: المدير يضبطه، وغيره يراه
           if (store.isAdminUser || store.settings.gradesLockedUntil.isNotEmpty)
             IconButton(

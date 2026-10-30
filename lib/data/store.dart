@@ -3115,6 +3115,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     await _writeSettings((prev) => prev.copyWith(gradesLockedUntil: date));
   }
 
+  /// مفاتيح إعدادات لا يقرؤها [AppSettings] بعينها (النشر والمتابعة): تُكتب كما هي،
+  /// وقيمة null تمحو المفتاح عند القراءة.
+  Future<void> writeSettingsPatch(Map<String, dynamic> patch, {String section = 'settings'}) async {
+    requireSection(section);
+    await _writeSettings((prev) => prev.copyWith(extra: {...prev.extra, ...patch}));
+  }
+
   /// الإقفال كما يسري على مستخدم هذا الجهاز: المدير لا يُقفل عليه شيء.
   String get myGradesLock => isAdminUser ? '' : settings.gradesLockedUntil;
 
