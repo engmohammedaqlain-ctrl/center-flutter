@@ -27,6 +27,7 @@ import 'payment_methods_tab.dart';
 import 'settings_forms.dart';
 import 'grading_scheme_tab.dart';
 import 'student_promotion_sheet.dart';
+import 'teacher_detail_screen.dart';
 
 /// الإعدادات — المقابل لـ `pages/Settings.tsx`.
 ///
@@ -1791,7 +1792,7 @@ class _TeachersTabState extends State<_TeachersTab> {
 }
 
 /// مدرس: اسمه، ثم رقمه وعدد شعبه، ثم موادّه سطراً واحداً. لمس البطاقة يفتح
-/// ملفه، ولمس الرقم يتصل به، والواتساب أيقونة واحدة في الطرف.
+/// صفحته، ولمس الرقم يتصل به، والواتساب أيقونة واحدة في الطرف.
 class _TeacherCard extends StatelessWidget {
   const _TeacherCard({required this.teacher});
 
@@ -1809,7 +1810,7 @@ class _TeacherCard extends StatelessWidget {
     final groups = store.groupsInViewedYear.where((g) => g.teacherId == t.id && g.isActive).length;
 
     return AppCard(
-      onTap: () => _open(context, TeacherFormScreen(teacher: t)),
+      onTap: () => _open(context, TeacherDetailScreen(teacherId: t.id)),
       padding: const EdgeInsetsDirectional.fromSTEB(14, 12, 8, 12),
       child: Row(
         children: [
