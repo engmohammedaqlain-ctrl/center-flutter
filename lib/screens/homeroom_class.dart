@@ -184,7 +184,7 @@ class _HomeroomClassViewState extends State<HomeroomClassView> {
                   IconButton(
                     tooltip: 'بطاقات الدخول',
                     onPressed: roomStudents.isEmpty ? null : () => _print(room, roomStudents),
-                    icon: Icon(Icons.print_outlined, color: Noon.muted),
+                    icon: Icon(Icons.download_outlined, color: Noon.muted),
                   ),
                   IconButton(
                     tooltip: 'تحديث',

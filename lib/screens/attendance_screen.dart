@@ -367,7 +367,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             const Divider(height: 1, color: AppColors.line),
             ListTile(
               enabled: onPrint != null,
-              leading: Icon(Icons.print_outlined, color: AppColors.heading, size: 20),
+              leading: Icon(Icons.download_outlined, color: AppColors.heading, size: 20),
               title: const Text('تنزيل كشف الأسبوع', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
               onTap: () {
                 Navigator.pop(ctx);

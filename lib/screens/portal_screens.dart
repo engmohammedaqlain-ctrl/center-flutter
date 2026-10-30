@@ -2300,7 +2300,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                   style: nText(14, weight: FontWeight.w700),
                 ),
               ),
-              NBtn(small: true, icon: Icons.print_outlined, label: 'طباعة', onTap: () => _exportMonthAttendance(excel: false)),
+              NBtn(small: true, icon: Icons.download_outlined, label: 'PDF', onTap: () => _exportMonthAttendance(excel: false)),
               const SizedBox(width: 6),
               NBtn(small: true, icon: Icons.table_view_outlined, label: 'Excel', onTap: () => _exportMonthAttendance(excel: true)),
             ],
@@ -4270,7 +4270,7 @@ class _RecentEvaluationCardState extends State<_RecentEvaluationCard> {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         if (widget.locked) const NBadge('مقفل من الإدارة', tone: NTone.sun, icon: Icons.lock_outline_rounded),
-                        NBtn(small: true, icon: Icons.print_outlined, label: 'طباعة', onTap: widget.onPrint),
+                        NBtn(small: true, icon: Icons.download_outlined, label: 'PDF', onTap: widget.onPrint),
                         NBtn(small: true, icon: Icons.table_view_outlined, label: 'Excel', onTap: widget.onExcel),
                         if (!widget.locked)
                           NBtn(tone: NBtnTone.ink, small: true, icon: Icons.edit_outlined, label: 'تعديل الكشف', onTap: widget.onEditSheet),

@@ -410,11 +410,8 @@ class PdfKit {
           return;
         }
       } catch (_) {
-        // نكمل بالمشاركة / الطباعة
+        // تعذّر حوار الحفظ: لا نافذة طباعة (التنزيل وحده، كالويب)
       }
-      // نافذة الطباعة للـ PDF وحده: ملف Excel أُلغي حفظه لا يُطبع
-      if (!mimeType.contains('pdf')) return;
-      await Printing.layoutPdf(onLayout: (_) async => bytes, name: file);
       return;
     }
 

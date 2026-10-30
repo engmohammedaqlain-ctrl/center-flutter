@@ -218,7 +218,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
             ),
           IconButton(
             tooltip: 'تنزيل الكشف',
-            icon: const Icon(Icons.print_outlined),
+            icon: const Icon(Icons.download_outlined),
             onPressed: list.isEmpty
                 ? null
                 : () => printEvaluations(

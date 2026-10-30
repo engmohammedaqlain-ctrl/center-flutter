@@ -166,9 +166,9 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
               ),
             ),
             IconButton(
-              tooltip: 'طباعة',
+              tooltip: 'تنزيل PDF',
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.print_outlined, size: 20),
+              icon: const Icon(Icons.download_outlined, size: 20),
               onPressed: () => _print(r),
             ),
           ],
