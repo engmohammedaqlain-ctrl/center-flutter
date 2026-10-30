@@ -14,6 +14,8 @@ import '../widgets/home_shortcut.dart';
 import '../widgets/widgets.dart';
 import 'app_update_sheet.dart';
 import 'staff_attendance_screen.dart';
+import 'home_screen.dart';
+import 'reports_screen.dart';
 import 'classes_screen.dart';
 import 'developer_settings_screen.dart';
 import 'evaluations_screen.dart';
@@ -50,7 +52,8 @@ class Section {
 }
 
 class _AppShellState extends State<AppShell> {
-  String current = 'students';
+  String current = 'home';
+  final _homeActive = ValueNotifier<bool>(true);
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _wasOffline = false;
   var _financePrefetchStarted = false;
@@ -139,6 +142,20 @@ class _AppShellState extends State<AppShell> {
   /// الترتيب: طلاب → صفوف → حضور → مالية.
   List<Section> _sections(AppStore store) {
     final all = [
+      Section(
+        'home',
+        'الرئيسية',
+        'الرئيسية',
+        Icons.space_dashboard_outlined,
+        Icons.space_dashboard_rounded,
+        HomeScreen(
+          onSection: (id) {
+            if (store.canOpenSection(id)) setState(() => current = id);
+          },
+          onReport: (id) => openReport(context, id),
+          active: _homeActive,
+        ),
+      ),
       const Section(
         'students',
         'الطلاب',
@@ -215,6 +232,7 @@ class _AppShellState extends State<AppShell> {
         }
         // قائمة بلا بنود لا تُفتح — التحديث يخص الجهاز فيبقى ظاهراً لكل الأدوار
         final hasMenu = store.canOpenSection('settings') ||
+            reportGroups(store).isNotEmpty ||
             (store.isFeatureOn('evaluations') && store.can('evaluations')) ||
             (store.isFeatureOn('moodle') && store.can('moodle')) ||
             store.isMasterAdmin ||
@@ -223,6 +241,10 @@ class _AppShellState extends State<AppShell> {
         final sections = _sections(store);
         var index = sections.indexWhere((s) => s.id == current);
         if (index < 0) index = 0;
+        final homeShown = sections[index].id == 'home';
+        if (_homeActive.value != homeShown) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => _homeActive.value = homeShown);
+        }
 
         return Scaffold(
           key: _scaffoldKey,
@@ -239,6 +261,14 @@ class _AppShellState extends State<AppShell> {
             onOpenMoodle: () {
               Navigator.of(context).pop();
               _openPage(const MoodleAdminScreen());
+            },
+            onOpenReports: () {
+              Navigator.of(context).pop();
+              _openPage(Scaffold(
+                backgroundColor: AppColors.bg,
+                appBar: AppBar(titleSpacing: 0, title: const Text('التقارير')),
+                body: Material(color: AppColors.bg, child: const ReportsScreen()),
+              ));
             },
             onOpenSettings: (tab) {
               Navigator.of(context).pop();
@@ -304,6 +334,7 @@ class _SideMenu extends StatelessWidget {
     required this.onClose,
     required this.onOpenEvaluations,
     required this.onOpenMoodle,
+    required this.onOpenReports,
     required this.onOpenSettings,
     required this.onOpenDeveloper,
     required this.onLogout,
@@ -313,6 +344,7 @@ class _SideMenu extends StatelessWidget {
   final VoidCallback onClose;
   final VoidCallback onOpenEvaluations;
   final VoidCallback onOpenMoodle;
+  final VoidCallback onOpenReports;
   final ValueChanged<String?> onOpenSettings;
   final VoidCallback onOpenDeveloper;
   final VoidCallback onLogout;
@@ -456,6 +488,15 @@ class _SideMenu extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.only(bottom: 16),
               children: [
+                if (reportGroups(store).isNotEmpty) ...[
+                  sectionLabel('المتابعة'),
+                  item(
+                    icon: Icons.insights_rounded,
+                    label: 'التقارير',
+                    color: AppColors.amber,
+                    onTap: onOpenReports,
+                  ),
+                ],
                 if (showAcademic) ...[
                   sectionLabel('الأكاديمي'),
                   if (store.isFeatureOn('evaluations') && store.can('evaluations'))
