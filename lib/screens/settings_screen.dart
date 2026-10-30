@@ -26,6 +26,7 @@ import 'grade_plan_screen.dart';
 import 'payment_methods_tab.dart';
 import 'settings_forms.dart';
 import 'grading_scheme_tab.dart';
+import 'followup_settings_tab.dart';
 import 'student_promotion_sheet.dart';
 import 'teacher_detail_screen.dart';
 
@@ -74,6 +75,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _Tab('teachers', Icons.school_outlined, 'المعلمون'),
     _Tab('subjects', Icons.menu_book_outlined, 'المواد'),
     _Tab('grading', Icons.workspace_premium_outlined, 'نظام العلامات'),
+    _Tab('followup', Icons.notifications_none_rounded, 'المتابعة'),
     _Tab(
       'users',
       Icons.manage_accounts_outlined,
@@ -146,6 +148,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 'payment_methods' => const PaymentMethodsTab(),
                 'subjects' => const _SubjectsTab(),
                 'grading' => const GradingSchemeTab(),
+                'followup' => FollowupSettingsTab(onOpenGrading: () => setState(() => current = 'grading')),
                 'users' => const _UsersTab(),
                 'backup' => const _DataTab(),
                 _ => const _TeachersTab(),

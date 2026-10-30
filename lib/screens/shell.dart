@@ -492,6 +492,11 @@ class _SideMenu extends StatelessWidget {
                       onTap: () => onOpenSettings('grading'),
                     ),
                   item(
+                    icon: Icons.notifications_none_rounded,
+                    label: 'المتابعة',
+                    onTap: () => onOpenSettings('followup'),
+                  ),
+                  item(
                     icon: Icons.calendar_month_rounded,
                     label: 'الأعوام الدراسية',
                     onTap: () => onOpenSettings('academic_years'),

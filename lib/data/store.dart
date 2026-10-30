@@ -1486,6 +1486,12 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return me == null || (me.isActive && normalizeRole(me.role) == 'admin');
   }
 
+  /// حركة في سجل الحركات من خارج المالية (إنذار الغياب): تُزامَن كغيرها.
+  void recordAudit({required String action, required String summary, String studentId = '', String studentName = '', String entityId = ''}) {
+    _recordFinanceAudit(action: action, summary: summary, studentId: studentId, studentName: studentName, entityId: entityId);
+    notifyListeners();
+  }
+
   void _recordFinanceAudit({
     required String action,
     required String summary,
