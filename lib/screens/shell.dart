@@ -13,7 +13,7 @@ import '../widgets/animated_count.dart';
 import '../widgets/home_shortcut.dart';
 import '../widgets/widgets.dart';
 import 'app_update_sheet.dart';
-import 'attendance_screen.dart';
+import 'staff_attendance_screen.dart';
 import 'classes_screen.dart';
 import 'developer_settings_screen.dart';
 import 'evaluations_screen.dart';
@@ -161,7 +161,7 @@ class _AppShellState extends State<AppShell> {
         'الحضور',
         Icons.event_available_outlined,
         Icons.event_available_rounded,
-        AttendanceScreen(),
+        AttendanceHub(),
       ),
       const Section(
         'finance',
