@@ -40,9 +40,9 @@ class PushNotice {
     this.body = '',
   });
 
-  /// `absence` أو `installments` أو `payment` لولي الأمر، و`note` للأسرة،
-  /// و`announcement` لولي الأمر والطالب، و`note_reply` للمعلم والمدير،
-  /// و`approval` للمدير، أو `test`.
+  /// `absence` أو `installments` أو `payment` أو `grades` لولي الأمر، و`note` للأسرة
+  /// (ومنها إنذار الغياب)، و`announcement` لولي الأمر والطالب، و`note_reply` للمعلم
+  /// والمدير، و`leave` للمعلم (قرار إجازته)، و`approval` للمدير، أو `test`.
   final String kind;
   final String studentId;
 
@@ -55,6 +55,7 @@ class PushNotice {
   String? get tab => switch (kind) {
         'absence' => 'attendance',
         'installments' || 'payment' => 'financial',
+        'grades' => 'evaluations',
         'note' => 'subjects',
         _ => null,
       };

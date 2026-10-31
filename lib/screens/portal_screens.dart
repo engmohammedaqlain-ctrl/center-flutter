@@ -784,8 +784,15 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     if (pending != null) WidgetsBinding.instance.addPostFrameCallback((_) => _openNotice(pending));
   }
 
-  /// رد ولي أمر لُمس: تبويب الملاحظات ومحادثة الطالب.
+  /// رد ولي أمر لُمس: تبويب الملاحظات ومحادثة الطالب. وقرار إجازة: نصه.
   Future<void> _openNotice(PushNotice notice) async {
+    // قرار الإجازة: لا شاشة إجازات في البوابة، فيظهر نصه
+    if (mounted && notice.kind == 'leave' && notice.body.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) showAppSnack(context, notice.body);
+      });
+      return;
+    }
     if (!mounted || notice.kind != 'note_reply' || !_notesOn) return;
     setState(() => tab = 'notes');
     await _loadNotes();
