@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:center_mobile/data/institution.dart';
+import 'package:center_mobile/data/material_cache.dart';
 import 'package:center_mobile/data/material_limits.dart';
 import 'package:center_mobile/data/payment_methods.dart';
 import 'package:center_mobile/data/portal.dart';
@@ -8,6 +9,7 @@ import 'package:center_mobile/models/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Installment _inst(String id, double amount, DateTime due, {double paid = 0, String status = 'unpaid'}) => Installment(
       id: id,
@@ -239,6 +241,8 @@ void main() {
   });
 
   group('المودل', () {
+    setUp(() => SharedPreferences.setMockInitialValues({}));
+
     test('المادة تمرّ عبر شكل السحابة', () {
       const item = CourseItem(
         id: 'i1',
@@ -334,8 +338,47 @@ void main() {
       );
 
       expect(asked?.path, endsWith('/storage/v1/object/sign/course_materials/t1/170_ab.pdf'));
-      expect((body as Map)['expiresIn'], 3600, reason: 'ساعة واحدة كما في MoodleService');
+      expect((body as Map)['expiresIn'], 7 * 24 * 3600, reason: 'أسبوع كما في MoodleService');
       expect(signed, endsWith('/storage/v1/object/sign/course_materials/t1/170_ab.pdf?token=abc'));
+    });
+
+    test('الفتحة الثانية بالرابط نفسه بلا توقيع ولا تسجيل: يفتح الجهاز نسخته', () async {
+      const service = PortalService();
+      const file = 'https://x.supabase.co/storage/v1/object/public/course_materials/t1/170_ab.pdf';
+      var signs = 0;
+      var logs = 0;
+      MockClient client() => MockClient((request) async {
+            if (request.url.path.contains('/rpc/')) {
+              logs++;
+              return http.Response('', 204);
+            }
+            signs++;
+            return http.Response(
+              jsonEncode({'signedURL': '/object/sign/course_materials/t1/170_ab.pdf?token=t$signs'}),
+              200,
+              headers: {'content-type': 'application/json; charset=utf-8'},
+            );
+          });
+
+      final first = await http.runWithClient(() => service.materialOpenUrl(file), client);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      final second = await http.runWithClient(() => service.materialOpenUrl(file), client);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(second, first);
+      expect(signs, 1);
+      expect(logs, 1);
+    });
+
+    test('رابط بقي على انتهائه أقل من ساعة يُوقَّع من جديد', () async {
+      final now = DateTime(2026, 10, 28, 12);
+      await MaterialCache.rememberUrl('t1/a.pdf', 'https://cdn/a?token=1', now: now);
+      expect(await MaterialCache.reusableUrl('t1/a.pdf', now: now.add(const Duration(days: 6))), 'https://cdn/a?token=1');
+      expect(
+        await MaterialCache.reusableUrl('t1/a.pdf', now: now.add(const Duration(days: 6, hours: 23, minutes: 30))),
+        isNull,
+      );
+      expect(await MaterialCache.reusableUrl('t1/b.pdf', now: now), isNull);
     });
 
     test('تعذّر التوقيع لا يُعيد رابطاً غير موقّع', () async {
