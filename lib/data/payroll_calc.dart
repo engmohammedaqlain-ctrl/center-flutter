@@ -67,18 +67,20 @@ class PayrollSettings {
 }
 
 /// شروط الأجر السارية في شهر — `PayTerms`.
+/// شروط الأجر بخاناتها الثلاث (ثابت، أجر حصة، نسبة): أي خليط جائز، والفارغ صفر لا يُحسب.
 class PayTerms {
   const PayTerms({
     required this.contractType,
-    required this.paymentRate,
+    required this.fixed,
     required this.sessionRate,
     required this.percent,
     required this.weeklyPeriods,
     required this.allowances,
   });
 
+  /// مشتق من الخانات: `fixed` أو `sessions` أو `percent` أو `mixed`، وفارغ بلا أجر
   final String contractType;
-  final double paymentRate;
+  final double fixed;
   final double sessionRate;
   final double percent;
   final double weeklyPeriods;
@@ -87,11 +89,18 @@ class PayTerms {
   factory PayTerms.of({String? contractType, Object? paymentRate, Object? weeklyPeriods, Object? payProfile}) {
     final p = payProfile is Map ? payProfile : const {};
     final a = p['allowances'];
+    // «بالحصة» و«نسبة» القديمان: payment_rate أجر حصة أو لا شيء، لا راتب ثابت — `termsOf`
+    final type = (contractType ?? '').isEmpty ? 'fixed' : contractType!;
+    final rate = math.max(0.0, _num(paymentRate));
+    final fixed = type == 'sessions' || type == 'percent' ? 0.0 : rate;
+    final session = type == 'sessions' ? rate : math.max(0.0, _num(p['session_rate']));
+    final percent = _num(p['percent']).clamp(0, 100).toDouble();
+    final parts = [if (fixed > 0) 'fixed', if (session > 0) 'sessions', if (percent > 0) 'percent'];
     return PayTerms(
-      contractType: (contractType ?? '').isEmpty ? 'fixed' : contractType!,
-      paymentRate: math.max(0.0, _num(paymentRate)),
-      sessionRate: math.max(0.0, _num(p['session_rate'])),
-      percent: _num(p['percent']).clamp(0, 100).toDouble(),
+      contractType: parts.length > 1 ? 'mixed' : parts.firstOrNull ?? '',
+      fixed: fixed,
+      sessionRate: session,
+      percent: percent,
       weeklyPeriods: math.max(0.0, _num(weeklyPeriods)),
       allowances: [
         if (a is List)
@@ -269,7 +278,7 @@ class PayrollCalc {
 
   /// ما يُحفظ مع السند — `snapshotOf`.
   Map<String, dynamic> snapshot(double paid) => {
-        'contract_type': terms.contractType,
+        'contract_type': [if (terms.fixed > 0) 'ثابت', if (terms.sessionRate > 0) 'حصص', if (terms.percent > 0) 'نسبة'].join(' + '),
         'lines': [for (final l in lines) {'label': l.label, 'amount': l.amount}],
         'gross': gross,
         'net': net,
@@ -299,11 +308,11 @@ PayrollCalc computePayroll({
   double advanceBalance = 0,
 }) {
   final terms = termsFor(teacher, month);
-  final type = terms.contractType;
-  final hasFixed = type == 'fixed' || type == 'mixed';
-  final hasSessions = type == 'sessions' || type == 'mixed';
-  final sessionRate = type == 'mixed' ? terms.sessionRate : type == 'sessions' ? terms.paymentRate : 0.0;
-  final fixedRate = hasFixed ? terms.paymentRate : 0.0;
+  final hasFixed = terms.fixed > 0;
+  final hasSessions = terms.sessionRate > 0;
+  final hasPercent = terms.percent > 0;
+  final sessionRate = terms.sessionRate;
+  final fixedRate = terms.fixed;
   final weekDays = 7 - settings.weekend.length;
   final perDay = weekDays > 0 ? terms.weeklyPeriods / weekDays : 0.0;
 
@@ -365,9 +374,9 @@ PayrollCalc computePayroll({
   final sessionsPay = sessions == null ? 0.0 : _r2(sessions * sessionRate);
   if (hasSessions) lines.add((label: 'الحصص: ${_count(sessions ?? 0)} × ${_count(sessionRate)}', amount: sessionsPay));
 
-  final rooms = type == 'percent' ? percentRooms : const <PercentRoom>[];
+  final rooms = hasPercent ? percentRooms : const <PercentRoom>[];
   final percentPay = _r2(rooms.fold<double>(0, (n, r) => n + r.amount));
-  if (type == 'percent') {
+  if (hasPercent) {
     lines.add((label: 'نسبة ${_count(terms.percent)}% من الرسوم', amount: percentPay));
     if (rooms.any((r) => r.share == null)) warnings.add('حصص مادة ناقصة في شعبة');
     if (rooms.isEmpty) warnings.add('لا شعب مسندة');

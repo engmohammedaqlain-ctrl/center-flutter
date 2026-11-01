@@ -2559,7 +2559,7 @@ Future<int> showPayrollSheet(
               LeaveRequest(id: l.id, teacherId: t.id, fromDate: l.fromDate, toDate: l.toDate, status: l.status, paid: l.paid),
         ],
         entry: mine.where((e) => e.month == m).firstOrNull,
-        percentRooms: terms.contractType == 'percent'
+        percentRooms: terms.percent > 0
             ? percentRooms(
                 teacherIds: ids,
                 groups: store.groupsInViewedYear,
