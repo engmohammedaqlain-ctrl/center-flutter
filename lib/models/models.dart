@@ -978,12 +978,24 @@ class Teacher {
     this.contractType = '',
     this.contractStart = '',
     this.birthDate = '',
+    this.weeklyPeriods,
+    this.payProfile,
+    this.salaryHistory = const [],
   });
 
   final String id;
   String name;
   String phone;
   String subject;
+
+  /// النصاب الأسبوعي (حصص).
+  final double? weeklyPeriods;
+
+  /// بقية شروط الأجر — `pay_profile`: أجر الحصة في المختلط، والنسبة، والبدلات. يكتبها الويب.
+  final Map<String, dynamic>? payProfile;
+
+  /// شروط الأجر بتاريخ سريانها — `salary_history`. يكتبها الويب.
+  final List<Map<String, dynamic>> salaryHistory;
 
   /// وظيفة غير التدريس (مرشد، مقصف...)؛ فارغة للمعلم.
   String jobTitle;
@@ -995,7 +1007,7 @@ class Teacher {
   /// المراحل التي يدرّسها.
   List<String> gradeLevels;
 
-  /// نظام العقد: `sessions` بالحصص أو `fixed` براتب ثابت — `TEACHER_CONTRACT_LABELS`.
+  /// نظام الأجر: `fixed` أو `sessions` أو `percent` أو `mixed` — `TEACHER_CONTRACT_LABELS`.
   String contractType;
   String contractStart;
   String birthDate;
@@ -1039,6 +1051,10 @@ class Teacher {
     'contract_type': contractType.isEmpty ? null : contractType,
     'contract_start': contractStart.isEmpty ? null : contractStart,
     'birth_date': birthDate.isEmpty ? null : birthDate,
+    // شروط الأجر يكتبها الويب وحده: تُحفظ هنا مع المعلم، وقائمة الرفع (sync.dart) لا ترسلها
+    'weekly_periods': weeklyPeriods,
+    'pay_profile': payProfile,
+    'salary_history': salaryHistory,
     'academic_year_id': academicYearId.isEmpty ? null : academicYearId,
     'created_at': createdAt,
     'updated_at': updatedAt,
@@ -1078,12 +1094,19 @@ class Teacher {
       contractType: '${m['contract_type'] ?? ''}',
       contractStart: '${m['contract_start'] ?? ''}',
       birthDate: '${m['birth_date'] ?? ''}',
+      weeklyPeriods: m['weekly_periods'] is num ? (m['weekly_periods'] as num).toDouble() : double.tryParse('${m['weekly_periods'] ?? ''}'),
+      payProfile: m['pay_profile'] is Map ? Map<String, dynamic>.from(m['pay_profile'] as Map) : null,
+      salaryHistory: [
+        if (m['salary_history'] is List)
+          for (final h in m['salary_history'] as List)
+            if (h is Map) Map<String, dynamic>.from(h),
+      ],
     );
   }
 }
 
 /// نظام العقد: بالحصص أو براتب ثابت — `TEACHER_CONTRACT_LABELS`.
-const teacherContractLabels = {'sessions': 'نظام الحصص', 'fixed': 'راتب ثابت'};
+const teacherContractLabels = {'fixed': 'راتب ثابت', 'sessions': 'بالحصة', 'percent': 'نسبة من الرسوم', 'mixed': 'ثابت وحصص'};
 
 class SubjectItem {
   SubjectItem({
@@ -2556,6 +2579,7 @@ class Group {
     this.startTime = '16:00',
     this.endTime = '18:00',
     this.status = 'active',
+    this.weeklyPeriods,
     this.academicYearId = '',
     this.syncStatus = 'synced',
     this.createdAt,
@@ -2571,6 +2595,9 @@ class Group {
 
   /// كل الشعب المشتركة في هذا الموديل: المعلم نفسه يدرّس المادة نفسها لأكثر من
   /// شعبة في المرحلة نفسها بسجل مجموعة واحد. [roomId] الشعبة الأساسية للعرض.
+  /// حصص المادة في الشعبة أسبوعياً — منها نصيب معلم النسبة.
+  final double? weeklyPeriods;
+
   List<String> roomIds;
   String gradeLevel;
   double pricePerMonth;
@@ -2619,6 +2646,7 @@ class Group {
     'teacher_id': teacherId.isEmpty ? null : teacherId,
     'room_id': roomId.isEmpty ? null : roomId,
     'room_ids': roomIds,
+    'weekly_periods': weeklyPeriods, // يكتبه الويب؛ لا يُرفع من هنا
     'grade_level': gradeLevel,
     'status': status,
     'academic_year_id': academicYearId.isEmpty ? null : academicYearId,
@@ -2636,6 +2664,7 @@ class Group {
       }
     }
     return Group(
+      weeklyPeriods: m['weekly_periods'] is num ? (m['weekly_periods'] as num).toDouble() : double.tryParse('${m['weekly_periods'] ?? ''}'),
       id: '${m['id']}',
       name: '${m['name'] ?? ''}',
       subjectId: '${m['subject_id'] ?? ''}',

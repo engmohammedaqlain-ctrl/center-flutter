@@ -14,14 +14,17 @@ const staffDayLabels = {'present': 'حاضر', 'absent': 'غائب', 'late': 'م
 String staffAttendanceId(String teacherId, String date) => 'sa_${teacherId}_$date';
 
 class StaffDay {
-  const StaffDay({required this.teacherId, required this.date, required this.status});
+  const StaffDay({required this.teacherId, required this.date, required this.status, this.periods});
 
   final String teacherId;
   final String date;
   final String status;
 
+  /// حصص اليوم حين تُرصد يومياً (إعدادات الرواتب في الويب).
+  final double? periods;
+
   factory StaffDay.fromMap(Map<String, dynamic> m) =>
-      StaffDay(teacherId: '${m['teacher_id'] ?? ''}', date: '${m['date'] ?? ''}'.substring(0, 10), status: '${m['status'] ?? ''}');
+      StaffDay(teacherId: '${m['teacher_id'] ?? ''}', date: '${m['date'] ?? ''}'.substring(0, 10), status: '${m['status'] ?? ''}', periods: m['periods'] is num ? (m['periods'] as num).toDouble() : double.tryParse('${m['periods'] ?? ''}'));
 }
 
 class LeaveRequest {
@@ -84,7 +87,7 @@ class StaffService {
     if (!force && hit != null && _fresh(hit.at)) return hit.rows;
     final rows = await supabaseSelect(
       'staff_attendance',
-      columns: 'teacher_id,date,status',
+      columns: 'teacher_id,date,status,periods',
       filters: {'and': '(date.gte.$from,date.lte.$to)'},
       limit: 5000,
     );
@@ -140,5 +143,88 @@ class StaffService {
       'updated_at': now,
     });
     _leaves = null;
+  }
+}
+
+/// راتب موظف في شهر — `payroll_entries` (`types/payroll.ts`). المعرّف `pe_<الموظف>_<الشهر>`.
+class PayrollEntryRow {
+  const PayrollEntryRow({
+    required this.id,
+    required this.teacherId,
+    required this.month,
+    this.sessions,
+    this.adjustments = const [],
+    this.advanceRecovered,
+    this.netOverride,
+    this.payoutId = '',
+    this.hasSnapshot = false,
+  });
+
+  final String id;
+  final String teacherId;
+  final String month;
+  final double? sessions;
+  final List<({String label, double amount})> adjustments;
+  final double? advanceRecovered;
+  final double? netOverride;
+  final String payoutId;
+  final bool hasSnapshot;
+
+  static double? _n(Object? v) => v == null ? null : v is num ? v.toDouble() : double.tryParse('$v');
+
+  factory PayrollEntryRow.fromMap(Map<String, dynamic> m) => PayrollEntryRow(
+        id: '${m['id']}',
+        teacherId: '${m['teacher_id'] ?? ''}',
+        month: '${m['month'] ?? ''}',
+        sessions: _n(m['sessions']),
+        adjustments: [
+          if (m['adjustments'] is List)
+            for (final a in m['adjustments'] as List)
+              if (a is Map) (label: '${a['label'] ?? ''}', amount: _n(a['amount']) ?? 0),
+        ],
+        advanceRecovered: _n(m['advance_recovered']),
+        netOverride: _n(m['net_override']),
+        payoutId: '${m['payout_id'] ?? ''}',
+        hasSnapshot: m['snapshot'] != null,
+      );
+}
+
+String payrollEntryId(String teacherId, String month) => 'pe_${teacherId}_$month';
+
+/// سطور الرواتب في السحابة: تُقرأ كلها لرصيد السلف، ويُكتب سطر الشهر عند الصرف.
+class PayrollEntries {
+  PayrollEntries._();
+
+  static Future<List<PayrollEntryRow>?> all() async {
+    final rows = await supabaseSelect(
+      'payroll_entries',
+      columns: 'id,teacher_id,month,sessions,adjustments,advance_recovered,net_override,payout_id,snapshot',
+      limit: 5000,
+    );
+    return rows == null ? null : [for (final r in rows) PayrollEntryRow.fromMap(r)];
+  }
+
+  /// يُثبّت الحساب كما صُرف ومقتطع السلفة وربط السند في سطر الشهر.
+  static Future<void> markPaid({
+    required String tenantId,
+    required String teacherId,
+    required String month,
+    required String payoutId,
+    required Map<String, dynamic> snapshot,
+    required double advanceRecovered,
+  }) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+    await supabaseUpsert('payroll_entries', [
+      {
+        'id': payrollEntryId(teacherId, month),
+        'tenant_id': tenantId,
+        'teacher_id': teacherId,
+        'month': month,
+        'payout_id': payoutId,
+        'snapshot': snapshot,
+        'advance_recovered': advanceRecovered,
+        'updated_at': now,
+      },
+    ]);
   }
 }

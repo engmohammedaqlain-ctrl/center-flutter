@@ -4,7 +4,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../data/arabic_search.dart';
+import '../data/payroll_calc.dart';
 import '../data/profit_report.dart';
+import '../data/staff.dart';
 import '../data/store.dart';
 import '../data/teacher_salary.dart';
 import '../models/models.dart';
@@ -2524,13 +2526,69 @@ Future<int> showPayrollSheet(
     return monthKeyOf(d);
   }
 
+  // الراتب المقترح بقواعد المدرسة: دوام الشهر وإجازاته وسطور الرواتب من السحابة — `usePayroll`
+  final payroll = PayrollSettings.fromMap(store.settings.extra['payroll']);
+  final calendar = [
+    if (store.settings.extra['calendar'] is List)
+      for (final e in store.settings.extra['calendar'] as List)
+        if (e is Map) Map<String, dynamic>.from(e),
+  ];
+  final calcs = <String, PayrollCalc>{};
+  Future<void> loadMonth(String m) async {
+    final days = await StaffService.days('$m-01', monthEnd(m)) ?? const <StaffDay>[];
+    final leaves = await StaffService.leaves() ?? const <LeaveRequest>[];
+    final entries = await PayrollEntries.all() ?? const <PayrollEntryRow>[];
+    calcs.clear();
+    for (final t in store.teachersInViewedYear) {
+      final ids = store.linkedTeacherIds(t.id);
+      final payouts = store.teacherPayouts.where((p) => ids.contains(p.teacherId)).toList();
+      final mine = entries.where((e) => ids.contains(e.teacherId)).toList();
+      final terms = termsFor(t, m);
+      calcs[t.id] = computePayroll(
+        teacher: t,
+        month: m,
+        settings: payroll,
+        calendar: calendar,
+        attendance: [
+          for (final d in days)
+            if (ids.contains(d.teacherId)) StaffDay(teacherId: t.id, date: d.date, status: d.status, periods: d.periods),
+        ],
+        leaves: [
+          for (final l in leaves)
+            if (ids.contains(l.teacherId))
+              LeaveRequest(id: l.id, teacherId: t.id, fromDate: l.fromDate, toDate: l.toDate, status: l.status, paid: l.paid),
+        ],
+        entry: mine.where((e) => e.month == m).firstOrNull,
+        percentRooms: terms.contractType == 'percent'
+            ? percentRooms(
+                teacherIds: ids,
+                groups: store.groupsInViewedYear,
+                rooms: store.roomsInViewedYear,
+                students: store.students,
+                installments: store.installments,
+                payments: store.payments,
+                month: m,
+                percent: terms.percent,
+                settings: payroll,
+              )
+            : const [],
+        advanceBalance: advanceBalance(payouts, mine, m),
+      );
+    }
+  }
+
   void refillAmounts() {
     for (final t in store.teachersInViewedYear) {
       final ctl = amounts[t.id];
       if (ctl == null) continue;
-      ctl.text = payoutType == 'salary' && t.rate > 0 ? trimNum(t.rate) : '';
+      final payable = calcs[t.id]?.payable ?? 0;
+      ctl.text = payoutType == 'salary' && payable > 0 ? trimNum(payable) : '';
     }
   }
+
+  await loadMonth(payrollMonth);
+  refillAmounts();
+  if (!context.mounted) return 0;
 
   final saved = await showModalBottomSheet<int>(
     context: context,
@@ -2620,9 +2678,12 @@ Future<int> showPayrollSheet(
                               tooltip: 'الشهر السابق',
                               visualDensity: VisualDensity.compact,
                               icon: const Icon(Icons.chevron_left, size: 18),
-                              onPressed: () => setSt(
-                                () => payrollMonth = shiftMonth(payrollMonth, -1),
-                              ),
+                              onPressed: () async {
+                                payrollMonth = shiftMonth(payrollMonth, -1);
+                                await loadMonth(payrollMonth);
+                                refillAmounts();
+                                setSt(() {});
+                              },
                             ),
                             Text(
                               monthLabel(payrollMonth),
@@ -2636,9 +2697,12 @@ Future<int> showPayrollSheet(
                               tooltip: 'الشهر التالي',
                               visualDensity: VisualDensity.compact,
                               icon: const Icon(Icons.chevron_right, size: 18),
-                              onPressed: () => setSt(
-                                () => payrollMonth = shiftMonth(payrollMonth, 1),
-                              ),
+                              onPressed: () async {
+                                payrollMonth = shiftMonth(payrollMonth, 1);
+                                await loadMonth(payrollMonth);
+                                refillAmounts();
+                                setSt(() {});
+                              },
                             ),
                           ],
                         ),
@@ -2743,6 +2807,11 @@ Future<int> showPayrollSheet(
                                     fontSize: 12,
                                   ),
                                 ),
+                                if (payoutType == 'salary' && paid.salary <= 0 && (calcs[t.id]?.warnings.isNotEmpty ?? false))
+                                  Text(
+                                    calcs[t.id]!.warnings.first,
+                                    style: const TextStyle(color: Color(0xFF92400E), fontSize: 10, fontWeight: FontWeight.w700),
+                                  ),
                                 if (paid.total > 0)
                                   Text(
                                     [
@@ -2802,10 +2871,10 @@ Future<int> showPayrollSheet(
                     color: AppColors.navy,
                     onPressed: selected.isEmpty
                         ? null
-                        : () {
+                        : () async {
                             try {
                               for (final id in selected) {
-                                store.addTeacherPayout(
+                                final payout = store.addTeacherPayout(
                                   teacherId: id,
                                   amount: amountOf(id),
                                   paymentDate: isoDate(date),
@@ -2814,10 +2883,26 @@ Future<int> showPayrollSheet(
                                   periodEnd: monthEnd(payrollMonth),
                                   method: method,
                                 );
+                                // الحساب كما صُرف ومقتطع السلفة في سطر الشهر، كالويب
+                                final calc = calcs[id];
+                                if (payoutType == 'salary' && calc != null) {
+                                  try {
+                                    await PayrollEntries.markPaid(
+                                      tenantId: store.tenantId ?? '',
+                                      teacherId: id,
+                                      month: payrollMonth,
+                                      payoutId: payout.id,
+                                      snapshot: calc.snapshot(amountOf(id)),
+                                      advanceRecovered: calc.advance,
+                                    );
+                                  } catch (_) {
+                                    // بلا إنترنت: السند صُرف، وتفصيله يُحسب من جديد عند الحاجة
+                                  }
+                                }
                               }
-                              Navigator.pop(ctx, selected.length);
+                              if (ctx.mounted) Navigator.pop(ctx, selected.length);
                             } on StoreException catch (e) {
-                              showAppSnack(ctx, e.message, error: true);
+                              if (ctx.mounted) showAppSnack(ctx, e.message, error: true);
                             }
                           },
                   ),
