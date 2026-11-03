@@ -588,12 +588,16 @@ class StudentPortalData {
     this.finance = const PortalFinance(),
     this.features,
     this.cachedAt,
+    this.gradesHeld = false,
   });
 
   final Student student;
   final PortalBranding branding;
   final List<PortalSubject> subjects;
   final List<StudentEvaluation> evaluations;
+
+  /// المدرسة تحجب العلامات حتى تسديد المستحقات (`portal_grades_held`)، فتُعرض جملة بدلها.
+  final bool gradesHeld;
   final PortalAttendance attendance;
   final PortalFinance finance;
 
@@ -1383,6 +1387,8 @@ class PortalService {
       supabaseSelect('payments', filters: byStudent),
       supabaseSelect('attendance', filters: byStudent),
       supabaseSelect('student_evaluations', filters: byStudent),
+      // عليه قسط حلّ موعده والمدرسة تحجب علاماته: القاعدة لا ترسلها، وهذا ليُعرض السبب
+      supabaseRpc('portal_grades_held', const {}),
     ]);
 
     List<Map<String, dynamic>> at(int i) =>
@@ -1411,10 +1417,11 @@ class PortalService {
       'installments': at(7),
       'payments': at(8),
       'attendance': at(9),
-      'evaluations': at(10),
+      'evaluations': results[11] == true ? const <Map<String, dynamic>>[] : at(10),
+      'grades_held': results[11] == true,
       'sessions': sessionRows ?? const <Map<String, dynamic>>[],
       // نسخة ناقصة تُعرض ولا تُحفظ: لا تحلّ محل كاملة سابقة
-      'complete': results.skip(2).every((r) => r != null) && sessionRows != null,
+      'complete': results.sublist(2, 11).every((r) => r != null) && sessionRows != null,
     };
   }
 
@@ -1500,8 +1507,9 @@ class PortalService {
         ),
     ];
 
+    final gradesHeld = raw['grades_held'] == true;
     final evaluations = [
-      for (final r in at('evaluations'))
+      for (final r in gradesHeld ? const <Map<String, dynamic>>[] : at('evaluations'))
         () {
           final e = StudentEvaluation.fromCloud(r);
           return e.withNames(
@@ -1518,6 +1526,7 @@ class PortalService {
       cachedAt: cachedAt,
       subjects: subjects,
       evaluations: evaluations,
+      gradesHeld: gradesHeld,
       attendance: PortalAttendance(
         total: marks.length,
         present: present,

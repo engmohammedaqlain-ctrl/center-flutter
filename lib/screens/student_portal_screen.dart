@@ -794,6 +794,9 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
   final _openSubjects = <String, bool>{};
 
   List<Widget> _evaluationsTab() {
+    if (data!.gradesHeld) {
+      return const [NEmpty(text: 'العلامات تظهر بعد تسديد المستحقات', icon: Icons.workspace_premium_outlined)];
+    }
     final list = data!.evaluations;
     final scheme = data!.branding.gradingScheme;
     final summaries = subjectGradeSummaries(
