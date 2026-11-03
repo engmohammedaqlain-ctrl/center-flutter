@@ -107,10 +107,16 @@ jobs:
             git commit -m "pubspec.lock" -- pubspec.lock
           fi
 
-      # بناء تجريبي: الحزمة العامة كما يبنيها فحص main، بلا Shorebird ولا رفع لأحد
+      # بناء تجريبي: الحزمة العامة كما يبنيها فحص main، بلا Shorebird ولا رفع لأحد.
+      # رقمه الإصدار التالي (2.11.0+44 ← 2.12.0+45) فيُثبَّت فوق المنشور؛ pubspec لا يتغير
       - name: Trial build
         if: inputs.action == 'test'
-        run: flutter build apk --release --target-platform android-arm64
+        run: |
+          v=$(grep -m1 '^version:' pubspec.yaml | sed 's/^version: *//' | tr -d '\r ')
+          IFS='.+' read -r major minor _ build <<< "$v"
+          name="$major.$((minor + 1)).0"
+          echo "Trial version $name+$((build + 1))"
+          flutter build apk --release --target-platform android-arm64 --build-name "$name" --build-number "$((build + 1))"
 
       - name: Trial APK
         if: inputs.action == 'test'
