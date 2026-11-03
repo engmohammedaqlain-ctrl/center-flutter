@@ -73,6 +73,8 @@ ReceiptView receiptViewOf(AppStore store, Payment payment, {Uint8List? notice}) 
     notice: notice,
     cancelled: payment.cancelled,
     cancelReason: payment.cancelReason,
+    // جملة المدرسة أسفل السند كما ضبطتها في «المدرسة»؛ غيابها = الجملة الافتراضية
+    note: store.settings.extra['receipt_note'] is String ? store.settings.extra['receipt_note'] as String : defaultReceiptNote,
   );
 }
 

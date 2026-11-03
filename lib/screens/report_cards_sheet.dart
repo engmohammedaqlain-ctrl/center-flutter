@@ -227,8 +227,10 @@ Future<Uint8List?> buildReportCardsPdf(
           yearLabel: yearLabel,
           logo: logo,
           stamp: stamp,
-          // صاحب الاشتراك تحت «المدير»؛ فارغ = يبقى السطر للتوقيع باليد
-          principal: store.currentTenant?.ownerName.trim() ?? '',
+          // اسم المدير من «المدرسة» (`principal_name`)، وإلا صاحب الاشتراك؛ فارغ = السطر للتوقيع باليد
+          principal: '${store.settings.extra['principal_name'] ?? ''}'.trim().isNotEmpty
+              ? '${store.settings.extra['principal_name']}'.trim()
+              : store.currentTenant?.ownerName.trim() ?? '',
           pass: pass,
           rank: rank == null ? null : (place: rank, of: cards.length),
           term1End: term1End,
