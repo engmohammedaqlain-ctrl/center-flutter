@@ -89,6 +89,7 @@ class ReceiptView {
     this.notice,
     this.cancelled = false,
     this.cancelReason = '',
+    this.note = defaultReceiptNote,
   });
 
   final String institutionName;
@@ -121,7 +122,13 @@ class ReceiptView {
   final Uint8List? notice;
   final bool cancelled;
   final String cancelReason;
+
+  /// جملة المدرسة أسفل السند (`settings.receipt_note`)؛ فارغة = لا شريط.
+  final String note;
 }
+
+/// الجملة الافتراضية أسفل سند القبض — `DEFAULT_APP_SETTINGS.receipt_note`.
+const defaultReceiptNote = 'سند مالي رسمي معتمد — يُرجى الاحتفاظ بهذا الوصل كإثبات سداد رسمي';
 
 /// سند القبض — `ReceiptModal.tsx`: ترويسة رسمية، صندوق المبلغ، جدول مسطّر،
 /// الإشعار المرفق، الموقف المالي، التوقيع والختم، شريط توثيقي.
@@ -403,17 +410,19 @@ class ReceiptDocument extends StatelessWidget {
                 ],
               ),
 
-              // 6. شريط توثيقي
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.only(top: 8),
-                decoration: const BoxDecoration(border: Border(top: BorderSide(color: _s200))),
-                child: const Text(
-                  'سند مالي رسمي معتمد — يُرجى الاحتفاظ بهذا الوصل كإثبات سداد رسمي',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 9.5, color: _s500),
+              // 6. جملة المدرسة أسفل السند (الإعدادات ← المدرسة)؛ فارغة = لا شريط
+              if (v.note.trim().isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.only(top: 8),
+                  decoration: const BoxDecoration(border: Border(top: BorderSide(color: _s200))),
+                  child: Text(
+                    v.note.trim(),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 9.5, color: _s500),
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
