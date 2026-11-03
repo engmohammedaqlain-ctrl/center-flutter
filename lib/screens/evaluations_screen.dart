@@ -19,6 +19,8 @@ import '../widgets/widgets.dart';
 import 'evaluation_form_sheet.dart';
 import 'evaluations_print.dart';
 import 'publish_grades_sheet.dart';
+import 'grade_approvals_sheet.dart';
+import '../data/grade_approval.dart' show ApprovedReasonRequired;
 
 /// الدرجات والتقييمات الأكاديمية — المقابل لـ `pages/Evaluations.tsx`.
 ///
@@ -206,6 +208,8 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
             ],
           ),
           // اعتماد العلامات قبل ظهورها للأهل، حين تختار المدرسة «بعد اعتماد الإدارة»
+          // طلبات الاعتماد بعددها قبل «نشر»: الإدارة تعتمد ما رصده المعلم ثم تنشره
+          if (store.can('evaluations')) GradeApprovalsButton(store: store),
           if (store.can('evaluations')) PublishGradesButton(store: store),
           // إقفال العلامات بعد تسليم الشهادات: المدير يضبطه، وغيره يراه
           if (store.isAdminUser || store.settings.gradesLockedUntil.isNotEmpty)
@@ -513,7 +517,15 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
     );
     if (!ok) return;
     try {
-      store.deleteEvaluation(e.id);
+      try {
+        store.deleteEvaluation(e.id);
+      } on ApprovedReasonRequired {
+        // اختبار معتمد: الإدارة تعدّله بسبب يُكتب في السجل
+        if (!context.mounted) return;
+        final reason = await askApprovedEditReason(context);
+        if (reason == null) return;
+        store.deleteEvaluation(e.id, reason: reason);
+      }
     } on StoreException catch (err) {
       if (context.mounted) showAppSnack(context, err.message, error: true);
       return;
@@ -1279,7 +1291,14 @@ Future<void> _showStudentGrades(
                                   final value = await _askScore(ctx, e);
                                   if (value == null || value == e.score) return;
                                   try {
-                                    store.updateEvaluationScore(e.id, value);
+                                    try {
+                                      store.updateEvaluationScore(e.id, value);
+                                    } on ApprovedReasonRequired {
+                                      if (!ctx.mounted) return;
+                                      final reason = await askApprovedEditReason(ctx);
+                                      if (reason == null) return;
+                                      store.updateEvaluationScore(e.id, value, reason: reason);
+                                    }
                                     if (ctx.mounted) Navigator.pop(ctx);
                                     if (context.mounted) showAppSnack(context, 'عُدّلت العلامة');
                                   } on StoreException catch (err) {

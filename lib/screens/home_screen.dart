@@ -267,9 +267,11 @@ class _HomeState extends State<_Home> {
     final d = data!;
     final showFinance = store.can('finance');
     final rate = d.marked == 0 ? null : (d.present / d.marked * 100).round();
+    final approvals = store.can('evaluations') ? store.pendingApprovals.length : 0;
     final needs = <(String, String, VoidCallback)>[
       if (d.alerts > 0) ('إنذارات غياب لم تُرسل', '${d.alerts}', () => widget.onReport('alerts')),
       if (d.lateGrading > 0) ('رصد متأخر عن موعده', '${d.lateGrading}', () => widget.onReport('completion')),
+      if (approvals > 0) ('علامات بانتظار الاعتماد', '$approvals', () => widget.onSection('evaluations')),
       if (leaveRequests > 0) ('طلبات إجازة', '$leaveRequests', () => widget.onSection('attendance')),
       if (showFinance && d.financeRequests > 0) ('طلبات موافقة', '${d.financeRequests}', () => widget.onSection('finance')),
     ];
