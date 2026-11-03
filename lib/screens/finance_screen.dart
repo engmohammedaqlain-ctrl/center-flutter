@@ -2552,6 +2552,19 @@ Future<int> showPayrollSheet(
   double amountOf(String id) =>
       double.tryParse(amounts[id]?.text.trim() ?? '') ?? 0;
 
+  /// سطور الرواتب من السحابة: لرصيد السلف ولمنع صرف الشهر مرتين.
+  var entries = const <PayrollEntryRow>[];
+
+  /// صُرف راتب الشهر من قبل (بسند أو بتسوية بلا سند) — يمنع سنداً ثانياً، كالويب.
+  bool paidBefore(String id) {
+    final ids = store.linkedTeacherIds(id);
+    return alreadyPaid(
+      store.teacherPayouts.where((p) => ids.contains(p.teacherId)).toList(),
+      entries.where((e) => ids.contains(e.teacherId)).toList(),
+      payrollMonth,
+    );
+  }
+
   String shiftMonth(String key, int delta) {
     final parts = key.split('-');
     final y = int.tryParse(parts.first) ?? DateTime.now().year;
@@ -2561,17 +2574,18 @@ Future<int> showPayrollSheet(
   }
 
   // الراتب المقترح بقواعد المدرسة: دوام الشهر وإجازاته وسطور الرواتب من السحابة — `usePayroll`
-  final payroll = PayrollSettings.fromMap(store.settings.extra['payroll']);
+  final payroll = PayrollSettings.fromMap(store.settings.extra['payroll'], weekend: store.settings.extra['weekend']);
   final calendar = [
     if (store.settings.extra['calendar'] is List)
       for (final e in store.settings.extra['calendar'] as List)
         if (e is Map) Map<String, dynamic>.from(e),
   ];
   final calcs = <String, PayrollCalc>{};
+  final subjectNames = {for (final s in store.subjects) s.id: s.name};
   Future<void> loadMonth(String m) async {
     final days = await StaffService.days('$m-01', monthEnd(m)) ?? const <StaffDay>[];
     final leaves = await StaffService.leaves() ?? const <LeaveRequest>[];
-    final entries = await PayrollEntries.all() ?? const <PayrollEntryRow>[];
+    entries = await PayrollEntries.all() ?? const <PayrollEntryRow>[];
     calcs.clear();
     for (final t in store.teachersInViewedYear) {
       final ids = store.linkedTeacherIds(t.id);
@@ -2603,7 +2617,8 @@ Future<int> showPayrollSheet(
                 payments: store.payments,
                 month: m,
                 percent: terms.percent,
-                settings: payroll,
+                basis: terms.percentBasis,
+                subjectNames: subjectNames,
               )
             : const [],
         advanceBalance: advanceBalance(payouts, mine, m),
@@ -2631,6 +2646,10 @@ Future<int> showPayrollSheet(
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setSt) {
         final selected = chosen.where((id) => amountOf(id) > 0).toList();
+        // السلفة أكلت راتبه كله: يُسوّى الشهر بلا سند ويُقتطع من رصيدها
+        final settle = payoutType == 'salary'
+            ? chosen.where((id) => amountOf(id) <= 0 && (calcs[id]?.settlesWithoutPayout ?? false) && !paidBefore(id)).toList()
+            : const <String>[];
         final total = selected.fold<double>(0, (sum, id) => sum + amountOf(id));
         final title = payoutType == 'advance'
             ? 'صرف سلف'
@@ -2651,7 +2670,7 @@ Future<int> showPayrollSheet(
                 payrollMonth,
               );
               // الراتب لا يُصرف مرتين في الشهر؛ السلفة والمكافأة بلا قيد
-              if (payoutType == 'salary' && paid.salary > 0) continue;
+              if (payoutType == 'salary' && (paid.salary > 0 || paidBefore(t.id))) continue;
               chosen.add(t.id);
             }
           });
@@ -2903,11 +2922,28 @@ Future<int> showPayrollSheet(
                   primary: PrimaryButton(
                     label: 'صرف',
                     color: AppColors.navy,
-                    onPressed: selected.isEmpty
+                    onPressed: selected.isEmpty && settle.isEmpty
                         ? null
                         : () async {
                             try {
+                              // سطور الشهر من السحابة قبل الصرف: شاشة قديمة أو جهاز آخر صرف للتو
+                              entries = await PayrollEntries.all() ?? entries;
+                              var done = 0;
+                              for (final id in settle) {
+                                final calc = calcs[id]!;
+                                await PayrollEntries.markPaid(
+                                  tenantId: store.tenantId ?? '',
+                                  teacherId: id,
+                                  month: payrollMonth,
+                                  payoutId: '',
+                                  snapshot: calc.snapshot(0),
+                                  advanceRecovered: calc.advance,
+                                );
+                                done++;
+                              }
                               for (final id in selected) {
+                                if (payoutType == 'salary' && paidBefore(id)) continue;
+                                done++;
                                 final payout = store.addTeacherPayout(
                                   teacherId: id,
                                   amount: amountOf(id),
@@ -2934,7 +2970,7 @@ Future<int> showPayrollSheet(
                                   }
                                 }
                               }
-                              if (ctx.mounted) Navigator.pop(ctx, selected.length);
+                              if (ctx.mounted) Navigator.pop(ctx, done);
                             } on StoreException catch (e) {
                               if (ctx.mounted) showAppSnack(ctx, e.message, error: true);
                             }

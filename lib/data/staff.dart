@@ -158,6 +158,8 @@ class PayrollEntryRow {
     this.netOverride,
     this.payoutId = '',
     this.hasSnapshot = false,
+    this.paid,
+    this.absentDays,
   });
 
   final String id;
@@ -169,6 +171,12 @@ class PayrollEntryRow {
   final double? netOverride;
   final String payoutId;
   final bool hasSnapshot;
+
+  /// المصروف كما ثُبّت مع الحساب (`snapshot.paid`): صفر = شهر سُوّي بلا سند حين أكلت السلفة راتبه
+  final double? paid;
+
+  /// أيام الغياب المخصومة إن عدّلها المدير عن الدوام
+  final double? absentDays;
 
   static double? _n(Object? v) => v == null ? null : v is num ? v.toDouble() : double.tryParse('$v');
 
@@ -186,6 +194,8 @@ class PayrollEntryRow {
         netOverride: _n(m['net_override']),
         payoutId: '${m['payout_id'] ?? ''}',
         hasSnapshot: m['snapshot'] != null,
+        paid: m['snapshot'] is Map ? _n((m['snapshot'] as Map)['paid']) : null,
+        absentDays: _n(m['absent_days']),
       );
 }
 
@@ -198,13 +208,14 @@ class PayrollEntries {
   static Future<List<PayrollEntryRow>?> all() async {
     final rows = await supabaseSelect(
       'payroll_entries',
-      columns: 'id,teacher_id,month,sessions,adjustments,advance_recovered,net_override,payout_id,snapshot',
+      columns: 'id,teacher_id,month,sessions,absent_days,adjustments,advance_recovered,net_override,payout_id,snapshot',
       limit: 5000,
     );
     return rows == null ? null : [for (final r in rows) PayrollEntryRow.fromMap(r)];
   }
 
-  /// يُثبّت الحساب كما صُرف ومقتطع السلفة وربط السند في سطر الشهر.
+  /// يُثبّت الحساب كما صُرف ومقتطع السلفة وربط السند في سطر الشهر. بلا سند (`payoutId` فارغ):
+  /// شهر أكلت السلفة راتبه كله، يُسوّى بلا نقد ويُقتطع من رصيدها.
   static Future<void> markPaid({
     required String tenantId,
     required String teacherId,
@@ -220,7 +231,7 @@ class PayrollEntries {
         'tenant_id': tenantId,
         'teacher_id': teacherId,
         'month': month,
-        'payout_id': payoutId,
+        'payout_id': payoutId.isEmpty ? null : payoutId,
         'snapshot': snapshot,
         'advance_recovered': advanceRecovered,
         'updated_at': now,

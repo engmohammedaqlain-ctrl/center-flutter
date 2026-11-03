@@ -1,8 +1,8 @@
 /// الراتب المقترح لشهر — المقابل لـ `features/finance/payrollCalc.ts`.
 ///
-/// رقم يُعرض ويُعدَّل قبل الصرف، لا مطالبة. ثابت، أو بالحصة، أو نسبة من رسوم شعبه، أو ثابت
-/// وحصص؛ ثم البدلات وبنود الشهر، وخصم الغياب والإجازة غير المدفوعة والتأخير، ومقتطع السلفة.
-/// القواعد في إعدادات المدرسة (`settings.payroll`)، والافتراضي يطابق الحساب السابق.
+/// رقم يُعرض ويُعدَّل قبل الصرف، لا مطالبة. ثابت، أو بالحصة، أو نسبة من نصيب مواده في رسوم
+/// شعبه، أو خليط منها؛ ثم البدلات وبنود الشهر، وخصم الغياب والإجازة غير المدفوعة والتأخير،
+/// ومقتطع السلفة. القواعد في إعدادات المدرسة (`settings.payroll`).
 library;
 
 import 'dart:math' as math;
@@ -16,58 +16,52 @@ import 'staff.dart';
 double _num(Object? v) => v is num ? v.toDouble() : double.tryParse('${v ?? ''}') ?? 0;
 double _r2(double n) => (n * 100).roundToDouble() / 100;
 
+/// ما يُخصم عن كل تأخير من أجر اليوم — `LATE_FRACTIONS`.
+const lateFractions = [0.0, 0.2, 0.25, 1 / 3, 0.5];
+
 /// قواعد الحساب — `PayrollSettings`.
 class PayrollSettings {
   const PayrollSettings({
     this.weekend = const [5],
-    this.dayBasis = '26',
     this.absenceDeduct = true,
-    this.latePerDay = 0,
+    this.lateFraction = 0,
     this.sessionsSource = 'load',
-    this.percentBasis = 'paid',
-    this.percentSplit = 'periods',
-    this.rounding = 1,
+    this.paidLeaveDays = 0,
   });
 
   /// أيام العطلة بترقيم JavaScript (الأحد 0 … السبت 6)
   final List<int> weekend;
 
-  /// `26` أو `30` أو `work_days`
-  final String dayBasis;
+  /// الغياب بلا إجازة ينقص الراتب؛ الإجازة غير المدفوعة تنقصه دائماً
   final bool absenceDeduct;
-  final int latePerDay;
+
+  /// ما يُخصم عن كل تأخير من أجر اليوم (0.25 = ربع يوم)؛ 0 = بلا خصم
+  final double lateFraction;
 
   /// `load` أو `monthly` أو `daily`
   final String sessionsSource;
 
-  /// `paid` أو `due`
-  final String percentBasis;
+  /// رصيد الإجازات المدفوعة في السنة؛ 0 = بلا رصيد
+  final int paidLeaveDays;
 
-  /// `periods` أو `full`
-  final String percentSplit;
-  final int rounding;
-
-  factory PayrollSettings.fromMap(Object? raw) {
+  /// `normalizePayrollSettings`؛ العطلة الأسبوعية من `settings.weekend` وإلا القديمة في `payroll`.
+  factory PayrollSettings.fromMap(Object? raw, {Object? weekend}) {
     final m = raw is Map ? raw : const {};
-    final w = m['weekend'];
-    final weekend = w is List ? {for (final d in w) int.tryParse('$d')}.whereType<int>().where((d) => d >= 0 && d <= 6).toList() : <int>[5];
-    final basis = '${m['day_basis'] ?? ''}';
-    final rounding = int.tryParse('${m['rounding'] ?? ''}') ?? 1;
+    final w = weekend ?? m['weekend'];
+    final days = w is List ? ({for (final d in w) int.tryParse('$d')}.whereType<int>().where((d) => d >= 0 && d <= 6).toList()..sort()) : <int>[5];
+    final fraction = _num(m['late_fraction']);
+    final leave = _num(m['paid_leave_days']).floor();
     return PayrollSettings(
-      weekend: weekend.length < 7 ? weekend : const [5],
-      dayBasis: basis == '30' || basis == 'work_days' ? basis : '26',
+      weekend: days.length < 7 ? days : const [5],
       absenceDeduct: m['absence_deduct'] != false,
-      latePerDay: math.max(0, int.tryParse('${m['late_per_day'] ?? ''}') ?? 0),
+      lateFraction: lateFractions.where((f) => (f - fraction).abs() < 0.001).firstOrNull ?? 0,
       sessionsSource: m['sessions_source'] == 'monthly' || m['sessions_source'] == 'daily' ? '${m['sessions_source']}' : 'load',
-      percentBasis: m['percent_basis'] == 'due' ? 'due' : 'paid',
-      percentSplit: m['percent_split'] == 'full' ? 'full' : 'periods',
-      rounding: rounding == 5 || rounding == 10 ? rounding : 1,
+      paidLeaveDays: leave.clamp(0, 60),
     );
   }
 }
 
-/// شروط الأجر السارية في شهر — `PayTerms`.
-/// شروط الأجر بخاناتها الثلاث (ثابت، أجر حصة، نسبة): أي خليط جائز، والفارغ صفر لا يُحسب.
+/// شروط الأجر بخاناتها الثلاث (ثابت، أجر حصة، نسبة): أي خليط جائز، والفارغ صفر لا يُحسب — `PayTerms`.
 class PayTerms {
   const PayTerms({
     required this.contractType,
@@ -76,6 +70,9 @@ class PayTerms {
     required this.percent,
     required this.weeklyPeriods,
     required this.allowances,
+    this.percentBasis = 'paid',
+    this.absenceDeduct = true,
+    this.advanceInstallment = 0,
   });
 
   /// مشتق من الخانات: `fixed` أو `sessions` أو `percent` أو `mixed`، وفارغ بلا أجر
@@ -85,6 +82,15 @@ class PayTerms {
   final double percent;
   final double weeklyPeriods;
   final List<({String name, double amount})> allowances;
+
+  /// النسبة من المقبوض (`paid`) أو من المستحق (`due`)
+  final String percentBasis;
+
+  /// غيابه يُخصم؛ يطفئه المدير لموظف بعينه
+  final bool absenceDeduct;
+
+  /// قسط السلفة الشهري؛ 0 = الرصيد كله
+  final double advanceInstallment;
 
   factory PayTerms.of({String? contractType, Object? paymentRate, Object? weeklyPeriods, Object? payProfile}) {
     final p = payProfile is Map ? payProfile : const {};
@@ -107,6 +113,9 @@ class PayTerms {
           for (final x in a)
             if (x is Map && '${x['name'] ?? ''}'.trim().isNotEmpty && _num(x['amount']) > 0) (name: '${x['name']}', amount: _num(x['amount'])),
       ],
+      percentBasis: p['percent_basis'] == 'due' ? 'due' : 'paid',
+      absenceDeduct: p['absence_deduct'] != false,
+      advanceInstallment: math.max(0.0, _num(p['advance_installment'])),
     );
   }
 }
@@ -147,14 +156,37 @@ List<String> payrollWorkDays(String month, List<int> weekend, List<Map<String, d
 bool isTuitionInstallmentId(String id) => !id.startsWith('extra_') && !id.startsWith('fee_') && !id.startsWith('plan_seat_');
 
 class PercentRoom {
-  const PercentRoom({required this.label, required this.fees, required this.share, required this.amount});
+  const PercentRoom({
+    required this.label,
+    required this.fees,
+    required this.teacherPeriods,
+    required this.totalPeriods,
+    required this.share,
+    required this.missing,
+    required this.amount,
+  });
+
   final String label;
+
+  /// رسوم الشعبة في الشهر بأساس المعلم
   final double fees;
-  final double? share;
+  final double teacherPeriods;
+  final double totalPeriods;
+
+  /// نصيب مواده من رسوم الشعبة (0..1): حصصها ÷ حصص كل مواد الشعبة، أو عددها ÷ عدد المواد إن نقصت حصص
+  final double share;
+
+  /// مواد الشعبة بلا حصص، بأسمائها: النصيب حينها بعدد المواد
+  final List<String> missing;
   final double amount;
 }
 
 /// نصيب معلم «النسبة» من رسوم كل شعبة يدرّسها في الشهر — `percentRooms`.
+///
+/// النسبة من حصة مواده من الرسوم لا من الرسوم كلها: حصة المادة = حصصها الأسبوعية ÷ حصص كل
+/// مواد الشعبة (أياً كان أجر معلميها). إن نقصت حصص مادة: بالتساوي بين موادها. معلم الصف
+/// الذي يدرّس كل موادها يأخذ رسومها كاملة. «من المقبوض»: كل دفعة في شهر قسطها، أو في شهر
+/// قبضها إن قُبضت متأخرة، فمن دفع السنة مقدماً لا تُعطى نسبتها كلها في شهر واحد.
 List<PercentRoom> percentRooms({
   required Set<String> teacherIds,
   required List<Group> groups,
@@ -164,7 +196,8 @@ List<PercentRoom> percentRooms({
   required List<Payment> payments,
   required String month,
   required double percent,
-  required PayrollSettings settings,
+  String basis = 'paid',
+  Map<String, String> subjectNames = const {},
 }) {
   final active = groups.where((g) => g.status != 'archived').toList();
   final mineByRoom = <String, List<Group>>{};
@@ -182,43 +215,52 @@ List<PercentRoom> percentRooms({
   for (final p in payments) {
     if (p.studentId.isNotEmpty) (payOf[p.studentId] ??= []).add(p);
   }
+  String subjectOf(Group g) => g.subjectId.isNotEmpty ? g.subjectId : g.id;
   final out = <PercentRoom>[];
   mineByRoom.forEach((roomId, mine) {
     final room = rooms.where((r) => r.id == roomId).firstOrNull;
     if (room == null) return;
+    // كل مواد الشعبة بمعلميها كلهم: حصة مواده منها
     final all = active.where((g) => g.roomIds.contains(roomId)).toList();
     final teacherPeriods = mine.fold<double>(0, (n, g) => n + (g.weeklyPeriods ?? 0));
     final totalPeriods = all.fold<double>(0, (n, g) => n + (g.weeklyPeriods ?? 0));
-    final double? share = settings.percentSplit == 'full'
-        ? 1.0
-        : all.any((g) => (g.weeklyPeriods ?? 0) <= 0) || totalPeriods <= 0
-            ? null
-            : teacherPeriods / totalPeriods;
+    final unknown = all.where((g) => !((g.weeklyPeriods ?? 0) > 0)).toList();
+    final share = unknown.isEmpty && totalPeriods > 0
+        ? teacherPeriods / totalPeriods
+        : {for (final g in mine) subjectOf(g)}.length / math.max(1, {for (final g in all) subjectOf(g)}.length);
+    final missing = {for (final g in unknown) subjectNames[g.subjectId] ?? 'مادة'}.toList();
+
     var fees = 0.0;
     for (final s in students) {
       if (s.status == 'archived' || !studentBelongsToRoom(s, room)) continue;
       final own = (instOf[s.id] ?? const <Installment>[]).where((i) => isTuitionInstallmentId(i.id)).toList();
-      if (settings.percentBasis == 'due') {
+      if (basis == 'due') {
         for (final i in own) {
           if (isoDate(i.dueDate).startsWith(month)) fees += chargeableAmount(i);
         }
       } else {
         final list = payOf[s.id] ?? const <Payment>[];
         final byId = {for (final p in list) p.id: p};
-        final tuition = {for (final i in own) i.id};
+        final dueMonth = {for (final i in own) i.id: isoDate(i.dueDate).substring(0, 7)};
         for (final slice in allocatePaymentSlices(list, instOf[s.id] ?? const <Installment>[])) {
-          if (slice.isDiscount || slice.installmentId == null || !tuition.contains(slice.installmentId)) continue;
+          if (slice.isDiscount || slice.installmentId == null || !dueMonth.containsKey(slice.installmentId)) continue;
           final p = byId[slice.paymentId];
-          if (p != null && isoDate(p.date).startsWith(month)) fees += slice.amount;
+          final paidMonth = p == null ? '' : isoDate(p.date).substring(0, 7);
+          final due = dueMonth[slice.installmentId]!.isEmpty ? paidMonth : dueMonth[slice.installmentId]!;
+          if ((paidMonth.compareTo(due) > 0 ? paidMonth : due) == month) fees += slice.amount;
         }
       }
     }
-    fees = _r2(fees);
+    // ردّ يزيد على مقبوض الشهر لا يجعل الرسوم سالبة فيُنقص الأجر
+    fees = math.max(0.0, _r2(fees));
     out.add(PercentRoom(
       label: [room.gradeLevel, room.name].where((x) => x.trim().isNotEmpty).join(' - '),
       fees: fees,
+      teacherPeriods: teacherPeriods,
+      totalPeriods: totalPeriods,
       share: share,
-      amount: share == null ? 0 : _r2(fees * share * percent / 100),
+      missing: missing,
+      amount: _r2(fees * share * percent / 100),
     ));
   });
   out.sort((a, b) => a.label.compareTo(b.label));
@@ -227,10 +269,17 @@ List<PercentRoom> percentRooms({
 
 String payoutMonthOf(TeacherPayout p) => (p.periodStart.isNotEmpty ? p.periodStart : p.paymentDate).padRight(7).substring(0, 7);
 
+/// الشهر مُسوّى: بسنده، أو بلا سند حين أكلت السلفة الراتب كله (المصروف صفر).
+bool _settled(PayrollEntryRow e, Set<String> payoutIds) =>
+    e.payoutId.isNotEmpty ? payoutIds.contains(e.payoutId) : e.hasSnapshot && (e.paid ?? -1) == 0;
+
 /// رصيد سلف الموظف قبل حساب الشهر — `advanceBalance`.
+///
+/// كل السلف حتى الشهر، ناقص ما اقتُطع في رواتب مصروفة لغيره (ومنها الشهر المسوّى بلا سند).
+/// شهر صُرف راتبه قبل الحساب المفصّل (بلا سطر) تُعدّ سلفه مقتطعة فيه.
 double advanceBalance(List<TeacherPayout> payouts, List<PayrollEntryRow> entries, String month) {
   final ids = {for (final p in payouts) p.id};
-  final paid = entries.where((e) => e.month != month && e.payoutId.isNotEmpty && ids.contains(e.payoutId)).toList();
+  final paid = entries.where((e) => e.month != month && _settled(e, ids)).toList();
   final settled = {for (final e in paid) e.month};
   var balance = 0.0;
   for (final p in payouts) {
@@ -249,6 +298,14 @@ double advanceBalance(List<TeacherPayout> payouts, List<PayrollEntryRow> entries
   return math.max(0.0, _r2(balance));
 }
 
+/// صُرف راتب الشهر من قبل — `PayrollService.alreadyPaid`: بسطر مسوّى (بسنده أو بلا سند
+/// حين أكلت السلفة الراتب)، أو بسند راتب لشهره. يمنع سنداً ثانياً (نقرتان، شاشة قديمة).
+bool alreadyPaid(List<TeacherPayout> payouts, List<PayrollEntryRow> entries, String month) {
+  final ids = {for (final p in payouts) p.id};
+  if (entries.any((e) => e.month == month && _settled(e, ids))) return true;
+  return payouts.any((p) => (p.payoutType.isEmpty || p.payoutType == 'salary') && payoutMonthOf(p) == month);
+}
+
 class PayrollCalc {
   PayrollCalc({
     required this.terms,
@@ -256,6 +313,7 @@ class PayrollCalc {
     required this.absent,
     required this.late,
     required this.sessions,
+    required this.dayValue,
     required this.gross,
     required this.net,
     required this.payable,
@@ -269,12 +327,20 @@ class PayrollCalc {
   final int absent;
   final int late;
   final double? sessions;
+
+  /// أجر اليوم: الراتب ÷ أيام دوام الشهر، وحصص يوم النصاب
+  final double dayValue;
   final double gross;
+
+  /// المقترح: المستحق والإضافات ناقص الغياب والخصومات والسلفة، بلا تقريب
   final double net;
   final double payable;
   final double advance;
   final List<({String label, double amount})> lines;
   final List<String> warnings;
+
+  /// السلفة أكلت الراتب كله: يُسوّى الشهر بلا سند (لا نقد يخرج)، ويُقتطع من رصيدها.
+  bool get settlesWithoutPayout => payable <= 0 && advance > 0;
 
   /// ما يُحفظ مع السند — `snapshotOf`.
   Map<String, dynamic> snapshot(double paid) => {
@@ -345,7 +411,8 @@ PayrollCalc computePayroll({
     }
   }
 
-  final dayBasis = settings.dayBasis == 'work_days' ? math.max(1, days.length).toDouble() : double.parse(settings.dayBasis);
+  // يوم الغياب = أجر يوم من أيام دوام الشهر الفعلية
+  final dayBasis = math.max(1, days.length).toDouble();
   final fixed = hasFixed && days.isNotEmpty ? _r2(fixedRate * employed.length / days.length) : 0.0;
   if (hasFixed) {
     lines.add((label: employed.length < days.length ? 'الراتب الثابت (${employed.length} من ${days.length} يوماً)' : 'الراتب الثابت', amount: fixed));
@@ -378,7 +445,9 @@ PayrollCalc computePayroll({
   final percentPay = _r2(rooms.fold<double>(0, (n, r) => n + r.amount));
   if (hasPercent) {
     lines.add((label: 'نسبة ${_count(terms.percent)}% من الرسوم', amount: percentPay));
-    if (rooms.any((r) => r.share == null)) warnings.add('حصص مادة ناقصة في شعبة');
+    for (final r in rooms) {
+      if (r.missing.isNotEmpty) warnings.add('${r.label}: حصص ${r.missing.join('، ')} غير مسجّلة، فالنصيب بعدد المواد');
+    }
     if (rooms.isEmpty) warnings.add('لا شعب مسندة');
   }
 
@@ -399,10 +468,11 @@ PayrollCalc computePayroll({
     }
   }
 
+  // الخصم: الثابت وحصص النصاب وحدهما، فالحصص المكتوبة أو المرصودة عُدّت بعد الغياب
   final byDay = hasSessions && from == 'load';
   final dayValue = _r2((hasFixed ? fixedRate / dayBasis : 0) + (byDay ? perDay * sessionRate : 0));
   var room = fixed + (byDay ? sessionsPay : 0);
-  double deduct(String label, int n) {
+  double deduct(String label, double n) {
     if (n == 0 || dayValue == 0 || room <= 0) return 0;
     final v = _r2(math.min(room, n * dayValue));
     room -= v;
@@ -410,25 +480,34 @@ PayrollCalc computePayroll({
     return v;
   }
 
-  final absentDays = settings.absenceDeduct ? absent : 0;
-  final lateDays = settings.latePerDay > 0 ? late ~/ settings.latePerDay : 0;
-  var deductions = deduct('غياب $absentDays يوم', absentDays) + deduct('إجازة بلا راتب $unpaidLeave يوم', unpaidLeave) + deduct('تأخير $late ($lateDays يوم)', lateDays);
-  deductions = _r2(deductions + manual);
+  // الغياب كما في الدوام إلا إن عدّله المدير، ولا يُخصم لمن لا يُخصم غيابه أو إن أُطفئ في المدرسة
+  final absentCounted = entry?.absentDays != null ? math.max(0.0, entry!.absentDays!).round() : absent;
+  final absentDays = settings.absenceDeduct && terms.absenceDeduct ? absentCounted : 0;
+  final lateDays = (late * settings.lateFraction * 100).roundToDouble() / 100;
+  var attendanceCut = deduct('غياب $absentDays يوم', absentDays.toDouble()) +
+      deduct('إجازة بلا راتب $unpaidLeave يوم', unpaidLeave.toDouble()) +
+      deduct('تأخير $late', lateDays);
+  attendanceCut = _r2(attendanceCut);
+  final deductions = _r2(attendanceCut + manual);
 
   final gross = _r2(fixed + sessionsPay + percentPay + allowances + additions);
+  final balance = math.max(0.0, advanceBalance);
   final before = math.max(0.0, gross - deductions);
-  final wanted = entry?.advanceRecovered ?? math.max(0.0, advanceBalance);
-  final advance = _r2(math.min(before, math.max(0.0, wanted)));
+  // المقترح: قسط السلفة الشهري إن حُدد، وإلا الرصيد كله
+  final suggested = terms.advanceInstallment > 0 ? math.min(balance, terms.advanceInstallment) : balance;
+  final advance = _r2(math.min(before, math.max(0.0, entry?.advanceRecovered ?? suggested)));
   if (advance > 0) lines.add((label: 'سلفة', amount: -advance));
 
-  final net = math.max(0.0, ((before - advance) / settings.rounding).roundToDouble() * settings.rounding);
+  // الصافي كما هو بلا تقريب: ما يُصرف يُكتب ويُعدَّل في مكانه
+  final net = math.max(0.0, _r2(before - advance));
   final payable = entry?.netOverride != null ? math.max(0.0, entry!.netOverride!) : net;
   return PayrollCalc(
     terms: terms,
     workDays: days.length,
-    absent: absent,
+    absent: absentCounted,
     late: late,
     sessions: sessions,
+    dayValue: dayValue,
     gross: gross,
     net: net,
     payable: payable,
