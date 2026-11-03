@@ -22,10 +22,10 @@ class SectionGroup {
   final List<Student> students;
 }
 
-/// الشعب بترتيب المراحل، ولكل شعبة طلابها (بلا المنسحبين والمؤرشفين) بترتيب الاسم.
-List<SectionGroup> groupBySection(AppStore store, {String grade = '', bool activeOnly = false}) {
+/// الشعب بترتيب المراحل، ولكل شعبة طلابها (بلا المؤرشفين، وبلا المنسحبين إلا بطلبهم) بترتيب الاسم.
+List<SectionGroup> groupBySection(AppStore store, {String grade = '', bool activeOnly = false, bool withWithdrawn = false}) {
   final live = store.studentsInViewedYear
-      .where((s) => activeOnly ? s.status == 'active' : (s.status != 'withdrawn' && s.status != 'archived'))
+      .where((s) => activeOnly ? s.status == 'active' : (s.status != 'archived' && (withWithdrawn || s.status != 'withdrawn')))
       .toList();
   final order = store.gradeOptions;
   int rank(String g) {
