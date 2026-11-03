@@ -54,6 +54,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
   /// مصدر المقبوضات: '' الكل | students | other
   String sourceFilter = '';
 
+  /// أعمار الديون — `AGING_FILTERS`: الكل، أو ما تأخر أكثر من 30 أو 60 يوماً.
+  String agingFilter = 'all';
+
   /// المقبوضات حسب سنة الدفع (متى قُبض) أو حسب سنة القسط (رسوم أي سنة سُدّدت).
   String paymentsBasis = 'payment';
 
@@ -832,7 +835,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
           matchArabicName(d.student.fullName, q) ||
           d.student.phone.contains(q) ||
           d.title.toLowerCase().contains(q);
-      return matchQ;
+      return matchQ && (agingFilter == 'all' || _daysLate(d.dueDate) > int.parse(agingFilter));
     }).toList();
 
     // بتاريخ الاستحقاق كما في الويب، فتتجاور بنود الشهر الواحد، وطلابه أبجدياً
@@ -846,7 +849,24 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
     return (
       toolbar: _toolbar(hint: 'اسم الطالب أو الجوال', shown: dues.length, total: all.length, store: store),
-      slivers: _listSlivers(
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+            child: SegmentedButton<String>(
+              showSelectedIcon: false,
+              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              segments: const [
+                ButtonSegment(value: 'all', label: Text('الكل')),
+                ButtonSegment(value: '30', label: Text('+30 يوم')),
+                ButtonSegment(value: '60', label: Text('+60 يوم')),
+              ],
+              selected: {agingFilter},
+              onSelectionChanged: (v) => setState(() => agingFilter = v.first),
+            ),
+          ),
+        ),
+        ..._listSlivers(
         items: dues,
         emptyMessage: 'لا مستحقات',
         groupOf: (d) => _monthLabel(d.dueDate),
@@ -873,6 +893,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
           );
         },
       ),
+      ],
     );
   }
 
@@ -2414,6 +2435,13 @@ class _PaymentCard extends StatelessWidget {
 
 /// بند مستحق: الطالب والبيان وتاريخ الاستحقاق، والمبلغ وتحته حالته، وزر التسديد.
 /// لمسه يفتح التسديد وملف الطالب.
+/// أيام التأخير بين موعد القسط واليوم، وصفر لما لم يحن — `daysLate`.
+int _daysLate(DateTime due) {
+  final now = DateTime.now();
+  final days = DateTime(now.year, now.month, now.day).difference(DateTime(due.year, due.month, due.day)).inDays;
+  return days < 0 ? 0 : days;
+}
+
 class _DueCard extends StatelessWidget {
   const _DueCard({required this.item, this.onOpen, this.onPay});
 
@@ -2425,10 +2453,16 @@ class _DueCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final d = item;
 
+    // أيام التأخير بلون من ثلاث درجات: رمادي، ثم عنبري بعد 30، ثم أحمر بعد 60
+    final late = _daysLate(d.dueDate);
     return _Row(
       title: d.student.fullName,
       meta: [d.title, _shortDate(d.dueDate)].where((s) => s.trim().isNotEmpty).join('  ·  '),
-      amount: _AmountColumn(amount: money(d.amount), color: _owedColor),
+      amount: _AmountColumn(
+        amount: money(d.amount),
+        color: _owedColor,
+        badge: late > 0 ? _Badge('متأخر $late يوم', late > 60 ? AppColors.danger : (late >= 30 ? AppColors.warn : AppColors.muted)) : null,
+      ),
       // لمسة واحدة: التسديد وملف الطالب في ورقة، أو مباشرةً إن كان متاحاً وحده
       onTap: () {
         final actions = <_SheetAction>[
