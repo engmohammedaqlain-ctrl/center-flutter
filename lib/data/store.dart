@@ -14,7 +14,9 @@ import 'arabic_search.dart';
 import 'balance.dart';
 import 'features.dart';
 import 'fee_plan.dart';
+import 'grade_approval.dart';
 import 'grade_plan_sync.dart';
+import 'grade_publish.dart';
 import 'grading.dart';
 import 'institution.dart';
 import 'local_db.dart';
@@ -2272,7 +2274,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   /// تعديل علامة مرصودة — `EvaluationService.updateScore`: لمن يملك «تعديل العلامات»،
   /// وفي حدود علامتها الكاملة، وخارج فترة الإقفال لغير المدير.
-  void updateEvaluationScore(String id, double score) {
+  void updateEvaluationScore(String id, double score, {String reason = ''}) {
     if (!canEditGrades) {
       throw StoreException('لا صلاحية لك على «${sectionLabel('evaluations.edit')}»');
     }
@@ -2282,6 +2284,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final current = Evaluation.fromCloud(bucket[idx]);
     _assertGradesUnlocked([current.evaluationDate]);
     checkScoreBounds([score], current.maxScore);
+    _logApprovedEdit(current, reason);
     final now = _nowIso();
     final row = {
       ...bucket[idx],
@@ -2296,7 +2299,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     notifyListeners();
   }
 
-  void deleteEvaluation(String id) {
+  void deleteEvaluation(String id, {String reason = ''}) {
     // تعديل/حذف علامة مرصودة — `userCanEditGrades` على الويب
     if (!canEditGrades) {
       throw StoreException('لا صلاحية لك على «${sectionLabel('evaluations.edit')}»');
@@ -2304,7 +2307,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final bucket = extraCloud['student_evaluations'];
     if (bucket == null) return;
     final target = bucket.where((e) => '${e['id']}' == id).firstOrNull;
-    if (target != null) _assertGradesUnlocked(['${target['evaluation_date'] ?? ''}']);
+    if (target != null) {
+      _assertGradesUnlocked(['${target['evaluation_date'] ?? ''}']);
+      _logApprovedEdit(Evaluation.fromCloud(target), reason, deleted: true);
+    }
     final before = bucket.length;
     bucket.removeWhere((e) => '${e['id']}' == id);
     if (bucket.length == before) return;
@@ -3130,6 +3136,66 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   /// الإقفال كما يسري على مستخدم هذا الجهاز: المدير لا يُقفل عليه شيء.
   String get myGradesLock => isAdminUser ? '' : settings.gradesLockedUntil;
+
+  // ── اعتماد العلامات (المقابل لـ GradeApprovals.tsx وgradeApproval.ts) ────────
+
+  bool _isApproved(Evaluation e) => settings.gradesApproved.containsKey(
+        approvalKey(groupId: e.groupId, subjectId: e.subjectId, title: e.title, date: e.evaluationDate),
+      );
+
+  /// تعديل علامة اختبار معتمد: بسبب مكتوب يُحفظ في السجل، وبلا سبب يُرمى
+  /// [ApprovedReasonRequired] فتسأل الشاشة عنه وتعيد المحاولة.
+  void _logApprovedEdit(Evaluation e, String reason, {bool deleted = false}) {
+    if (!_isApproved(e)) return;
+    if (reason.trim().isEmpty) throw ApprovedReasonRequired();
+    final student = studentById(e.studentId);
+    _recordFinanceAudit(
+      action: 'approved_grade_edit',
+      summary: '${deleted ? 'حذف' : 'تعديل'} علامة ${e.title.trim()}',
+      studentId: e.studentId,
+      studentName: student?.fullName ?? '',
+      reason: reason,
+    );
+  }
+
+  /// الاختبارات المرصودة بانتظار الاعتماد في العام المعروض — وضع «بعد اعتماد الإدارة» وحده.
+  List<PendingTest> get pendingApprovals {
+    if (!settings.gradesPublishManual) return const [];
+    final year = viewedAcademicYear;
+    final rows = evaluations.where((e) =>
+        year == null || year.startsOn.isEmpty || (e.evaluationDate.compareTo(year.startsOn) >= 0 && (year.endsOn.isEmpty || e.evaluationDate.compareTo(year.endsOn) <= 0)));
+    return pendingTests(
+      rows.map((e) => (groupId: e.groupId, subjectId: e.subjectId, teacherId: e.teacherId, title: e.title, date: e.evaluationDate)),
+      settings.gradesApproved,
+    );
+  }
+
+  /// وصف الاختبار في السجل: «اختبار قصير (1) · الرياضيات · الخامس / أ · 21/9».
+  String describeTest(String key) {
+    final p = key.split('|');
+    if (p.length < 4) return key;
+    final group = groups.where((g) => g.id == p[0]).firstOrNull;
+    final d = p[3];
+    return [
+      p[2],
+      subjectById(p[1])?.name ?? '',
+      group?.gradeLevel ?? '',
+      d.length >= 10 ? '${int.parse(d.substring(8, 10))}/${int.parse(d.substring(5, 7))}' : '',
+    ].where((s) => s.trim().isNotEmpty).join(' · ');
+  }
+
+  /// اعتماد اختبارات؛ «الكل» بأكثر من ثلاثة سطر واحد في السجل بعددها وأولها.
+  Future<void> approveTests(List<String> keys) async {
+    if (keys.isEmpty) return;
+    await writeSettingsPatch({'grades_approved': approvalsToMap(withApproved(settings.gradesApproved, keys, gradeActorLabel))}, section: 'evaluations');
+    if (keys.length > 3) {
+      recordAudit(action: 'grades_approved', summary: '${keys.length} اختبار، أولها ${describeTest(keys.first)}');
+    } else {
+      for (final k in keys) {
+        recordAudit(action: 'grades_approved', summary: describeTest(k));
+      }
+    }
+  }
 
   void _assertGradesUnlocked(Iterable<String> dates) {
     final lock = myGradesLock;

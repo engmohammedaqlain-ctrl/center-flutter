@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import '../data/features.dart';
 import '../data/grading.dart';
+import '../data/grade_approval.dart' show approvalKey, approvedTeacherMessage;
 import 'sheet_export.dart';
 import 'teacher_payslips.dart';
 import '../data/portal.dart';
@@ -1602,6 +1603,14 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   String get _gradeActor => 'المعلم: ${widget.user.name}'.trim();
 
   bool _lockedOut(StudentEvaluation e) {
+    // اختبار اعتمدته الإدارة لا يعدّله المعلم ولا يحذفه — كالويب
+    final approved = (data?.branding.gradesApproved ?? const {}).containsKey(
+      approvalKey(groupId: e.groupId, subjectId: e.subjectId, title: e.title, date: e.evaluationDate),
+    );
+    if (approved) {
+      showAppSnack(context, approvedTeacherMessage, error: true);
+      return true;
+    }
     if (!isGradeLocked(e.evaluationDate, _gradesLock)) return false;
     showAppSnack(context, gradeLockMessage(_gradesLock), error: true);
     return true;
@@ -2993,6 +3002,15 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
     final lock = widget.gradesLock;
     if (isGradeLocked(evalDate, lock) || widget.editing.any((r) => isGradeLocked(r.evaluationDate, lock))) {
       showAppSnack(context, gradeLockMessage(lock), error: true);
+      return;
+    }
+    // رصد على اختبار اعتمدته الإدارة (بنفس العنوان والتاريخ) تعديلٌ له: للإدارة وحدها
+    final approvals = widget.branding.gradesApproved;
+    bool approved(String groupId, String subjectId, String t, String d) =>
+        approvals.containsKey(approvalKey(groupId: groupId, subjectId: subjectId, title: t, date: d));
+    if (approved(c.group.id, c.group.subjectId, title, evalDate) ||
+        widget.editing.any((r) => approved(r.groupId, r.subjectId, r.title, r.evaluationDate))) {
+      showAppSnack(context, approvedTeacherMessage, error: true);
       return;
     }
 

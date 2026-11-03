@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import '../models/models.dart';
+import 'app_settings.dart';
+import 'grade_approval.dart';
 import 'grading.dart';
 import 'institution.dart';
 import 'local_db.dart';
@@ -74,6 +76,8 @@ class PortalOffline {
         'colors': data.branding.colors.toMap(),
         'grading_scheme': data.branding.gradingScheme.toMap(),
         'grades_locked_until': data.branding.gradesLockedUntil,
+        // الاعتمادات: بلاها يعدّل المعلم بلا نت اختباراً اعتمدته الإدارة
+        'grades_approved': approvalsToMap(data.branding.gradesApproved),
       },
       // أسماء المواد: بلا حفظها يفتح المعلم «الدرجات» بلا نت على قائمة مواد فارغة
       'subjects': [for (final s in data.subjects) s.toCloud()],
@@ -102,6 +106,7 @@ class PortalOffline {
                 ? GradingScheme.fromMap(Map<String, dynamic>.from(brandingRaw['grading_scheme'] as Map))
                 : GradingScheme.empty,
             gradesLockedUntil: '${brandingRaw['grades_locked_until'] ?? ''}',
+            gradesApproved: AppSettings(extra: {'grades_approved': brandingRaw['grades_approved']}).gradesApproved,
           )
         : const PortalBranding();
 
