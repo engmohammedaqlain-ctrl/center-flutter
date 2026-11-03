@@ -502,7 +502,7 @@ class _SideMenu extends StatelessWidget {
                   if (store.isFeatureOn('evaluations') && store.can('evaluations'))
                     item(
                       icon: Icons.workspace_premium_rounded,
-                      label: 'الدرجات والتقييمات',
+                      label: 'العلامات',
                       color: AppColors.amber,
                       onTap: onOpenEvaluations,
                     ),

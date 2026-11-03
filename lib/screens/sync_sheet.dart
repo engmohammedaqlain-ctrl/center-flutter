@@ -129,7 +129,7 @@ Future<void> showActionSheet(BuildContext context, AppStore store) {
                 _menuTile(
                   icon: Icons.workspace_premium_outlined,
                   iconColor: AppColors.accent,
-                  label: 'الدرجات والتقييمات',
+                  label: 'العلامات',
                   trailing: 'فتح',
                   onTap: () {
                     Navigator.pop(ctx);

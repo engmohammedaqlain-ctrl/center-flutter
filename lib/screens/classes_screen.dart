@@ -528,7 +528,7 @@ class _SubjectTeachersSheetState extends State<_SubjectTeachersSheet> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Text(
-                    'التوزيع ينعكس فوراً في بوابة المعلم ورصد الدرجات.',
+                    'التوزيع ينعكس فوراً في بوابة المعلم ورصد العلامات.',
                     style: TextStyle(color: AppColors.muted, fontSize: 10.5),
                   ),
                   const SizedBox(height: 8),
@@ -1016,7 +1016,7 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
                 child: NoonSearchField(
                   controller: search,
-                  hint: 'ابحث باسم الطالب أو الهاتف',
+                  hint: 'ابحث باسم الطالب أو الجوال',
                   onChanged: (_) => setState(() => visibleCount = kListPageSize),
                   count: q.isEmpty ? '${roster.length}' : '${list.length}/${roster.length}',
                 ),

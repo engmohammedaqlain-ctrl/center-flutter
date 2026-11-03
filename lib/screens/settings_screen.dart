@@ -1773,7 +1773,7 @@ class _TeachersTabState extends State<_TeachersTab> {
       children: [
         _Toolbar(
           controller: search,
-          hint: 'ابحث باسم المدرس أو رقم الهاتف...',
+          hint: 'ابحث باسم المدرس أو رقم الجوال...',
           shown: list.length,
           total: store.teachersInViewedYear.length,
           onChanged: (_) => setState(() {}),
@@ -1828,7 +1828,7 @@ class _TeacherCard extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   [
-                    phone.isEmpty ? 'بلا رقم هاتف' : formatPhoneDisplay(phone),
+                    phone.isEmpty ? 'بلا رقم جوال' : formatPhoneDisplay(phone),
                     if (teacherContractLabels[t.contractType] != null) teacherContractLabels[t.contractType]!,
                     if (groups > 0) '$groups شعبة',
                   ].join('  ·  '),
@@ -2521,7 +2521,7 @@ class _DataTabState extends State<_DataTab> {
         ),
         _NavTile(
           icon: Icons.download_outlined,
-          title: 'تصدير نسخة احتياطية',
+          title: 'تنزيل نسخة احتياطية',
           subtitle: 'اختر أين تحفظ الملف على جهازك',
           onTap: () => _export(context, store),
         ),
@@ -2850,7 +2850,7 @@ Future<void> _export(BuildContext context, AppStore store) async {
     );
   } catch (e) {
     if (!context.mounted) return;
-    final msg = userMessage(e, 'تعذّر تصدير النسخة');
+    final msg = userMessage(e, 'تعذّر تنزيل النسخة');
     if (msg.contains('أُلغي')) return;
     showAppSnack(context, msg, error: true);
   }

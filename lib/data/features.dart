@@ -66,8 +66,8 @@ const features = <String, FeatureDef>{
     defaultOn: true,
   ),
   'evaluations': FeatureDef(
-    label: 'الدرجات',
-    description: 'قسم الدرجات ونظام العلامات',
+    label: 'العلامات',
+    description: 'قسم العلامات ونظامها',
     group: FeatureGroup.modules,
     defaultOn: true,
   ),
@@ -103,8 +103,8 @@ const features = <String, FeatureDef>{
     requires: ['portal.teacher', 'attendance'],
   ),
   'portal.teacher.grades': FeatureDef(
-    label: 'رصد الدرجات',
-    description: 'يرصد درجات طلابه',
+    label: 'رصد العلامات',
+    description: 'يرصد علامات طلابه',
     group: FeatureGroup.teacherPortal,
     defaultOn: true,
     requires: ['portal.teacher', 'evaluations'],
@@ -144,8 +144,8 @@ const features = <String, FeatureDef>{
     requiresAny: _familyPortals,
   ),
   'portal.grades': FeatureDef(
-    label: 'الدرجات',
-    description: 'الدرجات والنتائج',
+    label: 'العلامات',
+    description: 'العلامات والنتائج',
     group: FeatureGroup.familyPortal,
     defaultOn: true,
     requires: ['evaluations'],

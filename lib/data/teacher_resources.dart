@@ -139,7 +139,7 @@ Future<TeacherPortalData> hydrateTeacherResources({
     final name = c.subjectName.trim().isEmpty ? 'مادة' : c.subjectName.trim();
     report(
       percent: 55 + ((i / n) * 25).floor(),
-      label: 'تنزيل الدرجات…',
+      label: 'تنزيل العلامات…',
       detail: name,
       records: records,
     );
@@ -150,7 +150,7 @@ Future<TeacherPortalData> hydrateTeacherResources({
     } catch (_) {}
     report(
       percent: 55 + (((i + 1) / n) * 25).floor(),
-      label: 'تنزيل الدرجات…',
+      label: 'تنزيل العلامات…',
       detail: name,
       records: records,
     );

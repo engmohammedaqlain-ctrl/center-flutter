@@ -248,9 +248,9 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
     errors.check(
       'title',
       _useComponents ? componentId.isEmpty : title.text.trim().isEmpty,
-      _useComponents ? 'يرجى اختيار التقييم' : 'يرجى تحديد عنوان التقييم',
+      _useComponents ? 'يرجى اختيار الاختبار' : 'يرجى تحديد عنوان الاختبار',
     );
-    errors.check('max', parsedMax == null || parsedMax <= 0, 'درجة قصوى غير صالحة');
+    errors.check('max', parsedMax == null || parsedMax <= 0, 'علامة قصوى غير صالحة');
 
     final entered = <String, double>{};
     for (final entry in scores.entries) {
@@ -270,7 +270,7 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
     errors.check(
       'scores',
       groupId.isNotEmpty && scores.isNotEmpty && entered.isEmpty && !anyScoreError,
-      'يرجى رصد درجة واحدة على الأقل',
+      'يرجى رصد علامة واحدة على الأقل',
     );
 
     setState(() => error = null);
@@ -315,7 +315,7 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
       appBar: AppBar(
         titleSpacing: 0,
         title: const Text(
-          'رصد درجات',
+          'رصد علامات',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14.5),
         ),
       ),
@@ -366,11 +366,11 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
                     },
                   ),
                   const SizedBox(height: 10),
-                  FieldLabel('عنوان التقييم / الاختبار', key: errors.key('title'), requiredField: true),
+                  FieldLabel('اسم الاختبار', key: errors.key('title'), requiredField: true),
                   if (useComponents)
                     AppDropdown<String>(
                       value: componentId.isEmpty ? null : componentId,
-                      hint: 'اختر التقييم',
+                      hint: 'اختر الاختبار',
                       errorText: errors['title'],
                       items: [
                         for (final c in _components)
@@ -425,7 +425,7 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            const FieldLabel('تاريخ التقييم'),
+                            const FieldLabel('تاريخ الاختبار'),
                             InkWell(
                               onTap: _pickDate,
                               child: Container(
@@ -460,7 +460,7 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              const FieldLabel('نوع التقييم'),
+                              const FieldLabel('نوع الاختبار'),
                               AppDropdown<String>(
                                 value: type,
                                 items: [
@@ -478,7 +478,7 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            FieldLabel('الدرجة القصوى', key: errors.key('max')),
+                            FieldLabel('العلامة القصوى', key: errors.key('max')),
                             TextField(
                               controller: maxScore,
                               keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -509,7 +509,7 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
                         children: [
                           Expanded(child: SectionTitle('الطلاب (${roster.length})')),
                           const Text(
-                            'اترك الدرجة فارغة لمن لم يختبر',
+                            'اترك العلامة فارغة لمن لم يختبر',
                             style: TextStyle(color: AppColors.faint, fontSize: 10.5),
                           ),
                         ],
@@ -592,7 +592,7 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
                 ],
       ),
       bottomNavigationBar: FormActionBar(
-        label: submitting ? 'جاري الحفظ...' : 'حفظ الدرجات',
+        label: submitting ? 'جاري الحفظ...' : 'حفظ العلامات',
         busy: submitting,
         onSave: submitting ? null : _save,
         onCancel: () => Navigator.pop(context, 0),

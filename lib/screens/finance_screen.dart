@@ -77,7 +77,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
   static const _statusOptions = {
     '': 'كل الحالات',
     'active': 'مقبوضة',
-    'cancelled': 'ملغاة',
+    'cancelled': 'ملغى',
   };
 
   String _resolvedFinanceYearId(AppStore store) {
@@ -843,7 +843,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
     final canOpenStudent = store.can('students');
 
     return (
-      toolbar: _toolbar(hint: 'اسم الطالب أو الهاتف', shown: dues.length, total: all.length, store: store),
+      toolbar: _toolbar(hint: 'اسم الطالب أو الجوال', shown: dues.length, total: all.length, store: store),
       slivers: _listSlivers(
         items: dues,
         emptyMessage: 'لا مستحقات',

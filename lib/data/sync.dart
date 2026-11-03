@@ -690,7 +690,7 @@ const tableLabelsAr = <String, String>{
   'teacher_payouts': 'مستحقات المعلمين',
   'expenses': 'المصروفات',
   'class_announcements': 'إعلانات الصفوف',
-  'student_evaluations': 'التقييمات والدرجات',
+  'student_evaluations': 'العلامات',
   'finance_requests': 'طلبات الموافقة',
   'payment_requests': 'طلبات الدفع من أولياء الأمور',
   'payment_methods': 'وسائل الدفع',
@@ -1073,8 +1073,8 @@ String describeRecord(
       return 'مرفقات طالب';
     case 'student_evaluations':
       return '${r['title'] ?? ''}'.trim().isEmpty
-          ? 'تقييم طالب'
-          : 'تقييم ${r['title']}';
+          ? 'اختبار طالب'
+          : 'اختبار ${r['title']}';
     case 'class_announcements':
       return '${r['title'] ?? 'إعلان صفّي'}';
     case 'institution_settings':

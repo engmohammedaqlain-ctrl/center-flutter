@@ -1599,8 +1599,8 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     if (_lockedOut(e)) return;
     final ok = await confirmSheet(
       context,
-      title: 'حذف التقييم',
-      message: 'هل أنت متأكد من حذف هذا التقييم؟',
+      title: 'حذف الاختبار',
+      message: 'هل أنت متأكد من حذف هذا الاختبار؟',
       confirmLabel: 'حذف',
     );
     if (!ok || !mounted) return;
@@ -1955,7 +1955,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
           onPressed: _current == null ? null : _newSection,
         ),
       'evaluations' => ThumbAction(
-          label: 'رصد درجات',
+          label: 'رصد علامات',
           icon: Icons.add,
           color: brand.primary,
           onPressed: _current == null ? null : _openEvaluationForm,
@@ -2068,7 +2068,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                 else if (id == 'attendance')
                   const PortalNavItem(id: 'attendance', label: 'الحضور', icon: Icons.how_to_reg_outlined)
                 else if (id == 'evaluations')
-                  const PortalNavItem(id: 'evaluations', label: 'الدرجات', icon: Icons.workspace_premium_outlined)
+                  const PortalNavItem(id: 'evaluations', label: 'العلامات', icon: Icons.workspace_premium_outlined)
                 else if (id == 'moodle')
                   const PortalNavItem(id: 'moodle', label: 'المودل', icon: Icons.menu_book_outlined)
                 else if (id == 'notes')
@@ -2453,7 +2453,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     );
     if (!mounted) return;
     if (saved == true) {
-      showAppSnack(context, 'تم حفظ كشف الدرجات');
+      showAppSnack(context, 'تم حفظ كشف العلامات');
       _loadEvaluations();
     }
   }
@@ -2481,7 +2481,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
             NBtn(
               tone: NBtnTone.sun,
               icon: Icons.add_rounded,
-              label: 'رصد درجات',
+              label: 'رصد علامات',
               expand: true,
               onTap: _current == null ? null : _openEvaluationForm,
             ),
@@ -2497,7 +2497,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
         ),
       if (groups.isNotEmpty) ...[
         // بطاقة لكل اختبار بمعدّله، وتُفتح فتظهر درجات طلابه
-        NSectionTitle(title: 'التقييمات السابقة', count: groups.length),
+        NSectionTitle(title: 'الاختبارات السابقة', count: groups.length),
         NColumn(
           gap: 12,
           children: [
@@ -2578,7 +2578,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
           ? 0
           : (scored.fold<int>(0, (a, e) => a + (e.percent ?? 0)) / scored.length).round();
       out.add((
-        title: first.title.isEmpty ? 'تقييم' : first.title,
+        title: first.title.isEmpty ? 'اختبار' : first.title,
         meta: [
           first.typeLabel,
           if (first.evaluationDate.isNotEmpty) first.evaluationDate.split('T').first,
@@ -2965,9 +2965,9 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
     if (c == null || saving) return;
 
     final title = evalTitle.text.trim();
-    setState(() => titleError = title.isEmpty ? 'يرجى إدخال عنوان الاختبار أو التقييم' : null);
+    setState(() => titleError = title.isEmpty ? 'يرجى إدخال اسم الاختبار' : null);
     if (title.isEmpty) {
-      showAppSnack(context, 'يرجى تحديد عنوان التقييم واختيار المادة', error: true);
+      showAppSnack(context, 'يرجى تحديد عنوان الاختبار واختيار المادة', error: true);
       return;
     }
 
@@ -3003,7 +3003,7 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
       }
       final score = double.tryParse(raw);
       if (score == null || score < 0 || score > max) {
-        showAppSnack(context, 'درجة غير صالحة للطالب ${s.fullName} (من 0 إلى ${trimNum(max)})', error: true);
+        showAppSnack(context, 'علامة غير صالحة للطالب ${s.fullName} (من 0 إلى ${trimNum(max)})', error: true);
         return;
       }
       batch.add(StudentEvaluation(
@@ -3026,7 +3026,7 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
       ));
     }
     if (batch.isEmpty && removed.isEmpty) {
-      showAppSnack(context, 'يرجى إدخال درجة واحدة على الأقل', error: true);
+      showAppSnack(context, 'يرجى إدخال علامة واحدة على الأقل', error: true);
       return;
     }
     if (removed.isNotEmpty) {
@@ -3057,7 +3057,7 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
       if (e is PortalException || !isTransientSyncError(e)) {
         if (!mounted) return;
         setState(() => saving = false);
-        showAppSnack(context, userMessage(e, 'حدث خطأ أثناء حفظ الدرجات'), error: true);
+        showAppSnack(context, userMessage(e, 'حدث خطأ أثناء حفظ العلامات'), error: true);
         return;
       }
       // بلا شبكة: الدرجات تُحفظ على الجهاز وتُرفع أول ما يعود الاتصال
@@ -3177,7 +3177,7 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
 
     return Scaffold(
       backgroundColor: Noon.paper,
-      appBar: NPageHeader(title: _isEditing ? 'تعديل الكشف' : 'رصد درجات'),
+      appBar: NPageHeader(title: _isEditing ? 'تعديل الكشف' : 'رصد علامات'),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -3305,7 +3305,7 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
                       });
                     },
                     child: const Text(
-                      'رصد الدرجة الكاملة للجميع',
+                      'رصد العلامة الكاملة للجميع',
                       style: TextStyle(color: _C.blue600, fontSize: 11, fontWeight: FontWeight.w800),
                     ),
                   ),
@@ -3315,7 +3315,7 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
           Padding(
             padding: EdgeInsets.fromLTRB(4, 4, 4, 8),
             child: Text(
-              'اترك الدرجة فارغة لمن لم يختبر',
+              'اترك العلامة فارغة لمن لم يختبر',
               style: TextStyle(color: _C.muted, fontSize: 11),
             ),
           ),
@@ -3383,7 +3383,7 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(NoonRadius.btn)),
               ),
               child: Text(
-                saving ? 'جاري الحفظ...' : 'حفظ كشف الدرجات',
+                saving ? 'جاري الحفظ...' : 'حفظ كشف العلامات',
                 style: const TextStyle(fontWeight: FontWeight.w800),
               ),
             ),
