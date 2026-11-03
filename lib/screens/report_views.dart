@@ -362,7 +362,11 @@ class _AbsenceReportState extends State<_AbsenceReport> {
               grade = g;
               sectionId = s;
               view = v;
-              if (v == 'sections') (q = '', minAbsent = 0, maxRate = 0);
+              if (v == 'sections') {
+                q = '';
+                minAbsent = 0;
+                maxRate = 0;
+              }
             })),
         _Search(onChanged: (v) => setState(() {
               q = v;
@@ -677,7 +681,11 @@ class _ResultsReportState extends State<_ResultsReport> with _GradesState {
               grade = g;
               sectionId = s;
               view = v;
-              if (v == 'sections') (q = '', limit = 0, picked.clear());
+              if (v == 'sections') {
+                q = '';
+                limit = 0;
+                picked.clear();
+              }
             })),
         // الأوائل: أول عشرة بالمعدل في النطاق؛ النقر ثانية يلغيها
         FilterChip(
@@ -1451,7 +1459,10 @@ class _DuesReportState extends State<_DuesReport> {
               grade = g;
               sectionId = s;
               view = v;
-              if (v == 'sections') (q = '', minDue = 0);
+              if (v == 'sections') {
+                q = '';
+                minDue = 0;
+              }
             })),
         _Search(onChanged: (v) => setState(() {
               q = v;
