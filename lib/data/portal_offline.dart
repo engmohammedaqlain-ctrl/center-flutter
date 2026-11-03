@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import '../models/models.dart';
+import 'followup.dart' show FollowupSettings;
 import 'grading.dart';
 import 'institution.dart';
 import 'local_db.dart';
@@ -74,6 +75,9 @@ class PortalOffline {
         'colors': data.branding.colors.toMap(),
         'grading_scheme': data.branding.gradingScheme.toMap(),
         'grades_locked_until': data.branding.gradesLockedUntil,
+        // مكوّنات كل مادة: بلا حفظها يرصد المعلم بلا نت بمكوّنات المدرسة العامة
+        'grading': data.branding.grading.toMap(),
+        'grade_deadlines': [for (final d in data.branding.gradeDeadlines) d.toMap()],
       },
       // أسماء المواد: بلا حفظها يفتح المعلم «الدرجات» بلا نت على قائمة مواد فارغة
       'subjects': [for (final s in data.subjects) s.toCloud()],
@@ -102,6 +106,8 @@ class PortalOffline {
                 ? GradingScheme.fromMap(Map<String, dynamic>.from(brandingRaw['grading_scheme'] as Map))
                 : GradingScheme.empty,
             gradesLockedUntil: '${brandingRaw['grades_locked_until'] ?? ''}',
+            grading: GradingSettings.normalize(brandingRaw['grading']),
+            gradeDeadlines: FollowupSettings.normalize({'grade_deadlines': brandingRaw['grade_deadlines']}).gradeDeadlines,
           )
         : const PortalBranding();
 
