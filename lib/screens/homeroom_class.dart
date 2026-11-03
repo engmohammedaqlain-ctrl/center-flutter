@@ -355,7 +355,7 @@ class _StudentCardState extends State<_StudentCard> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  const Text('الدرجات', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                  const Text('العلامات', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
                   const SizedBox(height: 6),
                   _Grades(evaluations: widget.evaluations, subjects: widget.subjects, scheme: widget.branding.gradingScheme),
                 ],
@@ -416,7 +416,7 @@ class _Grades extends StatelessWidget {
     if (summaries.isEmpty) {
       final monthly = [for (final e in evaluations) if (e.type == 'monthly' && e.subjectId.isEmpty) e]
         ..sort((a, b) => b.evaluationDate.compareTo(a.evaluationDate));
-      if (monthly.isEmpty) return Text('لا درجات بعد', style: TextStyle(color: Noon.faint, fontSize: 11));
+      if (monthly.isEmpty) return Text('لا علامات بعد', style: TextStyle(color: Noon.faint, fontSize: 11));
       return Wrap(
         spacing: 6,
         runSpacing: 6,

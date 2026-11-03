@@ -343,7 +343,7 @@ class _ShareToStudentFilePageState extends State<ShareToStudentFilePage> {
           else ...[
             SearchField(
               controller: search,
-              hint: 'الاسم، رقم الهوية، أو الهاتف...',
+              hint: 'الاسم، رقم الهوية، أو الجوال...',
               onChanged: (_) => setState(() {}),
             ),
             for (final s in matches)

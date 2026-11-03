@@ -181,7 +181,7 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
       errors
         ..reset()
         ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المدرس')
-        ..check('phone', number.isEmpty, 'يرجى إدخال رقم هاتف المدرس')
+        ..check('phone', number.isEmpty, 'يرجى إدخال رقم جوال المدرس')
         ..check('nationalId', idDigits.isNotEmpty && idDigits.length != 9, 'رقم الهوية يجب أن يتكون من 9 أرقام')
         // البوابة تقبل 6 أرقام وحدها: كلمة بغير ذلك تُنشئ حساباً لا يدخل
         ..check(
@@ -274,7 +274,7 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
               decoration: InputDecoration(hintText: 'مثال: أ. محمد العلي', errorText: errors['name']),
             ),
             _gap,
-            FieldLabel('رقم الهاتف', key: errors.key('phone'), requiredField: true),
+            FieldLabel('رقم الجوال', key: errors.key('phone'), requiredField: true),
             // الرقم يُقرأ من اليسار: المقدمة أولاً ثم بقيته، كنموذج الطالب
             Directionality(
               textDirection: TextDirection.ltr,

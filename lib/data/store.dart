@@ -2227,8 +2227,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     requireSection('evaluations');
     final cleanTitle = title.trim();
     if (groupId.isEmpty) throw StoreException('يرجى اختيار الشعبة');
-    if (cleanTitle.isEmpty) throw StoreException('يرجى تحديد عنوان التقييم');
-    if (scores.isEmpty) throw StoreException('يرجى رصد درجة واحدة على الأقل');
+    if (cleanTitle.isEmpty) throw StoreException('يرجى تحديد عنوان الاختبار');
+    if (scores.isEmpty) throw StoreException('يرجى رصد علامة واحدة على الأقل');
 
     final group = groups.where((g) => g.id == groupId).firstOrNull;
     if (group == null) throw StoreException('الشعبة المختارة غير موجودة');

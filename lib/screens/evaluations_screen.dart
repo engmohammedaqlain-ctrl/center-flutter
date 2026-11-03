@@ -58,13 +58,13 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
     final store = StoreScope.of(context);
     return TableGate(
       tables: const ['student_evaluations', 'rooms', 'students', 'groups'],
-      message: 'جارٍ تحميل الدرجات...',
+      message: 'جارٍ تحميل العلامات...',
       child: ListenableBuilder(
         listenable: store,
         builder: (context, _) {
           if (!store.features.enableEvaluations || !store.can('evaluations')) {
             return Scaffold(
-              appBar: AppBar(title: const Text('الدرجات والتقييمات')),
+              appBar: AppBar(title: const Text('العلامات')),
               body: NoAccess(section: 'evaluations', roleName: store.roleName),
             );
           }
@@ -73,7 +73,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
           if (grading.mode == 'monthly') {
             return Scaffold(
               backgroundColor: Colors.white,
-              appBar: AppBar(title: const Text('الدرجات والتقييمات')),
+              appBar: AppBar(title: const Text('العلامات')),
               body: const _MonthlyGradesPanel(),
             );
           }
@@ -186,7 +186,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
-        title: const Text('الدرجات والتقييمات'),
+        title: const Text('العلامات'),
         actions: [
           // شهادات الصف أو الشعبة المختارة دفعة واحدة، أو كشف نتائجها بالترتيب
           PopupMenuButton<bool>(
@@ -238,7 +238,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
         child: ThumbActionLayer(
           action: store.can('evaluations')
               ? ThumbAction(
-                  label: 'رصد درجات',
+                  label: 'رصد علامات',
                   icon: Icons.add,
                   color: AppColors.navy,
                   noon: true,
@@ -257,7 +257,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                         Expanded(
                           child: SearchField(
                             controller: search,
-                            hint: 'اسم الطالب أو عنوان التقييم',
+                            hint: 'اسم الطالب أو عنوان الاختبار',
                             onChanged: (_) => setState(() => listVisible = kListPageSize),
                           ),
                         ),
@@ -303,7 +303,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                 child: groupIds.isEmpty
                     ? const Padding(
                         padding: EdgeInsets.all(12),
-                        child: EmptyState(message: 'لا توجد تقييمات مرصودة مطابقة للبحث.'),
+                        child: EmptyState(message: 'لا توجد اختبارات مرصودة مطابقة للبحث.'),
                       )
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(12, 12, 12, thumbActionClearance),
@@ -500,15 +500,15 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
   Future<void> _record(BuildContext context, AppStore store) async {
     final saved = await showEvaluationSheet(context, store);
     if (saved > 0 && context.mounted) {
-      showAppSnack(context, 'تم رصد $saved درجة');
+      showAppSnack(context, 'تم رصد $saved علامة');
     }
   }
 
   Future<void> _delete(BuildContext context, AppStore store, Evaluation e) async {
     final ok = await confirmSheet(
       context,
-      title: 'حذف التقييم',
-      message: 'هل أنت متأكد من حذف تقييم «${e.title}»؟',
+      title: 'حذف الاختبار',
+      message: 'هل أنت متأكد من حذف اختبار «${e.title}»؟',
       confirmLabel: 'حذف',
     );
     if (!ok) return;
@@ -518,7 +518,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
       if (context.mounted) showAppSnack(context, err.message, error: true);
       return;
     }
-    if (context.mounted) showAppSnack(context, 'تم حذف التقييم');
+    if (context.mounted) showAppSnack(context, 'تم حذف الاختبار');
   }
 
   /// إقفال العلامات حتى تاريخ، أو فتحها — للمدير.
@@ -1170,7 +1170,7 @@ class _StudentRow extends StatelessWidget {
                     style: const TextStyle(color: AppColors.text, fontSize: 12.5, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 2),
-                  Text('${rows.length} تقييم', style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
+                  Text('${rows.length} اختبار', style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
                 ],
               ),
             ),

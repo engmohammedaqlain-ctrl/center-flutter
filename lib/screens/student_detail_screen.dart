@@ -256,7 +256,7 @@ class StudentDetailScreen extends StatelessWidget {
                   children: [
                     _InfoTable(rows: [
                       (
-                        'هاتف الطالب:',
+                        'جوال الطالب:',
                         student.phone.trim().isEmpty
                             ? _faintDash()
                             : _PhoneValue(phone: student.phone, prefix: student.phonePrefix),
@@ -272,7 +272,7 @@ class StudentDetailScreen extends StatelessWidget {
                         ),
                       ),
                       (
-                        'هاتف ولي الأمر:',
+                        'جوال ولي الأمر:',
                         parentPhone.isEmpty
                             ? _faintDash()
                             : _PhoneValue(phone: parentPhone, prefix: student.parentPhonePrefix),
@@ -989,7 +989,7 @@ class _PhoneValue extends StatelessWidget {
         ),
         const SizedBox(width: 6),
         _ContactAction(
-          tooltip: 'اتصال هاتفي',
+          tooltip: 'اتصال',
           onTap: () => launchTel(number),
           background: const Color(0xFFF1F5F9),
           border: AppColors.lineStrong,
@@ -2365,7 +2365,7 @@ class _EvaluationsCard extends StatelessWidget {
     final mono = const [FontFeature.tabularFigures()];
 
     return NoonFoldCard(
-      title: 'التقييمات (${list.length})',
+      title: 'الاختبارات (${list.length})',
       headerExtra: canReport
           ? InkWell(
               onTap: () => showReportCardsSheet(

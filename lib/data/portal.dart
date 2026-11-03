@@ -1727,7 +1727,7 @@ class PortalService {
   Future<List<StudentEvaluation>> studentEvaluations(String studentId) async {
     if (studentId.isEmpty) return const [];
     final rows = await _must(
-      'تقييمات الطالب',
+      'اختبارات الطالب',
       supabaseSelect(
         'student_evaluations',
         filters: {'student_id': 'eq.$studentId'},
@@ -2029,7 +2029,7 @@ class PortalService {
   /// تقييمات شعبة، الأحدث أولاً — `getEvaluationsByGroup`.
   Future<List<StudentEvaluation>> groupEvaluations(String groupId) async {
     final rows = await _must(
-      'درجات المادة',
+      'علامات المادة',
       supabaseSelect('student_evaluations', filters: {'group_id': 'eq.$groupId'}),
     );
     return rows.map(StudentEvaluation.fromCloud).toList()

@@ -262,7 +262,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                         Expanded(
                           child: NoonSearchField(
                             controller: search,
-                            hint: 'بحث بالاسم أو الهاتف أو الهوية',
+                            hint: 'بحث بالاسم أو الجوال أو الهوية',
                             onChanged: (_) => setState(() => visibleCount = kListPageSize),
                             count: list.length == countDenom ? '$countDenom' : '${list.length}/$countDenom',
                           ),

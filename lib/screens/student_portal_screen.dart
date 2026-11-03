@@ -265,7 +265,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
             ),
           'evaluations' => const PortalNavItem(
               id: 'evaluations',
-              label: 'درجات',
+              label: 'علامات',
               icon: Icons.workspace_premium_outlined,
               activeIcon: Icons.workspace_premium,
             ),
@@ -822,7 +822,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     }.toList()
       ..sort();
 
-    if (names.isEmpty) return const [NEmpty(text: 'لا درجات بعد', icon: Icons.workspace_premium_outlined)];
+    if (names.isEmpty) return const [NEmpty(text: 'لا علامات بعد', icon: Icons.workspace_premium_outlined)];
 
     // نسبة كل مادة: معدلها الموزون إن وُجد، وإلا متوسط تقييماتها
     final subjectPct = <({String name, int pct})>[
@@ -1389,7 +1389,7 @@ class _SubjectGradesCardState extends State<_SubjectGradesCard> {
                         ? [
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              child: Text('لا تقييمات', style: nText(12, weight: FontWeight.w500, color: Noon.muted)),
+                              child: Text('لا اختبارات', style: nText(12, weight: FontWeight.w500, color: Noon.muted)),
                             ),
                           ]
                         : [
@@ -1438,7 +1438,7 @@ class _SubjectGradesCardState extends State<_SubjectGradesCard> {
       _CollapsibleGroup(
         open: _expanded[key] ?? false,
         onToggle: () => setState(() => _expanded[key] = !(_expanded[key] ?? false)),
-        title: const Text('تقييمات أخرى'),
+        title: const Text('اختبارات أخرى'),
         end: Text('${others.length}', style: nText(12, color: Noon.muted)),
         children: [for (final (i, e) in others.indexed) _EvaluationRow(e: e, first: i == 0)],
       ),
@@ -1548,7 +1548,7 @@ class _EvaluationRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(e.title.isEmpty ? 'تقييم دراسي' : e.title, style: nText(14, weight: FontWeight.w500)),
+                Text(e.title.isEmpty ? 'اختبار' : e.title, style: nText(14, weight: FontWeight.w500)),
                 Text([nDayLabel(e.evaluationDate), e.teacherName].where((s) => s.trim().isNotEmpty).join(' · '), style: small),
                 if (e.notes.trim().isNotEmpty) Padding(padding: const EdgeInsets.only(top: 2), child: Text(e.notes.trim(), style: small)),
               ],

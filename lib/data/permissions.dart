@@ -17,7 +17,7 @@ const accessSections = <SectionDef>[
   SectionDef('students', 'الطلاب'),
   SectionDef('classes', 'الصفوف والجداول'),
   SectionDef('attendance', 'الحضور والغياب'),
-  SectionDef('evaluations', 'الدرجات والتقييمات'),
+  SectionDef('evaluations', 'العلامات'),
   SectionDef(
     'evaluations.edit',
     'تعديل العلامات وحذفها',

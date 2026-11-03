@@ -939,7 +939,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
       FieldLabel('الطالب', key: errors.key('student'), requiredField: true),
       SearchField(
         controller: search,
-        hint: 'الاسم، رقم الهاتف، أو المرحلة...',
+        hint: 'الاسم، رقم الجوال، أو المرحلة...',
         onChanged: (_) => setState(() {}),
       ),
       FormErrorText(errors['student']),

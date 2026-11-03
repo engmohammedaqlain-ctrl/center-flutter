@@ -104,7 +104,7 @@ class _GradingSchemeTabState extends State<GradingSchemeTab> {
                   ),
                   _Line(
                     label: 'تظهر العلامات للأهل',
-                    tooltip: 'بعد الاعتماد: يرصد المعلم، وتراجع الإدارة ثم تنشر من صفحة الدرجات',
+                    tooltip: 'بعد الاعتماد: يرصد المعلم، وتراجع الإدارة ثم تنشر من صفحة العلامات',
                     child: _Pick(
                       value: store.settings.gradesPublishManual ? 'manual' : 'auto',
                       options: const {'auto': 'فور الرصد', 'manual': 'بعد اعتماد الإدارة'},

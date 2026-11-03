@@ -147,11 +147,11 @@ class PortalOffline {
         return 'رصد حضور · ${op['date'] ?? ''}';
       case 'evaluations':
         final n = (op['rows'] as List?)?.length ?? 0;
-        return n > 0 ? 'درجات ($n)' : 'درجات';
+        return n > 0 ? 'علامات ($n)' : 'علامات';
       case 'evaluation_score':
         return 'تعديل علامة';
       case 'evaluation_delete':
-        return 'حذف تقييم';
+        return 'حذف اختبار';
       case 'section_upsert':
         return 'وحدة دراسية';
       case 'section_visible':

@@ -644,7 +644,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const FieldLabel('هاتف المالك'),
+                          const FieldLabel('جوال المالك'),
                           TextField(controller: ownerPhone, keyboardType: TextInputType.phone),
                         ],
                       ),

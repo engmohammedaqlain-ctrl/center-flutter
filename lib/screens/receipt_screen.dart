@@ -19,7 +19,7 @@ class ReceiptScreen {
   static Future<void> sendWhatsApp(BuildContext context, Payment payment, Student student) {
     final raw = student.parentPhone.isNotEmpty ? student.parentPhone : student.phone;
     if (raw.trim().isEmpty) {
-      showAppSnack(context, 'لا يوجد رقم هاتف مسجل للطالب أو ولي الأمر.', error: true);
+      showAppSnack(context, 'لا يوجد رقم جوال مسجل للطالب أو ولي الأمر.', error: true);
       return Future.value();
     }
     return open(context, payment, sendWhatsApp: true);

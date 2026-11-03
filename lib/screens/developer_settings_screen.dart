@@ -904,7 +904,7 @@ Future<void> showDemoDataResult(BuildContext context, DemoDataStats stats) {
             const SizedBox(height: 8),
             InfoStrip(
               child: Text(
-                '${stats.students} طالباً  ·  ${stats.groups} شعبة/مادة  ·  ${stats.evaluations} تقييماً',
+                '${stats.students} طالباً  ·  ${stats.groups} شعبة/مادة  ·  ${stats.evaluations} علامة',
                 style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
               ),
             ),
