@@ -8,6 +8,7 @@ import 'app_settings.dart';
 import 'attendance_days.dart';
 import 'balance.dart';
 import 'child_store.dart';
+import 'followup.dart' show FollowupOfSettings, GradeDeadline;
 import 'grade_approval.dart' show ApprovalMark, GradeApprovalSettings;
 import 'grading.dart';
 import 'image_shrink.dart';
@@ -222,6 +223,8 @@ class PortalBranding {
     this.gradingScheme = GradingScheme.empty,
     this.gradesLockedUntil = '',
     this.gradesApproved = const {},
+    this.grading = GradingSettings.empty,
+    this.gradeDeadlines = const [],
   });
 
   final String name;
@@ -237,6 +240,11 @@ class PortalBranding {
 
   /// الاختبارات المعتمدة (`settings.grades_approved`): لا يعدّلها المعلم.
   final Map<String, ApprovalMark> gradesApproved;
+  /// نظام العلامات كاملاً (`settings.grading`) بمكوّنات كل مادة — لمواعيد الرصد.
+  final GradingSettings grading;
+
+  /// مواعيد الرصد (`settings.followup.grade_deadlines`): شريط المطلوب في بوابة المعلم.
+  final List<GradeDeadline> gradeDeadlines;
 
   /// مطابق لـ `getPaymentMethodLabel`.
   String methodLabel(String key) {
@@ -1315,6 +1323,8 @@ class PortalService {
       ),
       gradesLockedUntil: app.gradesLockedUntil,
       gradesApproved: app.gradesApproved,
+      grading: app.grading,
+      gradeDeadlines: app.followup.gradeDeadlines,
     );
   }
 

@@ -63,6 +63,7 @@ class _HomeData {
   final double expectedMonth;
   final double overdue;
   final int alerts;
+  /// المعلمون المتأخرون عن مواعيد الرصد — المدير يتابع أشخاصاً كالويب.
   final int lateGrading;
   final int financeRequests;
   final List<({Student student, int days})> chronic;
@@ -252,7 +253,7 @@ class _HomeState extends State<_Home> {
       expectedMonth: expected,
       overdue: overdue,
       alerts: loadAbsenceAlerts(store).length,
-      lateGrading: completion.fold<int>(0, (n, r) => n + r.late),
+      lateGrading: {for (final r in completion) if (r.late > 0) r.teacherId}.length,
       financeRequests: store.pendingFinanceRequests.length,
       chronic: chronic,
       birthdays: birthdays,
@@ -270,7 +271,7 @@ class _HomeState extends State<_Home> {
     final approvals = store.can('evaluations') ? store.pendingApprovals.length : 0;
     final needs = <(String, String, VoidCallback)>[
       if (d.alerts > 0) ('إنذارات غياب لم تُرسل', '${d.alerts}', () => widget.onReport('alerts')),
-      if (d.lateGrading > 0) ('رصد متأخر عن موعده', '${d.lateGrading}', () => widget.onReport('completion')),
+      if (d.lateGrading > 0) ('رصد متأخر', '${d.lateGrading} معلم', () => widget.onReport('completion')),
       if (approvals > 0) ('علامات بانتظار الاعتماد', '$approvals', () => widget.onSection('evaluations')),
       if (leaveRequests > 0) ('طلبات إجازة', '$leaveRequests', () => widget.onSection('attendance')),
       if (showFinance && d.financeRequests > 0) ('طلبات موافقة', '${d.financeRequests}', () => widget.onSection('finance')),

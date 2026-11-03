@@ -8,6 +8,8 @@ import 'package:uuid/uuid.dart';
 import '../data/features.dart';
 import '../data/grading.dart';
 import '../data/grade_approval.dart' show approvalKey, approvedTeacherMessage;
+import '../data/grade_deadlines.dart';
+import 'grade_deadline_banner.dart';
 import 'sheet_export.dart';
 import 'teacher_payslips.dart';
 import '../data/portal.dart';
@@ -1030,6 +1032,31 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   /// مهلة طلبات بوابة المعلم — بلاها يعلق الانتظار عند انقطاع الشبكة.
   static const _cloudTimeout = Duration(seconds: 10);
 
+  /// مواعيد الرصد: ما فات موعده أو يحين خلال أسبوع ولم يُرصد، شريطاً فوق البوابة.
+  List<DueGrade> dueGrades = const [];
+
+  Future<void> _loadDueGrades(TeacherPortalData result) async {
+    try {
+      final list = await loadDueGrades(result).timeout(_cloudTimeout);
+      if (mounted) setState(() => dueGrades = list);
+    } catch (_) {
+      // التنبيه راحة لا شرط: فشل جلبه لا يعطّل البوابة
+    }
+  }
+
+  /// النقر على الشريط: تبويب الدرجات على مادة الرصد المطلوب وصفها وشعبتها.
+  void _openDueGrade(DueGrade d) {
+    setState(() {
+      tab = 'evaluations';
+      groupId = d.groupId;
+      if (d.gradeLevel.trim().isNotEmpty) gradeFilter = d.gradeLevel.trim();
+      final secs = _sections();
+      sectionFilter = secs.where((s) => isSameSectionName(s, d.section)).firstOrNull ?? (secs.isEmpty ? '' : secs.first);
+      _resetRecording();
+    });
+    _refreshTab();
+  }
+
   /// تطبيق بيانات المعلم على الحالة (كاش أو سحابة) مع اختيار الصف/الشعبة.
   void _applyTeacherData(TeacherPortalData result, {required bool fromCache}) {
     final tabs = _tabIds(result.features);
@@ -1056,6 +1083,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     error = null;
     offline = fromCache;
     pendingOps = _offline.pendingCountOf(widget.user.id);
+    if (!fromCache) unawaited(_loadDueGrades(result));
     // مشاركة وصلت قبل أن تجهز البيانات (فتحٌ من «مشاركة» أو قبل الدخول)
     if (ShareInbox.instance.hasFiles) WidgetsBinding.instance.addPostFrameCallback((_) => _onShared());
   }
@@ -2067,7 +2095,10 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                             padding: const EdgeInsets.fromLTRB(16, 16, 16, thumbActionClearance),
                             children: [
                               NColumn(
-                                children: switch (tab) {
+                                children: [
+                                  if (tab != 'homeroom' && _tabIds().contains('evaluations') && dueGrades.isNotEmpty)
+                                    GradeDeadlineBanner(due: dueGrades, onOpen: _openDueGrade),
+                                  ...switch (tab) {
                               'homeroom' => [
                                   HomeroomClassView(
                                     data: homeroom,
@@ -2081,7 +2112,8 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                               'moodle' => _moodleTab(brand),
                               'notes' => _notesTab(brand),
                               _ => _attendanceTab(brand),
-                                },
+                                  },
+                                ],
                               ),
                             ],
                           ),
@@ -2469,6 +2501,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
           classes: _classes,
           branding: data?.branding ?? const PortalBranding(),
           gradingScheme: _evalRecordingScheme,
+          grading: data?.branding.grading ?? GradingSettings.empty,
           initialGroupId: groupId,
           initialGrade: gradeFilter,
           initialSection: sectionFilter,
@@ -2792,6 +2825,7 @@ class _TeacherEvaluationFormPage extends StatefulWidget {
     required this.classes,
     required this.branding,
     required this.gradingScheme,
+    this.grading = GradingSettings.empty,
     this.initialGroupId = '',
     this.initialGrade = '',
     this.initialSection = '',
@@ -2807,6 +2841,9 @@ class _TeacherEvaluationFormPage extends StatefulWidget {
   final List<TeacherClass> classes;
   final PortalBranding branding;
   final GradingScheme gradingScheme;
+
+  /// نظام العلامات كاملاً: مكوّنات المادة وعلامتها الكاملة إن خصّصتها الإدارة.
+  final GradingSettings grading;
   final String initialGroupId;
   final String initialGrade;
   final String initialSection;
@@ -2850,11 +2887,28 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
 
   TeacherClass? get _current => widget.classes.where((c) => c.group.id == groupId).firstOrNull;
 
+  /// تخصيص المادة المختارة في صفها — `schemeForSubject` و`fullMarkForSubject` في الويب.
+  SubjectGrading? get _subjectGrading {
+    final c = _current;
+    if (c == null) return null;
+    final grade = gradeFilter.trim().isNotEmpty ? gradeFilter.trim() : c.group.gradeLevel;
+    return widget.grading.subjects[subjectGradingKey(grade, c.group.subjectId)];
+  }
+
+  /// مكوّنات الرصد: مكوّنات المادة إن خُصّصت، وإلا نظام المدرسة.
+  GradingScheme get _scheme {
+    final own = _subjectGrading?.scheme;
+    return own != null && !own.isEmpty ? own : widget.gradingScheme;
+  }
+
+  double get _fullMark => _subjectGrading?.fullMark ?? defaultFullMark;
+
   bool get _isEditing => widget.editing.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
+    evalMax.text = trimNum(_fullMark);
     final first = widget.editing.firstOrNull;
     if (first != null) {
       if (first.groupId.isNotEmpty) groupId = first.groupId;
@@ -2925,7 +2979,7 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
 
   double get _maxScore {
     final v = double.tryParse(evalMax.text.trim());
-    return (v == null || v <= 0) ? defaultFullMark : v;
+    return (v == null || v <= 0) ? _fullMark : v;
   }
 
   void _clearScores() {
@@ -2973,7 +3027,7 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
       final secs = _sections();
       if (secs.length == 1) sectionFilter = secs.first;
       _clearScores();
-      evalMax.text = trimNum(defaultFullMark);
+      evalMax.text = trimNum(_fullMark);
       evalComponentId = '';
     });
   }
@@ -3015,7 +3069,7 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
     }
 
     final max = _maxScore;
-    final comps = evalTerm.isEmpty ? const <GradingComponent>[] : widget.gradingScheme.of(evalTerm);
+    final comps = evalTerm.isEmpty ? const <GradingComponent>[] : _scheme.of(evalTerm);
     final comp = comps.where((x) => x.id == evalComponentId).firstOrNull;
     final type = evalComponentId.isNotEmpty ? evaluationTypeForComponent(comp?.name) : evalType;
 
@@ -3196,10 +3250,10 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
   Widget build(BuildContext context) {
     final students = _students();
     final visibleStudents = listPage(students, rosterVisible);
-    final scheme = widget.gradingScheme;
+    final scheme = _scheme;
     final components = evalTerm.isEmpty ? const <GradingComponent>[] : scheme.of(evalTerm);
     final useComponents = evalTerm.isNotEmpty && components.isNotEmpty;
-    final fullMark = defaultFullMark;
+    final fullMark = _fullMark;
 
     Widget pair(Widget a, Widget b) => Row(
           crossAxisAlignment: CrossAxisAlignment.start,
