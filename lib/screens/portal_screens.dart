@@ -7,6 +7,8 @@ import 'package:uuid/uuid.dart';
 
 import '../data/features.dart';
 import '../data/grading.dart';
+import '../data/grade_deadlines.dart';
+import 'grade_deadline_banner.dart';
 import 'sheet_export.dart';
 import '../data/portal.dart';
 import '../data/material_limits.dart';
@@ -1027,6 +1029,31 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   /// مهلة طلبات بوابة المعلم — بلاها يعلق الانتظار عند انقطاع الشبكة.
   static const _cloudTimeout = Duration(seconds: 10);
 
+  /// مواعيد الرصد: ما فات موعده أو يحين خلال أسبوع ولم يُرصد، شريطاً فوق البوابة.
+  List<DueGrade> dueGrades = const [];
+
+  Future<void> _loadDueGrades(TeacherPortalData result) async {
+    try {
+      final list = await loadDueGrades(result).timeout(_cloudTimeout);
+      if (mounted) setState(() => dueGrades = list);
+    } catch (_) {
+      // التنبيه راحة لا شرط: فشل جلبه لا يعطّل البوابة
+    }
+  }
+
+  /// النقر على الشريط: تبويب الدرجات على مادة الرصد المطلوب وصفها وشعبتها.
+  void _openDueGrade(DueGrade d) {
+    setState(() {
+      tab = 'evaluations';
+      groupId = d.groupId;
+      if (d.gradeLevel.trim().isNotEmpty) gradeFilter = d.gradeLevel.trim();
+      final secs = _sections();
+      sectionFilter = secs.where((s) => isSameSectionName(s, d.section)).firstOrNull ?? (secs.isEmpty ? '' : secs.first);
+      _resetRecording();
+    });
+    _refreshTab();
+  }
+
   /// تطبيق بيانات المعلم على الحالة (كاش أو سحابة) مع اختيار الصف/الشعبة.
   void _applyTeacherData(TeacherPortalData result, {required bool fromCache}) {
     final tabs = _tabIds(result.features);
@@ -1053,6 +1080,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     error = null;
     offline = fromCache;
     pendingOps = _offline.pendingCountOf(widget.user.id);
+    if (!fromCache) unawaited(_loadDueGrades(result));
     // مشاركة وصلت قبل أن تجهز البيانات (فتحٌ من «مشاركة» أو قبل الدخول)
     if (ShareInbox.instance.hasFiles) WidgetsBinding.instance.addPostFrameCallback((_) => _onShared());
   }
@@ -2039,7 +2067,10 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                             padding: const EdgeInsets.fromLTRB(16, 16, 16, thumbActionClearance),
                             children: [
                               NColumn(
-                                children: switch (tab) {
+                                children: [
+                                  if (tab != 'homeroom' && _tabIds().contains('evaluations') && dueGrades.isNotEmpty)
+                                    GradeDeadlineBanner(due: dueGrades, onOpen: _openDueGrade),
+                                  ...switch (tab) {
                               'homeroom' => [
                                   HomeroomClassView(
                                     data: homeroom,
@@ -2053,7 +2084,8 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                               'moodle' => _moodleTab(brand),
                               'notes' => _notesTab(brand),
                               _ => _attendanceTab(brand),
-                                },
+                                  },
+                                ],
                               ),
                             ],
                           ),

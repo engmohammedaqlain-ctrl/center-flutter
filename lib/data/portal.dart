@@ -8,6 +8,7 @@ import 'app_settings.dart';
 import 'attendance_days.dart';
 import 'balance.dart';
 import 'child_store.dart';
+import 'followup.dart' show FollowupOfSettings, GradeDeadline;
 import 'grading.dart';
 import 'image_shrink.dart';
 import 'institution.dart';
@@ -220,6 +221,8 @@ class PortalBranding {
     this.paymentMethods = defaultPaymentMethods,
     this.gradingScheme = GradingScheme.empty,
     this.gradesLockedUntil = '',
+    this.grading = GradingSettings.empty,
+    this.gradeDeadlines = const [],
   });
 
   final String name;
@@ -232,6 +235,12 @@ class PortalBranding {
 
   /// إقفال العلامات من إعدادات المدرسة (`settings.grades_locked_until`)، فارغ = مفتوحة.
   final String gradesLockedUntil;
+
+  /// نظام العلامات كاملاً (`settings.grading`) بمكوّنات كل مادة — لمواعيد الرصد.
+  final GradingSettings grading;
+
+  /// مواعيد الرصد (`settings.followup.grade_deadlines`): شريط المطلوب في بوابة المعلم.
+  final List<GradeDeadline> gradeDeadlines;
 
   /// مطابق لـ `getPaymentMethodLabel`.
   String methodLabel(String key) {
@@ -1297,6 +1306,7 @@ class PortalService {
         if (m is Map)
           if (PaymentMethodItem.fromMap(Map<String, dynamic>.from(m)) case final item?) item,
     ];
+    final app = AppSettings.fromMap(row['settings'] is Map ? Map<String, dynamic>.from(row['settings'] as Map) : null);
     return PortalBranding(
       name: customInstitutionName('${row['institution_name'] ?? ''}').isEmpty ? appName : customInstitutionName('${row['institution_name']}'),
       logo: '${row['logo'] ?? ''}',
@@ -1307,9 +1317,9 @@ class PortalService {
             ? Map<String, dynamic>.from(colorMap['__grading_scheme'] as Map)
             : const {},
       ),
-      gradesLockedUntil: AppSettings.fromMap(
-        row['settings'] is Map ? Map<String, dynamic>.from(row['settings'] as Map) : null,
-      ).gradesLockedUntil,
+      gradesLockedUntil: app.gradesLockedUntil,
+      grading: app.grading,
+      gradeDeadlines: app.followup.gradeDeadlines,
     );
   }
 
