@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../data/features.dart';
 import '../data/grading.dart';
 import 'sheet_export.dart';
+import 'teacher_payslips.dart';
 import '../data/portal.dart';
 import '../data/material_limits.dart';
 import '../data/notes.dart';
@@ -745,6 +746,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     }
     _load();
     unawaited(_loadHomeroom());
+    unawaited(_loadPayslips());
     _startPortalRealtime();
     ShareInbox.instance.addListener(_onShared);
     _listenPush();
@@ -1055,6 +1057,16 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     pendingOps = _offline.pendingCountOf(widget.user.id);
     // مشاركة وصلت قبل أن تجهز البيانات (فتحٌ من «مشاركة» أو قبل الدخول)
     if (ShareInbox.instance.hasFiles) WidgetsBinding.instance.addPostFrameCallback((_) => _onShared());
+  }
+
+  /// قسائم الراتب المصروفة: مرة عند الدخول، وفشلها لا يُظهر شيئاً.
+  List<Payslip> payslips = const [];
+
+  Future<void> _loadPayslips() async {
+    try {
+      final list = await loadMyPayslips(widget.user.id).timeout(_cloudTimeout);
+      if (mounted) setState(() => payslips = list);
+    } catch (_) {}
   }
 
   Future<void> _load() async {
@@ -2014,11 +2026,18 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
             branding: branding,
             sub: 'المعلم: ${widget.user.name}',
             onExit: widget.onExit,
-            action: _PortalSyncButton(
-              offline: offline,
-              pending: pendingOps,
-              busy: savingAttendance,
-              onTap: _syncNow,
+            action: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // «الراتب» لمن صُرف له راتب وفعّلت المدرسة قسائمه — زر «ملفي» في الويب
+                if (payslips.isNotEmpty) PayslipsButton(slips: payslips),
+                _PortalSyncButton(
+                  offline: offline,
+                  pending: pendingOps,
+                  busy: savingAttendance,
+                  onTap: _syncNow,
+                ),
+              ],
             ),
           ),
           Expanded(
