@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../data/balance.dart';
 import '../data/followup.dart';
 import '../data/phone.dart';
 import '../data/portal_usage.dart';
 import '../data/reports_data.dart';
+import '../data/staff.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -35,15 +37,16 @@ String _num(num v) => v == v.roundToDouble() ? '${v.round()}' : '$v';
 bool _matches(String name, String q) => q.trim().isEmpty || name.contains(q.trim());
 
 Widget reportView(String id) => switch (id) {
-      'absence' => const _AbsenceReport(),
-      'alerts' => const _AlertsReport(),
+      'absence' => const _AbsenceHub(),
+      'alerts' => const _AbsenceHub(alerts: true),
       'results' => const _ResultsReport(),
       'completion' => const _CompletionReport(),
-      'decline' => const _DeclineReport(),
-      'analysis' => const _AnalysisReport(),
-      'compare' => const _CompareReport(),
+      'analysis' => const _AnalysisHub(),
+      'decline' => const _AnalysisHub(initial: 'decline'),
+      'compare' => const _AnalysisHub(initial: 'compare'),
       'students' => const _StudentsReport(),
       'arrears' => const _DuesReport(),
+      'staff' => const _StaffReport(),
       'data' => const _DataReport(),
       'usage' => const _UsageReport(),
       'edits' => const _EditLogReport(),
@@ -129,7 +132,46 @@ class _Pick<T> extends StatelessWidget {
 
 /// الصف: «كل الصفوف» أو صف.
 Widget _gradePick(AppStore store, String value, ValueChanged<String> onChanged) =>
-    _Pick<String>(value: value, options: {'': 'كل الصفوف', for (final g in reportGrades(store)) g: g}, onChanged: onChanged);
+    _Pick<String>(value: value, options: {'': 'كل المدرسة', for (final g in reportGrades(store)) g: g}, onChanged: onChanged);
+
+/// النطاق باختيار واحد — `ScopeSelect`: كل المدرسة، صف، أو شعبة تحت صفها. الشعبة تفتح
+/// طلابها، والمدرسة والصف ملخص شعبهما، و«طلاب الصف» خيار يظهر حين يُفتح من سطر المجموع.
+/// يعيد (الصف، الشعبة، العرض).
+Widget _scopePick(
+  AppStore store, {
+  required String grade,
+  required String sectionId,
+  required String view,
+  required void Function(String grade, String sectionId, String view) onChanged,
+  bool rooms = true,
+}) {
+  final current = sectionId.isNotEmpty ? 's:$sectionId' : (view == 'students' ? 'st:$grade' : (grade.isEmpty ? '' : 'g:$grade'));
+  final all = store.roomsInViewedYear;
+  final options = <String, String>{
+    '': 'كل المدرسة',
+    if (current == 'st:') 'st:': 'طلاب المدرسة',
+    for (final g in reportGrades(store)) ...{
+      'g:$g': g,
+      if (current == 'st:$g') 'st:$g': 'طلاب $g',
+      if (rooms)
+        for (final r in all.where((r) => r.gradeLevel.trim() == g)) 's:${r.id}': '    ${r.name}',
+    },
+  };
+  return _Pick<String>(
+    value: current,
+    options: options,
+    onChanged: (v) {
+      if (v.startsWith('s:')) {
+        final room = all.where((r) => r.id == v.substring(2)).firstOrNull;
+        onChanged(room?.gradeLevel.trim() ?? '', v.substring(2), 'students');
+      } else if (v.startsWith('st:')) {
+        onChanged(v.substring(3), '', 'students');
+      } else {
+        onChanged(v.isEmpty ? '' : v.substring(2), '', 'sections');
+      }
+    },
+  );
+}
 
 /// الحد يُقرأ جملة: «غاب [3] أيام فأكثر» — `MinInput`.
 class _NumLine extends StatelessWidget {
@@ -174,14 +216,6 @@ class _Search extends StatelessWidget {
       );
 }
 
-/// «الشعب / الطلاب» — `ViewToggle`.
-Widget _viewToggle(String value, ValueChanged<String> onChanged, {String students = 'الطلاب'}) => SegmentedButton<String>(
-      showSelectedIcon: false,
-      style: const ButtonStyle(visualDensity: VisualDensity.compact),
-      segments: [const ButtonSegment(value: 'sections', label: Text('الشعب')), ButtonSegment(value: 'students', label: Text(students))],
-      selected: {value},
-      onSelectionChanged: (v) => onChanged(v.first),
-    );
 
 typedef _Kpi = ({String label, String value, String sub, Color? color, VoidCallback? onTap});
 
@@ -224,6 +258,7 @@ Widget _row(String title, String sub, List<Widget> trailing, {VoidCallback? onTa
             ]),
           ),
           for (final t in trailing) Padding(padding: const EdgeInsetsDirectional.only(start: 10), child: t),
+          if (onTap != null) Padding(padding: const EdgeInsetsDirectional.only(start: 6), child: Icon(Icons.chevron_left_rounded, size: 18, color: AdminNoon.faint)),
         ]),
       ),
     );
@@ -318,25 +353,28 @@ class _AbsenceReportState extends State<_AbsenceReport> {
 
     return _body([
       _Bar(sheet: sheet, children: [
-        _viewToggle(view, (v) => setState(() => view = v)),
         Row(mainAxisSize: MainAxisSize.min, children: [
           IconButton(tooltip: 'الشهر السابق', icon: const Icon(Icons.chevron_right), onPressed: () => setState(() => monthOffset--)),
           Text(periodLabel, style: NoonText.style(12.5, weight: FontWeight.w700)),
           IconButton(tooltip: 'الشهر التالي', icon: const Icon(Icons.chevron_left), onPressed: monthOffset >= 0 ? null : () => setState(() => monthOffset++)),
         ]),
-        _gradePick(store, grade, (g) => setState(() {
+        _scopePick(store, grade: grade, sectionId: sectionId, view: view, onChanged: (g, s, v) => setState(() {
               grade = g;
-              sectionId = '';
+              sectionId = s;
+              view = v;
+              if (v == 'sections') {
+                q = '';
+                minAbsent = 0;
+                maxRate = 0;
+              }
             })),
-        if (sectionId.isNotEmpty)
-          InputChip(
-            label: Text(sections.where((s) => s.group.room.id == sectionId).firstOrNull?.group.label ?? ''),
-            onDeleted: () => setState(() => sectionId = ''),
-          ),
+        _Search(onChanged: (v) => setState(() {
+              q = v;
+              if (v.isNotEmpty) view = 'students';
+            })),
         if (view == 'students') ...[
           _NumLine(label: 'غاب', suffix: 'أيام فأكثر', value: minAbsent, onChanged: (v) => setState(() => minAbsent = v)),
           _NumLine(label: 'حضوره', suffix: '% فأقل', value: maxRate, onChanged: (v) => setState(() => maxRate = v.clamp(0, 100))),
-          _Search(onChanged: (v) => setState(() => q = v)),
         ],
       ]),
       if (sections.isNotEmpty)
@@ -344,7 +382,7 @@ class _AbsenceReportState extends State<_AbsenceReport> {
           (label: 'الحضور', value: rate == null ? '—' : '$rate%', sub: '$present يوم حضور', color: rate == null ? null : (rate < 85 ? _red : _green), onTap: null),
           (label: 'غياب', value: '$absent', sub: '${scoped.fold<int>(0, (n, s) => n + s.rows.where((r) => r.absent > 0).length)} طالب غاب', color: absent > 0 ? _red : null, onTap: null),
           (label: 'مأذون', value: '$excused', sub: '${scoped.fold<int>(0, (n, s) => n + s.rows.where((r) => r.excused > 0).length)} طالب', color: excused > 0 ? _amber : null, onTap: null),
-          (label: 'الطلاب', value: '$students', sub: '${scoped.length} شعبة · ${days.length} يوم دوام', color: null, onTap: null),
+          (label: 'الطلاب', value: '$students', sub: '${scoped.length} شعبة · ${days.where((d) => d.compareTo(isoDate(now)) <= 0).length} يوم دوام', color: null, onTap: null),
         ]),
       if (sections.isEmpty)
         const NoonEmpty('لا شعب')
@@ -352,11 +390,12 @@ class _AbsenceReportState extends State<_AbsenceReport> {
         studentRows.isEmpty
             ? const NoonEmpty('لا طلاب')
             : _list([
+                // الحضور نسبة كما في ملخص الشعب، و«—» لمن لم يُرصد
                 for (final x in studentRows)
-                  _row(x.r.student.fullName, x.section, [
+                  _row(x.r.student.fullName, sectionId.isEmpty ? x.section : '', [
                     _val('${x.r.absent}', color: x.r.absent > 0 ? _red : null, hint: 'غياب'),
                     _val('${x.r.excused}', color: AdminNoon.muted, hint: 'مأذون'),
-                    _val('${x.r.present}', hint: 'حضور'),
+                    _val(x.r.present + x.r.absent + x.r.excused == 0 ? '—' : '${x.r.rate}%', color: x.r.rate < 85 ? _amber : null, hint: 'الحضور'),
                   ], onTap: () => _openStudent(context, x.r.student.id)),
               ])
       else
@@ -368,10 +407,72 @@ class _AbsenceReportState extends State<_AbsenceReport> {
                   sectionId = s.group.room.id;
                   view = 'students';
                 })),
-          _row('المدرسة', '$students طالب · $absent غياب · $excused مأذون', [_val(rate == null ? '—' : '$rate%')]),
+          _row(grade.isEmpty ? 'المدرسة' : grade, '$students طالب · $absent غياب · $excused مأذون', [_val(rate == null ? '—' : '$rate%')],
+              onTap: () => setState(() => view = 'students')),
         ]),
     ], onRefresh: () async => setState(_memo.clear));
   }
+}
+
+/// تقرير بعروض لنفس البيانات: شريط «الغياب | الإنذارات» أو «المواد | الشعب | التراجع» فوق
+/// العرض المختار، فلا يكون كل عرض سطراً وحده في الفهرس.
+class _Views extends StatefulWidget {
+  const _Views({required this.views, required this.initial});
+
+  final Map<String, ({String label, Widget view})> views;
+  final String initial;
+
+  @override
+  State<_Views> createState() => _ViewsState();
+}
+
+class _ViewsState extends State<_Views> {
+  late String current = widget.views.containsKey(widget.initial) ? widget.initial : widget.views.keys.first;
+
+  @override
+  Widget build(BuildContext context) => Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+          child: SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<String>(
+              showSelectedIcon: false,
+              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              segments: [for (final e in widget.views.entries) ButtonSegment(value: e.key, label: Text(e.value.label))],
+              selected: {current},
+              onSelectionChanged: (v) => setState(() => current = v.first),
+            ),
+          ),
+        ),
+        Expanded(child: KeyedSubtree(key: ValueKey(current), child: widget.views[current]!.view)),
+      ]);
+}
+
+/// «الغياب» و«الإنذارات» تقرير واحد — كالويب.
+class _AbsenceHub extends StatelessWidget {
+  const _AbsenceHub({this.alerts = false});
+
+  final bool alerts;
+
+  @override
+  Widget build(BuildContext context) => _Views(initial: alerts ? 'alerts' : 'absence', views: const {
+        'absence': (label: 'الغياب', view: _AbsenceReport()),
+        'alerts': (label: 'الإنذارات', view: _AlertsReport()),
+      });
+}
+
+/// «التحليل»: المواد ومقارنة الشعب والتراجع — كالويب.
+class _AnalysisHub extends StatelessWidget {
+  const _AnalysisHub({this.initial = 'analysis'});
+
+  final String initial;
+
+  @override
+  Widget build(BuildContext context) => _Views(initial: initial, views: const {
+        'analysis': (label: 'المواد', view: _AnalysisReport()),
+        'compare': (label: 'الشعب', view: _CompareReport()),
+        'decline': (label: 'التراجع', view: _DeclineReport()),
+      });
 }
 
 // ── إنذارات الغياب — `AbsenceAlertsView` ─────────────────────────────────────
@@ -574,15 +675,39 @@ class _ResultsReportState extends State<_ResultsReport> with _GradesState {
 
     return _body([
       _Bar(sheet: sheet, children: [
-        _viewToggle(view, (v) => setState(() => view = v)),
         if (metric != 'prev') periodPick((p) => setState(() => period = p)),
-        _gradePick(store, grade, (g) => setState(() {
+        _scopePick(store, grade: grade, sectionId: sectionId, view: view, onChanged: (g, s, v) => setState(() {
+              if (g != grade) metric = '';
               grade = g;
-              sectionId = '';
-              metric = '';
+              sectionId = s;
+              view = v;
+              if (v == 'sections') {
+                q = '';
+                limit = 0;
+                picked.clear();
+              }
             })),
-        if (sectionId.isNotEmpty)
-          InputChip(label: Text(all.where((s) => s.id == sectionId).firstOrNull?.label ?? ''), onDeleted: () => setState(() => sectionId = '')),
+        // الأوائل: أول عشرة بالمعدل في النطاق؛ النقر ثانية يلغيها
+        FilterChip(
+          avatar: const Icon(Icons.emoji_events_outlined, size: 16),
+          label: const Text('الأوائل'),
+          selected: view == 'students' && limit > 0 && order == 'top' && metric.isEmpty,
+          onSelected: (on) => setState(() {
+            if (!on) {
+              limit = 0;
+              return;
+            }
+            metric = '';
+            order = 'top';
+            picked.clear();
+            limit = 10;
+            view = 'students';
+          }),
+        ),
+        _Search(onChanged: (v) => setState(() {
+              q = v;
+              if (v.isNotEmpty) view = 'students';
+            })),
         if (view == 'students') ...[
           _Pick<String>(
             value: metric,
@@ -593,7 +718,6 @@ class _ResultsReportState extends State<_ResultsReport> with _GradesState {
           _NumLine(label: 'علامته من', suffix: '%', value: min, onChanged: (v) => setState(() => min = v)),
           _NumLine(label: 'إلى', suffix: '%', value: max, onChanged: (v) => setState(() => max = v)),
           _NumLine(label: 'أول', suffix: 'طالب', value: limit, onChanged: (v) => setState(() => limit = v)),
-          _Search(onChanged: (v) => setState(() => q = v)),
         ],
       ]),
       if (view == 'students')
@@ -612,10 +736,8 @@ class _ResultsReportState extends State<_ResultsReport> with _GradesState {
         ),
       if (view == 'sections' && graded > 0)
         _kpis([
-          (label: 'المعدل', value: average == null ? '—' : '${_num(average)}%', sub: 'النجاح ${_num(pass)}%', color: average != null && average < pass ? _red : null, onTap: null),
-          (label: 'دون النجاح', value: '$failing', sub: '${(failing / graded * 100).round()}% من المرصودين', color: failing > 0 ? _red : null, onTap: null),
-          (label: 'ناجح', value: '${graded - failing}', sub: '${((graded - failing) / graded * 100).round()}%', color: _green, onTap: null),
-          (label: 'مرصود', value: '$graded', sub: '${scoped.length} شعبة', color: null, onTap: null),
+          (label: 'المعدل', value: average == null ? '—' : '${_num(average)}%', sub: '$graded طالب', color: average != null && average < pass ? _red : null, onTap: null),
+          (label: 'دون النجاح', value: '$failing', sub: 'تحت ${_num(pass)}%', color: failing > 0 ? _red : null, onTap: null),
         ]),
       if (all.isEmpty)
         const NoonEmpty('لا شعب')
@@ -624,20 +746,26 @@ class _ResultsReportState extends State<_ResultsReport> with _GradesState {
             ? const NoonEmpty('لا طلاب')
             : _list([
                 for (var i = 0; i < ranked.length; i++)
-                  _row('${i + 1}. ${ranked[i].card.studentName}', ranked[i].section, [
+                  _row('${i + 1}. ${ranked[i].card.studentName}', sectionId.isEmpty ? ranked[i].section : '', [
                     _val('${_num(ranked[i].value)}%', color: ranked[i].value < pass ? _red : null),
                   ], onTap: () => _openStudent(context, ranked[i].card.id)),
               ])
       else
         _list([
           for (var i = 0; i < scoped.length; i++)
-            _row(scoped[i].label, '${parts[i].graded} مرصود${parts[i].failing > 0 ? ' · ${parts[i].failing} دون النجاح' : ''}', [
+            _row(scoped[i].label, '${parts[i].graded} طالب${parts[i].failing > 0 ? ' · ${parts[i].failing} دون النجاح' : ''}', [
               _val(parts[i].average == null ? '—' : '${_num(parts[i].average!)}%'),
             ], onTap: () => setState(() {
                   sectionId = scoped[i].id;
                   order = 'top';
                   view = 'students';
                 })),
+          _row(grade.isEmpty ? 'المدرسة' : grade, '$graded طالب${failing > 0 ? ' · $failing دون النجاح' : ''}', [
+            _val(average == null ? '—' : '${_num(average)}%'),
+          ], onTap: () => setState(() {
+                order = 'top';
+                view = 'students';
+              })),
         ]),
     ], onRefresh: () async => setState(_cards.clear));
   }
@@ -1042,6 +1170,7 @@ class _CompletionReportState extends State<_CompletionReport> {
 
 const _traits = {
   'sick': 'حالة صحية',
+  'withdrawn': 'منسحبون',
   'male': 'ذكور',
   'female': 'إناث',
   'app_parent_never': 'ولي أمر لم يدخل البوابة',
@@ -1049,6 +1178,15 @@ const _traits = {
   'app_week_none': 'لا دخول منذ أسبوع',
 };
 const _numLabels = {'absent': 'غياب', 'due': 'متأخر', 'prev': 'السنة الماضية'};
+
+/// صفات شائعة تظهر أزراراً حين لا صفة مختارة: نقرة واحدة بدل فتح القائمة.
+const _quick = {
+  'sick': 'حالة صحية',
+  'num:absent': 'كثيرو الغياب',
+  'num:due': 'عليهم متأخرات',
+  'app_parent_never': 'لم يدخل ولي الأمر',
+  'withdrawn': 'منسحبون',
+};
 const _numSuffix = {'absent': 'أيام فأكثر', 'due': 'فأكثر', 'prev': '% فأكثر'};
 const _numDefault = {'absent': 5, 'due': 100, 'prev': 90};
 
@@ -1105,15 +1243,27 @@ class _StudentsReportState extends State<_StudentsReport> {
           'male' => s.gender == 'ذكر',
           'female' => s.gender == 'أنثى',
           'sick' => _sick(s),
+          'withdrawn' => s.status == 'withdrawn',
           _ => appMatch(s, t),
         };
+    // يبدأ بلا قائمة: كل الطلاب في صفحة الطلاب، وهنا ما يُسأل عنه بصفة
+    final asked = traits.isNotEmpty || nums.isNotEmpty || q.trim().isNotEmpty;
+    void add(String v) => setState(() {
+          if (v.startsWith('num:')) {
+            nums[v.substring(4)] = _numDefault[v.substring(4)]!;
+          } else if (!traits.contains(v)) {
+            traits.add(v);
+          }
+        });
     final groups = [
-      for (final g in groupBySection(store, grade: grade))
+      for (final g in groupBySection(store, grade: grade, withWithdrawn: true))
         (
           label: g.label,
           students: [
             for (final s in g.students)
-              if (traits.every((t) => hasTrait(s, t)) &&
+              if (asked &&
+                  (traits.contains('withdrawn') || s.status != 'withdrawn') &&
+                  traits.every((t) => hasTrait(s, t)) &&
                   nums.entries.every((e) => (factOf(s, e.key) ?? -1) >= e.value) &&
                   _matches(s.fullName, q))
                 s,
@@ -1157,7 +1307,7 @@ class _StudentsReportState extends State<_StudentsReport> {
     // الغياب والمتأخرات والدخول لها تقاريرها المفصلة: رابط إليها بدل تكرار تفصيلها هنا
     final related = [
       if (nums.containsKey('absent')) ('تقرير الغياب', 'absence'),
-      if (nums.containsKey('due')) ('تقرير المتأخرات', 'arrears'),
+      if (nums.containsKey('due')) ('تقرير التحصيل', 'arrears'),
       if (appTraits.isNotEmpty) ('تقرير استخدام النظام', 'usage'),
     ];
 
@@ -1165,13 +1315,7 @@ class _StudentsReportState extends State<_StudentsReport> {
       _Bar(sheet: sheet, children: [
         PopupMenuButton<String>(
           tooltip: 'الصفات المختارة تجتمع',
-          onSelected: (v) => setState(() {
-            if (v.startsWith('num:')) {
-              nums[v.substring(4)] = _numDefault[v.substring(4)]!;
-            } else {
-              traits.add(v);
-            }
-          }),
+          onSelected: add,
           itemBuilder: (_) => [
             for (final e in _traits.entries)
               if (!traits.contains(e.key)) PopupMenuItem(value: e.key, child: Text(e.value)),
@@ -1198,8 +1342,12 @@ class _StudentsReportState extends State<_StudentsReport> {
         for (final t in traits) InputChip(label: Text(_traits[t]!), onDeleted: () => setState(() => traits.remove(t))),
         _gradePick(store, grade, (g) => setState(() => grade = g)),
         _Search(onChanged: (v) => setState(() => q = v)),
-        Text('$total', style: NoonText.style(12, weight: FontWeight.w700, color: AdminNoon.muted)),
+        if (asked) Text('$total', style: NoonText.style(12, weight: FontWeight.w700, color: AdminNoon.muted)),
       ]),
+      if (!asked)
+        Wrap(spacing: 6, runSpacing: 6, children: [
+          for (final e in _quick.entries) ActionChip(label: Text(e.value), onPressed: () => add(e.key)),
+        ]),
       if (related.isNotEmpty)
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
@@ -1208,7 +1356,9 @@ class _StudentsReportState extends State<_StudentsReport> {
             for (final r in related) TextButton(onPressed: () => openReport(context, r.$2), child: Text('${r.$1} ←')),
           ]),
         ),
-      if (total == 0)
+      if (!asked)
+        const SizedBox.shrink()
+      else if (total == 0)
         const NoonEmpty('لا طلاب')
       else
         _list([
@@ -1238,6 +1388,8 @@ class _DuesReport extends StatefulWidget {
   State<_DuesReport> createState() => _DuesReportState();
 }
 
+/// التحصيل بالشعب — `DuesReport.tsx`: المطلوب والمدفوع والمتأخر ونسبة التحصيل، واختيار
+/// شعبة (أو النقر عليها، أو على سطر المدرسة) يفتح مدينيها بأرقام أهاليهم.
 class _DuesReportState extends State<_DuesReport> {
   String grade = '';
   String view = 'sections';
@@ -1248,69 +1400,225 @@ class _DuesReportState extends State<_DuesReport> {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    final due = duesByStudent(store);
+    // مطلوب كل طالب ومدفوعه ومتأخره من أقساطه
+    final required = <String, double>{}, paid = <String, double>{}, due = <String, double>{};
+    for (final i in store.installments) {
+      final charge = chargeableAmount(i);
+      required[i.studentId] = (required[i.studentId] ?? 0) + charge;
+      paid[i.studentId] = (paid[i.studentId] ?? 0) + (i.paidAmount < charge ? i.paidAmount : charge);
+      if (isInstallmentDue(i)) due[i.studentId] = (due[i.studentId] ?? 0) + unpaidOf(i);
+    }
     final all = [
       for (final g in groupBySection(store, grade: grade, activeOnly: true))
         (
           group: g,
-          rows: [
-            for (final s in g.students)
-              if ((due[s.id] ?? 0) > 0 && (due[s.id] ?? 0) >= minDue && _matches(s.fullName, q)) (student: s, due: due[s.id]!),
-          ]..sort((a, b) => b.due.compareTo(a.due)),
+          students: [for (final s in g.students) if ((required[s.id] ?? 0) > 0) s],
         ),
-    ].where((s) => s.rows.isNotEmpty).toList();
-    final shown = [for (final s in all) if (sectionId.isEmpty || s.group.room.id == sectionId) s];
-    double sum(Iterable<({Student student, double due})> r) => r.fold(0, (n, x) => n + x.due);
-    final total = shown.fold<double>(0, (n, s) => n + sum(s.rows));
-    final debtors = [for (final s in shown) for (final r in s.rows) (r: r, section: s.group.label)]..sort((a, b) => b.r.due.compareTo(a.r.due));
+    ].where((s) => s.students.isNotEmpty).toList();
+    double sumOf(Map<String, double> m, Iterable<Student> list) => list.fold(0, (n, s) => n + (m[s.id] ?? 0));
+    final everyone = [for (final s in all) ...s.students];
+    final totalRequired = sumOf(required, everyone), totalPaid = sumOf(paid, everyone), totalDue = sumOf(due, everyone);
+    int? rateOf(double p, double r) => r <= 0 ? null : (p / r * 100).round();
+    final rate = rateOf(totalPaid, totalRequired);
+    final debtorCount = everyone.where((s) => (due[s.id] ?? 0) > 0.005).length;
+    // المدينون: من حلّ عليه ولم يدفع، بالحد والبحث والشعبة
+    final debtors = [
+      for (final s in all)
+        if (sectionId.isEmpty || s.group.room.id == sectionId)
+          for (final st in s.students)
+            if ((due[st.id] ?? 0) > 0.005 && (due[st.id] ?? 0) >= minDue && _matches(st.fullName, q)) (student: st, due: due[st.id]!, paid: paid[st.id] ?? 0, section: s.group.label),
+    ]..sort((a, b) => b.due.compareTo(a.due));
+    final debtorsDue = debtors.fold<double>(0, (n, d) => n + d.due);
+
+    _Sheet sheet() => view == 'students'
+        ? (
+            title: 'المدينون',
+            meta: [grade.isEmpty ? 'المدرسة' : grade, '${debtors.length} طالب', money(debtorsDue)],
+            headers: ['#', 'اسم الطالب', 'الشعبة', 'ولي الأمر', 'الجوال', 'المدفوع', 'المتأخر'],
+            rows: [
+              for (var i = 0; i < debtors.length; i++)
+                [i + 1, debtors[i].student.fullName, debtors[i].section, debtors[i].student.parentName, formatPhoneDisplay(debtors[i].student.parentPhone, debtors[i].student.parentPhonePrefix), money(debtors[i].paid), money(debtors[i].due)],
+            ],
+            landscape: false,
+          )
+        : (
+            title: 'التحصيل',
+            meta: [grade.isEmpty ? 'المدرسة' : grade, if (rate != null) 'التحصيل $rate%'],
+            headers: ['الشعبة', 'الطلاب', 'المطلوب', 'المدفوع', 'المتأخر', 'التحصيل'],
+            rows: [
+              for (final s in all)
+                [s.group.label, s.students.length, money(sumOf(required, s.students)), money(sumOf(paid, s.students)), money(sumOf(due, s.students)), '${rateOf(sumOf(paid, s.students), sumOf(required, s.students)) ?? 0}%'],
+              ['المدرسة', everyone.length, money(totalRequired), money(totalPaid), money(totalDue), '${rate ?? 0}%'],
+            ],
+            landscape: false,
+          );
+
+    return _body([
+      _Bar(sheet: sheet, children: [
+        _scopePick(store, grade: grade, sectionId: sectionId, view: view, onChanged: (g, s, v) => setState(() {
+              grade = g;
+              sectionId = s;
+              view = v;
+              if (v == 'sections') {
+                q = '';
+                minDue = 0;
+              }
+            })),
+        _Search(onChanged: (v) => setState(() {
+              q = v;
+              if (v.isNotEmpty) view = 'students';
+            })),
+        if (view == 'students') _NumLine(label: 'متأخر عليه', suffix: 'فأكثر', value: minDue, onChanged: (v) => setState(() => minDue = v)),
+      ]),
+      if (all.isNotEmpty)
+        _kpis([
+          (label: 'المدفوع', value: money(totalPaid), sub: 'من ${money(totalRequired)}', color: _green, onTap: null),
+          (label: 'التحصيل', value: rate == null ? '—' : '$rate%', sub: '', color: rate != null && rate < 70 ? _red : null, onTap: null),
+          (label: 'المتأخر', value: money(totalDue), sub: '$debtorCount طالب', color: totalDue > 0 ? _red : null, onTap: debtorCount > 0 ? () => setState(() => view = 'students') : null),
+        ]),
+      if (all.isEmpty)
+        const NoonEmpty('لا أقساط')
+      else if (view == 'students')
+        debtors.isEmpty
+            ? const NoonEmpty('لا متأخرات')
+            : _list([
+                for (final d in debtors)
+                  _row(d.student.fullName, [if (sectionId.isEmpty) d.section, formatPhoneDisplay(d.student.parentPhone, d.student.parentPhonePrefix)].where((x) => x.trim().isNotEmpty).join(' · '),
+                      [_val(money(d.due), color: _amber, hint: 'المتأخر')],
+                      onTap: () => _openStudent(context, d.student.id)),
+              ])
+      else
+        _list([
+          for (final s in all)
+            () {
+              final r = rateOf(sumOf(paid, s.students), sumOf(required, s.students));
+              return _row(s.group.label, 'المدفوع ${money(sumOf(paid, s.students))} · المتأخر ${money(sumOf(due, s.students))}', [
+                _val(r == null ? '—' : '$r%', color: r != null && r < 70 ? _amber : null, hint: 'التحصيل'),
+              ], onTap: () => setState(() {
+                    sectionId = s.group.room.id;
+                    view = 'students';
+                  }));
+            }(),
+          _row(grade.isEmpty ? 'المدرسة' : grade, 'المدفوع ${money(totalPaid)} · المتأخر ${money(totalDue)}', [_val(rate == null ? '—' : '$rate%')],
+              onTap: () => setState(() => view = 'students')),
+        ]),
+    ]);
+  }
+}
+
+// ── دوام الموظفين — `StaffReport.tsx` ────────────────────────────────────────
+
+/// دوام الموظفين في شهر: سطر لكل موظف بحضوره وغيابه وتأخيره وإجازاته، حتى اليوم.
+/// يوم الإجازة الموافق عليها إجازة لا غياب، كما في الرواتب.
+class _StaffReport extends StatefulWidget {
+  const _StaffReport();
+
+  @override
+  State<_StaffReport> createState() => _StaffReportState();
+}
+
+class _StaffReportState extends State<_StaffReport> {
+  int monthOffset = 0;
+  String q = '';
+  ({List<StaffDay> days, List<LeaveRequest> leaves})? data;
+  bool failed = false;
+  String _loaded = '';
+
+  String get _month {
+    final now = DateTime.now();
+    return isoDate(DateTime(now.year, now.month + monthOffset, 1)).substring(0, 7);
+  }
+
+  Future<void> _load({bool force = false}) async {
+    final month = _month;
+    _loaded = month;
+    final days = await StaffService.days('$month-01', '$month-31', force: force);
+    final leaves = await StaffService.leaves(force: force);
+    if (!mounted || _loaded != month) return;
+    setState(() {
+      failed = days == null || leaves == null;
+      data = failed ? null : (days: days!, leaves: leaves!);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = StoreScope.of(context);
+    if (_loaded != _month) {
+      data = null;
+      failed = false;
+      _load();
+    }
+    final month = _month;
+    final m = DateTime.parse('$month-01');
+    final label = '${_monthNames[m.month - 1]} ${m.year}';
+    final today = isoDate(DateTime.now());
+    final schoolDays = [for (final d in monthSchoolDays(month)) if (d.compareTo(today) <= 0) d];
+    final d = data;
+    final rows = d == null
+        ? const <({Teacher teacher, int present, int absent, int late, int leave, int unmarked})>[]
+        : ([
+            for (final t in store.teachersInViewedYear)
+              if (_matches(t.name, q))
+                () {
+                  final marked = {for (final x in d.days) if (x.teacherId == t.id) x.date: x.status};
+                  var present = 0, absent = 0, late = 0, leave = 0, unmarked = 0;
+                  for (final day in schoolDays) {
+                    if (approvedLeaveOn(d.leaves, t.id, day) != null) {
+                      leave++;
+                    } else {
+                      switch (marked[day]) {
+                        case 'present':
+                          present++;
+                        case 'absent':
+                          absent++;
+                        case 'late':
+                          late++;
+                        default:
+                          unmarked++;
+                      }
+                    }
+                  }
+                  return (teacher: t, present: present, absent: absent, late: late, leave: leave, unmarked: unmarked);
+                }(),
+          ]..sort((a, b) => a.teacher.name.compareTo(b.teacher.name)));
 
     _Sheet sheet() => (
-          title: 'المتأخرات',
-          meta: [grade.isEmpty ? 'المدرسة' : grade, '${debtors.length} طالب', money(total)],
-          headers: ['#', 'اسم الطالب', 'الشعبة', 'ولي الأمر', 'الجوال', 'المتأخر'],
+          title: 'دوام الموظفين',
+          meta: [label, '${schoolDays.length} يوم دوام'],
+          headers: ['#', 'الموظف', 'الوظيفة', 'حاضر', 'غائب', 'متأخر', 'إجازة', 'بلا رصد'],
           rows: [
-            for (var i = 0; i < debtors.length; i++)
-              [i + 1, debtors[i].r.student.fullName, debtors[i].section, debtors[i].r.student.parentName, formatPhoneDisplay(debtors[i].r.student.parentPhone, debtors[i].r.student.parentPhonePrefix), money(debtors[i].r.due)],
+            for (var i = 0; i < rows.length; i++)
+              [i + 1, rows[i].teacher.name, rows[i].teacher.jobTitle.isEmpty ? 'معلم' : rows[i].teacher.jobTitle, rows[i].present, rows[i].absent, rows[i].late, rows[i].leave, rows[i].unmarked],
           ],
           landscape: false,
         );
 
     return _body([
       _Bar(sheet: sheet, children: [
-        _viewToggle(view, (v) => setState(() => view = v), students: 'المدينون'),
-        _gradePick(store, grade, (g) => setState(() {
-              grade = g;
-              sectionId = '';
-            })),
-        if (sectionId.isNotEmpty)
-          InputChip(label: Text(all.where((s) => s.group.room.id == sectionId).firstOrNull?.group.label ?? ''), onDeleted: () => setState(() => sectionId = '')),
-        _NumLine(label: 'متأخر عليه', suffix: 'فأكثر', value: minDue, onChanged: (v) => setState(() => minDue = v)),
-        if (view == 'students') _Search(onChanged: (v) => setState(() => q = v)),
-      ]),
-      if (debtors.isNotEmpty)
-        _kpis([
-          (label: 'المتأخر', value: money(total), sub: '${shown.length} شعبة', color: _red, onTap: null),
-          (label: 'المدينون', value: '${debtors.length}', sub: 'متوسط ${money((total / debtors.length).round())}', color: _amber, onTap: null),
-          (label: 'الأعلى', value: money(debtors.first.r.due), sub: debtors.first.r.student.fullName, color: null, onTap: () => _openStudent(context, debtors.first.r.student.id)),
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          IconButton(tooltip: 'الشهر السابق', icon: const Icon(Icons.chevron_right), onPressed: () => setState(() => monthOffset--)),
+          Text(label, style: NoonText.style(12.5, weight: FontWeight.w700)),
+          IconButton(tooltip: 'الشهر التالي', icon: const Icon(Icons.chevron_left), onPressed: monthOffset >= 0 ? null : () => setState(() => monthOffset++)),
         ]),
-      if (shown.isEmpty)
-        const NoonEmpty('لا متأخرات')
-      else if (view == 'students')
-        _list([
-          for (final d in debtors)
-            _row(d.r.student.fullName, '${d.section} · ${formatPhoneDisplay(d.r.student.parentPhone, d.r.student.parentPhonePrefix)}', [_val(money(d.r.due), color: _amber)],
-                onTap: () => _openStudent(context, d.r.student.id)),
-        ])
+        _Search(onChanged: (v) => setState(() => q = v)),
+      ]),
+      if (failed)
+        const NoonEmpty('يحتاج اتصالاً بالإنترنت')
+      else if (d == null)
+        const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
+      else if (rows.isEmpty)
+        const NoonEmpty('لا موظفين')
       else
         _list([
-          for (final s in shown)
-            _row(s.group.label, '${s.rows.length} طالب', [_val(money(sum(s.rows)), color: _amber)], onTap: () => setState(() {
-                  sectionId = s.group.room.id;
-                  view = 'students';
-                })),
-          _row('المدرسة', '${debtors.length} طالب', [_val(money(total), color: _amber)]),
+          for (final r in rows)
+            _row(r.teacher.name, [if (r.teacher.jobTitle.isNotEmpty) r.teacher.jobTitle, if (r.leave > 0) 'إجازة ${r.leave}', if (r.unmarked > 0) 'بلا رصد ${r.unmarked}'].join(' · '), [
+              _val('${r.present}', hint: 'حاضر'),
+              _val('${r.absent}', color: r.absent > 0 ? _red : AdminNoon.muted, hint: 'غائب'),
+              _val('${r.late}', color: r.late > 0 ? _amber : AdminNoon.muted, hint: 'متأخر'),
+            ], onTap: () => _openTeacher(context, r.teacher.id)),
         ]),
-    ]);
+    ], onRefresh: () => _load(force: true));
   }
 }
 
