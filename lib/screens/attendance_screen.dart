@@ -110,11 +110,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     setState(() => _draft[studentId] = status);
   }
 
-  void _markAllDraftPresent(String owner, String date, List<Student> list) {
+  /// «الكل حاضر» لغير المرصودين وحدهم: لا يكتب فوق غائب أو مأذون رُصد — كالويب.
+  void _markAllDraftPresent(AppStore store, String owner, String date, List<Student> list) {
     _ensureDraftScope(owner, date);
     setState(() {
       for (final s in list) {
-        _draft[s.id] = 'present';
+        if (_statusOf(store, owner, s.id, date) == null) _draft[s.id] = 'present';
       }
     });
   }
@@ -237,7 +238,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       noon: true,
                       onPressed: list.isEmpty || currentOwner.isEmpty
                           ? null
-                          : () => _markAllDraftPresent(currentOwner, day.dateStr, list),
+                          : () => _markAllDraftPresent(store, currentOwner, day.dateStr, list),
                     ))
               : null,
           secondary: canEdit && dirty
@@ -248,7 +249,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   noon: true,
                   onPressed: list.isEmpty || currentOwner.isEmpty
                       ? null
-                      : () => _markAllDraftPresent(currentOwner, day.dateStr, list),
+                      : () => _markAllDraftPresent(store, currentOwner, day.dateStr, list),
                 )
               : null,
           child: Column(
