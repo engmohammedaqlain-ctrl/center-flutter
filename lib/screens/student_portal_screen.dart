@@ -779,7 +779,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       byMonth.putIfAbsent(nMonthLabel(r.date), () => []).add(r);
     }
 
-    final presentDays = a.records.where((r) => r.status == 'present').take(10).toList();
+    final recentDays = a.records.take(10).toList();
 
     return [
       NHeroCard(
@@ -839,29 +839,24 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
             ],
           ),
       ],
-      // أيام الحضور الأخيرة: كي لا تبقى الصفحة فارغة حين لا غياب
-      if (presentDays.isNotEmpty)
+      // آخر عشرة أيام بحالة كل يوم (حاضر أو غائب أو مأذون): بلاطات متساوية تلتف على الصفوف
+      if (recentDays.isNotEmpty)
         NColumn(
           gap: 8,
           children: [
-            NSectionTitle(title: 'آخر أيام الحضور', count: presentDays.length),
+            const NSubTitle('آخر 10 أيام'),
             Container(
-              clipBehavior: Clip.antiAlias,
+              padding: const EdgeInsets.all(12),
               decoration: nPanelDecoration(),
-              child: NDivided(
-                children: [
-                  for (final r in presentDays)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      child: Row(
-                        children: [
-                          Expanded(child: Text('${nWeekdayLabel(r.date)} · ${nMonthLabel(r.date)}', style: nText(14, weight: FontWeight.w700))),
-                          SizedBox(width: 112, child: Align(alignment: AlignmentDirectional.centerStart, child: _attendanceBadge(r.status))),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
+              child: LayoutBuilder(builder: (context, c) {
+                const gap = 8.0;
+                final w = (c.maxWidth - gap * 4) / 5;
+                return Wrap(
+                  spacing: gap,
+                  runSpacing: gap,
+                  children: [for (final r in recentDays) SizedBox(width: w, child: _dayTile(r))],
+                );
+              }),
             ),
           ],
         ),
@@ -1133,6 +1128,32 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       amount: Text(nMoney(inst.amount)),
       badge: _installmentBadge(inst),
       progress: partial && inst.amount > 0 ? inst.paidAmount / inst.amount : null,
+    );
+  }
+
+  /// بلاطة يوم: اسمه ورقمه وحالته بلونها.
+  Widget _dayTile(AttendanceMark r) {
+    final d = DateTime.tryParse(r.date.length >= 10 ? r.date.substring(0, 10) : r.date);
+    final (label, fg, bg) = switch (r.status) {
+      'present' => ('حاضر', Noon.green700, Noon.green50),
+      'absent' => ('غائب', Noon.red600, Noon.red50),
+      'excused' => ('مأذون', Noon.warn, Noon.sunL),
+      _ => ('متأخر', Noon.warn, Noon.sunL),
+    };
+    const names = ['الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد'];
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(d == null ? '' : names[d.weekday - 1], style: nText(10.5, weight: FontWeight.w500, color: Noon.muted)),
+          const SizedBox(height: 2),
+          Text(d == null ? '' : '${d.day}', style: nText(18, weight: FontWeight.w700, color: Noon.text, height: 1.1)),
+          const SizedBox(height: 3),
+          Text(label, style: nText(10.5, weight: FontWeight.w700, color: fg)),
+        ],
+      ),
     );
   }
 
