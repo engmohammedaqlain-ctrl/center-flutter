@@ -42,24 +42,27 @@ class StudentSubjectsCard extends StatelessWidget {
     final subjectName = subjectRaw.isNotEmpty ? subjectRaw : (group?.name ?? 'مادة');
     final teacher = group == null ? null : store.teacherById(group.teacherId);
 
+    // عمودان ثابتان: المادة عند البداية والمعلم عند النهاية، فتصطف الأسماء كلها
     return Row(
       children: [
-        Flexible(
+        Expanded(
+          flex: 5,
           child: Text(
             subjectName,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: NoonText.style(11, weight: FontWeight.w600),
+            style: NoonText.style(12, weight: FontWeight.w600),
           ),
         ),
         const SizedBox(width: 8),
-        const Spacer(),
-        Flexible(
+        Expanded(
+          flex: 6,
           child: Text(
             teacher?.name ?? '—',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: NoonText.style(11, color: AdminNoon.muted),
+            textAlign: TextAlign.end,
+            style: NoonText.style(12, color: AdminNoon.muted),
           ),
         ),
       ],
