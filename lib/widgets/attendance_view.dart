@@ -15,6 +15,20 @@ const attendanceAbsentColor = Color(0xFFA5484A);
 const attendanceExcusedColor = Color(0xFF9A6700);
 const attendanceUnmarkedColor = Color(0xFFD5DAE2);
 
+/// خانات رصد الطالب.
+const studentMarkOptions = [
+  ('present', 'حاضر', attendancePresentColor),
+  ('absent', 'غائب', attendanceAbsentColor),
+  ('excused', 'مأذون', attendanceExcusedColor),
+];
+
+/// خانات دوام الموظف: التأخر بلون المأذون في كشف الطلاب.
+const staffMarkOptions = [
+  ('present', 'حاضر', attendancePresentColor),
+  ('absent', 'غائب', attendanceAbsentColor),
+  ('late', 'متأخر', attendanceExcusedColor),
+];
+
 /// يوم في الشريط: بلا إطار إلا المختار — اسمه ورقمه ونقطة اكتمال رصده.
 class AttendanceDayChip extends StatelessWidget {
   const AttendanceDayChip({
@@ -238,7 +252,7 @@ class AttendanceStudentRowState extends State<AttendanceStudentRow> {
       ],
     );
 
-    Widget toggle({required bool expand}) => _MarkToggle(
+    Widget toggle({required bool expand}) => AttendanceMarkToggle(
           status: status,
           expand: expand,
           onSet: widget.canEdit ? (s) => _tap(s == status ? null : s) : null,
@@ -280,18 +294,16 @@ class AttendanceStudentRowState extends State<AttendanceStudentRow> {
 }
 
 /// مفتاح رصد مقسّم بثلاث خانات متلاصقة؛ الخانة المختارة تمتلئ بلون حالتها.
-class _MarkToggle extends StatelessWidget {
-  const _MarkToggle({required this.status, required this.expand, required this.onSet});
+/// للطلاب حاضر وغائب ومأذون، ولدوام الموظفين حاضر وغائب ومتأخر ([staffMarkOptions]).
+class AttendanceMarkToggle extends StatelessWidget {
+  const AttendanceMarkToggle({super.key, required this.status, required this.expand, required this.onSet, this.options = studentMarkOptions});
 
   final String? status;
   final bool expand;
   final ValueChanged<String>? onSet;
+  final List<(String, String, Color)> options;
 
-  static const _options = [
-    ('present', 'حاضر', attendancePresentColor),
-    ('absent', 'غائب', attendanceAbsentColor),
-    ('excused', 'مأذون', attendanceExcusedColor),
-  ];
+  List<(String, String, Color)> get _options => options;
 
   @override
   Widget build(BuildContext context) {
