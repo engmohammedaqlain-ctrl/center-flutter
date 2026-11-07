@@ -13,6 +13,7 @@ import '../data/share_inbox.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/admin_ui.dart' show NoonSegment;
 import '../widgets/noon_ui.dart';
 import '../widgets/widgets.dart';
 
@@ -398,6 +399,20 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
   }
 
   @override
+  /// قسم في النموذج: لوحة بيضاء بعنوان، وحقولها بمسافة منتظمة، فلا تتداخل الحقول بصرياً.
+  Widget _formSection(String title, List<Widget> children) => Container(
+        padding: const EdgeInsets.all(14),
+        decoration: nPanelDecoration(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(title, style: nText(14, weight: FontWeight.w700)),
+            const SizedBox(height: 14),
+            NColumn(gap: 16, children: children),
+          ],
+        ),
+      );
+
   Widget build(BuildContext context) {
     final account = _method?.accountNumber ?? '';
     final radius = BorderRadius.circular(NoonRadius.btn);
@@ -407,108 +422,98 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
         title: 'تسديد دفعة',
         footer: Row(
           children: [
-            Expanded(
-              child: NBtn(
-                tone: NBtnTone.ink,
-                label: 'إرسال للمراجعة',
-                expand: true,
-                busy: busy,
-                onTap: _ready ? _submit : null,
-              ),
-            ),
-          ],
-        ),
-        children: [
+          // ثلاثة أقسام متمايزة: المبلغ، ثم التحويل، ثم الإشعار والملاحظة
+          _formSection('المبلغ', [
           if (_kids.length > 1)
-            CheckboxListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              controlAffinity: ListTileControlAffinity.leading,
+            NoonSegment<bool>(
               value: family,
-              onChanged: (v) => setState(() => family = v ?? false),
-              title: Text('عن عدة أبناء', style: nText(13, weight: FontWeight.w700)),
+              options: const [(false, 'ابن واحد'), (true, 'عدة أبناء')],
+              onChanged: (v) => setState(() => family = v),
             ),
           if (family) ...[
-            NField(
-              label: 'المبلغ عن كل ابن (شيكل)',
-              child: Column(
-                children: [
-                  for (final k in _kids)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        children: [
-                          Expanded(child: Text(k.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(13, weight: FontWeight.w700))),
-                          SizedBox(
-                            width: 110,
-                            child: TextField(
-                              controller: _shares[k.id],
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              style: nText(14, weight: FontWeight.w500),
-                              decoration: nInputDecoration(),
-                              onChanged: (_) => setState(() {}),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          NColumn(
+            gap: 8,
+            children: [
+              for (final k in _kids)
+                Container(
+                  padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 8, 8),
+                  decoration: BoxDecoration(
+                    color: Noon.mist2,
+                    borderRadius: BorderRadius.circular(NoonRadius.btn),
+                    border: Border.all(color: Noon.line),
+                  ),
+                  child: Row(
                     children: [
-                      Text('المجموع', style: nText(13, weight: FontWeight.w700)),
-                      Text('${trimNum(_familyTotal)} شيكل', style: nText(13, weight: FontWeight.w700)),
+                      NInitial(name: k.name, size: 30, fontSize: 12),
+                      const SizedBox(width: 10),
+                      Expanded(child: Text(k.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(14, weight: FontWeight.w700))),
+                      SizedBox(
+                        width: 120,
+                        child: TextField(
+                          controller: _shares[k.id],
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          textAlign: TextAlign.center,
+                          style: nText(15, weight: FontWeight.w700),
+                          decoration: nInputDecoration(hint: '0', dense: true).copyWith(suffixText: 'شيكل'),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                      ),
                     ],
                   ),
-                ],
+                ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(color: Noon.mist, borderRadius: BorderRadius.circular(NoonRadius.btn)),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('المجموع المحوَّل', style: nText(13, weight: FontWeight.w700)),
+                    Text('${trimNum(_familyTotal)} شيكل', style: nText(17, weight: FontWeight.w700, color: Noon.ink)),
+                  ],
+                ),
               ),
-            ),
-            NField(
-              label: 'اسم المحوِّل',
-              child: TextField(
-                controller: sender,
-                style: nText(14, weight: FontWeight.w500),
-                decoration: nInputDecoration(),
-                onChanged: (_) => setState(() {}),
-              ),
-            ),
+            ],
+          ),
           ] else ...[
-            NField(
-              label: 'المبلغ',
-              child: NColumn(
-                gap: 10,
-                children: [
-                  TextField(
-                    controller: amount,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    textAlign: TextAlign.center,
-                    style: nText(28, weight: FontWeight.w700),
-                    decoration: nInputDecoration(hint: '0').copyWith(suffixText: 'شيكل'),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  if (widget.suggestedAmount > 0)
-                    Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(NoonRadius.btn),
-                        onTap: () => setState(() => amount.text = trimNum(widget.suggestedAmount)),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                          decoration: BoxDecoration(
-                            color: Noon.mist,
-                            borderRadius: BorderRadius.circular(NoonRadius.btn),
-                            border: Border.all(color: Noon.line),
-                          ),
-                          child: Text(
-                            'المستحق الآن ${trimNum(widget.suggestedAmount)} شيكل',
-                            style: nText(12, weight: FontWeight.w700, color: Noon.ink),
-                          ),
+          NField(
+            label: 'المبلغ',
+            child: NColumn(
+              gap: 10,
+              children: [
+                TextField(
+                  controller: amount,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  textAlign: TextAlign.center,
+                  style: nText(28, weight: FontWeight.w700),
+                  decoration: nInputDecoration(hint: '0').copyWith(suffixText: 'شيكل'),
+                  onChanged: (_) => setState(() {}),
+                ),
+                if (widget.suggestedAmount > 0)
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(NoonRadius.btn),
+                      onTap: () => setState(() => amount.text = trimNum(widget.suggestedAmount)),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: Noon.mist,
+                          borderRadius: BorderRadius.circular(NoonRadius.btn),
+                          border: Border.all(color: Noon.line),
+                        ),
+                        child: Text(
+                          'المستحق الآن ${trimNum(widget.suggestedAmount)} شيكل',
+                          style: nText(12, weight: FontWeight.w700, color: Noon.ink),
                         ),
                       ),
                     ),
-                ],
-              ),
+                  ),
+              ],
             ),
+          ),
           ],
+          ]),
+          _formSection('بيانات التحويل', [
           NField(
             label: 'حوّل إلى',
             hint: 'تُحسب الدفعة بعد مراجعة المالية للإشعار',
@@ -552,6 +557,31 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
               ],
             ),
           ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: NField(
+                  label: 'اسم المحوِّل',
+                  child: TextField(
+                    controller: sender,
+                    style: nText(14, weight: FontWeight.w500),
+                    decoration: nInputDecoration(),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                )),
+                const SizedBox(width: 12),
+                Expanded(child: NField(
+                  label: 'تاريخ التحويل',
+                  child: NFieldBox(
+                    onTap: _pickDate,
+                    trailing: Icons.calendar_today_outlined,
+                    child: Text(date, textDirection: TextDirection.ltr, textAlign: TextAlign.right),
+                  ),
+                )),
+              ],
+            ),
+          ]),
+          _formSection('الإشعار والملاحظة', [
           NField(
             label: 'صورة الإشعار',
             child: LayoutBuilder(
@@ -621,39 +651,6 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
               },
             ),
           ),
-          if (family)
-            NField(
-              label: 'تاريخ التحويل',
-              child: NFieldBox(
-                onTap: _pickDate,
-                trailing: Icons.calendar_today_outlined,
-                child: Text(date, textDirection: TextDirection.ltr, textAlign: TextAlign.right),
-              ),
-            )
-          else
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: NField(
-              label: 'اسم المحوِّل',
-              child: TextField(
-                controller: sender,
-                style: nText(14, weight: FontWeight.w500),
-                decoration: nInputDecoration(),
-                onChanged: (_) => setState(() {}),
-              ),
-            )),
-                const SizedBox(width: 12),
-                Expanded(child: NField(
-              label: 'تاريخ التحويل',
-              child: NFieldBox(
-                onTap: _pickDate,
-                trailing: Icons.calendar_today_outlined,
-                child: Text(date, textDirection: TextDirection.ltr, textAlign: TextAlign.right),
-              ),
-            )),
-              ],
-            ),
           NField(
             label: 'ملاحظة',
             child: TextField(
@@ -664,6 +661,7 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
               decoration: nInputDecoration(hint: 'مثال: عن قسط شهر 10'),
             ),
           ),
+          ]),
           if (error.isNotEmpty) NNotice(text: error, sun: true),
         ],
       ),
