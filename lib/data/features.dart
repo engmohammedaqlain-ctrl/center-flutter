@@ -241,6 +241,7 @@ const sectionFeature = <String, String>{
   'attendance': 'attendance',
   'evaluations': 'evaluations',
   'moodle': 'moodle',
+  'timetable': 'timetable',
 };
 
 bool isFeatureKey(String key) => featureKeys.contains(key);

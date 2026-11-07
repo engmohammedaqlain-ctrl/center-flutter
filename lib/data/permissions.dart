@@ -15,7 +15,7 @@ class SectionDef {
 
 const accessSections = <SectionDef>[
   SectionDef('students', 'الطلاب'),
-  SectionDef('classes', 'الصفوف والجداول'),
+  SectionDef('classes', 'الصفوف والشعب'),
   SectionDef('attendance', 'الحضور والغياب'),
   SectionDef('evaluations', 'العلامات'),
   SectionDef(
@@ -25,6 +25,7 @@ const accessSections = <SectionDef>[
     parent: 'evaluations',
   ),
   SectionDef('moodle', 'المودل'),
+  SectionDef('timetable', 'الجداول'),
   SectionDef('finance', 'المالية'),
   SectionDef('finance.expenses', 'المصروفات وصرف الأجور', hint: 'يكشف رواتب الموظفين', parent: 'finance'),
   SectionDef('finance.collect', 'تحصيل الدفعات وإصدار السندات', parent: 'finance'),
@@ -58,6 +59,10 @@ const financeActions = ['finance.collect', 'finance.cancel', 'finance.discount',
 
 /// علامة القائمة بعد فصل أفعال المالية — `ACCESS_FORMAT_MARKER`.
 const accessFormatMarker = 'access:v2';
+
+/// علامة القائمة بعد إضافة «الجداول» — `TIMETABLE_FORMAT_MARKER`: قائمة بلا العلامة حُفظت قبله
+/// فترثه من قالب دورها، فلا يحتاج كل مدير حُفظت قائمته أن يمنحه له مدير آخر.
+const timetableFormatMarker = 'access:v3';
 
 SectionDef? sectionDef(String id) {
   for (final s in accessSections) {
@@ -139,7 +144,7 @@ const _legacyCapabilitySections = <String, List<String>>{
 List<String> normalizeSections(Iterable<String> stored) {
   final out = <String>{};
   for (final entry in stored) {
-    if (entry == accessFormatMarker) continue;
+    if (entry == accessFormatMarker || entry == timetableFormatMarker) continue;
     if (sectionDef(entry) != null) {
       out.add(entry);
       continue;
@@ -153,16 +158,19 @@ List<String> normalizeSections(Iterable<String> stored) {
 }
 
 /// القائمة كما تُحفظ على الحساب — مع علامة v2.
-List<String> serializeSections(Iterable<String> sections) => [...normalizeSections(sections), accessFormatMarker];
+List<String> serializeSections(Iterable<String> sections) => [...normalizeSections(sections), accessFormatMarker, timetableFormatMarker];
 
 /// التبويبات الفعلية: قائمته الخاصة، أو قالب دوره.
 /// قائمة بلا `access:v2` مع تبويب المالية ترث أفعال قالب الدور.
 List<String> effectiveSections(List<String>? stored, String? role) {
   if (stored == null) return [...roleDefinition(role).sections];
   final sections = normalizeSections(stored);
-  if (stored.contains(accessFormatMarker) || !sections.contains('finance')) return sections;
-  final inherited = roleDefinition(role).sections.where(financeActions.contains);
-  return normalizeSections([...sections, ...inherited]);
+  final template = roleDefinition(role).sections;
+  final inherited = <String>[
+    if (!stored.contains(accessFormatMarker) && sections.contains('finance')) ...template.where(financeActions.contains),
+    if (!stored.contains(timetableFormatMarker) && template.contains('timetable')) 'timetable',
+  ];
+  return inherited.isEmpty ? sections : normalizeSections([...sections, ...inherited]);
 }
 
 bool roleCanAccess(String? role, String section) => roleDefinition(role).sections.contains(section);

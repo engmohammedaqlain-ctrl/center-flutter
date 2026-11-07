@@ -226,7 +226,7 @@ Future<void> _assignTeacher(BuildContext context, Classroom room) async {
 ///
 /// كل مادة في سطرها ومعلمها أمامها. المادة بلا معلم تُرفع عن الشعبة عند الحفظ،
 /// والمسندة تُنشئ مجموعتها تلقائياً ويُربط بها طلاب الشعبة بلا رسوم.
-Future<void> _assignSubjectTeachers(BuildContext context, Classroom room) async {
+Future<void> assignSubjectTeachers(BuildContext context, Classroom room) async {
   final store = StoreScope.of(context);
   await showModalBottomSheet<void>(
     context: context,
@@ -868,7 +868,7 @@ Future<void> _showRoomActionsSheet(
     case 'assign':
       await _assignTeacher(context, room);
     case 'subjects':
-      await _assignSubjectTeachers(context, room);
+      await assignSubjectTeachers(context, room);
     case 'schedule':
       await showScheduleFileSheet(context, kind: 'room', ownerId: room.id, title: 'جدول ${room.gradeLevel} ${room.name}'.trim());
     case 'delete':
@@ -980,7 +980,7 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
                   onSelected: (v) {
                     if (v == 'edit') _openRoomForm(context, room);
                     if (v == 'assign') _assignTeacher(context, room);
-                    if (v == 'subjects') _assignSubjectTeachers(context, room);
+                    if (v == 'subjects') assignSubjectTeachers(context, room);
                     if (v == 'delete') {
                       _confirmDeleteRoom(context, room, onDeleted: () => Navigator.pop(context));
                     }
@@ -1273,7 +1273,7 @@ class _SubjectTeachersCardState extends State<_SubjectTeachersCard> {
                         color: AppColors.amberDark,
                         background: AppColors.amberSoft,
                         border: AppColors.amberBorder,
-                        onTap: () => _assignSubjectTeachers(context, widget.room),
+                        onTap: () => assignSubjectTeachers(context, widget.room),
                       ),
                     ],
                     if (canExpand)

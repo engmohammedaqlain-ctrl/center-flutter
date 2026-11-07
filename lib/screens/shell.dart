@@ -21,6 +21,7 @@ import 'developer_settings_screen.dart';
 import 'evaluations_screen.dart';
 import 'finance_screen.dart';
 import 'moodle_admin_screen.dart';
+import 'timetable_screen.dart';
 import 'notes_parts.dart';
 import 'settings_screen.dart';
 import 'students_screen.dart';
@@ -235,6 +236,7 @@ class _AppShellState extends State<AppShell> {
             reportGroups(store).isNotEmpty ||
             (store.isFeatureOn('evaluations') && store.can('evaluations')) ||
             (store.isFeatureOn('moodle') && store.can('moodle')) ||
+            (store.isFeatureOn('timetable') && store.can('timetable')) ||
             store.isMasterAdmin ||
             AppUpdater.instance.supported ||
             HomeShortcut.available;
@@ -261,6 +263,10 @@ class _AppShellState extends State<AppShell> {
             onOpenMoodle: () {
               Navigator.of(context).pop();
               _openPage(const MoodleAdminScreen());
+            },
+            onOpenTimetable: () {
+              Navigator.of(context).pop();
+              _openPage(const TimetableScreen());
             },
             onOpenReports: () {
               Navigator.of(context).pop();
@@ -334,6 +340,7 @@ class _SideMenu extends StatelessWidget {
     required this.onClose,
     required this.onOpenEvaluations,
     required this.onOpenMoodle,
+    required this.onOpenTimetable,
     required this.onOpenReports,
     required this.onOpenSettings,
     required this.onOpenDeveloper,
@@ -344,6 +351,7 @@ class _SideMenu extends StatelessWidget {
   final VoidCallback onClose;
   final VoidCallback onOpenEvaluations;
   final VoidCallback onOpenMoodle;
+  final VoidCallback onOpenTimetable;
   final VoidCallback onOpenReports;
   final ValueChanged<String?> onOpenSettings;
   final VoidCallback onOpenDeveloper;
@@ -425,7 +433,8 @@ class _SideMenu extends StatelessWidget {
 
     final canSettings = store.canOpenSection('settings');
     final showAcademic = (store.isFeatureOn('evaluations') && store.can('evaluations')) ||
-        (store.isFeatureOn('moodle') && store.can('moodle'));
+        (store.isFeatureOn('moodle') && store.can('moodle')) ||
+        (store.isFeatureOn('timetable') && store.can('timetable'));
 
     return Drawer(
       backgroundColor: Colors.white,
@@ -512,6 +521,13 @@ class _SideMenu extends StatelessWidget {
                       label: 'المودل',
                       color: AppColors.amber,
                       onTap: onOpenMoodle,
+                    ),
+                  if (store.isFeatureOn('timetable') && store.can('timetable'))
+                    item(
+                      icon: Icons.calendar_view_week_rounded,
+                      label: 'الجداول',
+                      color: AppColors.amber,
+                      onTap: onOpenTimetable,
                     ),
                 ],
                 if (canSettings) ...[

@@ -8129,7 +8129,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   /// حصص المادة في شعبتها الأسبوعية: تصل الرواتب ونسبة المعلم.
-  void setGroupWeeklyPeriods(String id, int periods) {
+  void setGroupWeeklyPeriods(String id, int? periods) {
     final i = groups.indexWhere((g) => g.id == id);
     if (i < 0 || groups[i].weeklyPeriods == periods) return;
     final next = Group.fromCloud({

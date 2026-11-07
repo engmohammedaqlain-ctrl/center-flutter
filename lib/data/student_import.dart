@@ -308,35 +308,58 @@ String _esc(String v) =>
     v.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 
 /// ملف xlsx بسيط بورقة واحدة: كل الخلايا نص، فلا يسقط Excel أصفار الهوية والجوال.
-Uint8List writeXlsx(List<List<String>> rows, {String sheetName = 'الطلاب'}) {
-  final data = StringBuffer();
-  for (var r = 0; r < rows.length; r++) {
-    data.write('<row r="${r + 1}">');
-    for (var c = 0; c < rows[r].length; c++) {
-      data.write('<c r="${_columnName(c)}${r + 1}" t="inlineStr"><is><t xml:space="preserve">${_esc(rows[r][c])}</t></is></c>');
-    }
-    data.write('</row>');
+Uint8List writeXlsx(List<List<String>> rows, {String sheetName = 'الطلاب'}) => writeXlsxBook({sheetName: rows});
+
+/// اسم ورقة يقبله Excel: 31 حرفاً بلا الرموز الممنوعة، وبلا تكرار.
+String _sheetName(String raw, Set<String> used) {
+  var base = raw.replaceAll(RegExp(r'[\\/?*\[\]:]'), '-').trim();
+  if (base.isEmpty) base = 'ورقة';
+  if (base.length > 28) base = base.substring(0, 28);
+  var name = base;
+  for (var i = 2; !used.add(name); i++) {
+    name = '$base $i';
   }
+  return name;
+}
+
+/// ملف xlsx بأوراق: اسم الورقة ← صفوفها، وكل الخلايا نص.
+Uint8List writeXlsxBook(Map<String, List<List<String>>> sheets) {
   const head = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  const main = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+  const rel = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  final used = <String>{};
+  final names = [for (final k in sheets.keys) _sheetName(k, used)];
+  final bodies = sheets.values.toList();
   final files = <String, String>{
     '[Content_Types].xml': '$head<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
         '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
         '<Default Extension="xml" ContentType="application/xml"/>'
         '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
-        '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        '${[for (var i = 0; i < names.length; i++) '<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'].join()}'
         '</Types>',
     '_rels/.rels': '$head<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+        '<Relationship Id="rId1" Type="$rel/officeDocument" Target="xl/workbook.xml"/>'
         '</Relationships>',
-    'xl/workbook.xml': '$head<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-        '<sheets><sheet name="${_esc(sheetName)}" sheetId="1" r:id="rId1"/></sheets></workbook>',
+    'xl/workbook.xml': '$head<workbook xmlns="$main" xmlns:r="$rel"><sheets>'
+        '${[for (var i = 0; i < names.length; i++) '<sheet name="${_esc(names[i])}" sheetId="${i + 1}" r:id="rId${i + 1}"/>'].join()}'
+        '</sheets></workbook>',
     'xl/_rels/workbook.xml.rels': '$head<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+        '${[for (var i = 0; i < names.length; i++) '<Relationship Id="rId${i + 1}" Type="$rel/worksheet" Target="worksheets/sheet${i + 1}.xml"/>'].join()}'
         '</Relationships>',
-    'xl/worksheets/sheet1.xml': '$head<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-        '<sheetViews><sheetView rightToLeft="1" workbookViewId="0"/></sheetViews><sheetData>$data</sheetData></worksheet>',
   };
+  for (var s = 0; s < names.length; s++) {
+    final rows = bodies[s];
+    final data = StringBuffer();
+    for (var r = 0; r < rows.length; r++) {
+      data.write('<row r="${r + 1}">');
+      for (var c = 0; c < rows[r].length; c++) {
+        data.write('<c r="${_columnName(c)}${r + 1}" t="inlineStr"><is><t xml:space="preserve">${_esc(rows[r][c])}</t></is></c>');
+      }
+      data.write('</row>');
+    }
+    files['xl/worksheets/sheet${s + 1}.xml'] = '$head<worksheet xmlns="$main">'
+        '<sheetViews><sheetView rightToLeft="1" workbookViewId="0"/></sheetViews><sheetData>$data</sheetData></worksheet>';
+  }
   final archive = Archive();
   files.forEach((name, text) {
     final encoded = utf8.encode(text);
