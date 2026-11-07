@@ -57,89 +57,119 @@ class _ParentRequestCardState extends State<ParentRequestCard> {
   @override
   Widget build(BuildContext context) => _card(widget.request, store.can('finance.collect'));
 
+  /// سطر «العنوان: القيمة» في تفاصيل الطلب.
+  Widget _kv(String label, String value) => value.trim().isEmpty
+      ? const SizedBox.shrink()
+      : Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(width: 74, child: Text(label, style: const TextStyle(color: AppColors.muted, fontSize: 12))),
+              Expanded(child: Text(value, style: const TextStyle(color: AppColors.text, fontSize: 12.5, height: 1.35))),
+            ],
+          ),
+        );
+
+  /// دفعة ولي أمر: الاسم والمبلغ وحالته، فتفاصيل التحويل، فصورة الإشعار بعرض البطاقة، وأزرار القرار بعرض متساوٍ.
+  /// بلا إطار خاص: تُوضع داخل لوحة الطلبات فلا يصير صندوقاً داخل صندوق.
   Widget _card(PaymentRequest r, bool canDecide) {
     final approved = r.status == 'approved';
+    final sent = (r.createdAt ?? '').replaceFirst('T', ' ').split('.').first;
+    final transferDay = r.transferDate.split('T').first;
+    final sentDay = isoDate((DateTime.tryParse(r.createdAt ?? '') ?? DateTime.now()).toLocal());
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: AppCard(
-        padding: const EdgeInsets.all(11),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      r.studentName.isEmpty ? 'طالب' : r.studentName,
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.heading),
+                    ),
+                    const SizedBox(height: 2),
+                    Text('من ${r.senderName}', style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(money(r.amount), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18, color: AppColors.heading)),
+                  const SizedBox(height: 4),
+                  _StatusPill(status: r.status, label: r.statusLabel),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Divider(height: 1, thickness: 1, color: AppColors.line),
+          const SizedBox(height: 6),
+          _kv('إلى', r.transferChannel),
+          _kv('المرجع', r.referenceNumber),
+          if (transferDay.isNotEmpty && transferDay != sentDay) _kv('تاريخ التحويل', transferDay),
+          _kv('ملاحظة', r.notes),
+          _kv('أُرسل', sent),
+          if (r.status != 'pending') ...[
+            const SizedBox(height: 6),
+            Text(
+              [
+                approved ? 'قبله' : 'رفضه',
+                if (r.decidedByName.isNotEmpty) r.decidedByName,
+                if ((r.decidedAt ?? '').isNotEmpty) (r.decidedAt ?? '').split('T').first,
+                if (r.rejectionReason.isNotEmpty) '— ${r.rejectionReason}',
+              ].join(' '),
+              style: TextStyle(
+                color: approved ? AppColors.success : AppColors.danger,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          if (r.imagePaths.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: () => setState(() => open = !open),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.image_outlined, size: 18, color: AppColors.navy),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'إشعار التحويل (${r.imagePaths.length})',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.navy),
+                      ),
+                    ),
+                    Icon(open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: AppColors.muted),
+                  ],
+                ),
+              ),
+            ),
+            if (open) _RequestImages(store: store, request: r),
+          ],
+          if (r.status == 'pending' && canDecide) ...[
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
-                  child: Text(
-                    r.studentName.isEmpty ? 'طالب' : r.studentName,
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5, color: AppColors.text),
-                  ),
+                  child: PrimaryButton(label: 'قبول', color: AppColors.success, expand: true, height: 46, onPressed: () => _approve(r)),
                 ),
-                Text(money(r.amount), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, fontFamily: 'monospace')),
-                const SizedBox(width: 8),
-                _StatusPill(status: r.status, label: r.statusLabel),
+                const SizedBox(width: 10),
+                Expanded(child: GhostButton(label: 'رفض', height: 46, onPressed: () => _reject(r))),
               ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              [
-                'من ${r.senderName}',
-                if (r.transferChannel.isNotEmpty) 'إلى ${r.transferChannel}',
-                // تاريخ التحويل حين يختلف عن يوم الإرسال وحده
-                if (r.transferDate.isNotEmpty &&
-                    r.transferDate.split('T').first !=
-                        isoDate((DateTime.tryParse(r.createdAt ?? '') ?? DateTime.now()).toLocal()))
-                  'تحويل ${r.transferDate.split('T').first}',
-                if (r.referenceNumber.isNotEmpty) 'مرجع ${r.referenceNumber}',
-              ].join('  ·  '),
-              style: const TextStyle(color: AppColors.text, fontSize: 11.5, height: 1.4),
-            ),
-            if (r.notes.isNotEmpty) ...[
-              const SizedBox(height: 2),
-              Text(r.notes, style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-            ],
-            const SizedBox(height: 2),
-            Text(
-              'أُرسل ${(r.createdAt ?? '').replaceFirst('T', ' ').split('.').first}',
-              style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
-            ),
-            if (r.status != 'pending') ...[
-              const SizedBox(height: 4),
-              Text(
-                [
-                  approved ? 'قبله' : 'رفضه',
-                  if (r.decidedByName.isNotEmpty) r.decidedByName,
-                  if ((r.decidedAt ?? '').isNotEmpty) (r.decidedAt ?? '').split('T').first,
-                  if (r.rejectionReason.isNotEmpty) '— ${r.rejectionReason}',
-                ].join(' '),
-                style: TextStyle(
-                  color: approved ? AppColors.success : AppColors.danger,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                GhostButton(
-                  label: '${open ? 'إخفاء' : 'الإشعار'} (${r.imagePaths.length})',
-                  icon: Icons.image_outlined,
-                  onPressed: () => setState(() => open = !open),
-                ),
-                const Spacer(),
-                if (r.status == 'pending' && canDecide) ...[
-                  PrimaryButton(label: 'قبول', color: AppColors.success, onPressed: () => _approve(r)),
-                  const SizedBox(width: 8),
-                  GhostButton(label: 'رفض', onPressed: () => _reject(r)),
-                ],
-              ],
-            ),
-            if (open) ...[
-              const SizedBox(height: 8),
-              _RequestImages(store: store, request: r),
-            ],
           ],
-        ),
+        ],
       ),
     );
   }
@@ -202,17 +232,24 @@ class _RequestImagesState extends State<_RequestImages> {
         if (list.every((s) => s == null)) {
           return const Text('تعذّر تحميل الصور (يحتاج اتصالاً)', style: TextStyle(color: AppColors.danger, fontSize: 11));
         }
-        return Wrap(
-          spacing: 8,
-          runSpacing: 8,
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             for (final src in list)
               if (src != null)
-                GestureDetector(
-                  onTap: () => _zoom(src),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(Corner.box),
-                    child: Image.memory(base64Decode(src.split(',').last), height: 96, fit: BoxFit.contain),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: GestureDetector(
+                    onTap: () => _zoom(src),
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: AppColors.sunken,
+                        borderRadius: BorderRadius.circular(Corner.box),
+                        border: Border.all(color: AppColors.line),
+                      ),
+                      child: Image.memory(base64Decode(src.split(',').last), height: 240, fit: BoxFit.contain),
+                    ),
                   ),
                 ),
           ],

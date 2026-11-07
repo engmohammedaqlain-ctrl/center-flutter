@@ -1382,58 +1382,93 @@ class _FinanceScreenState extends State<FinanceScreen> {
           child: Text(text, style: NoonText.style(10.5, weight: FontWeight.w700, color: color)),
         );
 
+    Widget kv(String label, String value) => value.trim().isEmpty
+        ? const SizedBox.shrink()
+        : Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(width: 74, child: Text(label, style: NoonText.style(12, color: AdminNoon.muted))),
+                Expanded(child: Text(value, style: NoonText.style(12.5, height: 1.35))),
+              ],
+            ),
+          );
+
     Widget requestCard(FinanceRequest request) {
       final pendingRow = request.status == 'pending';
       final approved = request.status == 'approved';
-      return LedgerRow(
-        icon: kindIcon(request.kind),
-        tone: pendingRow ? LedgerTone.partial : (approved ? LedgerTone.paid : LedgerTone.due),
-        title: Text(financeRequestLabel(request.kind)),
-        subtitle: Text(request.summary.isNotEmpty ? request.summary : request.studentName),
-        amount: const SizedBox.shrink(),
-        badge: pendingRow
-            ? statusChip('بانتظار القرار', AppColors.amberDark)
-            : statusChip(approved ? 'اعتُمد' : 'مرفوض', approved ? AppColors.success : AppColors.danger),
-        notes: [
-          if (request.studentName.isNotEmpty && request.summary.isNotEmpty)
-            Text(request.studentName, style: NoonText.style(11.5, weight: FontWeight.w700, color: AdminNoon.ink)),
-          if (request.reason.isNotEmpty) Text('السبب: ${request.reason}', style: NoonText.style(11.5, color: AdminNoon.muted)),
-          Text(
-            [
-              if (request.requestedByName.isNotEmpty) 'من ${request.requestedByName}',
-              if ((request.createdAt ?? '').isNotEmpty) (request.createdAt ?? '').split('T').first,
-            ].join('  ·  '),
-            style: NoonText.style(10.5, color: AdminNoon.faint),
-          ),
-          if (!pendingRow && request.decisionNote.isNotEmpty)
-            Text('— ${request.decisionNote}', style: NoonText.style(11, color: approved ? AppColors.success : AppColors.danger)),
-        ],
-        footer: pendingRow
-            ? (store.isFinanceAdmin
-                ? Row(
+      final day = (request.createdAt ?? '').split('T').first;
+      return Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: PrimaryButton(
-                          label: 'قبول',
-                          color: AppColors.success,
-                          expand: true,
-                          onPressed: () async {
-                            try {
-                              await runBusyOp(context, () => store.approveFinanceRequest(request.id), message: 'جارٍ الحسم...');
-                            } on StoreException catch (e) {
-                              if (context.mounted) showAppSnack(context, e.message, error: true);
-                            }
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: GhostButton(label: 'رفض', onPressed: () => _rejectFinanceRequest(context, store, request)),
-                      ),
+                      Text(financeRequestLabel(request.kind), style: NoonText.style(15, weight: FontWeight.w700)),
+                      if (request.studentName.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(request.studentName, style: NoonText.style(12.5, color: AdminNoon.muted)),
+                      ],
                     ],
-                  )
-                : Text('بانتظار المدير', style: NoonText.style(11, weight: FontWeight.w600, color: AppColors.amberDark)))
-            : null,
+                  ),
+                ),
+                statusChip(
+                  pendingRow ? 'بانتظار القرار' : (approved ? 'اعتُمد' : 'مرفوض'),
+                  pendingRow ? AppColors.amberDark : (approved ? AppColors.success : AppColors.danger),
+                ),
+              ],
+            ),
+            if (request.summary.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(request.summary, style: NoonText.style(13, height: 1.4)),
+            ],
+            const SizedBox(height: 8),
+            Divider(height: 1, thickness: 1, color: AdminNoon.line),
+            const SizedBox(height: 6),
+            kv('السبب', request.reason),
+            kv('من', request.requestedByName),
+            kv('التاريخ', day),
+            if (!pendingRow && request.decisionNote.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text('— ${request.decisionNote}', style: NoonText.style(12, weight: FontWeight.w600, color: approved ? AppColors.success : AppColors.danger)),
+              ),
+            if (pendingRow) ...[
+              const SizedBox(height: 12),
+              if (store.isFinanceAdmin)
+                Row(
+                  children: [
+                    Expanded(
+                      child: PrimaryButton(
+                        label: 'قبول',
+                        color: AppColors.success,
+                        expand: true,
+                        height: 46,
+                        onPressed: () async {
+                          try {
+                            await runBusyOp(context, () => store.approveFinanceRequest(request.id), message: 'جارٍ الحسم...');
+                          } on StoreException catch (e) {
+                            if (context.mounted) showAppSnack(context, e.message, error: true);
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(child: GhostButton(label: 'رفض', height: 46, onPressed: () => _rejectFinanceRequest(context, store, request))),
+                  ],
+                )
+              else
+                Text('بانتظار المدير', style: NoonText.style(12, weight: FontWeight.w600, color: AppColors.amberDark)),
+            ],
+          ],
+        ),
       );
     }
 
