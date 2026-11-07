@@ -134,7 +134,7 @@ List<SectionAttendance> attendanceBySection(AppStore store, List<SectionGroup> g
         rows: [
           for (final s in g.students)
             () {
-              final days = dailyAttendance(recordsOf[s.id] ?? const [], sessions);
+              final days = dailyAttendance(recordsOf[s.id] ?? const [], sessions, calendar: store.settings.calendar);
               int count(String st) => days.where((d) => d.status == st).length;
               return StudentAttendance(
                 student: s,

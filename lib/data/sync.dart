@@ -145,6 +145,7 @@ const tableAllowedColumns = <String, List<String>>{
     'housing_status',
     'original_area',
     'health_status',
+    'orphan_status',
     'medical_condition',
     'parent_job',
     'parent_secondary_phone',

@@ -91,7 +91,7 @@ class StudentDetailScreen extends StatelessWidget {
         final insts = store.installments.where((i) => i.studentId == student.id).toList()..sort(compareInstallments);
         final rawMarks = store.attendance.where((a) => a.studentId == student.id).toList();
         // الإحصاء بالأيام لا بالسجلات: كشف شعبة + مواد كان يضاعف الغياب
-        final days = dailyAttendance(rawMarks, store.sessions);
+        final days = dailyAttendance(rawMarks, store.sessions, calendar: store.settings.calendar);
         final marks = [
           for (final d in days)
             AttendanceMark(id: d.date, studentId: student.id, date: d.date, status: d.status),

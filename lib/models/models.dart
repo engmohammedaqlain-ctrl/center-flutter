@@ -488,6 +488,7 @@ class Student {
     this.housingStatus = 'ملك',
     this.originalArea = '',
     this.healthStatus = 'سليم',
+    this.orphanStatus = '',
     this.medicalCondition = '',
     this.parentJob = '',
     this.parentSecondaryPhone = '',
@@ -548,6 +549,9 @@ class Student {
   String housingStatus;
   String originalArea;
   String healthStatus;
+
+  /// `father` أو `mother` أو `both`، والفارغ غير يتيم — `orphan_status`.
+  String orphanStatus;
   String medicalCondition;
   String parentJob;
   String parentSecondaryPhone;
@@ -639,6 +643,7 @@ class Student {
       'housing_status': housingStatus,
       'original_area': originalArea,
       'health_status': healthStatus,
+      'orphan_status': orphanStatus.isEmpty ? null : orphanStatus,
       'medical_condition': medicalCondition,
       'parent_job': parentJob,
       'parent_secondary_phone': parentSecondaryPhone,
@@ -718,6 +723,7 @@ class Student {
       housingStatus: '${m['housing_status'] ?? 'ملك'}',
       originalArea: '${m['original_area'] ?? ''}',
       healthStatus: '${m['health_status'] ?? 'سليم'}',
+      orphanStatus: '${m['orphan_status'] ?? ''}',
       medicalCondition: '${m['medical_condition'] ?? ''}',
       parentJob: '${m['parent_job'] ?? ''}',
       parentSecondaryPhone: '${m['parent_secondary_phone'] ?? ''}',

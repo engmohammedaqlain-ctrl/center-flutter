@@ -3,6 +3,7 @@
 library;
 
 import '../models/models.dart';
+import 'school_calendar.dart';
 import 'academic_matching.dart';
 import 'app_settings.dart';
 import 'attendance_days.dart';
@@ -171,7 +172,7 @@ Map<String, int> absentDaysThisYear(AppStore store) {
     if (ids.contains(r.sessionId)) byStudent.putIfAbsent(r.studentId, () => []).add(r);
   }
   return {
-    for (final e in byStudent.entries) e.key: dailyAttendance(e.value, sessions).where((d) => d.status == 'absent').length,
+    for (final e in byStudent.entries) e.key: dailyAttendance(e.value, sessions, calendar: store.settings.calendar).where((d) => d.status == 'absent').length,
   };
 }
 

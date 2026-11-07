@@ -5,14 +5,17 @@
 library;
 
 import '../models/models.dart';
+import 'school_calendar.dart';
 
 const _dayStatusRank = {'present': 1, 'excused': 2, 'absent': 3};
 
 /// حضور مجمّع يوماً بيوم.
 List<({String date, String status})> dailyAttendance(
   Iterable<AttendanceMark> records,
-  Iterable<ClassSession> sessions,
-) {
+  Iterable<ClassSession> sessions, {
+  // يوم العطلة لا يُحسب غياباً ولا حضوراً
+  Iterable<CalendarEvent> calendar = const [],
+}) {
   final sessionById = {for (final s in sessions) s.id: s};
   final byDay = <String, ({String status, int at, bool room})>{};
 
@@ -21,7 +24,7 @@ List<({String date, String status})> dailyAttendance(
     final date = session != null && session.sessionDate.isNotEmpty
         ? session.sessionDate
         : (r.date.isNotEmpty ? r.date : (r.createdAt ?? '').split('T').first);
-    if (date.isEmpty) continue;
+    if (date.isEmpty || holidayEventOn(calendar, date) != null) continue;
 
     final parsed = DateTime.tryParse(r.updatedAt ?? r.createdAt ?? '');
     final candidate = (

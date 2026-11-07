@@ -23,6 +23,8 @@ import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import 'developer_settings_screen.dart';
 import 'grade_plan_screen.dart';
+import 'calendar_settings_tab.dart';
+import 'discount_settings_tab.dart';
 import 'payment_methods_tab.dart';
 import 'school_settings_tab.dart';
 import 'settings_forms.dart';
@@ -73,7 +75,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static const _allTabs = [
     _Tab('school', Icons.apartment_outlined, 'المدرسة'),
     _Tab('academic_years', Icons.calendar_month_outlined, 'الأعوام الدراسية'),
+    _Tab('calendar', Icons.event_outlined, 'التقويم'),
     _Tab('grade_fees', Icons.payments_outlined, 'المراحل والرسوم'),
+    _Tab('discounts', Icons.percent_rounded, 'الخصومات'),
     _Tab('payment_methods', Icons.credit_card_outlined, 'وسائل الدفع'),
     _Tab('teachers', Icons.school_outlined, 'المعلمون'),
     _Tab('subjects', Icons.menu_book_outlined, 'المواد'),
@@ -148,6 +152,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: switch (active.id) {
                 'school' => const SchoolSettingsTab(),
                 'academic_years' => const _AcademicYearsTab(),
+                'calendar' => const CalendarSettingsTab(),
+                'discounts' => const DiscountSettingsTab(),
                 'grade_fees' => const _FeesTab(),
                 'payment_methods' => const PaymentMethodsTab(),
                 'subjects' => const _SubjectsTab(),

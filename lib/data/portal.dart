@@ -16,6 +16,7 @@ import 'institution.dart';
 import 'material_cache.dart';
 import 'material_limits.dart';
 import 'payment_methods.dart';
+import 'school_calendar.dart';
 import 'supabase.dart';
 
 /// بوابة الطالب والمعلم — المقابل لـ `features/portal/portal.service.ts`
@@ -225,7 +226,11 @@ class PortalBranding {
     this.gradesApproved = const {},
     this.grading = GradingSettings.empty,
     this.gradeDeadlines = const [],
+    this.calendar = const [],
   });
+
+  /// العطل والامتحانات (`settings.calendar`): شريط القريب للأسرة، ولا رصد في العطلة.
+  final List<CalendarEvent> calendar;
 
   final String name;
   final String logo;
@@ -1347,6 +1352,7 @@ class PortalService {
       gradesApproved: app.gradesApproved,
       grading: app.grading,
       gradeDeadlines: app.followup.gradeDeadlines,
+      calendar: app.calendar,
     );
   }
 
@@ -1526,7 +1532,7 @@ class PortalService {
       rawMarks.add(AttendanceMark.fromCloud({...r, 'status': status}));
     }
     // يوم بيوم: غياب يوم رصده ست مواد كان يُعدّ ستة أيام غياب
-    final days = dailyAttendance(rawMarks, sessionObjs);
+    final days = dailyAttendance(rawMarks, sessionObjs, calendar: brandingFromRaw(brandingRow is Map ? Map<String, dynamic>.from(brandingRow) : const {}).calendar);
     final present = days.where((d) => d.status == 'present').length;
     final absent = days.where((d) => d.status == 'absent').length;
     final excused = days.where((d) => d.status == 'excused').length;

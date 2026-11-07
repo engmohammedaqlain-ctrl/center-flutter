@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/school_calendar.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -222,9 +223,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         }
         final dayProgress = _dayProgress;
         final dirty = _draft.isNotEmpty && _draftOwner == currentOwner && _draftDate == day.dateStr;
+        // العطلة لا يُرصد فيها: تظهر باسمها بدل الكشف
+        final holiday = holidayEventOn(store.settings.calendar, day.dateStr);
 
         return ThumbActionLayer(
-          action: canEdit
+          action: canEdit && holiday == null
               ? (dirty
                   ? ThumbAction(
                       label: 'حفظ الرصد',
@@ -281,7 +284,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                         ),
               ),
               Expanded(
-                child: list.isEmpty
+                child: holiday != null
+                    ? Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: EmptyState(message: 'عطلة: ${holiday.title}'),
+                      )
+                    : list.isEmpty
                     ? const Padding(
                         padding: EdgeInsets.all(14),
                         child: EmptyState(message: 'لا يوجد طلاب مسجلون في هذه الشعبة'),

@@ -207,7 +207,7 @@ class _HomeState extends State<_Home> {
     final chronicPct = store.settings.followup.chronicPercent;
     final chronic = <({Student student, int days})>[];
     for (final s in active) {
-      final days = dailyAttendance(byStudent[s.id] ?? const [], sessions);
+      final days = dailyAttendance(byStudent[s.id] ?? const [], sessions, calendar: store.settings.calendar);
       final t = days.where((d) => d.date == today).firstOrNull;
       if (t != null) {
         marked++;

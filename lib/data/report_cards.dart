@@ -133,7 +133,7 @@ ReportCardStudent studentReportCard(AppStore store, Student s, {Classroom? room}
       (s.section.trim().isEmpty ? null : store.roomsInViewedYear.where((r) => studentBelongsToRoom(s, r)).firstOrNull);
   final marks = store.attendance.where((a) => a.studentId == s.id);
   final misses = [
-    for (final d in dailyAttendance(marks, store.sessions))
+    for (final d in dailyAttendance(marks, store.sessions, calendar: store.settings.calendar))
       if (d.status != 'present' &&
           (year == null || (d.date.compareTo(year.startsOn) >= 0 && d.date.compareTo(year.endsOn) <= 0)))
         d,

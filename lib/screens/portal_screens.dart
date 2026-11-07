@@ -26,6 +26,7 @@ import '../data/academic_matching.dart';
 import '../data/teacher_resources.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../data/school_calendar.dart';
 import '../models/models.dart';
 import '../widgets/attendance_view.dart';
 import '../widgets/thumb_action.dart';
@@ -1472,6 +1473,11 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
 
   /// يوم مضى: تعديل رصده بعد تأكيد.
   Future<bool> _canEditDay() async {
+    final holiday = holidayEventOn(data?.branding.calendar ?? const [], sessionDate);
+    if (holiday != null) {
+      showAppSnack(context, 'عطلة: ${holiday.title}', error: true);
+      return false;
+    }
     if (sessionDate.compareTo(isoDate(DateTime.now())) >= 0 || _unlockedDay == sessionDate) return true;
     final ok = await confirmSheet(
       context,

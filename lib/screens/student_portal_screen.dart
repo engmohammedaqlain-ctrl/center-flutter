@@ -11,6 +11,7 @@ import '../data/push.dart';
 import '../data/realtime.dart';
 import '../data/share_inbox.dart';
 import '../data/store.dart';
+import '../data/school_calendar.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
@@ -122,9 +123,44 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
   }
 
   /// فوق محتوى كل تبويب: إعلان المدرسة، وشريط «ملاحظة جديدة» يفتح محادثتها.
-  List<Widget> _familyTop() {
-    if (!_notesOn) return const [];
+  /// العطل والامتحانات القريبة (أسبوعان) — `FamilyCalendarStrip`.
+  List<Widget> _calendarStrip() {
+    final now = DateTime.now();
+    final horizon = isoDate(DateTime(now.year, now.month, now.day + 14));
+    final soon = upcomingEvents(data?.branding.calendar ?? const [], isoDate(now))
+        .where((e) => e.from.compareTo(horizon) <= 0)
+        .take(3)
+        .toList();
+    if (soon.isEmpty) return const [];
     return [
+      Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final e in soon)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: e.kind == 'exam' ? const Color(0xFFFFFBEB) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '${calendarKindLabels[e.kind]} ${e.title} ${eventRange(e)}',
+                  style: nText(11.5, weight: FontWeight.w700, color: e.kind == 'exam' ? const Color(0xFF92400E) : const Color(0xFF334155)),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _familyTop() {
+    if (!_notesOn) return _calendarStrip();
+    return [
+      ..._calendarStrip(),
       // لكل ابن إعلانات نطاقه (مرحلته وشعبته)
       FamilyAnnouncementsCard(key: ValueKey(user.id), service: widget.notes, reloadTick: _announceTick),
       NewNotesBanner(

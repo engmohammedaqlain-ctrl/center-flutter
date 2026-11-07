@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../data/academic_matching.dart';
+import '../data/discount_policy.dart';
 import '../data/phone.dart';
 import '../data/fee_plan.dart';
 import '../data/store.dart';
@@ -69,6 +70,10 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
 
   // ── الخصم الشهري: المقابل لحالة `hasCustomDiscount` في StudentForm.tsx ──
   late bool hasDiscount;
+
+  /// لمس الموظف خانة الخصم يوقف اقتراح السياسة — `discountTouched`.
+  bool _discountTouched = false;
+  late String orphanStatus = widget.student?.orphanStatus ?? '';
 
   /// للتسجيل الجديد فقط: خطة كاملة أو من تاريخ الالتحاق — `EnrollmentPlanMode`.
   EnrollmentPlanMode enrollmentMode = EnrollmentPlanMode.full;
@@ -216,10 +221,38 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     });
   }
 
+  /// الخصم المقترح للطالب الجديد من سياسة المدرسة — `suggestDiscount`: الأكبر يغلب،
+  /// والموظف يعدّله أو يلغيه قبل الحفظ.
+  void _applyDiscountPolicy() {
+    if (widget.student != null || _discountTouched || !mounted) return;
+    final store = AppStore.instance;
+    final clean = parentNationalId.text.trim();
+    final siblings = clean.isEmpty
+        ? 0
+        : store.students
+            .where((x) => x.parentNationalId.trim() == clean && (x.status == 'active' || x.status == 'pending'))
+            .length;
+    final best = suggestDiscount(
+      store.settings.discounts,
+      siblingsBefore: siblings,
+      average: parseAverage(gpa.text),
+      orphan: orphanStatus,
+      sick: health == 'مريض',
+    );
+    setState(() {
+      hasDiscount = best != null;
+      if (best == null) return;
+      discountType = 'percentage';
+      discountRate.text = trimNum(best.percent);
+      discountReason.text = best.reason;
+    });
+  }
+
   /// أخٌ مسجَّل بالرقم نفسه: كلمة وليّ أمره تُنسخ للطالب الجديد، فيدخل الأب
   /// مرة واحدة ويرى ابنيه. بلا ذلك تُولَّد لكل ابن كلمة، فلا يصل إلا لأحدهما.
   void _findSibling() {
     final clean = parentNationalId.text.trim();
+    _applyDiscountPolicy();
     if (clean.isEmpty) {
       if (sibling != null) setState(() => sibling = null);
       return;
@@ -586,6 +619,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
         housingStatus: housing,
         originalArea: originalArea.text.trim(),
         healthStatus: health,
+        orphanStatus: orphanStatus,
         medicalCondition: health == 'مريض' ? medicalCondition.text.trim() : '',
         parentJob: parentJob.text.trim(),
         parentSecondaryPhone: combinePhoneAndPrefix(parentSecondaryNumber.text.trim(), secondaryPrefix),
@@ -1018,7 +1052,10 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
             activeThumbColor: AppColors.amber,
             onChanged: editing || !canDiscount
                 ? null
-                : (v) => setState(() => hasDiscount = v),
+                : (v) => setState(() {
+                      _discountTouched = true;
+                      hasDiscount = v;
+                    }),
           ),
         ],
       ),
@@ -1448,7 +1485,11 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
         ],
         [
           const FieldLabel('المعدل'),
-          TextField(controller: gpa, decoration: const InputDecoration(hintText: '92.5%')),
+          TextField(
+            controller: gpa,
+            onChanged: (_) => _applyDiscountPolicy(),
+            decoration: const InputDecoration(hintText: '92.5%'),
+          ),
         ],
         startFlex: 3,
         endFlex: 2,
@@ -1477,10 +1518,28 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
             child: _toggle('سليم', health == 'سليم', AppColors.success, () => setState(() {
                   health = 'سليم';
                   medicalCondition.clear();
+                  _applyDiscountPolicy();
                 })),
           ),
           const SizedBox(width: 6),
-          Expanded(child: _toggle('يعاني من مرض', health == 'مريض', AppColors.danger, () => setState(() => health = 'مريض'))),
+          Expanded(child: _toggle('يعاني من مرض', health == 'مريض', AppColors.danger, () => setState(() {
+                  health = 'مريض';
+                  _applyDiscountPolicy();
+                }))),
+        ],
+      ),
+      const SizedBox(height: 8),
+      Row(
+        children: [
+          for (final o in const {'': 'غير يتيم', 'father': 'يتيم الأب', 'mother': 'يتيم الأم', 'both': 'يتيم الأبوين'}.entries) ...[
+            Expanded(
+              child: _toggle(o.value, orphanStatus == o.key, AppColors.amber, () {
+                setState(() => orphanStatus = o.key);
+                _applyDiscountPolicy();
+              }),
+            ),
+            if (o.key != 'both') const SizedBox(width: 4),
+          ],
         ],
       ),
       if (health == 'مريض') ...[
