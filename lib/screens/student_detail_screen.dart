@@ -211,23 +211,34 @@ class StudentDetailScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  'ملف الطالب',
-                  style: TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w700, fontSize: 17, height: 1.2),
+                Text(
+                  student.fullName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16, height: 1.25),
                 ),
-                if (store.institutionName.trim().isNotEmpty)
-                  Text(
-                    store.institutionName.trim(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: AppText.family,
-                      color: Colors.white.withValues(alpha: 0.55),
-                      fontWeight: FontWeight.w500,
-                      fontSize: 12,
-                      height: 1.2,
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        headerMeta,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: AppText.family,
+                          color: Colors.white.withValues(alpha: 0.7),
+                          fontWeight: FontWeight.w500,
+                          fontSize: 12,
+                          height: 1.25,
+                        ),
+                      ),
                     ),
-                  ),
+                    if (status != 'active' && studentStatusLabels.containsKey(status)) ...[
+                      const SizedBox(width: 6),
+                      NoonBadge(studentStatusLabel(status), tone: NoonBadgeTone.sun),
+                    ],
+                  ],
+                ),
               ],
             ),
           ),
@@ -244,33 +255,6 @@ class StudentDetailScreen extends StatelessWidget {
           body: ListView(
             padding: EdgeInsets.fromLTRB(12, 12, 12, showBottomBar ? 12 : 28),
             children: [
-              // الرأس: الاسم وتحته المرحلة والشعبة، وحالته إن لم يكن نشطاً
-              sec(
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(student.fullName, style: NoonText.style(16, weight: FontWeight.w700, height: 1.2)),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            headerMeta,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: NoonText.style(12, weight: FontWeight.w500, color: AdminNoon.muted),
-                          ),
-                        ),
-                        if (status != 'active' && studentStatusLabels.containsKey(status)) ...[
-                          const SizedBox(width: 6),
-                          NoonBadge(studentStatusLabel(status), tone: NoonBadgeTone.sun),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-
               if (canFinance)
                 sec(
                   _FinanceStrip(
@@ -935,14 +919,11 @@ List<Widget> _attendanceMisses(List<AttendanceMark> marks) {
     ..sort((a, b) => b.date.compareTo(a.date));
   if (misses.isEmpty) return const [];
   return [
-    ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 160),
-      child: ListView.separated(
-        shrinkWrap: true,
-        padding: EdgeInsets.zero,
-        itemCount: misses.length,
-        separatorBuilder: (_, _) => Divider(height: 1, thickness: 1, color: AdminNoon.line),
-        itemBuilder: (_, i) {
+    Column(
+      children: [
+        for (var i = 0; i < misses.length; i++) ...[
+          if (i > 0) Divider(height: 1, thickness: 1, color: AdminNoon.line),
+          Builder(builder: (_) {
           final m = misses[i];
           final date = parseIsoDate(m.date);
           return Padding(
@@ -962,8 +943,9 @@ List<Widget> _attendanceMisses(List<AttendanceMark> marks) {
               ],
             ),
           );
-        },
-      ),
+          }),
+        ],
+      ],
     ),
   ];
 }
@@ -991,7 +973,7 @@ class _InfoTable extends StatelessWidget {
               ),
               Padding(
                 padding: EdgeInsets.only(top: i == 0 ? 0 : 8),
-                child: Align(alignment: AlignmentDirectional.centerStart, child: rows[i].$2),
+                child: Align(alignment: AlignmentDirectional.centerEnd, child: rows[i].$2),
               ),
             ],
           ),
@@ -2466,10 +2448,7 @@ class _EvaluationsCard extends StatelessWidget {
         if (bySubject.isEmpty)
           const NoonEmpty('لا توجد علامات', dashed: false)
         else
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 288),
-            child: SingleChildScrollView(
-              child: Column(
+          Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   for (final entry in bySubject.entries) ...[
@@ -2533,8 +2512,6 @@ class _EvaluationsCard extends StatelessWidget {
                   ],
                 ],
               ),
-            ),
-          ),
       ],
     );
   }
