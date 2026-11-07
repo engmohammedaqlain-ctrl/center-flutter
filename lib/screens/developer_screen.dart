@@ -308,6 +308,18 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
 
   Future<void> _extend(BuildContext context, Tenant t) async {
     final store = StoreScope.of(context);
+    // التجريبية تُمدَّد أسبوعاً بكبسة — `DEMO_EXTEND_DAYS`
+    if (t.isDemo) {
+      final error = await store.tenantApi.extendDemo(t.id, 7);
+      if (!context.mounted) return;
+      if (error != null) {
+        showAppSnack(context, error, error: true);
+        return;
+      }
+      await store.refreshTenantsFromCloud();
+      if (context.mounted) showAppSnack(context, 'مُدّدت «${t.name}» 7 أيام');
+      return;
+    }
     final months = TextEditingController(text: '12');
 
     await showModalBottomSheet<void>(
@@ -402,6 +414,20 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
 
   Future<void> _delete(BuildContext context, Tenant t) async {
     final store = StoreScope.of(context);
+    // التجريبية تُحذف الآن بكل بياناتها وملفاتها وحساباتها — `purgeDemo`
+    if (t.isDemo) {
+      final ok = await confirmSheet(context, title: 'حذف التجريبية', message: 'حذف «${t.name}» التجريبية الآن؟', confirmLabel: 'حذف');
+      if (!ok || !context.mounted) return;
+      final error = await store.tenantApi.purgeDemo(t.id);
+      if (!context.mounted) return;
+      if (error != null) {
+        showAppSnack(context, error, error: true);
+        return;
+      }
+      store.deleteTenant(t.id);
+      showAppSnack(context, 'حُذفت «${t.name}»');
+      return;
+    }
     final typed = TextEditingController();
 
     final confirmed = await showModalBottomSheet<bool>(
@@ -934,7 +960,7 @@ class _TenantCard extends StatelessWidget {
                 itemBuilder: (_) => [
                   const PopupMenuItem(value: 'enter', child: Text('دخول للمنشأة')),
                   const PopupMenuItem(value: 'edit', child: Text('تعديل البيانات')),
-                  const PopupMenuItem(value: 'extend', child: Text('تمديد الاشتراك')),
+                  PopupMenuItem(value: 'extend', child: Text(tenant.isDemo ? 'تمديد 7 أيام' : 'تمديد الاشتراك')),
                   PopupMenuItem(value: 'toggle', child: Text(tenant.active ? 'إيقاف الاشتراك' : 'تفعيل الاشتراك')),
                   const PopupMenuItem(value: 'delete', child: Text('حذف نهائياً')),
                 ],
