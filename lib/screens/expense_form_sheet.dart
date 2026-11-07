@@ -10,6 +10,7 @@ import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/form_layout.dart';
+import '../widgets/owner_fold.dart';
 import '../widgets/widgets.dart';
 
 /// نافذة «تسجيل سند صرف جديد» — المقابل لـ `isExpenseModalOpen` في Finance.tsx.
@@ -63,6 +64,9 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
 
   /// مصروف ينقص الربح، أو مسحوبات من الربح. «تحويل» مخفي حتى ميزة رصيد الصندوق.
   String kind = 'expense';
+
+  /// التحويل: الحساب المستلِم.
+  String toMethod = '';
   late String teacherId = widget.payoutTeacherId;
   late String method = _defaultMethod();
   final description = TextEditingController();
@@ -147,7 +151,7 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
       errors
         ..reset()
         ..check('teacher', isPayout && teacherId.isEmpty, 'اختر المعلم المستفيد')
-        ..check('description', !isPayout && description.text.trim().isEmpty, 'البيان / المستفيد مطلوب')
+        ..check('description', !isPayout && kind != 'transfer' && description.text.trim().isEmpty, 'البيان / المستفيد مطلوب')
         ..check('amount', value <= 0, 'المبلغ يجب أن يكون أكبر من صفر');
     });
     if (errors.report(context)) return;
@@ -167,13 +171,16 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
         ).id;
       } else {
         recordId = widget.store.addExpense(
-          category: category,
-          description: description.text,
+          category: kind == 'transfer' ? 'تحويل' : category,
+          description: kind == 'transfer' && description.text.trim().isEmpty
+              ? 'تحويل إلى ${widget.store.paymentMethodLabel(toMethod)}'
+              : description.text,
           amount: value,
           expenseDate: date,
           method: method,
           notes: notes.text,
           kind: kind,
+          toMethod: toMethod,
         ).id;
       }
       // الإشعار يلحق بالسند: يُحفظ على الجهاز ويُرفع بأول اتصال
@@ -223,10 +230,16 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
             if (!isPayout) ...[
               _TypeTabs(
                 active: kind,
-                onSelect: (v) => setState(() => kind = v),
+                onSelect: (v) => setState(() {
+                  kind = v;
+                  if (v == 'transfer' && toMethod.isEmpty) {
+                    toMethod = methods.where((m) => m.id != method).firstOrNull?.id ?? '';
+                  }
+                }),
                 items: [
                   ('expense', 'مصروف', AppColors.heading),
                   ('draw', 'مسحوبات', AppColors.amberDark),
+                  ('transfer', 'تحويل', AppColors.muted),
                 ],
               ),
               const SizedBox(height: 12),
@@ -247,18 +260,20 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
                 }),
               ),
             ] else ...[
-              const FieldLabel('بند المصروف / التصنيف:'),
-              AppDropdown<String>(
-                value: category,
-                items: [
-                  for (final c in expenseCategories)
-                    DropdownMenuItem(value: c, child: Text(expenseCategoryLabel(c))),
-                ],
-                onChanged: (v) => setState(() => category = v ?? category),
-              ),
-              const SizedBox(height: 10),
+              if (kind != 'transfer') ...[
+                const FieldLabel('بند المصروف / التصنيف:'),
+                AppDropdown<String>(
+                  value: category,
+                  items: [
+                    for (final c in expenseCategories)
+                      DropdownMenuItem(value: c, child: Text(expenseCategoryLabel(c))),
+                  ],
+                  onChanged: (v) => setState(() => category = v ?? category),
+                ),
+                const SizedBox(height: 10),
+              ],
 
-              FieldLabel('البيان / المستفيد:', key: errors.key('description'), requiredField: true),
+              FieldLabel(kind == 'transfer' ? 'البيان (اختياري):' : 'البيان / المستفيد:', key: errors.key('description'), requiredField: true),
               TextField(
                 controller: description,
                 textInputAction: TextInputAction.next,
@@ -333,14 +348,22 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
             ),
             const SizedBox(height: 10),
 
-            const FieldLabel('طريقة الدفع:'),
+            FieldLabel(!isPayout && kind == 'transfer' ? 'من حساب:' : 'طريقة الدفع:'),
             AppDropdown<String>(
               value: methods.any((m) => m.id == method) ? method : null,
-              items: [
-                for (final m in methods) DropdownMenuItem(value: m.id, child: Text(m.name)),
-              ],
+              items: methodDropdownItems(methods),
               onChanged: (v) => setState(() => method = v ?? method),
             ),
+            if (!isPayout && kind == 'transfer') ...[
+              const SizedBox(height: 10),
+              const FieldLabel('إلى حساب:', requiredField: true),
+              AppDropdown<String>(
+                value: toMethod.isNotEmpty && toMethod != method ? toMethod : null,
+                hint: 'اختر',
+                items: methodDropdownItems(methods.where((m) => m.id != method)),
+                onChanged: (v) => setState(() => toMethod = v ?? ''),
+              ),
+            ],
             const SizedBox(height: 10),
 
             const FieldLabel('ملاحظات (اختياري):'),

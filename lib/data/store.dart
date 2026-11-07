@@ -2497,10 +2497,14 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     String method = 'cash',
     String notes = '',
     String kind = 'expense',
+    String toMethod = '',
   }) {
     requireSection('finance.expenses');
     final desc = description.trim();
     if (desc.isEmpty) throw StoreException('البيان مطلوب لتسجيل سند الصرف');
+    if (kind == 'transfer' && (toMethod.isEmpty || toMethod == method)) {
+      throw StoreException('اختر حساباً مستلِماً غير حساب التحويل');
+    }
     amount = validPayoutAmount(amount);
     assertOpenDate([expenseDate], 'سند الصرف');
 
@@ -2516,6 +2520,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       method: method,
       notes: notes.trim(),
       kind: kind,
+      toMethod: kind == 'transfer' ? toMethod : '',
       syncStatus: 'pending',
       createdAt: now,
       updatedAt: now,

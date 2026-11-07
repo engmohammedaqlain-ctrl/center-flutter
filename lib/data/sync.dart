@@ -231,6 +231,7 @@ const tableAllowedColumns = <String, List<String>>{
   'payment_methods': [
     'id',
     'name',
+    'owner',
     'type',
     'account_number',
     'show_in_portal',
@@ -442,6 +443,7 @@ const tableAllowedColumns = <String, List<String>>{
     'payment_method',
     'notes',
     'kind',
+    'to_payment_method',
     'is_cancelled',
     'cancelled_reason',
     'tenant_id',

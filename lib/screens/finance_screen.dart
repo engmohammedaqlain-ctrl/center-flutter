@@ -17,6 +17,7 @@ import '../widgets/form_layout.dart';
 import '../widgets/list_paging.dart';
 import '../widgets/table_gate.dart';
 import '../widgets/thumb_action.dart';
+import '../widgets/owner_fold.dart';
 import '../widgets/widgets.dart';
 import 'expense_form_sheet.dart';
 import 'payment_form_screen.dart';
@@ -1030,9 +1031,13 @@ class _FinanceScreenState extends State<FinanceScreen> {
           category: expenseKindOf(e) == 'expense'
               ? expenseCategoryLabel(e.category)
               : '${expenseKindNames[expenseKindOf(e)]} · ${expenseCategoryLabel(e.category)}',
-          description: e.description,
+          // التحويل يظهر في مصروفات الحسابين: «من ← إلى»
+          description: e.isTransferIn
+              ? '${store.paymentMethodLabel(e.method)} ← ${store.paymentMethodLabel(e.toMethod)}'
+              : e.description,
           amount: e.amount,
           method: e.method,
+          toMethod: e.isTransferIn ? e.toMethod : '',
           voucher: ExpenseVoucher.fromExpense(e),
         ),
       for (final p in payouts)
@@ -1054,7 +1059,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
       spentBy[r.method] = (amount: prev.amount + r.amount, count: prev.count + 1);
     }
     final methodRows = spentBy.entries.toList()..sort((a, b) => b.value.amount.compareTo(a.value.amount));
-    final byAccount = spendMethod.isEmpty ? all : all.where((r) => r.method == spendMethod).toList();
+    final byAccount = spendMethod.isEmpty
+        ? all
+        : all.where((r) => r.method == spendMethod || r.toMethod == spendMethod).toList();
     final rows = q.isEmpty
         ? byAccount
         : byAccount.where((r) => r.description.toLowerCase().contains(q) || r.category.toLowerCase().contains(q)).toList();
@@ -1998,6 +2005,7 @@ class _MethodTotals extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final total = rows.fold<double>(0, (a, r) => a + r.amount);
+    final ownerOf = {for (final m in StoreScope.of(context).paymentMethods) m.id: m.owner};
     Widget chip({required String label, required String value, required bool active, VoidCallback? onTap, Color? color}) {
       return InkWell(
         onTap: onTap,
@@ -2028,13 +2036,17 @@ class _MethodTotals extends StatelessWidget {
       spacing: 6,
       runSpacing: 6,
       children: [
-        for (final r in rows)
-          chip(
+        OwnerTiles<({String id, String label, double amount, int count})>(
+          items: rows,
+          ownerOf: (r) => ownerOf[r.id],
+          amountOf: (r) => r.amount,
+          tile: (r) => chip(
             label: r.label,
             value: '${money(r.amount)} · ${r.count}',
             active: selected == r.id,
             onTap: () => onTap(r.id),
           ),
+        ),
         if (rows.length > 1 && selected.isEmpty)
           chip(label: 'المجموع', value: money(total), active: false, color: AppColors.success),
       ],
@@ -2524,8 +2536,11 @@ class _SpendRow {
     required this.amount,
     required this.method,
     required this.voucher,
+    this.toMethod = '',
   });
 
+  /// المستلِم في التحويل بين حسابين.
+  final String toMethod;
   final String date;
   final bool isPayout;
   final String category;

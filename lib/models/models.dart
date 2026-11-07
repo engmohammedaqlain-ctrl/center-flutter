@@ -2064,6 +2064,7 @@ class Expense {
     this.method = 'cash',
     this.notes = '',
     this.kind = 'expense',
+    this.toMethod = '',
     this.cancelled = false,
     this.cancelReason = '',
     this.syncStatus = 'synced',
@@ -2086,6 +2087,12 @@ class Expense {
   String method;
   String notes;
 
+  /// التحويل: الحساب المستلِم — `to_payment_method`. الغائب في تحويل قديم يخرج فقط.
+  String toMethod;
+
+  /// تحويل بين حسابين له مستلِم مختلف عن المصدر — `isTransferIn`.
+  bool get isTransferIn => kind == 'transfer' && toMethod.isNotEmpty && toMethod != method;
+
   /// سند أُلغي بسببه: يبقى في السجل ويخرج من كل مجموع — `is_cancelled`.
   bool cancelled;
   String cancelReason;
@@ -2104,6 +2111,7 @@ class Expense {
     'payment_method': method,
     'notes': notes.isEmpty ? null : notes,
     'kind': kind,
+    'to_payment_method': toMethod.isEmpty ? null : toMethod,
     'is_cancelled': cancelled,
     'cancelled_reason': cancelReason.isEmpty ? null : cancelReason,
     'created_at': createdAt,
@@ -2122,6 +2130,7 @@ class Expense {
     method: '${m['payment_method'] ?? 'cash'}',
     notes: '${m['notes'] ?? ''}',
     kind: '${m['kind'] ?? 'expense'}',
+    toMethod: '${m['to_payment_method'] ?? ''}',
     cancelled: m['is_cancelled'] == true,
     cancelReason: '${m['cancelled_reason'] ?? ''}',
     syncStatus: '${m['sync_status'] ?? 'synced'}',

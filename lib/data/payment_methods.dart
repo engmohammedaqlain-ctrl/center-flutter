@@ -30,7 +30,11 @@ class PaymentMethodItem {
     this.orderIndex = 0,
     this.accountNumber = '',
     this.showInPortal = true,
+    this.owner = '',
   });
+
+  /// صاحب الحساب (اسم شخص): تُجمع حساباته في كشف واحد. الفارغ بدون صاحب.
+  final String owner;
 
   final String id;
   final String name;
@@ -53,7 +57,7 @@ class PaymentMethodItem {
 
   String get typeLabel => paymentMethodTypes[type] ?? 'أخرى';
 
-  PaymentMethodItem copyWith({String? name, String? type, bool? enabled, String? accountNumber, bool? showInPortal}) =>
+  PaymentMethodItem copyWith({String? owner, String? name, String? type, bool? enabled, String? accountNumber, bool? showInPortal}) =>
       PaymentMethodItem(
         id: id,
         name: name ?? this.name,
@@ -63,6 +67,7 @@ class PaymentMethodItem {
         orderIndex: orderIndex,
         accountNumber: accountNumber ?? this.accountNumber,
         showInPortal: showInPortal ?? this.showInPortal,
+        owner: owner ?? this.owner,
       );
 
   Map<String, dynamic> toMap() => {
@@ -75,6 +80,7 @@ class PaymentMethodItem {
         // فارغٌ يُرفع null لا يُحذف المفتاح: وإلا بقي الرقم القديم في السحابة
         'account_number': accountNumber.trim().isEmpty ? null : accountNumber.trim(),
         'show_in_portal': showInPortal,
+        'owner': owner.trim().isEmpty ? null : owner.trim(),
       };
 
   static PaymentMethodItem? fromMap(Object? raw) {
@@ -94,6 +100,7 @@ class PaymentMethodItem {
       accountNumber: '${raw['account_number'] ?? ''}'.trim(),
       // الغائب يعني ظاهرة، كما في `show_in_portal !== false`
       showInPortal: raw['show_in_portal'] != false,
+      owner: '${raw['owner'] ?? ''}'.trim(),
     );
   }
 }
