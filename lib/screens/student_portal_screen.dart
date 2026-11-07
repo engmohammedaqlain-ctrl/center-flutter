@@ -266,19 +266,6 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     }
   }
 
-  /// نسيان الجهاز: حسابات الأبناء وكلمة المرور ونسخ بياناتهم، ثم خروج.
-  Future<void> _forgetDevice() async {
-    final ok = await confirmSheet(
-      context,
-      title: 'نسيان هذا الجهاز',
-      message: 'تُمسح حسابات الأبناء وكلمة المرور وبياناتهم من هذا الجهاز، ويلزم الدخول من جديد.',
-      confirmLabel: 'نسيان',
-    );
-    if (!ok || !mounted) return;
-    await ChildStore.instance?.forgetAll();
-    widget.onExit();
-  }
-
   List<PortalNavItem> get _navItems {
     final state = resolveFeatures(data?.features);
     final ids = familyPortalTabs(state, isParent: isParent);
@@ -628,20 +615,6 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                                   },
                                 ],
                               ),
-                              // صغير ومنزوٍ في آخر الصفحة: نادر الاستعمال
-                              if (isParent)
-                                Align(
-                                  alignment: AlignmentDirectional.centerStart,
-                                  child: TextButton(
-                                    onPressed: _forgetDevice,
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: Noon.onInkSoft,
-                                      visualDensity: VisualDensity.compact,
-                                      textStyle: nText(11),
-                                    ),
-                                    child: const Text('نسيان هذا الجهاز'),
-                                  ),
-                                ),
                             ],
                           ),
                         ),
