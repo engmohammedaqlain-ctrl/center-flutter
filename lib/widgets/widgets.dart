@@ -350,6 +350,20 @@ class FilterButton extends StatelessWidget {
   }
 }
 
+/// أيقونة اتجاه (إرسال، أسهم، تالٍ): تأتي بعد الكلمة في العربية، أي يسارها، وتشير إلى حيث يمضي الزر.
+bool iconTrails(IconData icon) => _trailingIcons.contains(icon);
+
+// مجموعة غير ثابتة: IconData يعيد تعريف == فلا تصلح عناصر مجموعة ثابتة
+final _trailingIcons = <IconData>{
+      Icons.send,
+      Icons.send_rounded,
+      Icons.send_outlined,
+      Icons.arrow_forward,
+      Icons.arrow_forward_rounded,
+      Icons.arrow_forward_ios_rounded,
+      Icons.east,
+    };
+
 class PrimaryButton extends StatelessWidget {
   const PrimaryButton({
     super.key,
@@ -399,8 +413,9 @@ class PrimaryButton extends StatelessWidget {
                 ? Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      if (icon != null) ...[Icon(icon, size: 14), const SizedBox(width: 5)],
+                      if (icon != null && !iconTrails(icon!)) ...[Icon(icon, size: 14), const SizedBox(width: 5)],
                       Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                      if (icon != null && iconTrails(icon!)) ...[const SizedBox(width: 5), Icon(icon, size: 14)],
                     ],
                   )
                 : FittedBox(
@@ -408,8 +423,9 @@ class PrimaryButton extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (icon != null) ...[Icon(icon, size: 14), const SizedBox(width: 5)],
+                        if (icon != null && !iconTrails(icon!)) ...[Icon(icon, size: 14), const SizedBox(width: 5)],
                         Text(label),
+                        if (icon != null && iconTrails(icon!)) ...[const SizedBox(width: 5), Icon(icon, size: 14)],
                       ],
                     ),
                   ),
@@ -477,8 +493,9 @@ class GhostButton extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (icon != null) ...[Icon(icon, size: 14), const SizedBox(width: 4)],
+              if (icon != null && !iconTrails(icon!)) ...[Icon(icon, size: 14), const SizedBox(width: 4)],
               Text(label),
+              if (icon != null && iconTrails(icon!)) ...[const SizedBox(width: 4), Icon(icon, size: 14)],
             ],
           ),
         ),

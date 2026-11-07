@@ -306,9 +306,23 @@ abstract final class AppTheme {
         ),
       ),
       chipTheme: ChipThemeData(
-        labelStyle: AppText.label,
+        labelStyle: WidgetStateTextStyle.resolveWith(
+          (s) => AppText.label.copyWith(color: s.contains(WidgetState.selected) ? Colors.white : AppColors.text),
+        ),
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Corner.chip)),
+        showCheckmark: false,
+        color: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? AppColors.navy : Colors.white),
+        side: BorderSide(color: AppColors.line),
+      ),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        selectedIcon: const SizedBox.shrink(),
+        style: ButtonStyle(
+          backgroundColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? AppColors.navy : Colors.white),
+          foregroundColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? Colors.white : AppColors.text),
+          side: WidgetStatePropertyAll(BorderSide(color: AppColors.line)),
+          textStyle: WidgetStatePropertyAll(AppText.label.copyWith(fontWeight: FontWeight.w600)),
+        ),
       ),
       listTileTheme: ListTileThemeData(
         dense: true,
