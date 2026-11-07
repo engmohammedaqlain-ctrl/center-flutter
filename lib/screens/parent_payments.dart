@@ -422,6 +422,18 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
         title: 'تسديد دفعة',
         footer: Row(
           children: [
+            Expanded(
+              child: NBtn(
+                tone: NBtnTone.ink,
+                label: 'إرسال للمراجعة',
+                expand: true,
+                busy: busy,
+                onTap: _ready ? _submit : null,
+              ),
+            ),
+          ],
+        ),
+        children: [
           // ثلاثة أقسام متمايزة: المبلغ، ثم التحويل، ثم الإشعار والملاحظة
           _formSection('المبلغ', [
           if (_kids.length > 1)
