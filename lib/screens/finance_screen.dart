@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../data/arabic_search.dart';
+import '../data/method_owners.dart';
 import '../data/payroll_calc.dart';
 import '../data/profit_report.dart';
 import '../data/staff.dart';
@@ -2064,25 +2065,43 @@ class _MethodTotals extends StatelessWidget {
   Widget build(BuildContext context) {
     final total = rows.fold<double>(0, (a, r) => a + r.amount);
     final ownerOf = {for (final m in StoreScope.of(context).paymentMethods) m.id: m.owner};
-    Widget chip({required String label, required String value, required bool active, VoidCallback? onTap, Color? color}) {
+    final grouping = groupMethodsByOwner<({String id, String label, double amount, int count})>(rows, (r) => ownerOf[r.id]);
+    final groups = grouping.groups;
+    final ungrouped = grouping.ungrouped;
+
+    Widget methodRow(({String id, String label, double amount, int count}) r) {
+      final active = selected == r.id;
+      final share = total > 0 ? (r.amount / total).clamp(0.0, 1.0) : 0.0;
       return InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(Corner.field),
+        onTap: () => onTap(r.id),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: active ? AppColors.navy.withValues(alpha: 0.06) : Colors.white,
-            borderRadius: BorderRadius.circular(Corner.field),
-            border: Border.all(color: active ? AppColors.navy : AppColors.line),
-          ),
+          color: active ? AppColors.navy.withValues(alpha: 0.06) : Colors.transparent,
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-              Text(
-                value,
-                style: TextStyle(fontFamily: AppText.family, color: color ?? AppColors.heading, fontSize: 12.5, fontWeight: FontWeight.w700),
+              Row(
+                children: [
+                  if (active) ...[Icon(Icons.check_circle, size: 16, color: AppColors.navy), const SizedBox(width: 6)],
+                  Expanded(
+                    child: Text(r.label, maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontFamily: AppText.family, fontSize: 13.5, fontWeight: FontWeight.w600, color: AppColors.heading)),
+                  ),
+                  Text('${r.count} سند', style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+                  const SizedBox(width: 12),
+                  Text(money(r.amount),
+                      style: TextStyle(fontFamily: AppText.family, fontSize: 13.5, fontWeight: FontWeight.w700, color: AppColors.heading)),
+                ],
+              ),
+              const SizedBox(height: 7),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: LinearProgressIndicator(
+                  value: share,
+                  minHeight: 3,
+                  backgroundColor: AppColors.line,
+                  valueColor: AlwaysStoppedAnimation(AppColors.navy),
+                ),
               ),
             ],
           ),
@@ -2090,24 +2109,56 @@ class _MethodTotals extends StatelessWidget {
       );
     }
 
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: [
-        OwnerTiles<({String id, String label, double amount, int count})>(
-          items: rows,
-          ownerOf: (r) => ownerOf[r.id],
-          amountOf: (r) => r.amount,
-          tile: (r) => chip(
-            label: r.label,
-            value: '${money(r.amount)} · ${r.count}',
-            active: selected == r.id,
-            onTap: () => onTap(r.id),
+    final children = <Widget>[
+      for (final g in groups) ...[
+        Container(
+          color: AppColors.sunken,
+          padding: const EdgeInsets.fromLTRB(14, 7, 14, 7),
+          child: Row(
+            children: [
+              Expanded(child: Text(g.owner, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.muted))),
+              Text(money(g.items.fold<double>(0, (a, i) => a + i.amount)),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.muted)),
+            ],
           ),
         ),
-        if (rows.length > 1 && selected.isEmpty)
-          chip(label: 'المجموع', value: money(total), active: false, color: AppColors.success),
+        for (final i in g.items) methodRow(i),
       ],
+      for (final i in ungrouped) methodRow(i),
+    ];
+    final divided = <Widget>[
+      for (var i = 0; i < children.length; i++) ...[
+        if (i > 0) Divider(height: 1, thickness: 1, color: AppColors.line),
+        children[i],
+      ],
+    ];
+
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(Corner.field + 2),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ...divided,
+          if (rows.length > 1 && selected.isEmpty) ...[
+            Divider(height: 1, thickness: 1, color: AppColors.line),
+            Container(
+              color: AppColors.sunken,
+              padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
+              child: Row(
+                children: [
+                  Expanded(child: Text('المجموع', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: AppColors.heading))),
+                  Text(money(total), style: TextStyle(fontFamily: AppText.family, fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.success)),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
