@@ -10,7 +10,9 @@ import '../data/grade_plan_sync.dart';
 import '../data/grading.dart';
 import '../data/installment_adjustments.dart';
 import '../data/phone.dart';
+import '../data/doc_export.dart';
 import '../data/official_docs.dart';
+import '../data/student_file.dart';
 import '../data/report_cards.dart';
 import '../data/school_calendar.dart';
 import '../data/school_options.dart';
@@ -179,14 +181,29 @@ class StudentDetailScreen extends StatelessWidget {
           appBar: AppBar(
             titleSpacing: 0,
             actions: [
-              if (store.can('students') && store.settings.toolOn('official_docs'))
+              if (store.can('students'))
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.more_vert, color: Colors.white),
-                  onSelected: (v) {
-                    if (v == 'official') showOfficialDocSheet(context, store, student);
+                  onSelected: (v) async {
+                    if (v == 'official') {
+                      showOfficialDocSheet(context, store, student);
+                      return;
+                    }
+                    // الملف الشامل PDF: بياناته وحضوره وعلاماته وماليته ودخوله
+                    await runBusyOp(context, () async {
+                      final bytes = await buildStudentFile(store, student);
+                      if (!context.mounted) return;
+                      if (bytes == null) {
+                        showAppSnack(context, 'تعذّر تجهيز الملف', error: true);
+                        return;
+                      }
+                      DocExport.showActions(context, bytes, 'ملف_${student.fullName}');
+                    }, message: 'جارِ الإعداد...');
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'official', child: Text('ورقة رسمية')),
+                  itemBuilder: (_) => [
+                    if (store.settings.toolOn('official_docs'))
+                      const PopupMenuItem(value: 'official', child: Text('ورقة رسمية')),
+                    const PopupMenuItem(value: 'file', child: Text('الملف الشامل')),
                   ],
                 ),
             ],
