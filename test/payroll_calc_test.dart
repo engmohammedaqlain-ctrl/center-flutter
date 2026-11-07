@@ -69,7 +69,7 @@ void main() {
     expect([w.workDays, w.dayValue, w.net], [22, 100, 2100]);
   });
 
-  test('الصافي بلا تقريب', () {
+  test('كل بند بشيكل كامل، والصافي مجموعها كما تُرى', () {
     final r = calc(
       teacher('fixed', 2603, profile: {
         'allowances': [
@@ -78,7 +78,9 @@ void main() {
       }),
       entry: const PayrollEntryRow(id: 'e', teacherId: 't', month: month, adjustments: [(label: 'مكافأة', amount: 50), (label: 'كسر', amount: -20.25)]),
     );
-    expect([r.gross, r.net, r.payable], [2753.5, 2733.25, 2733.25]);
+    expect([r.gross, r.net, r.payable], [2754, 2734, 2734]);
+    final c = payrollColumns(r);
+    expect(r.net, c.due - c.absence + c.extra - c.cuts);
   });
 
   test('نسبة المعلم من نصيب مواده بحصصها، وبعدد المواد إن نقصت حصص', () {

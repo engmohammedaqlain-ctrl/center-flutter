@@ -17,7 +17,7 @@ double _num(Object? v) => v is num ? v.toDouble() : double.tryParse('${v ?? ''}'
 double _r2(double n) => (n * 100).roundToDouble() / 100;
 
 /// مبالغ الراتب بشيكل كامل: كل بند مقرّب فيُجمع الصف كما يُرى — `whole`.
-double _whole(double n) => n.roundToDouble();
+double _whole(double n) => (n + 0.5).floorToDouble();
 
 /// معلم الحصة: أجره حصص وحدها، والمدرسة ترصد الحصص يومياً، بلا خصم دوام — `isPerLesson`.
 bool isPerLesson(PayTerms terms, bool featureOn) => featureOn && terms.perLesson;
@@ -35,10 +35,10 @@ class PayrollColumns {
 }
 
 PayrollColumns payrollColumns(PayrollCalc c) => PayrollColumns(
-      due: (c.fixed + c.sessionsPay + c.percentPay + c.allowances).roundToDouble(),
-      extra: c.additions.roundToDouble(),
-      absence: c.attendanceCut.roundToDouble(),
-      cuts: (c.manualCut + c.advance).roundToDouble(),
+      due: _whole(c.fixed + c.sessionsPay + c.percentPay + c.allowances),
+      extra: _whole(c.additions),
+      absence: _whole(c.attendanceCut),
+      cuts: _whole(c.manualCut + c.advance),
     );
 
 final _attendanceLinePattern = RegExp(r'^(غياب|إجازة بلا راتب|تأخير) ');
@@ -48,10 +48,10 @@ PayrollColumns snapshotColumns(Map<String, dynamic>? s, List<({String label, dou
   final saved = s?['columns'];
   if (saved is Map) {
     return PayrollColumns(
-      due: _num(saved['due']).roundToDouble(),
-      extra: _num(saved['extra']).roundToDouble(),
-      absence: _num(saved['absence']).roundToDouble(),
-      cuts: _num(saved['cuts']).roundToDouble(),
+      due: _whole(_num(saved['due'])),
+      extra: _whole(_num(saved['extra'])),
+      absence: _whole(_num(saved['absence'])),
+      cuts: _whole(_num(saved['cuts'])),
     );
   }
   final extras = {for (final a in adjustments) if (a.amount > 0) a.label};
@@ -68,7 +68,7 @@ PayrollColumns snapshotColumns(Map<String, dynamic>? s, List<({String label, dou
       cuts -= amount;
     }
   }
-  return PayrollColumns(due: due.roundToDouble(), extra: extra.roundToDouble(), absence: absence.roundToDouble(), cuts: cuts.roundToDouble());
+  return PayrollColumns(due: _whole(due), extra: _whole(extra), absence: _whole(absence), cuts: _whole(cuts));
 }
 
 /// ما يُخصم عن كل تأخير من أجر اليوم — `LATE_FRACTIONS`.
@@ -591,8 +591,8 @@ PayrollCalc computePayroll({
   if (advance > 0) lines.add((label: 'سلفة', amount: -advance));
 
   // الصافي كما هو بلا تقريب: ما يُصرف يُكتب ويُعدَّل في مكانه
-  final net = math.max(0.0, (before - advance).roundToDouble());
-  final payable = entry?.netOverride != null ? math.max(0.0, entry!.netOverride!.roundToDouble()) : net;
+  final net = math.max(0.0, _whole(before - advance));
+  final payable = entry?.netOverride != null ? math.max(0.0, _whole(entry!.netOverride!)) : net;
   return PayrollCalc(
     terms: terms,
     workDays: days.length,
