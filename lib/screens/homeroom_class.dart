@@ -424,7 +424,7 @@ class _Grades extends StatelessWidget {
           for (final e in monthly)
             StatusChip.muted(
               '${e.title.isNotEmpty ? e.title : (e.evaluationDate.length >= 7 ? e.evaluationDate.substring(0, 7) : e.evaluationDate)}: '
-              e.status.isEmpty ? '${(e.score ?? 0).round()}/${e.maxScore.round()}' : e.statusLabel,
+              '${e.status.isEmpty ? '${(e.score ?? 0).round()}/${e.maxScore.round()}' : e.statusLabel}',
             ),
         ],
       );
