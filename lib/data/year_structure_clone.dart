@@ -80,6 +80,17 @@ Future<YearStructureCloneResult> cloneYearStructure(
       syncStatus: 'pending',
       createdAt: now,
       updatedAt: now,
+      // كالويب (`...t`): سجل المعلم في العام الجديد ببياناته وأجره كلها
+      jobTitle: old.jobTitle,
+      specialization: old.specialization,
+      graduationYear: old.graduationYear,
+      gradeLevels: [...old.gradeLevels],
+      contractType: old.contractType,
+      contractStart: old.contractStart,
+      birthDate: old.birthDate,
+      weeklyPeriods: old.weeklyPeriods,
+      payProfile: old.payProfile,
+      salaryHistory: old.salaryHistory,
     );
     teacherMap[old.id] = row.id;
     store.teachers.add(row);
@@ -165,6 +176,7 @@ Future<YearStructureCloneResult> cloneYearStructure(
       syncStatus: 'pending',
       createdAt: now,
       updatedAt: now,
+      weeklyPeriods: old.weeklyPeriods,
     );
     store.groups.add(row);
     store.queueYearStructureInsert('groups', row.id, row.toCloud());
