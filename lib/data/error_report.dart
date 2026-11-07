@@ -91,10 +91,19 @@ class ErrorReport {
   }
 
   /// يرسل الخطأ مرة، بلا انتظار وبلا أي أثر عند الفشل.
-  void report(Object error, StackTrace? stack) {
+  void report(Object error, StackTrace? stack) => _report(errorKind(error), '$error', stack);
+
+  /// فشل المزامنة يصل قائمة أعطال المطور بجدوله ونصه التقني — `reportSyncFailure`. كان يُكتب في
+  /// سجل الجهاز وحده، فلا يُعرف لماذا نقصت بيانات مدرسة. انقطاع الشبكة ليس عطلاً فلا يُرسل.
+  /// [kind] `SyncPullError` أو `SyncPushError`.
+  void reportSyncFailure(String kind, String table, String raw) {
+    if (raw.trim().isEmpty) return;
+    _report(kind, '$table: $raw', StackTrace.empty);
+  }
+
+  void _report(String kind, String rawMessage, StackTrace? stack) {
     try {
-      final kind = errorKind(error);
-      final message = scrubText('$error', 500);
+      final message = scrubText(rawMessage, 500);
       if (isIgnorableError(kind, message)) return;
       final trace = (stack ?? StackTrace.empty).toString().split('\n').take(12).join('\n');
       final screen = screenOf(trace);
