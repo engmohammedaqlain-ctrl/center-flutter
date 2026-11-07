@@ -57,6 +57,7 @@ class ChildStore {
   final Persistence Function() _db;
 
   static const _kAccounts = 'noon_child_accounts';
+  static const _kSessionMirror = 'noon_session_mirror';
   static const _kDataPrefix = 'child_cache_';
 
   Future<Map<String, dynamic>> _readAccounts() async {
@@ -145,7 +146,29 @@ class ChildStore {
   }
 
   /// نسيان الجهاز: كل الحسابات وكلمات المرور ونسخ البيانات.
+  /// نسخة من مفاتيح الجلسة في التخزين المشفّر: قاعدة الجهاز على الويب قد تُفتح فارغة بعد إعادة التشغيل
+  /// الساخنة أو مسح الموقع، فيُستعاد منها دخول الإدارة والبوابة بدل الخروج.
+  Future<void> writeSessionMirror(Map<String, String> values) async {
+    if (values.isEmpty) {
+      await _secrets.delete(_kSessionMirror);
+    } else {
+      await _secrets.write(_kSessionMirror, jsonEncode(values));
+    }
+  }
+
+  Future<Map<String, String>> readSessionMirror() async {
+    final raw = await _secrets.read(_kSessionMirror);
+    if (raw == null || raw.isEmpty) return const {};
+    try {
+      final v = jsonDecode(raw);
+      return v is Map ? {for (final e in v.entries) '${e.key}': '${e.value}'} : const {};
+    } catch (_) {
+      return const {};
+    }
+  }
+
   Future<void> forgetAll() async {
+    await _secrets.delete(_kSessionMirror);
     await _secrets.delete(_kAccounts);
     await _secrets.delete(_kLogins);
     final db = _db();
