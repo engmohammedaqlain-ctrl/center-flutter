@@ -2707,7 +2707,7 @@ class Group {
     'teacher_id': teacherId.isEmpty ? null : teacherId,
     'room_id': roomId.isEmpty ? null : roomId,
     'room_ids': roomIds,
-    'weekly_periods': weeklyPeriods, // يكتبه الويب؛ لا يُرفع من هنا
+    'weekly_periods': weeklyPeriods,
     'grade_level': gradeLevel,
     'status': status,
     'academic_year_id': academicYearId.isEmpty ? null : academicYearId,
