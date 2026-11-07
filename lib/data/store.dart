@@ -19,6 +19,7 @@ import 'grade_plan_sync.dart';
 import 'grade_publish.dart';
 import 'grading.dart';
 import 'institution.dart';
+import 'child_store.dart';
 import 'local_db.dart';
 import 'monthly_averages.dart';
 import 'payment_methods.dart';
@@ -1100,6 +1101,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       if (!loadedTables.contains('institution_settings')) {
         loadedTables.add('institution_settings');
       }
+      await _restoreSessionFromMirror();
       _restoreSession();
       // شعار المدرسة واسمها من صف الهوية على القرص — بلا هذا تبقى الواجهة
       // على شعار التطبيق حتى تنتهي شبكة afterEnter
@@ -2112,10 +2114,14 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         if (user != null) 'user': user.toJson(),
       }),
     );
+    await _mirrorSession();
   }
 
   /// الخروج من البوابة: لا تُفتح من جديد حتى يُدخل الرمز.
-  Future<void> clearPortalSession() => db.setSetting(_kPortalSession, '');
+  Future<void> clearPortalSession() async {
+    await db.setSetting(_kPortalSession, '');
+    await _mirrorSession();
+  }
 
   void _restoreSession() {
     final s = db.settings;
@@ -2180,6 +2186,44 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// رسالة تُعرض في شاشة الدخول بعد انتهاء الجلسة، وتُمحى بأول دخول ناجح.
   String? sessionExpiredNotice;
 
+  /// مفاتيح الجلسة المنسوخة إلى التخزين المشفّر (إدارة وبوابة).
+  static const _mirrorKeys = [
+    _kLoggedIn,
+    _kMasterAdmin,
+    _kTenantId,
+    _kDeviceUser,
+    _kStaffUser,
+    _kStaffRole,
+    _kIdentityFromLogin,
+    _kAuthAccess,
+    _kAuthRefresh,
+    _kAuthExpiry,
+    _kAuthClaims,
+    _kPortalSession,
+  ];
+
+  Future<void> _mirrorSession() async {
+    final child = ChildStore.instance;
+    if (child == null) return;
+    final values = <String, String>{
+      for (final k in _mirrorKeys)
+        if ((db.settings[k] ?? '').isNotEmpty) k: db.settings[k]!,
+    };
+    await child.writeSessionMirror(values);
+  }
+
+  /// قاعدة الجهاز بلا جلسة (فُتحت فارغة): تُستعاد من النسخة المشفّرة إن وُجدت. الخروج الصريح يمحو
+  /// النسخة، فلا يعود به دخول أُنهي عمداً.
+  Future<void> _restoreSessionFromMirror() async {
+    final child = ChildStore.instance;
+    if (child == null) return;
+    if (db.settings[_kLoggedIn] == 'true' || (db.settings[_kPortalSession] ?? '').isNotEmpty) return;
+    final saved = await child.readSessionMirror();
+    for (final e in saved.entries) {
+      if ((db.settings[e.key] ?? '').isEmpty) await db.setSetting(e.key, e.value);
+    }
+  }
+
   Future<void> _saveSession() async {
     // التوكن المجدَّد للقناة المفتوحة أيضاً: انتهاؤه عليها يوقف التعديلات اللحظية بصمت
     _realtime?.updateAccessToken(SupabaseAuth.accessToken);
@@ -2190,6 +2234,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     await db.setSetting(_kAuthRefresh, SupabaseAuth.refreshToken);
     await db.setSetting(_kAuthExpiry, SupabaseAuth.expiresAt?.toIso8601String());
     await db.setSetting(_kAuthClaims, SupabaseAuth.claims.isEmpty ? null : jsonEncode(SupabaseAuth.claims));
+    await _mirrorSession();
   }
 
   // ── إعدادات المنشأة (المقابل لـ institution.ts) ─────────────────────────────
