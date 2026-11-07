@@ -1089,9 +1089,36 @@ class _FinanceScreenState extends State<FinanceScreen> {
     return (
       toolbar: _toolbar(hint: 'ابحث في البيان', shown: rows.length, total: all.length, store: store),
       slivers: _listSlivers(
-        header: methodRows.isEmpty
-            ? null
-            : _MethodTotals(
+        header: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // الرواتب قسم من المصروفات: بابها ظاهر هنا لا مخفياً خلف «+»
+            if (store.can('finance.expenses')) ...[
+              Material(
+          color: Colors.transparent,
+          child: Ink(
+            decoration: noonPanel(),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(AdminNoon.rPanel),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PayrollScreen())),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Row(
+                  children: [
+                    Icon(Icons.payments_outlined, size: 20, color: AdminNoon.ink),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text('كشف الرواتب وصرفها', style: NoonText.style(13.5, weight: FontWeight.w700))),
+                    Icon(Icons.chevron_right_rounded, size: 20, color: AdminNoon.faint),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+              const SizedBox(height: 8),
+            ],
+            if (methodRows.isNotEmpty)
+              _MethodTotals(
                 rows: [
                   for (final m in methodRows)
                     (
@@ -1104,6 +1131,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 selected: spendMethod,
                 onTap: (id) => setState(() => spendMethod = spendMethod == id ? '' : id),
               ),
+          ],
+        ),
         items: rows,
         emptyMessage: 'لا مصروفات',
         groupOf: (r) {
