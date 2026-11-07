@@ -627,8 +627,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
             final ok = await confirmSheet(
               context,
               title: 'توليد بيانات تجريبية',
-              message: 'حذف كل البيانات من الجهاز والسحابة وتوليد بيانات تجريبية؟
-لا يمكن التراجع.',
+              message: 'حذف كل البيانات من الجهاز والسحابة وتوليد بيانات تجريبية؟\nلا يمكن التراجع.',
               confirmLabel: 'تنفيذ',
               confirmColor: AppColors.danger,
             );
