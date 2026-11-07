@@ -33,6 +33,10 @@ import 'student_detail_screen.dart';
 /// والمصروفات والطلبات — كلٌّ منها رقم الفترة وبابُ سجلّه. تحتها سطر ثابت:
 /// البحث وزرّ تصفية واحد يجمع العام والفصل وفلاتر التبويب، ثم السجل في بطاقة
 /// واحدة. الإجراء الأساسي زر الإبهام، والثانوي في رأس السجل.
+/// فتح المستحقات بفلتر أعمار الديون من خارج المالية — «متأخرون +60 يوم» في الرئيسية
+/// (`/finance?tab=dues&aging=60`).
+final financeAgingRequest = ValueNotifier<String?>(null);
+
 class FinanceScreen extends StatefulWidget {
   const FinanceScreen({super.key});
 
@@ -212,9 +216,32 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   @override
   void dispose() {
+    financeAgingRequest.removeListener(_takeAging);
     _pages.dispose();
     search.dispose();
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final v = financeAgingRequest.value;
+    if (v != null) {
+      financeAgingRequest.value = null;
+      tab = _Tab.dues;
+      agingFilter = v;
+    }
+    financeAgingRequest.addListener(_takeAging);
+  }
+
+  void _takeAging() {
+    final v = financeAgingRequest.value;
+    if (v == null || !mounted) return;
+    financeAgingRequest.value = null;
+    setState(() {
+      tab = _Tab.dues;
+      agingFilter = v;
+    });
   }
 
   /// الأقسام بترتيبها — فهرس القسم هو رقم صفحته في السحب.

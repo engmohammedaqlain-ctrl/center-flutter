@@ -19,6 +19,7 @@ import '../widgets/admin_tokens.dart';
 import '../widgets/admin_ui.dart';
 import '../widgets/table_gate.dart';
 import '../widgets/widgets.dart';
+import 'finance_screen.dart' show financeAgingRequest;
 import 'student_detail_screen.dart';
 import 'teacher_detail_screen.dart';
 
@@ -281,6 +282,19 @@ class _HomeState extends State<_Home> {
     final showFinance = store.can('finance');
     final rate = d.marked == 0 ? null : (d.present / d.marked * 100).round();
     final approvals = store.can('evaluations') ? store.pendingApprovals.length : 0;
+    // طلاب عليهم قسط مضى على موعده أكثر من 60 يوماً — `longOverdue`
+    final now = DateTime.now();
+    final longCut = DateTime(now.year, now.month, now.day - 60);
+    final activeIds = {
+      for (final s in store.studentsInViewedYear)
+        if (s.status == 'active') s.id,
+    };
+    final longOverdue = showFinance
+        ? {
+            for (final i in store.installments)
+              if (activeIds.contains(i.studentId) && unpaidOf(i) > 0 && i.dueDate.isBefore(longCut)) i.studentId,
+          }.length
+        : 0;
     final needs = <(String, String, VoidCallback)>[
       if (d.alerts > 0) ('إنذارات غياب لم تُرسل', '${d.alerts}', () => widget.onReport('alerts')),
       if (d.lateGrading > 0) ('رصد متأخر', '${d.lateGrading} معلم', () => widget.onReport('completion')),
@@ -288,6 +302,11 @@ class _HomeState extends State<_Home> {
       if (leaveRequests > 0) ('طلبات إجازة', '$leaveRequests', () => widget.onSection('attendance')),
       if (backupIssue != null) ('النسخة اليومية', backupIssue!, () => widget.onSection('settings')),
       if (showFinance && d.financeRequests > 0) ('طلبات موافقة', '${d.financeRequests}', () => widget.onSection('finance')),
+      if (longOverdue > 0)
+        ('متأخرون +60 يوم', '$longOverdue طالب', () {
+          financeAgingRequest.value = '60';
+          widget.onSection('finance');
+        }),
     ];
 
     Widget card(String title, List<Widget> children, {int? count, String? hint}) => Padding(
