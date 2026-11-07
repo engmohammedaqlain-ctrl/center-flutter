@@ -661,7 +661,7 @@ class SolverRun {
     for (var li = 0; li < L; li++) {
       final l = g.lessons[li];
       final sessions = l.isDouble ? (l.count / 2).ceil() : l.count;
-      _baseAdj[li] = math.max(0, 2 * math.min(sessions, D) - D - 1);
+      _baseAdj[li] = math.max<int>(0, 2 * math.min<int>(sessions, D) - D - 1);
       _baseSame[li] = math.max(0, sessions - D);
     }
 
