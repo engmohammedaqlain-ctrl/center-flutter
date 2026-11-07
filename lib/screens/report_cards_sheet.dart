@@ -5,8 +5,10 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../data/doc_export.dart';
+import '../data/official_docs.dart';
 import '../data/printing.dart';
 import '../data/report_cards.dart';
+import '../data/school_options.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
@@ -81,13 +83,26 @@ class _ReportCardsSheetState extends State<_ReportCardsSheet> {
 
   bool get isClass => widget.cards.length > 1;
 
+  /// رقم ورمز تحقق لكل شهادة، مرة واحدة: إعادة التنزيل لا تصدر أرقاماً جديدة.
+  final _verify = <String, IssuedDoc>{};
+
   Future<void> _print() => runBusyOp(context, () async {
+        if (!widget.summary && widget.store.settings.certificateQr && _verify.isEmpty) {
+          for (final c in widget.cards) {
+            try {
+              _verify[c.id] = await issueOfficialDoc('certificate', c.id, c.studentName);
+            } catch (_) {
+              // بلا اتصال تُنزَّل الشهادة بلا رمز، كالويب
+            }
+          }
+        }
         final bytes = await buildReportCardsPdf(
           widget.store,
           widget.cards,
           terms: terms,
           summary: widget.summary,
           withRank: isClass && withRank,
+          verify: _verify,
         );
         if (!mounted) return;
         if (bytes == null) {
@@ -160,6 +175,7 @@ Future<Uint8List?> buildReportCardsPdf(
   required ReportCardTerms terms,
   bool summary = false,
   bool withRank = false,
+  Map<String, IssuedDoc> verify = const {},
 }) async {
   try {
     final doc = pw.Document(theme: await PdfKit.theme());
@@ -234,6 +250,7 @@ Future<Uint8List?> buildReportCardsPdf(
           pass: pass,
           rank: rank == null ? null : (place: rank, of: cards.length),
           term1End: term1End,
+          verify: verify[card.id],
         ),
       ));
     }
@@ -285,6 +302,7 @@ pw.Widget _cardPage(
   required double pass,
   required ({int place, int of})? rank,
   required String term1End,
+  IssuedDoc? verify,
 }) {
   final cells = [for (final r in card.rows) (row: r, t1: reportTermCell(r.term1), t2: reportTermCell(r.term2))];
   final anyPartial = cells.any((c) => c.t1.partial || (both && c.t2.partial));
@@ -347,6 +365,10 @@ pw.Widget _cardPage(
           _signature('المدير', principal),
         ],
       ),
+      if (verify != null) ...[
+        pw.SizedBox(height: 12),
+        verifyBlock(serial: verify.serial, url: verify.url, label: 'رقم الشهادة'),
+      ],
     ],
   );
 }

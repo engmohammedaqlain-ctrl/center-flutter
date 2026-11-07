@@ -10,7 +10,10 @@ import '../data/grade_plan_sync.dart';
 import '../data/grading.dart';
 import '../data/installment_adjustments.dart';
 import '../data/phone.dart';
+import '../data/official_docs.dart';
 import '../data/report_cards.dart';
+import '../data/school_calendar.dart';
+import '../data/school_options.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -22,6 +25,7 @@ import '../widgets/form_layout.dart';
 import '../widgets/panels.dart';
 import '../widgets/table_gate.dart';
 import '../widgets/widgets.dart';
+import 'official_doc_sheet.dart';
 import 'payment_form_screen.dart';
 import 'receipt_screen.dart';
 import 'return_to_grade_plan_sheet.dart';
@@ -174,6 +178,18 @@ class StudentDetailScreen extends StatelessWidget {
           backgroundColor: AdminNoon.paper,
           appBar: AppBar(
             titleSpacing: 0,
+            actions: [
+              if (store.can('students') && store.settings.toolOn('official_docs'))
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, color: Colors.white),
+                  onSelected: (v) {
+                    if (v == 'official') showOfficialDocSheet(context, store, student);
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'official', child: Text('ورقة رسمية')),
+                  ],
+                ),
+            ],
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -461,6 +477,7 @@ class StudentDetailScreen extends StatelessWidget {
                 sec(_EvaluationsCard(studentId: student.id, evaluations: store.evaluationsOfStudent(student.id))),
 
               _AttachmentsCard(studentId: student.id),
+              _IssuedDocsCard(studentId: student.id),
 
               if (store.can('students'))
                 Padding(
@@ -2556,6 +2573,40 @@ class _AttachmentsCardState extends State<_AttachmentsCard> {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// ما صدر للطالب من أوراق رسمية — قسم «الوثائق» في الويب. يختفي بلا أوراق أو بلا اتصال.
+class _IssuedDocsCard extends StatefulWidget {
+  const _IssuedDocsCard({required this.studentId});
+
+  final String studentId;
+
+  @override
+  State<_IssuedDocsCard> createState() => _IssuedDocsCardState();
+}
+
+class _IssuedDocsCardState extends State<_IssuedDocsCard> {
+  List<IssuedDocRow> docs = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    studentIssuedDocs(widget.studentId).then((rows) {
+      if (mounted) setState(() => docs = rows);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (docs.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: NoonFoldCard(
+        title: 'الوثائق',
+        children: [for (final d in docs) IssuedDocTile(doc: d)],
       ),
     );
   }
