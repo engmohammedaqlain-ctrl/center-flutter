@@ -19,6 +19,7 @@ import '../theme/app_theme.dart';
 import '../widgets/moodle_style.dart';
 import '../widgets/noon_moodle.dart';
 import '../widgets/noon_ui.dart';
+import '../widgets/ledger_row.dart';
 import '../widgets/subject_style.dart';
 import '../widgets/widgets.dart';
 import 'notes_parts.dart';
@@ -1035,47 +1036,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                 children: [
                   NDivided(
                     children: [
-                      for (final inst in visible)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(inst.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(14, weight: FontWeight.w700)),
-                                    if (inst.dueDate.isNotEmpty) ...[
-                                      const SizedBox(height: 2),
-                                      Tooltip(
-                                        message: 'الاستحقاق',
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(Icons.schedule_rounded, size: 12, color: Noon.muted),
-                                            const SizedBox(width: 4),
-                                            Text(nDayLabel(inst.dueDate), style: nText(11, weight: FontWeight.w500, color: Noon.muted)),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(nMoney(inst.amount), style: nText(14, weight: FontWeight.w700)),
-                                  const SizedBox(height: 6),
-                                  _installmentBadge(inst),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
+                      for (final inst in visible) _installmentRow(inst),
                     ],
                   ),
                   if (all.length > preview)
@@ -1115,47 +1076,42 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       if (p.purpose.isNotEmpty) paymentPurposeNames[p.purpose] ?? '',
     ].where((s) => s.trim().isNotEmpty).join(' · ');
     void open() => showPortalReceipt(context: context, payment: p, student: data!.student, branding: branding);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: open,
-        highlightColor: Noon.mist,
-        child: Padding(
-          padding: const EdgeInsetsDirectional.fromSTEB(16, 10, 12, 10),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text.rich(
-                      TextSpan(
-                        text: 'سند ',
-                        children: [
-                          TextSpan(text: p.receiptNumber),
-                        ],
-                      ),
-                      style: nText(14, weight: FontWeight.w500),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      [nFullDayLabel(isoDate(p.date)), how].where((s) => s.isNotEmpty).join(' · '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: nText(11, color: Noon.muted),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(nMoney(p.amount), style: nText(14, weight: FontWeight.w700, color: Noon.green700)),
-              const SizedBox(width: 4),
-              NBtn(tone: NBtnTone.ghost, small: true, icon: Icons.description_outlined, tooltip: 'معاينة الوصل', fg: Noon.teal, onTap: open),
-            ],
-          ),
-        ),
-      ),
+    return LedgerRow(
+      icon: Icons.receipt_long_outlined,
+      tone: LedgerTone.paid,
+      title: Text('سند ${p.receiptNumber}'),
+      subtitle: Text([nFullDayLabel(isoDate(p.date)), how].where((s) => s.isNotEmpty).join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis),
+      amount: Text(nMoney(p.amount), style: nText(14.5, weight: FontWeight.w700, color: Noon.green700)),
+      chevron: true,
+      onTap: open,
+    );
+  }
+
+  /// قسط: دائرة بحالته، وعنوانه واستحقاقه، ومبلغه وشارة حالته، وشريط للمسدد جزئياً.
+  Widget _installmentRow(PortalInstallment inst) {
+    final paid = _isPaid(inst);
+    final partial = !paid && !inst.isScheduled && inst.paidAmount > 0;
+    final tone = paid
+        ? LedgerTone.paid
+        : inst.isScheduled
+            ? LedgerTone.upcoming
+            : partial
+                ? LedgerTone.partial
+                : LedgerTone.due;
+    return LedgerRow(
+      icon: paid
+          ? Icons.check_rounded
+          : inst.isScheduled
+              ? Icons.schedule_rounded
+              : partial
+                  ? Icons.timelapse_rounded
+                  : Icons.priority_high_rounded,
+      tone: tone,
+      title: Text(inst.title),
+      subtitle: inst.dueDate.isEmpty ? null : Text('يستحق ${nDayLabel(inst.dueDate)}'),
+      amount: Text(nMoney(inst.amount)),
+      badge: _installmentBadge(inst),
+      progress: partial && inst.amount > 0 ? inst.paidAmount / inst.amount : null,
     );
   }
 
