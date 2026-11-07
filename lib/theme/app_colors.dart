@@ -241,11 +241,12 @@ abstract final class Noon {
     Noon.action = action;
     onAction = noonReadableOn(action);
     actionH = noonMix(action, 0.88);
-    mist = noonMix(active, 0.14);
-    mist2 = noonMix(active, 0.07);
-    band = noonMix(active, 0.05);
-    head = noonMix(active, 0.24);
-    headLine = noonMix(active, 0.38);
+    // التدرجات الفاتحة من لون الثيم الداكن: من لون التمييز كانت تعطي زهرياً وبيجاً غريباً عن الثيم
+    mist = noonMix(sidebar, 0.14);
+    mist2 = noonMix(sidebar, 0.07);
+    band = noonMix(sidebar, 0.05);
+    head = noonMix(sidebar, 0.24);
+    headLine = noonMix(sidebar, 0.38);
     paper = appBg;
     line = noonMix(sidebar, 0.14);
     rule = noonMix(sidebar, 0.62);
