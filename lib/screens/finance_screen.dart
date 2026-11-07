@@ -12,7 +12,11 @@ import '../data/teacher_salary.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/admin_tokens.dart' show AdminNoon;
+import '../widgets/admin_ui.dart' show NoonSegment, NoonText, noonPanel;
 import '../widgets/animated_count.dart';
+import '../widgets/empty_note.dart';
+import '../widgets/ledger_row.dart';
 import '../widgets/form_layout.dart';
 import '../widgets/list_paging.dart';
 import '../widgets/table_gate.dart';
@@ -76,6 +80,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
   /// فلتر معلم في المصروفات (نسخه عبر الأعوام)
   String statementTeacherId = '';
   bool showProcessedRequests = false;
+
+  /// الرقابة: `requests` الطلبات، أو `audit` سجل الحركات الحساسة.
+  String controlsView = 'requests';
   String auditUserFilter = '';
   String auditActionFilter = '';
 
@@ -1323,104 +1330,73 @@ class _FinanceScreenState extends State<FinanceScreen> {
       await ReceiptScreen.open(context, p);
     }
 
+    IconData kindIcon(String key) {
+      if (key.contains('cancel')) return Icons.block_outlined;
+      if (key.contains('discount')) return Icons.percent_rounded;
+      if (key.contains('refund')) return Icons.undo_rounded;
+      if (key.contains('reverse')) return Icons.swap_horiz_rounded;
+      if (key.contains('expense') || key.contains('spend')) return Icons.receipt_long_outlined;
+      return Icons.rule_folder_outlined;
+    }
+
+    Widget statusChip(String text, Color color) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+          child: Text(text, style: NoonText.style(10.5, weight: FontWeight.w700, color: color)),
+        );
+
     Widget requestCard(FinanceRequest request) {
       final pendingRow = request.status == 'pending';
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: AppCard(
-          padding: const EdgeInsets.all(11),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                [
-                  financeRequestLabel(request.kind),
-                  if (request.studentName.isNotEmpty) request.studentName,
-                ].join(' — '),
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12.5,
-                  color: AppColors.text,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                request.summary,
-                style: const TextStyle(
-                  color: AppColors.text,
-                  fontSize: 11.5,
-                  height: 1.35,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                [
-                  'السبب: ${request.reason}',
-                  if (request.requestedByName.isNotEmpty)
-                    'من ${request.requestedByName}',
-                  if ((request.createdAt ?? '').isNotEmpty)
-                    (request.createdAt ?? '').split('T').first,
-                ].join('  ·  '),
-                style: const TextStyle(
-                  color: AppColors.muted,
-                  fontSize: 10.5,
-                  height: 1.45,
-                ),
-              ),
-              if (!pendingRow) ...[
-                const SizedBox(height: 4),
-                Text(
-                  [
-                    request.status == 'approved' ? 'اعتُمد' : 'مرفوض',
-                    if (request.decisionNote.isNotEmpty)
-                      '— ${request.decisionNote}',
-                  ].join(' '),
-                  style: TextStyle(
-                    color: request.status == 'approved'
-                        ? AppColors.success
-                        : AppColors.danger,
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-              if (pendingRow) ...[
-                const SizedBox(height: 9),
-                if (store.isFinanceAdmin)
-                  ActionButtons(
-                    primaryFlex: 1,
-                    gap: 8,
-                    primary: PrimaryButton(
-                      label: 'قبول',
-                      color: AppColors.success,
-                      onPressed: () async {
-                        try {
-                          await runBusyOp(context, () => store.approveFinanceRequest(request.id), message: 'جارٍ الحسم...');
-                        } on StoreException catch (e) {
-                          if (context.mounted) showAppSnack(context, e.message, error: true);
-                        }
-                      },
-                    ),
-                    secondary: GhostButton(
-                      label: 'رفض',
-                      onPressed: () =>
-                          _rejectFinanceRequest(context, store, request),
-                    ),
-                  )
-                else
-                  Text(
-                    'بانتظار المدير',
-                    textAlign: TextAlign.end,
-                    style: TextStyle(
-                      color: AppColors.amberDark,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-              ],
-            ],
+      final approved = request.status == 'approved';
+      return LedgerRow(
+        icon: kindIcon(request.kind),
+        tone: pendingRow ? LedgerTone.partial : (approved ? LedgerTone.paid : LedgerTone.due),
+        title: Text(financeRequestLabel(request.kind)),
+        subtitle: Text(request.summary.isNotEmpty ? request.summary : request.studentName),
+        amount: const SizedBox.shrink(),
+        badge: pendingRow
+            ? statusChip('بانتظار القرار', AppColors.amberDark)
+            : statusChip(approved ? 'اعتُمد' : 'مرفوض', approved ? AppColors.success : AppColors.danger),
+        notes: [
+          if (request.studentName.isNotEmpty && request.summary.isNotEmpty)
+            Text(request.studentName, style: NoonText.style(11.5, weight: FontWeight.w700, color: AdminNoon.ink)),
+          if (request.reason.isNotEmpty) Text('السبب: ${request.reason}', style: NoonText.style(11.5, color: AdminNoon.muted)),
+          Text(
+            [
+              if (request.requestedByName.isNotEmpty) 'من ${request.requestedByName}',
+              if ((request.createdAt ?? '').isNotEmpty) (request.createdAt ?? '').split('T').first,
+            ].join('  ·  '),
+            style: NoonText.style(10.5, color: AdminNoon.faint),
           ),
-        ),
+          if (!pendingRow && request.decisionNote.isNotEmpty)
+            Text('— ${request.decisionNote}', style: NoonText.style(11, color: approved ? AppColors.success : AppColors.danger)),
+        ],
+        footer: pendingRow
+            ? (store.isFinanceAdmin
+                ? Row(
+                    children: [
+                      Expanded(
+                        child: PrimaryButton(
+                          label: 'قبول',
+                          color: AppColors.success,
+                          expand: true,
+                          onPressed: () async {
+                            try {
+                              await runBusyOp(context, () => store.approveFinanceRequest(request.id), message: 'جارٍ الحسم...');
+                            } on StoreException catch (e) {
+                              if (context.mounted) showAppSnack(context, e.message, error: true);
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: GhostButton(label: 'رفض', onPressed: () => _rejectFinanceRequest(context, store, request)),
+                      ),
+                    ],
+                  )
+                : Text('بانتظار المدير', style: NoonText.style(11, weight: FontWeight.w600, color: AppColors.amberDark)))
+            : null,
       );
     }
 
@@ -1435,52 +1411,58 @@ class _FinanceScreenState extends State<FinanceScreen> {
     // المدير يرى القرارات في السجل؛ الموظف لا سجل له فتبقى له قائمة السابقة
     final done = store.isFinanceAdmin ? const <Widget>[] : [for (final i in items) if (!i.pending) i.node];
 
+    Widget panel(List<Widget> rows) => Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          clipBehavior: Clip.antiAlias,
+          decoration: noonPanel(),
+          child: Column(
+            children: [
+              for (var i = 0; i < rows.length; i++) ...[
+                if (i > 0) Divider(height: 1, thickness: 1, color: AdminNoon.line),
+                rows[i],
+              ],
+            ],
+          ),
+        );
+
+    final showAudit = store.isFinanceAdmin && controlsView == 'audit';
     return [
-        if (pending.isNotEmpty || done.isNotEmpty) ...[
-        Text(
-          'بانتظار الموافقة (${pending.length})',
-          style: TextStyle(
-            color: AppColors.heading,
-            fontWeight: FontWeight.w700,
-            fontSize: 13,
-          ),
-        ),
-        const SizedBox(height: 8),
-        ...pending,
-        ],
-        if (done.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          TextButton(
-            onPressed: () =>
-                setState(() => showProcessedRequests = !showProcessedRequests),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.navy,
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              alignment: AlignmentDirectional.centerStart,
-              textStyle: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 11.5,
-              ),
-            ),
-            child: Text(
-              showProcessedRequests
-                  ? 'إخفاء السابقة (${done.length})'
-                  : 'عرض السابقة (${done.length})',
-            ),
-          ),
-          if (showProcessedRequests) ...done,
-        ],
         if (store.isFinanceAdmin) ...[
-          const SizedBox(height: 16),
-          Text(
-            'سجل الحركات الحساسة',
-            style: TextStyle(
-              color: AppColors.heading,
-              fontWeight: FontWeight.w700,
-              fontSize: 13,
-            ),
+          NoonSegment<String>(
+            value: controlsView,
+            options: [('requests', 'الطلبات${pending.isEmpty ? '' : ' (${pending.length})'}'), ('audit', 'سجل الحركات')],
+            onChanged: (v) => setState(() => controlsView = v),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
+        ],
+        if (!showAudit) ...[
+          if (pending.isEmpty && done.isEmpty)
+            const EmptyNote('لا طلبات بانتظار الموافقة', icon: Icons.task_alt_outlined)
+          else ...[
+            if (pending.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text('بانتظار الموافقة (${pending.length})', style: NoonText.style(13, weight: FontWeight.w700)),
+              ),
+              panel(pending),
+            ] else if (store.isFinanceAdmin)
+              const EmptyNote('لا طلبات بانتظار الموافقة', icon: Icons.task_alt_outlined),
+          ],
+          if (done.isNotEmpty) ...[
+            TextButton(
+              onPressed: () => setState(() => showProcessedRequests = !showProcessedRequests),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.navy,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                alignment: AlignmentDirectional.centerStart,
+                textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+              ),
+              child: Text(showProcessedRequests ? 'إخفاء السابقة (${done.length})' : 'عرض السابقة (${done.length})'),
+            ),
+            if (showProcessedRequests) panel(done),
+          ],
+        ],
+        if (showAudit) ...[
           Row(
             children: [
               Expanded(
@@ -1520,106 +1502,48 @@ class _FinanceScreenState extends State<FinanceScreen> {
           ),
           const SizedBox(height: 8),
           if (audit.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 18),
-              child: Text(
-                'لا حركات',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.muted, fontSize: 12),
-              ),
-            )
+            const EmptyNote('لا حركات', icon: Icons.history_outlined)
           else ...[
-            for (final a in auditPage)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: AppCard(
-                  padding: const EdgeInsets.all(11),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              financeAuditActionLabel(a.action),
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 12,
-                                color: AppColors.heading,
-                              ),
-                            ),
-                          ),
-                          if (a.amount != null)
-                            Text(
-                              money(a.amount!),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 12,
-                                fontFamily: 'monospace',
-                              ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        [
+            Container(
+              clipBehavior: Clip.antiAlias,
+              decoration: noonPanel(),
+              child: Column(
+                children: [
+                  for (var i = 0; i < auditPage.length; i++) ...[
+                    if (i > 0) Divider(height: 1, thickness: 1, color: AdminNoon.line),
+                    () {
+                      final a = auditPage[i];
+                      final pid = paymentIdOf(a);
+                      return LedgerRow(
+                        icon: kindIcon(a.action),
+                        tone: LedgerTone.neutral,
+                        title: Text(financeAuditActionLabel(a.action)),
+                        subtitle: Text([
                           if (a.userName.isNotEmpty) a.userName,
-                          if ((a.createdAt ?? '').isNotEmpty)
-                            (a.createdAt ?? '').replaceFirst('T', ' ').split('.').first,
-                        ].join('  ·  '),
-                        style: const TextStyle(
-                          color: AppColors.muted,
-                          fontSize: 10.5,
-                        ),
-                      ),
-                      if (a.studentName.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        // اسم الطالب يفتح ملفه
-                        GestureDetector(
-                          onTap: a.studentId.isEmpty
-                              ? null
-                              : () => Navigator.of(context).push(
-                                    MaterialPageRoute(builder: (_) => StudentDetailScreen(studentId: a.studentId)),
-                                  ),
-                          child: Text(
-                            a.studentName,
-                            style: TextStyle(
-                              color: a.studentId.isEmpty ? AppColors.text : AppColors.navy,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
+                          if ((a.createdAt ?? '').isNotEmpty) (a.createdAt ?? '').replaceFirst('T', ' ').split('.').first,
+                        ].join('  ·  ')),
+                        amount: a.amount != null ? Text(money(a.amount!), textDirection: TextDirection.ltr) : const SizedBox.shrink(),
+                        onTap: pid != null ? () => openReceipt(pid) : null,
+                        notes: [
+                          if (a.studentName.isNotEmpty)
+                            GestureDetector(
+                              onTap: a.studentId.isEmpty
+                                  ? null
+                                  : () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StudentDetailScreen(studentId: a.studentId))),
+                              child: Text(
+                                a.studentName,
+                                style: NoonText.style(11.5, weight: FontWeight.w700, color: a.studentId.isEmpty ? AdminNoon.text : AdminNoon.ink),
+                              ),
                             ),
-                          ),
-                        ),
-                      ],
-                      // البيان يفتح السند الذي تخصه الحركة
-                      if (a.summary.isNotEmpty || paymentIdOf(a) != null) ...[
-                        const SizedBox(height: 3),
-                        GestureDetector(
-                          onTap: paymentIdOf(a) == null ? null : () => openReceipt(paymentIdOf(a)!),
-                          child: Text(
-                            a.summary.isNotEmpty ? a.summary : 'السند',
-                            style: TextStyle(
-                              color: paymentIdOf(a) == null ? AppColors.text : AppColors.navy,
-                              fontSize: 11.5,
-                              height: 1.35,
-                            ),
-                          ),
-                        ),
-                      ],
-                      if (a.reason.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          'السبب: ${a.reason}',
-                          style: const TextStyle(
-                            color: AppColors.muted,
-                            fontSize: 10.5,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
+                          if (a.summary.isNotEmpty) Text(a.summary, style: NoonText.style(11.5, color: AdminNoon.text, height: 1.35)),
+                          if (a.reason.isNotEmpty) Text('السبب: ${a.reason}', style: NoonText.style(11, color: AdminNoon.muted)),
+                        ],
+                      );
+                    }(),
+                  ],
+                ],
               ),
+            ),
             LoadMoreButton(
               shown: auditPage.length,
               total: audit.length,
