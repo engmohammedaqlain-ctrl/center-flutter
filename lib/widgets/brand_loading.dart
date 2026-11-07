@@ -2,12 +2,26 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../data/school_brand.dart';
+import '../data/store.dart';
 import 'widgets.dart' show decodeLogo;
 
 /// شاشة انتقال بهوية المدرسة: عند الدخول بحساب محفوظ، واستعادة الجلسة، وتسجيل الخروج.
 /// خلفية بلون الثيم الداكن، وشعار المدرسة في صندوق أبيض تدور حوله حلقة، والرسالة تحته.
 class BrandLoadingScreen extends StatelessWidget {
   const BrandLoadingScreen({super.key, required this.message, this.logo = '', this.name = ''});
+
+  /// شاشة الانتقال بشعار المدرسة واسمها المعروفين على الجهاز.
+  factory BrandLoadingScreen.auto(String message) {
+    final brand = SchoolBrand.instance;
+    final store = AppStore.instance;
+    final useBrand = brand.linked && brand.name.isNotEmpty;
+    return BrandLoadingScreen(
+      message: message,
+      logo: store.institutionLogo.isNotEmpty && !useBrand ? store.institutionLogo : brand.logo,
+      name: store.institutionName.isNotEmpty && !useBrand ? store.institutionName : brand.name,
+    );
+  }
 
   final String message;
 

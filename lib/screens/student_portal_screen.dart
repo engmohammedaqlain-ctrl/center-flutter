@@ -20,6 +20,7 @@ import '../theme/app_theme.dart';
 import '../widgets/moodle_style.dart';
 import '../widgets/noon_moodle.dart';
 import '../widgets/noon_ui.dart';
+import '../widgets/brand_loading.dart';
 import '../widgets/ledger_row.dart';
 import '../widgets/subject_style.dart';
 import '../widgets/widgets.dart';
@@ -581,6 +582,9 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
         : user.name;
     final details = portalGradeLine(user: user, student: student);
     final parentName = user.name.trim().isNotEmpty ? user.name.trim() : 'ولي الأمر';
+
+    // أول تحميل: نفس شاشة الدخول بشعار المدرسة، فلا تتبدّل ثلاث شاشات مختلفة بين الضغط والدخول
+    if (loading && data == null && error == null) return BrandLoadingScreen.auto('جارٍ تحميل بياناتك');
 
     return Scaffold(
       backgroundColor: Noon.paper,

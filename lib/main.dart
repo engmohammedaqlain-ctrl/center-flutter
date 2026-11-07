@@ -584,6 +584,9 @@ class _LoginScreenState extends State<LoginScreen> {
   /// نص شاشة الانتقال أثناء [busy].
   String busyMessage = 'جارٍ تسجيل الدخول';
 
+  /// البوابة تُفتح الآن: طبقة الانتقال تبقى حتى تغطيها.
+  bool _entering = false;
+
   /// حسابات مطابقة لرقم الهوية والرمز — قد يكون الرقم في أكثر من منشأة.
   List<PortalUser> choices = const [];
 
@@ -819,6 +822,7 @@ class _LoginScreenState extends State<LoginScreen> {
       unawaited(_openStaff(account));
       return;
     }
+    if (!restored) setState(() => _entering = true);
     // الجلسة تبقى بعد إغلاق التطبيق، كجلسة الإدارة
     unawaited(_appStore.savePortalSession(
       nationalId: account.nationalId.isEmpty ? portalId.text : account.nationalId,
@@ -885,7 +889,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
     // شاشة الإقلاع تبقى تحت البوابة حتى تُدفع فوقها، ثم تُطفأ كي لا تُعاد عند الخروج
     Navigator.of(context).push(route).then((_) {
-      if (mounted) setState(() => restoring = false);
+      if (mounted) {
+        setState(() {
+          restoring = false;
+          _entering = false;
+        });
+      }
     });
     if (restored && restoring) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -948,7 +957,7 @@ class _LoginScreenState extends State<LoginScreen> {
           listenable: Listenable.merge([SchoolBrand.instance, ShareInbox.instance]),
           builder: (context, _) => _frame(store),
         ),
-        if (busy) Positioned.fill(child: _transition(busyMessage)),
+        if (busy || _entering) Positioned.fill(child: _transition(busy ? busyMessage : 'جارٍ فتح حسابك')),
       ],
     );
   }
