@@ -132,6 +132,33 @@ class StaffService {
     }
   }
 
+  /// حصص اليوم — `setPeriods`. معلم الحصة ([lessonsOnly]) لا حالة لدوامه: أول عدد يحفظ يومه
+  /// «حاضراً» ضمناً، ومسحه يمسح اليوم.
+  static Future<void> setPeriods(String tenantId, String teacherId, String date, double? periods, {bool lessonsOnly = false, bool exists = true}) async {
+    if (lessonsOnly && periods == null) return setDay(tenantId, teacherId, date, null);
+    if (!exists) {
+      if (!lessonsOnly || periods == null) return;
+      await setDay(tenantId, teacherId, date, 'present');
+    }
+    await supabaseUpdate('staff_attendance', {'id': 'eq.${staffAttendanceId(teacherId, date)}'}, {
+      'periods': periods,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    });
+    for (final e in _days.entries.toList()) {
+      final p = e.key.split('|');
+      if (date.compareTo(p[0]) < 0 || date.compareTo(p[1]) > 0) continue;
+      _days[e.key] = (
+        at: e.value.at,
+        rows: [
+          for (final d in e.value.rows)
+            d.teacherId == teacherId && d.date == date
+                ? StaffDay(teacherId: teacherId, date: date, status: d.status, periods: periods)
+                : d,
+        ],
+      );
+    }
+  }
+
   /// الموافقة (مدفوعة أو لا) أو الرفض.
   static Future<void> decideLeave(String id, {required bool approve, bool paid = false, String decidedBy = 'الإدارة'}) async {
     final now = DateTime.now().toUtc().toIso8601String();
@@ -160,7 +187,11 @@ class PayrollEntryRow {
     this.hasSnapshot = false,
     this.paid,
     this.absentDays,
+    this.snapshot,
   });
+
+  /// اللقطة كما صُرفت.
+  final Map<String, dynamic>? snapshot;
 
   final String id;
   final String teacherId;
@@ -196,6 +227,7 @@ class PayrollEntryRow {
         hasSnapshot: m['snapshot'] != null,
         paid: m['snapshot'] is Map ? _n((m['snapshot'] as Map)['paid']) : null,
         absentDays: _n(m['absent_days']),
+        snapshot: m['snapshot'] is Map ? Map<String, dynamic>.from(m['snapshot'] as Map) : null,
       );
 }
 
@@ -212,6 +244,29 @@ class PayrollEntries {
       limit: 5000,
     );
     return rows == null ? null : [for (final r in rows) PayrollEntryRow.fromMap(r)];
+  }
+
+  /// يعدّل سطر الموظف في الشهر أو ينشئه — `PayrollService.saveEntry`.
+  static Future<void> saveEntry({
+    required String tenantId,
+    required String teacherId,
+    required String month,
+    required Map<String, dynamic> patch,
+    required bool isNew,
+  }) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+    await supabaseUpsert('payroll_entries', [
+      {
+        'id': payrollEntryId(teacherId, month),
+        'tenant_id': tenantId,
+        'teacher_id': teacherId,
+        'month': month,
+        if (isNew) 'adjustments': const <Map<String, dynamic>>[],
+        if (isNew) 'created_at': now,
+        ...patch,
+        'updated_at': now,
+      },
+    ]);
   }
 
   /// إلغاء سند راتب يعيد شهره مفتوحاً: يفك السند والحساب المثبّت ومقتطع السلفة

@@ -26,7 +26,12 @@ const featureKeys = <String>[
   'notify.payments',
   'notify.grades',
   'notify.messages',
+  'timetable',
+  'payroll.per_lesson',
 ];
+
+/// مفاتيح الاشتراك: يفعّلها المطور وحده من لوحته — `DEVELOPER_ONLY_FEATURES`.
+const developerOnlyFeatures = ['timetable', 'payroll.per_lesson'];
 
 typedef FeatureState = Map<String, bool>;
 typedef FeatureMap = Map<String, bool>;
@@ -187,6 +192,19 @@ const features = <String, FeatureDef>{
     group: FeatureGroup.familyPortal,
     defaultOn: true,
     requires: ['portal.parent'],
+  ),
+  'timetable': FeatureDef(
+    label: 'الجداول',
+    description: 'الجدول الأسبوعي والاحتياط، و«جدولي» في بوابة المعلم',
+    group: FeatureGroup.modules,
+    defaultOn: false,
+  ),
+  'payroll.per_lesson': FeatureDef(
+    label: 'معلم الحصة',
+    description: 'عدد حصص كل يوم بدل الحضور والغياب لمن أجره بالحصة',
+    group: FeatureGroup.administration,
+    defaultOn: false,
+    requires: ['finance.expenses'],
   ),
   'notify.grades': FeatureDef(
     label: 'إشعار العلامات',

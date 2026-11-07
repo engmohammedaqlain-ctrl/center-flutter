@@ -8107,6 +8107,18 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return created;
   }
 
+  /// أجر الموظف من كشف الرواتب: لمن يملك الصرف — `payUpdate` و`updateTeacher`.
+  void saveTeacherPay(Teacher t, Map<String, dynamic> update) {
+    requireSection('finance.expenses');
+    final next = Teacher.fromCloud({...t.toCloud(), ...update, 'updated_at': _nowIso(), 'sync_status': 'pending'});
+    final i = teachers.indexWhere((e) => e.id == t.id);
+    if (i < 0) throw StoreException('المعلم غير موجود');
+    teachers[i] = next;
+    _queue('teachers', t.id, 'UPDATE', next.toCloud());
+    markDirty('teachers');
+    notifyListeners();
+  }
+
   /// ملف aSc: يملأ نصاب المعلم ويضيف مواده المطابقة — `AscImportModal`.
   void applyAscTeacher(Teacher t, {required int periods, required List<String> subjectIds}) {
     upsertTeacher(Teacher.fromCloud({
