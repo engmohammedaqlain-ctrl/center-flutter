@@ -218,6 +218,10 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
           contractType: contractType,
           contractStart: contractStart,
           birthDate: birthDate,
+          // النموذج لا يعرضها: تبقى كما هي، فلا يمحو حفظ البيانات أجر المعلم ونصابه
+          weeklyPeriods: widget.teacher?.weeklyPeriods,
+          payProfile: widget.teacher?.payProfile,
+          salaryHistory: widget.teacher?.salaryHistory ?? const [],
         ),
       );
       showAppSnack(context, widget.teacher == null ? 'تمت إضافة المدرس' : 'تم حفظ بيانات المدرس');
