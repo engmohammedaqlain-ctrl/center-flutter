@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
 import 'supabase.dart';
+import 'error_report.dart';
 import 'user_message.dart';
 
 /// مطابق لـ TABLE_ALLOWED_COLUMNS في sync.ts
@@ -1955,6 +1956,11 @@ class SyncService {
       current.lastError = message;
       current.lastAttemptAt = now;
     }
+    if (!transient) {
+      for (final table in {for (final a in actions) a.tableName}) {
+        ErrorReport.instance.reportSyncFailure('SyncPushError', table, message);
+      }
+    }
   }
 
   /// إعادة السجلات المتعثرة إلى الطابور النشط — المقابل لزر إعادة المحاولة
@@ -2800,6 +2806,7 @@ class SyncService {
             await Future<void>.delayed(Duration(milliseconds: 400 * (attempt + 1)));
             continue;
           }
+          if (!isTransientSyncError(lastError)) ErrorReport.instance.reportSyncFailure('SyncPullError', table, '$lastError');
           return null;
         }
         return await decodeRowsOffThread(res.body);
@@ -2809,6 +2816,7 @@ class SyncService {
           await Future<void>.delayed(Duration(milliseconds: 400 * (attempt + 1)));
           continue;
         }
+        if (!isTransientSyncError(err)) ErrorReport.instance.reportSyncFailure('SyncPullError', table, '$err');
         return null;
       }
     }
@@ -2843,6 +2851,7 @@ class SyncService {
             await Future<void>.delayed(Duration(milliseconds: 400 * (attempt + 1)));
             continue;
           }
+          if (!isTransientSyncError(lastError)) ErrorReport.instance.reportSyncFailure('SyncPullError', table, '$lastError');
           return null;
         }
         return await decodeRowsOffThread(res.body);
@@ -2852,6 +2861,7 @@ class SyncService {
           await Future<void>.delayed(Duration(milliseconds: 400 * (attempt + 1)));
           continue;
         }
+        if (!isTransientSyncError(err)) ErrorReport.instance.reportSyncFailure('SyncPullError', table, '$err');
         return null;
       }
     }
