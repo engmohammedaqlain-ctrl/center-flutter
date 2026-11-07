@@ -320,6 +320,9 @@ Future<Map<String, dynamic>> supabaseInvoke(
     }
     final code = res.statusCode;
     if (code >= 500 || code == 408 || code == 429) data[kOfflineFlag] = true;
+    // بوابة الدوال ترفض بـ401/403 قبل أن تصل الطلب إلى الدالة (مفتاح أو توكن عابر، أو إعادة تشغيل للتطبيق):
+    // ليس رفضاً لهوية المستخدم، فلا تُتلف به جلسة محفوظة ولا حساب محفوظ. الرفض الحقيقي يأتي 200 بلا رمز دخول.
+    if (anonymous && (code == 401 || code == 403)) data[kOfflineFlag] = true;
     return data;
   } on http.ClientException {
     return {'error': _offlineMessage, kOfflineFlag: true};
