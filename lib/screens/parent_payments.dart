@@ -361,21 +361,11 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
     }
   }
 
-  @override
-  /// قسم في النموذج: لوحة بيضاء بعنوان، وحقولها بمسافة منتظمة، فلا تتداخل الحقول بصرياً.
-  Widget _formSection(String title, List<Widget> children) => Container(
-        padding: const EdgeInsets.all(14),
-        decoration: nPanelDecoration(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(title, style: nText(14, weight: FontWeight.w700)),
-            const SizedBox(height: 14),
-            NColumn(gap: 16, children: children),
-          ],
-        ),
-      );
+  /// مجموعة حقول متتالية بمسافة منتظمة، بلا لوحة ولا عنوان: العناوين على الحقول نفسها كافية،
+  /// واللوحة حول حقول لها حدودها كانت صندوقاً داخل صندوق.
+  Widget _formSection(String title, List<Widget> children) => NColumn(gap: 16, children: children);
 
+  @override
   Widget build(BuildContext context) {
     final account = _method?.accountNumber ?? '';
     final radius = BorderRadius.circular(NoonRadius.btn);
