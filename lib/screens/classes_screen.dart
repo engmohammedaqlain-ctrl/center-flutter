@@ -842,6 +842,13 @@ Future<void> _showRoomActionsSheet(
               onTap: () => Navigator.pop(ctx, 'subjects'),
             ),
             ListTile(
+              leading: const Icon(Icons.calendar_view_week_outlined, color: AppColors.muted),
+              title: const Text('الجدول'),
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              onTap: () => Navigator.pop(ctx, 'schedule'),
+            ),
+            ListTile(
               leading: const Icon(Icons.delete_outline, color: AppColors.danger),
               title: const Text('حذف الصف'),
               dense: true,
@@ -986,6 +993,9 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
                     if (v == 'edit') _openRoomForm(context, room);
                     if (v == 'assign') _assignTeacher(context, room);
                     if (v == 'subjects') assignSubjectTeachers(context, room);
+                    if (v == 'schedule') {
+                      showScheduleFileSheet(context, kind: 'room', ownerId: room.id, title: 'جدول ${room.gradeLevel} ${room.name}'.trim());
+                    }
                     if (v == 'delete') {
                       _confirmDeleteRoom(context, room, onDeleted: () => Navigator.pop(context));
                     }
