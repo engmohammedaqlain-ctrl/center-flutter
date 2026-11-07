@@ -1,3 +1,4 @@
+import '../widgets/empty_note.dart';
 import 'package:flutter/material.dart';
 
 import '../data/school_calendar.dart';
@@ -529,7 +530,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               onChanged: (x) => setSheet(() => g = x),
             ),
           if (rooms.isEmpty)
-            Text('لا توجد شعب مسجلة', style: NoonText.style(12, weight: FontWeight.w500, color: AdminNoon.muted))
+            EmptyNote('لا توجد شعب مسجلة')
           else
             GridView.count(
               crossAxisCount: 2,

@@ -68,9 +68,14 @@ abstract final class AppColors {
     final side = parseHexColor(c.sidebarBg) ?? const Color(0xFF052E2B);
     // لون ناقص أو تالف يعود إلى أقرب لون من هوية المنشأة نفسها — لا إلى لون
     // النظام الافتراضي، فمنشأة ضبطت لونين فقط لا تظهر بنصف هويتها
-    final action = parseHexColor(c.actionButton) ?? const Color(0xFF059669);
-    final highlight = parseHexColor(c.activeItem) ?? action;
-    final primary = parseHexColor(c.primaryButton) ?? side;
+    // لا برتقالي في التطبيق مهما اختارت المدرسة: اللون الدافئ يستبدله أخضر النظام
+    const green = Color(0xFF059669);
+    final picked = parseHexColor(c.actionButton) ?? green;
+    final action = _isWarm(picked) ? green : picked;
+    // تمييز العنصر النشط بلون الثيم الداكن لا بلون المدرسة المختار له
+    final highlight = side;
+    final pickedPrimary = parseHexColor(c.primaryButton) ?? side;
+    final primary = _isWarm(pickedPrimary) ? side : pickedPrimary;
     final surfaceBg = parseHexColor(c.appBg) ?? const Color(0xFFF8FAFC);
 
     navy = side;
@@ -89,6 +94,12 @@ abstract final class AppColors {
     bg = surfaceBg;
 
     Noon.derive(sidebar: side, active: highlight, action: action, appBg: surfaceBg);
+  }
+
+  /// برتقالي أو أصفر مائل للبرتقالي أو أحمر دافئ: الدرجات الزاهية بين الأحمر والأصفر.
+  static bool _isWarm(Color c) {
+    final h = HSLColor.fromColor(c);
+    return h.saturation > 0.35 && h.lightness > 0.2 && h.lightness < 0.85 && h.hue >= 8 && h.hue <= 55;
   }
 
   /// إعادة الألوان إلى هوية النظام الافتراضية.

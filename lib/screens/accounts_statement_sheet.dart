@@ -1,3 +1,4 @@
+import '../widgets/empty_note.dart';
 import 'package:flutter/material.dart';
 
 import '../data/account_statement.dart';
@@ -182,7 +183,7 @@ class _StatementSheetState extends State<_StatementSheet> {
             onChanged: (v) => setState(() => picked = v),
           ),
           if (accounts.isEmpty)
-            const Text('لا حركة في حسابات هذا الصاحب', style: TextStyle(color: AppColors.muted, fontSize: 12))
+            EmptyNote('لا حركة في حسابات هذا الصاحب')
           else
             for (final a in accounts) _account(a.name, a.statement),
         ],

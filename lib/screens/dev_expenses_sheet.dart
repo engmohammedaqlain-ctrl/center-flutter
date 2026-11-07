@@ -1,3 +1,4 @@
+import '../widgets/empty_note.dart';
 import 'package:flutter/material.dart';
 
 import '../data/supabase.dart';
@@ -142,7 +143,7 @@ class _DevExpensesSheetState extends State<_DevExpensesSheet> {
         else if (list == null)
           const Center(child: AppLoader(compact: true, size: 22))
         else if (list.isEmpty)
-          const Text('لا مصاريف', style: TextStyle(color: AppColors.muted, fontSize: 12))
+          EmptyNote('لا مصاريف')
         else
           Column(
             children: [

@@ -1,3 +1,4 @@
+import '../widgets/empty_note.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -667,7 +668,7 @@ class _TeacherPageState extends State<_TeacherPage> {
             headerExtra: leaves.isEmpty ? null : Text('${leaves.length}', style: NoonText.style(11, color: AdminNoon.muted)),
             children: [
               if (leaves.isEmpty)
-                Text('لا إجازات', style: NoonText.style(12, color: AdminNoon.muted))
+                EmptyNote('لا إجازات')
               else
                 for (final l in leaves)
                   Row(children: [
@@ -755,7 +756,7 @@ class _LessonPlansState extends State<_LessonPlans> {
         if (snap.connectionState != ConnectionState.done) return const LinearProgressIndicator(minHeight: 2);
         final plans = snap.data;
         if (plans == null) return Text('تعذّر جلب ملفات التحضير', style: NoonText.style(12, color: AdminNoon.muted));
-        if (plans.isEmpty) return Text('لا ملفات تحضير', style: NoonText.style(12, color: AdminNoon.muted));
+        if (plans.isEmpty) return EmptyNote('لا ملفات تحضير');
         String scope(Map<String, dynamic> p) {
           final subject = '${p['subject_id'] ?? ''}';
           if (subject.isEmpty) return 'عام';

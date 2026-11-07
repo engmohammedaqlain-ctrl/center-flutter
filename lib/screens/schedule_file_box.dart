@@ -1,3 +1,4 @@
+import '../widgets/empty_note.dart';
 import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
@@ -189,7 +190,7 @@ class _ScheduleFileBoxState extends State<ScheduleFileBox> {
         if (current == null)
           const Padding(
             padding: EdgeInsets.only(bottom: 8),
-            child: Text('لم يُرفع جدول بعد', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+            child: EmptyNote('لم يُرفع جدول بعد'),
           )
         else ...[
           Text(

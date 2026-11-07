@@ -1,3 +1,4 @@
+import '../widgets/empty_note.dart';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
@@ -401,7 +402,7 @@ class _LoadTabState extends State<LoadTab> {
           if (mine.isEmpty)
             const Padding(
               padding: EdgeInsets.all(10),
-              child: Text('لا مواد مسندة', style: TextStyle(fontSize: 12, color: AppColors.muted)),
+              child: EmptyNote('لا مواد مسندة'),
             ),
           for (final l in mine)
             Padding(

@@ -1,3 +1,4 @@
+import '../widgets/empty_note.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -416,7 +417,7 @@ class _Grades extends StatelessWidget {
     if (summaries.isEmpty) {
       final monthly = [for (final e in evaluations) if (e.type == 'monthly' && e.subjectId.isEmpty) e]
         ..sort((a, b) => b.evaluationDate.compareTo(a.evaluationDate));
-      if (monthly.isEmpty) return Text('لا علامات بعد', style: TextStyle(color: Noon.faint, fontSize: 11));
+      if (monthly.isEmpty) return EmptyNote('لا علامات بعد');
       return Wrap(
         spacing: 6,
         runSpacing: 6,
