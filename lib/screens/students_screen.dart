@@ -11,6 +11,7 @@ import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import '../widgets/list_paging.dart';
 import '../widgets/table_gate.dart';
+import 'announcement_sheet.dart';
 import 'return_to_grade_plan_sheet.dart';
 import 'student_detail_screen.dart';
 import 'student_form_screen.dart';
@@ -279,6 +280,16 @@ class _StudentsScreenState extends State<StudentsScreen> {
                             presentStatuses: presentStatuses,
                           ),
                         ),
+                        // إعلان للأسر: وجهته التصفية الحالية
+                        if (store.featureState['portal.notes'] == true && store.can('students')) ...[
+                          const SizedBox(width: 6),
+                          NoonButton(
+                            icon: Icons.campaign_outlined,
+                            tooltip: 'إعلان',
+                            size: 44,
+                            onPressed: () => showAnnouncementSheet(context, grade: grade, section: section),
+                          ),
+                        ],
                         if (canSelect) ...[
                           const SizedBox(width: 6),
                           NoonButton(

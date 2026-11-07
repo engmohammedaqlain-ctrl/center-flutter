@@ -304,14 +304,43 @@ String noteTime(String iso, {DateTime? now}) {
 
 /// إعلان مدرسة في نطاق الطالب.
 class SchoolAnnouncement {
-  const SchoolAnnouncement({required this.id, required this.body, this.createdAt = ''});
+  const SchoolAnnouncement({
+    required this.id,
+    required this.body,
+    this.createdAt = '',
+    this.scope = 'all',
+    this.gradeLevel = '',
+    this.section = '',
+    this.endsAt = '',
+  });
 
   final String id;
   final String body;
   final String createdAt;
+  final String scope;
+  final String gradeLevel;
+  final String section;
+  final String endsAt;
 
-  factory SchoolAnnouncement.fromMap(Map<dynamic, dynamic> m) =>
-      SchoolAnnouncement(id: _s(m['id']), body: _s(m['body']), createdAt: _s(m['created_at']));
+  factory SchoolAnnouncement.fromMap(Map<dynamic, dynamic> m) => SchoolAnnouncement(
+        id: _s(m['id']),
+        body: _s(m['body']),
+        createdAt: _s(m['created_at']),
+        scope: _s(m['scope']),
+        gradeLevel: _s(m['grade_level']),
+        section: _s(m['section']),
+        endsAt: _s(m['ends_at']),
+      );
+}
+
+/// «كل المدرسة» أو «عاشر» أو «عاشر · شعبة ب» — `targetLabel`.
+String announcementTargetLabel({required String scope, required String grade, required String section}) {
+  if (scope == 'section' && grade.isNotEmpty && section.isNotEmpty) {
+    final label = section.startsWith('شعبة') ? section : 'شعبة ${section.replaceAll(RegExp('[()]'), '').trim()}';
+    return '$grade · $label';
+  }
+  if (scope == 'grade' && grade.isNotEmpty) return grade;
+  return 'كل المدرسة';
 }
 
 /// دوال الخادم بجلسة المستخدم. قابلة للاستبدال في الاختبارات.
@@ -402,6 +431,38 @@ class NotesService {
   /// «قُرئت»: للمعلم والإدارة ردود الأهل.
   Future<void> markRead() async {
     await supabaseRpc('mark_notes_read', const {});
+  }
+
+  /// نشر إعلان من الإدارة — `post_announcement`.
+  Future<void> postAnnouncement({
+    required String body,
+    String grade = '',
+    String section = '',
+    required int days,
+  }) =>
+      _call(
+        'post_announcement',
+        {
+          'p_id': _uuid.v4(),
+          'p_body': body.trim(),
+          'p_scope': section.isNotEmpty ? 'section' : (grade.isNotEmpty ? 'grade' : 'all'),
+          'p_grade': grade.isEmpty ? null : grade,
+          'p_section': section.isEmpty ? null : section,
+          'p_days': days,
+        },
+        'تعذّر نشر الإعلان',
+      );
+
+  Future<void> deleteAnnouncement(String id) => _call('delete_announcement', {'p_id': id}, 'تعذّر حذف الإعلان');
+
+  /// إعلانات المدرسة كلها للإدارة — `school_announcements_list`.
+  Future<List<SchoolAnnouncement>> schoolAnnouncements() async {
+    final data = await _call('school_announcements_list', const {}, 'تعذّر تحميل الإعلانات');
+    return [
+      if (data is List)
+        for (final a in data)
+          if (a is Map) SchoolAnnouncement.fromMap(a),
+    ];
   }
 
   /// إعلانات المدرسة السارية في نطاق الطالب. الفشل قائمة فارغة: الإعلان ليس شرطاً للبوابة.
