@@ -1419,14 +1419,14 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     final days = _monthSchoolDays(month);
     final byDate = await _rangeMarks(days).timeout(const Duration(seconds: 30));
     final students = _students();
-    String symbol(String? s) => switch (s) { 'present' => '✔', 'absent' => 'غ', 'excused' => 'م', _ => '' };
+    String symbol(String? s) => switch (s) { 'present' => 'ح', 'absent' => 'غ', 'excused' => 'م', _ => '' };
     final name = gregorianMonths[int.parse(month.substring(5, 7)) - 1];
     return SheetData(
       title: 'كشف حضور شهر $name ${month.substring(0, 4)}',
       institution: data?.branding.name ?? '',
       logo: data?.branding.logo ?? '',
       landscape: true,
-      meta: [_attendanceClassLabel(), '${students.length} طالب', '✔ حاضر · غ غائب · م مأذون'],
+      meta: [_attendanceClassLabel(), '${students.length} طالب', 'ح حاضر · غ غائب · م مأذون'],
       headers: ['م', 'الطالب', for (final d in days) '${int.parse(d.substring(8))}', 'غياب', 'مأذون'],
       flex: [2, 9, for (final _ in days) 2, 3, 3],
       rows: [

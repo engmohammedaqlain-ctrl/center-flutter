@@ -261,7 +261,7 @@ SheetData attendanceSheet({
   required List<Student> students,
   required String ownerId,
 }) {
-  String symbol(String? s) => switch (s) { 'present' => '✔', 'absent' => 'غ', 'excused' => 'م', _ => '' };
+  String symbol(String? s) => switch (s) { 'present' => 'ح', 'absent' => 'غ', 'excused' => 'م', _ => '' };
   final month = days.length > 6;
   return SheetData(
     title: 'كشف الحضور والغياب $periodLabel',
@@ -269,7 +269,7 @@ SheetData attendanceSheet({
     logo: store.institutionLogo,
     landscape: true,
     yearLabel: academicYear(),
-    meta: [title, '${students.length} طالب', '✔ حاضر · غ غائب · م مأذون'],
+    meta: [title, '${students.length} طالب', 'ح حاضر · غ غائب · م مأذون'],
     headers: [
       'م',
       'الطالب',
