@@ -136,6 +136,16 @@ class TenantService {
     return null;
   }
 
+  /// تمديد مدرسة تجريبية (القاعدة ترفض غير التجريبية) — `extendDemo`. يعيد رسالة الخطأ أو `null`.
+  Future<String?> extendDemo(String id, int days) =>
+      supabaseRpcError('dev_extend_demo', {'p_tenant': id, 'p_days': days});
+
+  /// حذف مدرسة تجريبية الآن بكل بياناتها وملفاتها وحساباتها — `purgeDemo`.
+  Future<String?> purgeDemo(String id) async {
+    final data = await supabaseInvoke('admin-tenants', {'action': 'purge_demo', 'tenant_id': id});
+    return data['error'] == null ? null : '${data['error']}';
+  }
+
   /// حذف منشأة مع حساب دخولها — `deleteTenant`. يعيد رسالة الخطأ أو `null`.
   Future<String?> remove(String id) async {
     final data = await supabaseInvoke('admin-tenants', {'action': 'delete_tenant', 'tenant_id': id});
