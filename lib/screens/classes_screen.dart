@@ -999,23 +999,12 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
               : null,
           body: Column(
             children: [
-              // رأس الصف: اسمه وسطر حقائقه — `NMetaLine` في الويب
-              Container(
-                margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                padding: const EdgeInsets.all(12),
-                decoration: noonPanel(),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(room.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: NoonText.style(16, weight: FontWeight.w700)),
-                    const SizedBox(height: 2),
-                    NoonMetaLine([
-                      ('المرحلة', room.gradeLevel.trim()),
-                      ('المربي', teacher?.name ?? 'بلا مربي'),
-                      ('الطلاب', '${roster.length} / ${room.capacity > 0 ? room.capacity : 30}'),
-                    ]),
-                  ],
-                ),
+              // رأس الصف: بطاقة بلون الثيم — اسم الشعبة ومرحلتها، والمربي، وامتلاء المقاعد، ومكان القاعة
+              _ClassHero(
+                room: room,
+                teacher: teacher,
+                students: roster.length,
+                onAssign: canEdit ? () => _assignTeacher(context, room) : null,
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
@@ -1036,15 +1025,6 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             _SubjectTeachersCard(room: room, canEdit: canEdit),
-                            if (room.notes.trim().isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              InfoStrip(
-                                child: Text(
-                                  'ملاحظات: ${room.notes.trim()}',
-                                  style: const TextStyle(color: Color(0xFF475569), fontSize: 12, height: 1.5),
-                                ),
-                              ),
-                            ],
                           ],
                         ),
                       ),
@@ -1775,4 +1755,133 @@ Widget _codeLine(String owner, String code) {
         ),
     ],
   );
+}
+
+
+/// رأس صفحة الصف: بطاقة بتدرج لون الثيم الداكن.
+class _ClassHero extends StatelessWidget {
+  const _ClassHero({required this.room, required this.teacher, required this.students, this.onAssign});
+
+  final Classroom room;
+  final Teacher? teacher;
+  final int students;
+  final VoidCallback? onAssign;
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = AdminNoon.ink;
+    final cap = room.capacity > 0 ? room.capacity : 30;
+    final ratio = (students / cap).clamp(0.0, 1.0);
+    final onInk = AdminNoon.onInk;
+    final soft = AdminNoon.onInkSoft;
+    final name = teacher?.name.trim() ?? '';
+    final initial = name.replaceFirst(RegExp(r'^أ\.\s*'), '').trim();
+    final notes = room.notes.trim();
+    TextStyle t(double size, FontWeight w, Color c) => TextStyle(fontFamily: AppText.family, fontSize: size, fontWeight: w, color: c, height: 1.25);
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: LinearGradient(
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+          colors: [ink, AdminNoon.mix(ink, 0.86), AdminNoon.mix(ink, 0.62, Colors.black)],
+        ),
+        boxShadow: [BoxShadow(color: ink.withValues(alpha: 0.25), blurRadius: 16, offset: const Offset(0, 6))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(color: onInk.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(14)),
+                child: Icon(Icons.meeting_room_outlined, size: 24, color: onInk),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(room.gradeLevel.trim().isEmpty ? 'بلا مرحلة' : 'الصف ${room.gradeLevel.trim()}', style: t(12.5, FontWeight.w500, soft)),
+                    const SizedBox(height: 2),
+                    Text(room.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: t(22, FontWeight.w700, onInk)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          // المربي
+          InkWell(
+            onTap: name.isEmpty ? onAssign : null,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(color: onInk.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(12)),
+              child: Row(
+                children: [
+                  Container(
+                    width: 30,
+                    height: 30,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(color: onInk.withValues(alpha: 0.2), shape: BoxShape.circle),
+                    child: name.isEmpty
+                        ? Icon(Icons.person_add_alt_1_outlined, size: 16, color: onInk)
+                        : Text(initial.isEmpty ? '؟' : initial.substring(0, 1), style: t(14, FontWeight.w700, onInk)),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('المربي', style: t(10.5, FontWeight.w500, soft)),
+                        Text(name.isEmpty ? (onAssign == null ? 'بلا مربي' : 'تعيين مربي للصف') : name, style: t(14, FontWeight.w700, onInk)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          // امتلاء الصف
+          Row(
+            children: [
+              Text('الطلاب', style: t(12, FontWeight.w500, soft)),
+              const Spacer(),
+              Text('$students', style: t(15, FontWeight.w700, onInk)),
+              Text(' من $cap', style: t(12, FontWeight.w500, soft)),
+            ],
+          ),
+          const SizedBox(height: 7),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: ratio,
+              minHeight: 6,
+              backgroundColor: onInk.withValues(alpha: 0.18),
+              valueColor: AlwaysStoppedAnimation(ratio >= 1 ? const Color(0xFFFCD34D) : onInk),
+            ),
+          ),
+          if (notes.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.place_outlined, size: 15, color: soft),
+                const SizedBox(width: 6),
+                Expanded(child: Text(notes, style: t(12, FontWeight.w500, soft))),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
