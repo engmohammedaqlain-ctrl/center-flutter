@@ -399,23 +399,23 @@ class _HomeState extends State<_Home> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(AdminNoon.rPanel),
-          border: Border.all(color: const Color(0xFFFCD34D), width: 1.4),
-          boxShadow: [BoxShadow(color: const Color(0xFFF59E0B).withValues(alpha: 0.14), blurRadius: 14, offset: const Offset(0, 5))],
+          border: Border.all(color: AdminNoon.ink.withValues(alpha: 0.22)),
+          boxShadow: [BoxShadow(color: AdminNoon.ink.withValues(alpha: 0.12), blurRadius: 14, offset: const Offset(0, 5))],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(
               padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
-              color: const Color(0xFFFFFBEB),
+              color: AdminNoon.ink,
               child: Row(children: [
-                const Icon(Icons.notifications_active_outlined, size: 20, color: Color(0xFFB45309)),
+                Icon(Icons.notifications_active_outlined, size: 20, color: AdminNoon.onInk),
                 const SizedBox(width: 8),
-                Expanded(child: Text('يحتاج تدخلاً', style: NoonText.style(14, weight: FontWeight.w700, color: const Color(0xFF92400E)))),
+                Expanded(child: Text('يحتاج تدخلاً', style: NoonText.style(14, weight: FontWeight.w700, color: AdminNoon.onInk))),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                  decoration: BoxDecoration(color: const Color(0xFFF59E0B), borderRadius: BorderRadius.circular(20)),
-                  child: Text('${pending.length}', style: NoonText.style(12.5, weight: FontWeight.w700, color: Colors.white)),
+                  decoration: BoxDecoration(color: AdminNoon.onInk, borderRadius: BorderRadius.circular(20)),
+                  child: Text('${pending.length}', style: NoonText.style(12.5, weight: FontWeight.w700, color: AdminNoon.ink)),
                 ),
               ]),
             ),
@@ -430,7 +430,7 @@ class _HomeState extends State<_Home> {
   Widget _pendingRow(String key, _Pending p) {
     final open = _openPending.contains(key);
     final urgent = key == 'alerts';
-    final tone = urgent ? const Color(0xFFDC2626) : const Color(0xFFD97706);
+    final tone = urgent ? AdminNoon.red600 : AdminNoon.ink;
     final badge = Container(
       constraints: const BoxConstraints(minWidth: 28),
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
