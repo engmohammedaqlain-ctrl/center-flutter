@@ -33,6 +33,7 @@ import 'screens/shell.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 import 'widgets/auth_frame.dart';
+import 'widgets/brand_loading.dart';
 import 'widgets/animated_count.dart';
 import 'widgets/home_shortcut.dart';
 import 'widgets/platform_notices.dart';
@@ -580,6 +581,9 @@ class _LoginScreenState extends State<LoginScreen> {
   String? error;
   bool busy = false;
 
+  /// نص شاشة الانتقال أثناء [busy].
+  String busyMessage = 'جارٍ تسجيل الدخول';
+
   /// حسابات مطابقة لرقم الهوية والرمز — قد يكون الرقم في أكثر من منشأة.
   List<PortalUser> choices = const [];
 
@@ -606,6 +610,7 @@ class _LoginScreenState extends State<LoginScreen> {
     portalCode.text = login.code;
     setState(() {
       busy = true;
+      busyMessage = 'جارٍ فتح حسابك';
       error = null;
       choices = const [];
     });
@@ -791,6 +796,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (busy) return;
     setState(() {
       busy = true;
+      busyMessage = 'جارٍ فتح حسابك';
       error = null;
     });
     final result = await const PortalService().login(digitsOnly(portalId.text), digitsOnly(portalCode.text), choice: account);
@@ -829,15 +835,31 @@ class _LoginScreenState extends State<LoginScreen> {
 
     // الخروج يُنهي جلسة البوابة: لا تبقى صلاحيات طالب أو ولي أمر على الجهاز
     Future<void> exit() async {
-      // قبل إنهاء الجلسة: لا تصل الجهاز إشعارات من كان عليه (ولي أمر أو طالب أو معلم)
-      await ParentPush.instance.unregister();
-      await _appStore.clearPortalSession();
-      // ولا تبقى كشوف صفوفه معروضة لمن يدخل بعده
-      await PortalOffline(_appStore.db).clear();
-      await supabaseSignOut();
+      final nav = Navigator.of(context);
+      final loader = PageRouteBuilder<void>(
+        opaque: true,
+        pageBuilder: (_, __, ___) => _transition('جارٍ تسجيل الخروج'),
+        transitionsBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+        transitionDuration: const Duration(milliseconds: 180),
+      );
+      unawaited(nav.push(loader));
+      try {
+        // قبل إنهاء الجلسة: لا تصل الجهاز إشعارات من كان عليه (ولي أمر أو طالب أو معلم)
+        await ParentPush.instance.unregister();
+        await _appStore.clearPortalSession();
+        // ولا تبقى كشوف صفوفه معروضة لمن يدخل بعده
+        await PortalOffline(_appStore.db).clear();
+        await supabaseSignOut();
+        // لا تومض الشاشة وتختفي: تبقى لحظة تُقرأ فيها الرسالة
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      } catch (_) {
+        // فشل تنظيف جانبي لا يُبقي المستخدم عالقاً على شاشة الخروج
+      }
       if (mounted) {
         setState(() => restoring = false);
-        Navigator.of(context).pop();
+        // شاشة الخروج أولاً ثم البوابة تحتها
+        nav.pop();
+        nav.pop();
       }
       await _loadSaved();
     }
@@ -918,12 +940,27 @@ class _LoginScreenState extends State<LoginScreen> {
     final store = _appStore;
     // جلسة محفوظة: خلفية بيضاء قصيرة لا شعار ثانٍ — الشعار ظهر في إقلاع المخزن
     if (restoring) {
-      return const ColoredBox(color: Colors.white, child: SizedBox.expand());
+      return _transition('جارٍ فتح حسابك');
     }
-    return ListenableBuilder(
-      listenable: Listenable.merge([SchoolBrand.instance, ShareInbox.instance]),
-      builder: (context, _) => _frame(store),
+    return Stack(
+      children: [
+        ListenableBuilder(
+          listenable: Listenable.merge([SchoolBrand.instance, ShareInbox.instance]),
+          builder: (context, _) => _frame(store),
+        ),
+        if (busy) Positioned.fill(child: _transition(busyMessage)),
+      ],
     );
+  }
+
+  /// شاشة الانتقال بشعار المدرسة واسمها: دخول بحساب محفوظ، واستعادة جلسة، وخروج.
+  Widget _transition(String message) {
+    final brand = SchoolBrand.instance;
+    final store = _appStore;
+    final useBrand = brand.linked && brand.name.isNotEmpty;
+    final name = store.institutionName.isNotEmpty && !useBrand ? store.institutionName : brand.name;
+    final logo = store.institutionLogo.isNotEmpty && !useBrand ? store.institutionLogo : brand.logo;
+    return BrandLoadingScreen(message: message, logo: logo, name: name);
   }
 
   /// هوية الجهاز إن عُرفت من دخولٍ سابق، وإلا مدرسة هذه النسخة أو رابطها.
