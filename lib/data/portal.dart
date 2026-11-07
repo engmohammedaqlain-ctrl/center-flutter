@@ -17,6 +17,7 @@ import 'material_cache.dart';
 import 'material_limits.dart';
 import 'payment_methods.dart';
 import 'school_calendar.dart';
+import 'timetable_model.dart';
 import 'supabase.dart';
 
 /// بوابة الطالب والمعلم — المقابل لـ `features/portal/portal.service.ts`
@@ -228,10 +229,14 @@ class PortalBranding {
     this.gradeDeadlines = const [],
     this.calendar = const [],
     this.weekend = const [5],
+    this.timetable,
   });
 
   /// أيام العطلة الأسبوعية (`settings.weekend`).
   final List<int> weekend;
+
+  /// أوقات الحصص (`settings.timetable`).
+  final TimetableSettings? timetable;
 
   /// العطل والامتحانات (`settings.calendar`): شريط القريب للأسرة، ولا رصد في العطلة.
   final List<CalendarEvent> calendar;
@@ -1358,6 +1363,7 @@ class PortalService {
       gradeDeadlines: app.followup.gradeDeadlines,
       calendar: app.calendar,
       weekend: app.weekend,
+      timetable: TimetableSettings.fromMap(app.extra['timetable']),
     );
   }
 
