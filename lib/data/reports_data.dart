@@ -338,7 +338,7 @@ class ExamDecline {
 List<ExamDecline> examDeclines(Iterable<Evaluation> evaluations, double minDrop) {
   final bySubject = <String, Map<String, ({String title, String date, double percent})>>{};
   for (final e in evaluations) {
-    if (e.subjectId.isEmpty || !(e.maxScore > 0)) continue;
+    if (e.subjectId.isEmpty || e.status.isNotEmpty || !(e.maxScore > 0)) continue;
     bySubject.putIfAbsent('${e.studentId}|${e.subjectId}', () => {})['${e.evaluationDate}|${e.title}'] =
         (title: e.title, date: e.evaluationDate, percent: round1(e.score / e.maxScore * 100));
   }

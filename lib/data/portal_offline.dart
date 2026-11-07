@@ -348,6 +348,7 @@ class PortalOffline {
               '${op['id']}',
               (op['score'] as num).toDouble(),
               updatedBy: '${op['updated_by'] ?? ''}',
+              status: '${op['score_status'] ?? ''}',
             );
             done++;
           case 'evaluation_delete':

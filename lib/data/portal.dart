@@ -306,7 +306,15 @@ class StudentEvaluation {
     this.teacherName = '',
     this.recordedBy = '',
     this.updatedBy = '',
+    this.scoreStatus = '',
   });
+
+  /// `score_status` كما خُزّن؛ يُقرأ بـ [status].
+  final String scoreStatus;
+
+  /// الحالة السارية: `absent` أو `exempt` أو فارغ.
+  String get status => effectiveScoreStatus(scoreStatus, score);
+  String get statusLabel => scoreStatusLabels[status] ?? '';
 
   final String id;
   final String studentId;
@@ -339,7 +347,8 @@ class StudentEvaluation {
   final String recordedBy;
   final String updatedBy;
 
-  StudentEvaluation copyWith({double? score, String? updatedBy, String? updatedAt}) => StudentEvaluation(
+  /// [scoreStatus] إن مُرّر يُكتب كما هو، فالفارغ يمسح الحالة عند علامة رقمية.
+  StudentEvaluation copyWith({double? score, String? updatedBy, String? updatedAt, String? scoreStatus}) => StudentEvaluation(
         id: id,
         studentId: studentId,
         groupId: groupId,
@@ -359,11 +368,15 @@ class StudentEvaluation {
         teacherName: teacherName,
         recordedBy: recordedBy,
         updatedBy: updatedBy ?? this.updatedBy,
+        scoreStatus: scoreStatus ?? this.scoreStatus,
       );
 
   /// النسبة المئوية للدرجة، أو `null` إن لم تُرصد درجة بعد.
   int? get percent {
     final s = score;
+    // المعفى خارج كل معدل، والغائب صفر
+    if (status == 'exempt') return null;
+    if (status == 'absent') return 0;
     if (s == null || maxScore <= 0) return null;
     return ((s / maxScore) * 100).round();
   }
@@ -393,6 +406,7 @@ class StudentEvaluation {
         teacherName: teacherName,
         recordedBy: recordedBy,
         updatedBy: updatedBy,
+        scoreStatus: scoreStatus,
       );
 
   /// تحويل للشكل الذي يقرأه `computeTermGrade` / `subjectGradeSummaries`.
@@ -410,6 +424,7 @@ class StudentEvaluation {
         notes: notes,
         term: term,
         componentId: componentId,
+        scoreStatus: scoreStatus,
       );
 
   Map<String, dynamic> toCloud() => {
@@ -428,6 +443,8 @@ class StudentEvaluation {
         'component_id': componentId.isEmpty ? null : componentId,
         'recorded_by': recordedBy.isEmpty ? null : recordedBy,
         'updated_by': updatedBy.isEmpty ? null : updatedBy,
+        // يُكتب دائماً: علامة رقمية تمسح حالة قديمة، فلا يبقيها الـ upsert
+        'score_status': scoreStatus.isEmpty ? null : scoreStatus,
         'created_at': createdAt.isEmpty ? null : createdAt,
         'updated_at': updatedAt.isEmpty ? null : updatedAt,
       };
@@ -450,6 +467,7 @@ class StudentEvaluation {
         updatedAt: '${m['updated_at'] ?? ''}',
         recordedBy: '${m['recorded_by'] ?? ''}',
         updatedBy: '${m['updated_by'] ?? ''}',
+        scoreStatus: '${m['score_status'] ?? ''}',
       );
 }
 
@@ -2085,10 +2103,15 @@ class PortalService {
   Future<void> deleteEvaluation(String id) => supabaseDelete('student_evaluations', {'id': 'eq.$id'});
 
   /// تعديل علامة مرصودة — مقابل `EvaluationService.updateScore` في الويب.
-  Future<void> updateEvaluationScore(String id, double score, {String updatedBy = ''}) => supabaseUpdate(
+  Future<void> updateEvaluationScore(String id, double score, {String updatedBy = '', String status = ''}) => supabaseUpdate(
         'student_evaluations',
         {'id': 'eq.$id'},
-        {'score': score, if (updatedBy.isNotEmpty) 'updated_by': updatedBy, 'updated_at': _nowIso()},
+        {
+          'score': status.isEmpty ? score : 0,
+          'score_status': status.isEmpty ? null : status,
+          if (updatedBy.isNotEmpty) 'updated_by': updatedBy,
+          'updated_at': _nowIso(),
+        },
       );
 
   // ── طلبات الدفع من ولي الأمر (ParentPaymentRequests) ─────────────────────

@@ -8,6 +8,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/form_layout.dart';
 import '../widgets/list_paging.dart';
+import '../widgets/score_status_toggle.dart';
 import '../widgets/widgets.dart';
 
 /// صفحة «رصد درجات» — المقابل لـ `isRecordModalOpen` في Evaluations.tsx.
@@ -47,6 +48,9 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
 
   /// درجة كل طالب. الحقل الفارغ يعني «لم يُرصد» فيُتخطّى، لا صفراً.
   final scores = <String, TextEditingController>{};
+
+  /// «غائب» أو «معفى» بدل العلامة لكل طالب.
+  final statuses = <String, String>{};
 
   /// ملاحظة اختيارية لكل طالب — مطابق لـ `studentScores[id].notes`.
   final notes = <String, TextEditingController>{};
@@ -139,6 +143,7 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
       c.dispose();
     }
     scores.clear();
+    statuses.clear();
     notes.clear();
     for (final s in _roster) {
       scores[s.id] = TextEditingController();
@@ -255,6 +260,11 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
     final entered = <String, double>{};
     for (final entry in scores.entries) {
       final raw = entry.value.text.trim();
+      // الحالة تُحفظ بعلامة صفر
+      if ((statuses[entry.key] ?? '').isNotEmpty) {
+        entered[entry.key] = 0;
+        continue;
+      }
       if (raw.isEmpty) continue;
       final value = double.tryParse(raw);
       if (value == null) {
@@ -288,6 +298,7 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
         evaluationDate: date,
         scores: entered,
         notes: {for (final e in notes.entries) e.key: e.value.text},
+        statuses: statuses,
         term: term,
         componentId: term.isNotEmpty && componentId.isNotEmpty ? componentId : '',
       );
@@ -525,15 +536,30 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
                         child: Row(
                           children: [
                             Expanded(
-                              child: Text(
-                                s.fullName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: AppColors.text,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    s.fullName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: AppColors.text,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  ScoreStatusToggle(
+                                    status: statuses[s.id] ?? '',
+                                    onStatus: (status) => setState(() {
+                                      statuses[s.id] = status;
+                                      if (status.isNotEmpty) scores[s.id]?.clear();
+                                      errors.clear('score:${s.id}');
+                                    }),
+                                  ),
+                                ],
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -541,8 +567,10 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
                               width: 88,
                               child: TextField(
                                 controller: scores[s.id],
-                                onChanged: (_) {
-                                  if (errors.clear('score:${s.id}')) setState(() {});
+                                onChanged: (v) {
+                                  final hadStatus = (statuses[s.id] ?? '').isNotEmpty && v.trim().isNotEmpty;
+                                  if (hadStatus) statuses[s.id] = '';
+                                  if (errors.clear('score:${s.id}') || hadStatus) setState(() {});
                                 },
                                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 textAlign: TextAlign.center,
@@ -550,7 +578,8 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
                                 decoration: InputDecoration(
                                   isDense: true,
                                   errorText: errors['score:${s.id}'],
-                                  hintText: 'من ${trimNum(double.tryParse(maxScore.text.trim()) ?? 100)}',
+                                  hintText: scoreStatusLabels[statuses[s.id]] ??
+                                      'من ${trimNum(double.tryParse(maxScore.text.trim()) ?? 100)}',
                                   hintStyle: const TextStyle(fontSize: 11, color: AppColors.faint),
                                 ),
                               ),

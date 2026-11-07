@@ -1884,6 +1884,25 @@ const evaluationTypeNames = {
 ///
 /// ليس ملاحظة عابرة كما كان: عنوان ودرجة من درجة قصوى وتاريخ ونوع، وهي
 /// الحقول التي أضافتها هجرة `20260910_evaluations_expansion.sql`.
+/// «غائب» و«معفى» بدل العلامة — `SCORE_STATUS_LABELS`.
+///
+/// الغائب يُحسب صفراً ويُعرض «غائب»، والمعفى خارج كل معدل كأن الاختبار لم يُعقد له.
+const scoreStatusLabels = <String, String>{'absent': 'غائب', 'exempt': 'معفى'};
+
+/// الحالة السارية، والفارغ علامة عادية — `scoreStatusOf`: لا تسري إلا والعلامة صفر،
+/// فتطبيق قديم عدّل علامة غائب إلى 15 دون أن يمسح الحالة تبقى علامته 15.
+String effectiveScoreStatus(String? status, num? score) {
+  if ((status == 'absent' || status == 'exempt') && !((score ?? 0) > 0)) return status!;
+  return '';
+}
+
+/// متوسط النسب بلا المعفى؛ `null` إن لم يبقَ ما يُحسب — `averagePercent`.
+double? averageEvaluationPercent(Iterable<Evaluation> list) {
+  final counted = list.where((e) => !e.isExempt).toList();
+  if (counted.isEmpty) return null;
+  return counted.fold<double>(0, (a, e) => a + e.percent) / counted.length;
+}
+
 class Evaluation {
   Evaluation({
     required this.id,
@@ -1904,6 +1923,7 @@ class Evaluation {
     this.updatedAt,
     this.recordedBy = '',
     this.updatedBy = '',
+    this.scoreStatus = '',
   });
 
   final String id;
@@ -1913,6 +1933,9 @@ class Evaluation {
   String teacherId;
   String title;
   double score;
+
+  /// `score_status` كما خُزّن؛ يُقرأ بـ [status].
+  String scoreStatus;
   double maxScore;
   String evaluationDate;
   String type;
@@ -1930,6 +1953,13 @@ class Evaluation {
   /// `recorded_by` / `updated_by` (مهاجرة 20261022). القديمة فارغة.
   String recordedBy;
   String updatedBy;
+
+  /// الحالة السارية: `absent` أو `exempt` أو فارغ.
+  String get status => effectiveScoreStatus(scoreStatus, score);
+  bool get isExempt => status == 'exempt';
+
+  /// العلامة كما تُعرض: «غائب» و«معفى» بدل الصفر — `scoreText`.
+  String get statusLabel => scoreStatusLabels[status] ?? '';
 
   /// النسبة المئوية. الدرجة القصوى صفراً تعني تقييماً بلا وزن لا قسمةً على صفر.
   int get percent {
@@ -1960,6 +1990,7 @@ class Evaluation {
     'component_id': componentId.isEmpty ? null : componentId,
     'recorded_by': recordedBy.isEmpty ? null : recordedBy,
     'updated_by': updatedBy.isEmpty ? null : updatedBy,
+    'score_status': scoreStatus.isEmpty ? null : scoreStatus,
     'created_at': createdAt,
     'updated_at': updatedAt,
     'sync_status': syncStatus,
@@ -1985,6 +2016,7 @@ class Evaluation {
     updatedAt: m['updated_at']?.toString(),
     recordedBy: '${m['recorded_by'] ?? ''}',
     updatedBy: '${m['updated_by'] ?? ''}',
+    scoreStatus: '${m['score_status'] ?? ''}',
   );
 }
 

@@ -1076,10 +1076,13 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
 NTone _percentTone(num percent) => percent >= 85 ? NTone.green : (percent >= 60 ? NTone.sun : NTone.red);
 
 /// نسبة التقييم؛ بلا علامة صفر.
-double _pct(StudentEvaluation e) => e.maxScore > 0 ? (e.score ?? 0) / e.maxScore * 100 : 0;
+double _pct(StudentEvaluation e) => e.maxScore > 0 && e.status.isEmpty ? (e.score ?? 0) / e.maxScore * 100 : 0;
 
-double? _averagePercent(List<StudentEvaluation> list) =>
-    list.isEmpty ? null : list.fold<double>(0, (s, e) => s + _pct(e)) / list.length;
+/// متوسط النسب بلا المعفى — `averagePercent`.
+double? _averagePercent(List<StudentEvaluation> list) {
+  final counted = list.where((e) => e.status != 'exempt').toList();
+  return counted.isEmpty ? null : counted.fold<double>(0, (s, e) => s + _pct(e)) / counted.length;
+}
 
 class _ErrorBody extends StatelessWidget {
   const _ErrorBody({required this.message, required this.onRetry});
@@ -1564,16 +1567,18 @@ class _EvaluationRow extends StatelessWidget {
             children: [
               Text.rich(
                 TextSpan(
-                  text: e.score == null ? '—' : trimNum(e.score!),
+                  text: e.status.isNotEmpty ? e.statusLabel : (e.score == null ? '—' : trimNum(e.score!)),
                   children: [
-                    TextSpan(text: ' من ${trimNum(e.maxScore)}', style: nText(12, weight: FontWeight.w500, color: Noon.muted)),
+                    if (e.status.isEmpty) TextSpan(text: ' من ${trimNum(e.maxScore)}', style: nText(12, weight: FontWeight.w500, color: Noon.muted)),
                   ],
                 ),
                 textDirection: TextDirection.rtl,
-                style: nText(16, weight: FontWeight.w700, color: p >= 50 ? Noon.text : Noon.red600, height: 1),
+                style: nText(16, weight: FontWeight.w700, color: p >= 50 || e.status == 'exempt' ? Noon.text : Noon.red600, height: 1),
               ),
-              const SizedBox(height: 4),
-              Text('${p.round()}%', textDirection: TextDirection.ltr, style: small),
+              if (e.status != 'exempt') ...[
+                const SizedBox(height: 4),
+                Text('${p.round()}%', textDirection: TextDirection.ltr, style: small),
+              ],
             ],
           ),
         ],

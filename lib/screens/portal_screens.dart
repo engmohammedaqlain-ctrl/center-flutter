@@ -34,6 +34,7 @@ import '../widgets/list_paging.dart';
 import '../widgets/moodle_style.dart';
 import '../widgets/noon_moodle.dart';
 import '../widgets/noon_ui.dart';
+import '../widgets/score_status_toggle.dart';
 import 'homeroom_class.dart';
 import 'notes_parts.dart';
 import 'portal_chrome.dart';
@@ -1665,17 +1666,17 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   }
 
   /// تعديل علامة مرصودة — كنقر الخلية في كشف الويب.
-  Future<void> _editScore(StudentEvaluation e, double score) async {
+  Future<void> _editScore(StudentEvaluation e, double score, String status) async {
     if (_lockedOut(e)) return;
     final actor = _gradeActor;
     final updated = [
-      for (final x in recent) x.id == e.id ? x.copyWith(score: score, updatedBy: actor) : x,
+      for (final x in recent) x.id == e.id ? x.copyWith(score: score, updatedBy: actor, scoreStatus: status) : x,
     ];
     setState(() => recent = updated);
     if (e.groupId.isNotEmpty) await _offline.saveEvaluations(e.groupId, updated);
     await _writeOrQueue(
-      () => _service.updateEvaluationScore(e.id, score, updatedBy: actor),
-      {'kind': 'evaluation_score', 'id': e.id, 'score': score, 'updated_by': actor},
+      () => _service.updateEvaluationScore(e.id, score, updatedBy: actor, status: status),
+      {'kind': 'evaluation_score', 'id': e.id, 'score': score, 'updated_by': actor, 'score_status': status},
       announceTables: const ['student_evaluations'],
     );
   }
@@ -2615,7 +2616,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
             return [
               '${i + 1}',
               nameOf(ids[i]),
-              r?.score == null ? 'لم يختبر' : trimNum(r!.score!),
+              r?.score == null ? 'لم يختبر' : (r!.status.isEmpty ? trimNum(r.score!) : r.statusLabel),
               r?.percent == null ? '' : '${r!.percent}%',
               r?.notes ?? '',
             ];
@@ -2879,6 +2880,9 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
   String evalComponentId = '';
   String? titleError;
   final _scores = <String, TextEditingController>{};
+
+  /// «غائب» أو «معفى» بدل العلامة لكل طالب.
+  final _statuses = <String, String>{};
   final _notes = <String, TextEditingController>{};
   bool saving = false;
   int rosterVisible = kListPageSize;
@@ -2919,7 +2923,11 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
       evalTerm = first.term.isNotEmpty ? first.term : termForDate(evalDate);
       evalComponentId = first.componentId;
       for (final r in widget.editing) {
-        if (r.score != null) _ctl(_scores, r.studentId).text = trimNum(r.score!);
+        if (r.status.isNotEmpty) {
+          _statuses[r.studentId] = r.status;
+        } else if (r.score != null) {
+          _ctl(_scores, r.studentId).text = trimNum(r.score!);
+        }
         if (r.notes.isNotEmpty) _ctl(_notes, r.studentId).text = r.notes;
       }
     }
@@ -3088,11 +3096,12 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
     for (final s in _students()) {
       final raw = _ctl(_scores, s.id).text.trim();
       final prev = existing[s.id];
-      if (raw.isEmpty) {
+      final status = _statuses[s.id] ?? '';
+      if (raw.isEmpty && status.isEmpty) {
         if (_isEditing && prev != null) removed.add(prev);
         continue;
       }
-      final score = double.tryParse(raw);
+      final score = status.isEmpty ? double.tryParse(raw) : 0.0;
       if (score == null || score < 0 || score > max) {
         showAppSnack(context, 'علامة غير صالحة للطالب ${s.fullName} (من 0 إلى ${trimNum(max)})', error: true);
         return;
@@ -3114,6 +3123,7 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
         createdAt: prev?.createdAt ?? '',
         recordedBy: prev != null ? prev.recordedBy : widget.actor,
         updatedBy: widget.actor,
+        scoreStatus: status,
       ));
     }
     if (batch.isEmpty && removed.isEmpty) {
@@ -3392,6 +3402,7 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
                       setState(() {
                         for (final s in _students()) {
                           _ctl(_scores, s.id).text = full;
+                          _statuses.remove(s.id);
                         }
                       });
                     },
@@ -3421,15 +3432,29 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
                   child: Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          s.fullName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: _C.text,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              s.fullName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: _C.text,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            ScoreStatusToggle(
+                              status: _statuses[s.id] ?? '',
+                              onStatus: (status) => setState(() {
+                                _statuses[s.id] = status;
+                                if (status.isNotEmpty) _ctl(_scores, s.id).clear();
+                              }),
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -3437,7 +3462,12 @@ class _TeacherEvaluationFormPageState extends State<_TeacherEvaluationFormPage> 
                         width: 80,
                         child: _Input(
                           controller: _ctl(_scores, s.id),
-                          hint: 'من ${trimNum(_maxScore)}',
+                          hint: scoreStatusLabels[_statuses[s.id]] ?? 'من ${trimNum(_maxScore)}',
+                          onChanged: (v) {
+                            if (v.trim().isNotEmpty && (_statuses[s.id] ?? '').isNotEmpty) {
+                              setState(() => _statuses[s.id] = '');
+                            }
+                          },
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           ltr: true,
                           center: true,
@@ -4297,7 +4327,7 @@ class _RecentEvaluationCard extends StatefulWidget {
   final List<StudentEvaluation> rows;
   final String Function(String studentId) nameOf;
   final void Function(StudentEvaluation) onDelete;
-  final void Function(StudentEvaluation, double) onEditScore;
+  final void Function(StudentEvaluation, double, String) onEditScore;
 
   /// فتح الكشف كاملاً في صفحة الرصد: تصحيح علامات أو إضافة من لم يختبر.
   final VoidCallback onEditSheet;
@@ -4391,12 +4421,12 @@ class _RecentEvaluationCardState extends State<_RecentEvaluationCard> {
                                 Padding(
                                   padding: const EdgeInsetsDirectional.only(end: 10),
                                   child: Text(
-                                    '${row.score == null ? '-' : trimNum(row.score!)} / ${trimNum(row.maxScore)}',
+                                    row.status.isNotEmpty ? row.statusLabel : '${row.score == null ? '-' : trimNum(row.score!)} / ${trimNum(row.maxScore)}',
                                     style: nText(13, weight: FontWeight.w700),
                                   ),
                                 )
                               else ...[
-                                _EditableScore(row: row, onSave: (v) => widget.onEditScore(row, v)),
+                                _EditableScore(row: row, onSave: (v, status) => widget.onEditScore(row, v, status)),
                                 NBtn(tone: NBtnTone.danger, small: true, icon: Icons.delete_outline_rounded, tooltip: 'حذف', onTap: () => widget.onDelete(row)),
                               ],
                             ],
@@ -4771,7 +4801,7 @@ class _EditableScore extends StatefulWidget {
   const _EditableScore({required this.row, required this.onSave});
 
   final StudentEvaluation row;
-  final ValueChanged<double> onSave;
+  final void Function(double score, String status) onSave;
 
   @override
   State<_EditableScore> createState() => _EditableScoreState();
@@ -4779,9 +4809,10 @@ class _EditableScore extends StatefulWidget {
 
 class _EditableScoreState extends State<_EditableScore> {
   bool editing = false;
-  late final TextEditingController ctl = TextEditingController(
-    text: widget.row.score == null ? '' : trimNum(widget.row.score!),
-  );
+  late final TextEditingController ctl = TextEditingController(text: _text);
+
+  String get _text =>
+      widget.row.score == null || widget.row.status.isNotEmpty ? '' : trimNum(widget.row.score!);
 
   @override
   void dispose() {
@@ -4791,43 +4822,68 @@ class _EditableScoreState extends State<_EditableScore> {
 
   void _commit() {
     setState(() => editing = false);
-    final v = double.tryParse(ctl.text.trim());
+    final raw = ctl.text.trim();
+    // خانة فارغة تبقي ما كان: غائب أو معفى أو علامته
+    if (raw.isEmpty && widget.row.status.isNotEmpty) return;
+    final v = double.tryParse(raw);
     if (v == null || v < 0 || v > widget.row.maxScore) {
       // خارج المدى: تُردّ إلى قيمتها ولا تُحفظ
-      ctl.text = widget.row.score == null ? '' : trimNum(widget.row.score!);
+      ctl.text = _text;
       showAppSnack(context, 'العلامة بين 0 و ${trimNum(widget.row.maxScore)}', error: true);
       return;
     }
-    if (v != widget.row.score) widget.onSave(v);
+    if (v != widget.row.score || widget.row.status.isNotEmpty) widget.onSave(v, '');
+  }
+
+  void _setStatus(String status) {
+    setState(() => editing = false);
+    // إزالة الحالة تُبقي الخانة مفتوحة لعلامة جديدة ولا تحفظ صفراً
+    if (status.isEmpty) {
+      setState(() => editing = true);
+      return;
+    }
+    ctl.clear();
+    if (status != widget.row.status) widget.onSave(0, status);
   }
 
   @override
   Widget build(BuildContext context) {
     if (editing) {
-      return SizedBox(
-        width: 74,
-        height: 30,
-        child: TextField(
-          controller: ctl,
-          autofocus: true,
-          textAlign: TextAlign.center,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          style: TextStyle(
-            fontFamily: AppText.family,
-            fontSize: 12.5,
-            fontWeight: FontWeight.w800,
-            color: Noon.text,
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          SizedBox(
+            width: 74,
+            height: 30,
+            child: TextField(
+              controller: ctl,
+              autofocus: true,
+              textAlign: TextAlign.center,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              style: TextStyle(
+                fontFamily: AppText.family,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                color: Noon.text,
+              ),
+              decoration: InputDecoration(
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                suffixText: '/${trimNum(widget.row.maxScore)}',
+                suffixStyle: TextStyle(color: Noon.faint, fontSize: 10.5),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(NoonRadius.btn)),
+              ),
+              onSubmitted: (_) => _commit(),
+              onTapOutside: (_) => _commit(),
+            ),
           ),
-          decoration: InputDecoration(
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            suffixText: '/${trimNum(widget.row.maxScore)}',
-            suffixStyle: TextStyle(color: Noon.faint, fontSize: 10.5),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(NoonRadius.btn)),
+          const SizedBox(height: 4),
+          // لمس الحالة ليس خروجاً من الخانة: لا يحفظها قبل أن تصل اللمسة
+          TextFieldTapRegion(
+            child: ScoreStatusToggle(status: widget.row.status, onStatus: _setStatus),
           ),
-          onSubmitted: (_) => _commit(),
-          onTapOutside: (_) => _commit(),
-        ),
+        ],
       );
     }
 
@@ -4837,8 +4893,10 @@ class _EditableScoreState extends State<_EditableScore> {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
         child: Text(
-          '${widget.row.score == null ? '—' : trimNum(widget.row.score!)}'
-          ' / ${trimNum(widget.row.maxScore)}',
+          widget.row.status.isNotEmpty
+              ? widget.row.statusLabel
+              : '${widget.row.score == null ? '—' : trimNum(widget.row.score!)}'
+                  ' / ${trimNum(widget.row.maxScore)}',
           textDirection: TextDirection.ltr,
           style: TextStyle(
             fontFamily: AppText.family,

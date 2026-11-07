@@ -40,7 +40,7 @@ Future<void> printEvaluations(
     final scoreMap = <String, Map<String, String>>{};
     for (final e in evaluations) {
       final key = e.title.trim().isEmpty ? e.typeLabel : e.title.trim();
-      scoreMap.putIfAbsent(e.studentId, () => {})[key] = trimNum(e.score);
+      scoreMap.putIfAbsent(e.studentId, () => {})[key] = e.status.isEmpty ? trimNum(e.score) : e.statusLabel;
     }
 
     // مجموع الفصل إن وُجدت درجات رقمية
@@ -118,8 +118,8 @@ Future<void> printEvaluations(
             ].where((x) => x.isNotEmpty).join(' · '),
             e.title,
             e.typeLabel,
-            '${trimNum(e.score)} / ${trimNum(e.maxScore)}',
-            '${e.percent}%',
+            e.status.isEmpty ? '${trimNum(e.score)} / ${trimNum(e.maxScore)}' : e.statusLabel,
+            e.isExempt ? '—' : '${e.percent}%',
             e.evaluationDate,
             e.notes.isEmpty ? '-' : e.notes,
           ],

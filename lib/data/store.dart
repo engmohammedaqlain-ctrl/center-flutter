@@ -2223,6 +2223,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     required String evaluationDate,
     required Map<String, double> scores,
     Map<String, String> notes = const {},
+    Map<String, String> statuses = const {},
     String term = '',
     String componentId = '',
   }) {
@@ -2261,6 +2262,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         updatedAt: now,
         recordedBy: actor,
         updatedBy: actor,
+        scoreStatus: statuses[entry.key] ?? '',
       );
       final row = e.toCloud();
       bucket.add(row);
@@ -2274,7 +2276,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   /// تعديل علامة مرصودة — `EvaluationService.updateScore`: لمن يملك «تعديل العلامات»،
   /// وفي حدود علامتها الكاملة، وخارج فترة الإقفال لغير المدير.
-  void updateEvaluationScore(String id, double score, {String reason = ''}) {
+  void updateEvaluationScore(String id, double score, {String reason = '', String status = ''}) {
     if (!canEditGrades) {
       throw StoreException('لا صلاحية لك على «${sectionLabel('evaluations.edit')}»');
     }
@@ -2288,7 +2290,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final now = _nowIso();
     final row = {
       ...bucket[idx],
-      'score': score,
+      'score': status.isEmpty ? score : 0.0,
+      // علامة رقمية تمسح الحالة، والحالة تُحفظ مع صفر
+      'score_status': status.isEmpty ? null : status,
       'updated_by': gradeActorLabel,
       'updated_at': now,
       'sync_status': 'pending',

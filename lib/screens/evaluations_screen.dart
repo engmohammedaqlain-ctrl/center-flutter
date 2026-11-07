@@ -13,6 +13,7 @@ import '../theme/app_theme.dart';
 import '../widgets/admin_ui.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/list_paging.dart';
+import '../widgets/score_status_toggle.dart';
 import '../widgets/table_gate.dart';
 import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
@@ -298,7 +299,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                   child: AdminHero(
                     icon: Icons.workspace_premium_outlined,
                     label: 'معدل الكشوف',
-                    value: '${(list.fold<int>(0, (a, e) => a + e.percent) / list.length).round()}',
+                    value: '${(averageEvaluationPercent(list) ?? 0).round()}',
                     unit: '%',
                     chips: ['${groupIds.length} كشف', '${list.length} علامة'],
                   ),
@@ -1023,8 +1024,7 @@ class _GroupSectionState extends State<_GroupSection> {
     for (final e in widget.evaluations) {
       byStudent.putIfAbsent(e.studentId, () => []).add(e);
     }
-    int averageOf(List<Evaluation> rows) =>
-        rows.isEmpty ? 0 : (rows.fold<int>(0, (a, e) => a + e.percent) / rows.length).round();
+    int averageOf(List<Evaluation> rows) => (averageEvaluationPercent(rows) ?? 0).round();
     final students = byStudent.keys.toList()
       ..sort((a, b) {
         if (widget.sortByResult) {
@@ -1289,15 +1289,15 @@ Future<void> _showStudentGrades(
                           onTap: store.canEditGrades && !isGradeLocked(e.evaluationDate, lock)
                               ? () async {
                                   final value = await _askScore(ctx, e);
-                                  if (value == null || value == e.score) return;
+                                  if (value == null || (value.score == e.score && value.status == e.status)) return;
                                   try {
                                     try {
-                                      store.updateEvaluationScore(e.id, value);
+                                      store.updateEvaluationScore(e.id, value.score, status: value.status);
                                     } on ApprovedReasonRequired {
                                       if (!ctx.mounted) return;
                                       final reason = await askApprovedEditReason(ctx);
                                       if (reason == null) return;
-                                      store.updateEvaluationScore(e.id, value, reason: reason);
+                                      store.updateEvaluationScore(e.id, value.score, reason: reason, status: value.status);
                                     }
                                     if (ctx.mounted) Navigator.pop(ctx);
                                     if (context.mounted) showAppSnack(context, 'عُدّلت العلامة');
@@ -1311,15 +1311,15 @@ Future<void> _showStudentGrades(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                '${trimNum(e.score)} / ${trimNum(e.maxScore)}',
+                                e.status.isEmpty ? '${trimNum(e.score)} / ${trimNum(e.maxScore)}' : e.statusLabel,
                                 style: TextStyle(
                                   fontFamily: AppText.family,
-                                  color: _tierColor(e.percent),
+                                  color: e.isExempt ? AppColors.muted : _tierColor(e.percent),
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              Text('${e.percent}%', style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
+                              if (!e.isExempt) Text('${e.percent}%', style: const TextStyle(color: AppColors.faint, fontSize: 10.5)),
                             ],
                           ),
                         ),
@@ -1444,25 +1444,52 @@ Color _tierColor(int percent) {
 }
 
 /// نافذة إدخال علامة جديدة لتقييم مرصود.
-Future<double?> _askScore(BuildContext context, Evaluation e) async {
-  final ctl = TextEditingController(text: trimNum(e.score));
-  final result = await showDialog<double>(
+Future<({double score, String status})?> _askScore(BuildContext context, Evaluation e) async {
+  final ctl = TextEditingController(text: e.status.isEmpty ? trimNum(e.score) : '');
+  var status = e.status;
+  final result = await showDialog<({double score, String status})>(
     context: context,
-    builder: (dialog) => AlertDialog(
-      title: Text(e.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      content: TextField(
-        controller: ctl,
-        autofocus: true,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        decoration: InputDecoration(labelText: 'العلامة من ${trimNum(e.maxScore)}'),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(dialog), child: const Text('إلغاء')),
-        FilledButton(
-          onPressed: () => Navigator.pop(dialog, double.tryParse(ctl.text.trim())),
-          child: const Text('حفظ'),
+    builder: (dialog) => StatefulBuilder(
+      builder: (dialog, setDialog) => AlertDialog(
+        title: Text(e.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: ctl,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(labelText: 'العلامة من ${trimNum(e.maxScore)}'),
+              onChanged: (v) {
+                if (v.trim().isNotEmpty && status.isNotEmpty) setDialog(() => status = '');
+              },
+            ),
+            const SizedBox(height: 10),
+            ScoreStatusToggle(
+              status: status,
+              onStatus: (s) => setDialog(() {
+                status = s;
+                if (s.isNotEmpty) ctl.clear();
+              }),
+            ),
+          ],
         ),
-      ],
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog), child: const Text('إلغاء')),
+          FilledButton(
+            onPressed: () {
+              if (status.isNotEmpty) {
+                Navigator.pop(dialog, (score: 0.0, status: status));
+                return;
+              }
+              final score = double.tryParse(ctl.text.trim());
+              Navigator.pop(dialog, score == null ? null : (score: score, status: ''));
+            },
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
     ),
   );
   ctl.dispose();

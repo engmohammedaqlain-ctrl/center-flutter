@@ -2346,8 +2346,7 @@ class _EvaluationsCard extends StatelessWidget {
     double? percentOf(String subjectId, List<Evaluation> rows) {
       final fromScheme = summaries[subjectId]?.yearAverage;
       if (fromScheme != null) return fromScheme;
-      if (rows.isEmpty) return null;
-      return rows.fold<double>(0, (a, e) => a + e.percent) / rows.length;
+      return averageEvaluationPercent(rows);
     }
 
     /// نسبة الفصل: المكتمل بلونه، والجاري بلون التنبيه.
@@ -2477,7 +2476,7 @@ class _EvaluationsCard extends StatelessWidget {
                             SizedBox(
                               width: 56,
                               child: Text(
-                                '${trimNum(e.score)}/${trimNum(e.maxScore)}',
+                                e.status.isEmpty ? '${trimNum(e.score)}/${trimNum(e.maxScore)}' : e.statusLabel,
                                 textDirection: TextDirection.ltr,
                                 textAlign: TextAlign.right,
                                 style: NoonText.style(11, weight: FontWeight.w700).copyWith(fontFeatures: mono),

@@ -470,6 +470,7 @@ const tableAllowedColumns = <String, List<String>>{
     'component_id',
     'recorded_by',
     'updated_by',
+    'score_status',
     'created_at',
     'updated_at',
   ],

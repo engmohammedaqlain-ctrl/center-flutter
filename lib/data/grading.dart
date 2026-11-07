@@ -289,6 +289,7 @@ class ComponentResult {
     required this.contribution,
     this.achievedScore,
     this.maxScore = 0,
+    this.exempt = false,
   });
 
   final GradingComponent component;
@@ -300,6 +301,9 @@ class ComponentResult {
   final double contribution;
   final double? achievedScore;
   final double maxScore;
+
+  /// الطالب معفى من كل تقييمات المكوّن: خارج حسابه، ووزنه يتوزع على البقية.
+  final bool exempt;
 }
 
 /// معدل فصل دراسي لطالب في مادة، وفق مخطط المدرسة.
@@ -342,10 +346,23 @@ TermGrade computeTermGrade(
   final totalWeight = components.fold<double>(0, (a, c) => a + c.weight);
   final weightBase = totalWeight > 0 ? totalWeight : 100.0;
   final results = <ComponentResult>[];
+  List<Evaluation> own(GradingComponent c) =>
+      evaluations.where((e) => e.term == term && e.componentId == c.id).toList();
+
+  // المعفى لا يدخل الحساب. ومكوّن أُعفي الطالب من كل تقييماته يخرج بوزنه وتتمدد
+  // أوزان البقية إلى المجموع نفسه: يبقى الفصل مكتملاً بما عُقد له.
+  final exemptIds = {
+    for (final c in components)
+      if (c.weight > 0 && own(c).isNotEmpty && own(c).every((e) => e.isExempt)) c.id,
+  };
+  final activeWeight = components.fold<double>(0, (a, c) => a + (exemptIds.contains(c.id) ? 0 : c.weight));
+  final scale = activeWeight > 0 ? weightBase / activeWeight : 0.0;
 
   for (final component in components) {
-    final matching = evaluations.where((e) => e.term == term && e.componentId == component.id).toList();
-    final componentMax = (component.weight / weightBase) * fullMark;
+    final exempt = exemptIds.contains(component.id);
+    final weight = exempt ? 0.0 : component.weight * scale;
+    final matching = own(component).where((e) => !e.isExempt).toList();
+    final componentMax = (weight / weightBase) * fullMark;
     if (matching.isEmpty) {
       results.add(ComponentResult(
         component: component,
@@ -353,30 +370,36 @@ TermGrade computeTermGrade(
         contribution: 0,
         achievedScore: null,
         maxScore: componentMax,
+        exempt: exempt,
       ));
       continue;
     }
+    // الغائب صفر
     final sum = matching.fold<double>(
       0,
-      (acc, e) => acc + (e.maxScore > 0 ? (e.score / e.maxScore) * 100 : 0),
+      (acc, e) => acc + (e.status.isEmpty && e.maxScore > 0 ? (e.score / e.maxScore) * 100 : 0),
     );
     final avg = sum / matching.length;
     results.add(
       ComponentResult(
         component: component,
         achievedPercent: avg,
-        contribution: avg * component.weight / 100,
+        contribution: avg * weight / 100,
         achievedScore: (avg / 100) * componentMax,
         maxScore: componentMax,
+        exempt: exempt,
       ),
     );
   }
 
-  final isComplete = results.every((r) => r.component.weight <= 0 || r.achievedPercent != null);
+  // معفى من كل مكوّنات الفصل: لا علامة له فيه، لا صفر مكتمل
+  final allExempt = exemptIds.isNotEmpty && activeWeight == 0;
+  final isComplete =
+      !allExempt && results.every((r) => r.component.weight <= 0 || r.exempt || r.achievedPercent != null);
   final total = results.fold<double>(0, (a, r) => a + r.contribution);
   final gradedWeight = results
       .where((r) => r.achievedPercent != null)
-      .fold<double>(0, (a, r) => a + r.component.weight);
+      .fold<double>(0, (a, r) => a + r.component.weight * scale);
   final currentAverage = gradedWeight > 0 ? total / gradedWeight * 100 : null;
 
   return TermGrade(
