@@ -9,6 +9,8 @@ import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../widgets/admin_tokens.dart';
 import '../widgets/admin_ui.dart';
+import '../widgets/attendance_view.dart';
+import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
 import 'attendance_screen.dart';
 
@@ -147,7 +149,18 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
     final pending = leaves.where((l) => l.status == 'pending').toList()..sort((a, b) => a.fromDate.compareTo(b.fromDate));
     String nameOf(String id) => store.teacherById(id)?.name ?? 'موظف';
 
-    return RefreshIndicator(
+    final workDay = _workDay(store);
+    return ThumbActionLayer(
+      action: workDay != null && teachers.isNotEmpty && records != null
+          ? ThumbAction(
+              label: 'الكل حاضر',
+              icon: Icons.done_all,
+              color: AppColors.success,
+              noon: true,
+              onPressed: () => _allPresent(store, teachers, workDay),
+            )
+          : null,
+      child: RefreshIndicator(
       onRefresh: () => _load(force: true),
       child: ListView(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
@@ -181,16 +194,11 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
             ),
             const SizedBox(height: 10),
           ],
-          SegmentedButton<String>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(value: 'day', label: Text('يوم')),
-              ButtonSegment(value: 'week', label: Text('أسبوعي')),
-              ButtonSegment(value: 'month', label: Text('شهري')),
-            ],
-            selected: {period},
-            onSelectionChanged: (v) {
-              setState(() => period = v.first);
+          NoonSegment<String>(
+            value: period,
+            options: const [('day', 'يوم'), ('week', 'أسبوعي'), ('month', 'شهري')],
+            onChanged: (v) {
+              setState(() => period = v);
               _load();
             },
           ),
@@ -209,7 +217,14 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
             _sheet(store, teachers),
         ],
       ),
+    ),
     );
+  }
+
+  /// اليوم الذي يُرصد له «الكل حاضر»: اليوم المعروض، أو اليوم الحالي في الكشف — إن لم يكن عطلة.
+  String? _workDay(AppStore store) {
+    if (period == 'day') return holidayOn(store, date) == null ? date : null;
+    return days.where((d) => d.isToday && holidayOn(store, d.dateStr) == null).firstOrNull?.dateStr;
   }
 
   Widget _navigator(AppStore store, List<Teacher> teachers) {
@@ -241,12 +256,11 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
       next = () => weekOffset++;
       atEnd = weekOffset >= 0;
     }
-    final workDay = period == 'day' ? (holidayOn(store, date) == null ? date : null) : days.where((d) => d.isToday && holidayOn(store, d.dateStr) == null).firstOrNull?.dateStr;
     return Row(
       children: [
         IconButton(
           tooltip: 'السابق',
-          icon: const Icon(Icons.chevron_right),
+          icon: const Icon(Icons.chevron_left),
           onPressed: () {
             setState(prev);
             _load();
@@ -255,7 +269,7 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
         Text(label, style: NoonText.style(13, weight: FontWeight.w700)),
         IconButton(
           tooltip: 'التالي',
-          icon: const Icon(Icons.chevron_left),
+          icon: const Icon(Icons.chevron_right),
           onPressed: atEnd
               ? null
               : () {
@@ -263,16 +277,6 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
                   _load();
                 },
         ),
-        const Spacer(),
-        if (workDay != null && teachers.isNotEmpty && records != null)
-          NoonButton(
-            small: true,
-            tone: NoonTone.sun,
-            icon: Icons.done_all_rounded,
-            label: 'الكل حاضر',
-            tooltip: 'لمن لم يُرصد',
-            onPressed: () => _allPresent(store, teachers, workDay),
-          ),
       ],
     );
   }
@@ -281,7 +285,6 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
   Widget _dayList(AppStore store, List<Teacher> teachers) {
     final holiday = holidayOn(store, date);
     if (holiday != null) return NoonEmpty('عطلة: $holiday');
-    const tone = {'present': Color(0xFF059669), 'absent': Color(0xFFE11D48), 'late': Color(0xFFF59E0B)};
     return AppCard(
       padding: EdgeInsets.zero,
       child: Column(
@@ -315,28 +318,12 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
                     if (leave != null)
                       NoonBadge('إجازة ${leave.paid == true ? 'مدفوعة' : 'غير مدفوعة'}')
                     else
-                      for (final s in staffDayLabels.keys)
-                        Padding(
-                          padding: const EdgeInsetsDirectional.only(start: 4),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(8),
-                            onTap: () => _save(store, t.id, date, status == s ? null : s),
-                            child: Container(
-                              height: 32,
-                              padding: const EdgeInsets.symmetric(horizontal: 10),
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: status == s ? tone[s] : Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: status == s ? tone[s]! : AppColors.lineStrong),
-                              ),
-                              child: Text(
-                                staffDayLabels[s]!,
-                                style: NoonText.style(11.5, weight: FontWeight.w700, color: status == s ? Colors.white : AdminNoon.muted),
-                              ),
-                            ),
-                          ),
-                        ),
+                      AttendanceMarkToggle(
+                        status: status,
+                        expand: false,
+                        options: staffMarkOptions,
+                        onSet: (s) => _save(store, t.id, date, status == s ? null : s),
+                      ),
                   ],
                 ),
               );
