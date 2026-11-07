@@ -349,14 +349,14 @@ class _HomeState extends State<_Home> {
   Widget _kpi(String label, String value, String sub, {Color? color, VoidCallback? onTap, String? hint}) => Tooltip(
         message: hint ?? '',
         child: Material(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(AdminNoon.rPanel),
-          child: InkWell(
+          color: Colors.transparent,
+          child: Ink(
+            decoration: noonPanel(),
+            child: InkWell(
             onTap: onTap,
             borderRadius: BorderRadius.circular(AdminNoon.rPanel),
             child: Container(
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-              decoration: noonPanel(color: Colors.transparent),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -378,6 +378,7 @@ class _HomeState extends State<_Home> {
                 ],
               ),
             ),
+          ),
           ),
         ),
       );

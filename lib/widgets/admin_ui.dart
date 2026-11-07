@@ -4,6 +4,7 @@ import '../models/models.dart';
 import '../theme/app_theme.dart';
 import 'admin_tokens.dart';
 import 'animated_count.dart';
+import 'widgets.dart' show iconTrails;
 
 /// لبنات شاشات الإدارة بهوية نون «رسمية حديثة» — مطابقة لـ `components/noon/noonUi.tsx`
 /// و`noonPortal.tsx` في الويب على عرض الجوال. الألوان من [AdminNoon] (ثيم المدرسة).
@@ -43,9 +44,9 @@ class AdminHero extends StatelessWidget {
       HeroTone.paid => const [Color(0xFF0F4A34), Color(0xFF1E7651), Color(0xFF08301F)],
       HeroTone.due => const [Color(0xFF62202B), Color(0xFF8C3441), Color(0xFF431018)],
       HeroTone.theme => [
-          AdminNoon.mix(ink, 0.66, Colors.black),
-          AdminNoon.mix(AdminNoon.mix(teal, 0.55, ink), 0.74, Colors.black),
-          AdminNoon.mix(ink, 0.38, Colors.black),
+          ink,
+          AdminNoon.mix(ink, 0.86),
+          AdminNoon.mix(ink, 0.62, Colors.black),
         ],
     };
   }
@@ -408,8 +409,8 @@ class NoonButton extends StatelessWidget {
             mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              if (icon != null) Icon(icon, size: iconSize, color: fg),
-              if (icon != null && !iconOnly) const SizedBox(width: 6),
+              if (icon != null && !iconTrails(icon!)) Icon(icon, size: iconSize, color: fg),
+              if (icon != null && !iconOnly && !iconTrails(icon!)) const SizedBox(width: 6),
               if (!iconOnly)
                 Flexible(
                   child: Text(
@@ -419,6 +420,8 @@ class NoonButton extends StatelessWidget {
                     style: _t(small ? 12 : 14, FontWeight.w700, fg),
                   ),
                 ),
+              if (icon != null && !iconOnly && iconTrails(icon!)) const SizedBox(width: 6),
+              if (icon != null && iconTrails(icon!)) Icon(icon, size: iconSize, color: fg),
             ],
           );
 
