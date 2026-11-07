@@ -1758,7 +1758,7 @@ Widget _codeLine(String owner, String code) {
 }
 
 
-/// رأس صفحة الصف: بطاقة بتدرج لون الثيم الداكن.
+/// رأس صفحة الصف: لوحة بيضاء هادئة — الاسم والمرحلة، ثم سطور «العنوان: القيمة» للمربي والطلاب والقاعة.
 class _ClassHero extends StatelessWidget {
   const _ClassHero({required this.room, required this.teacher, required this.students, this.onAssign});
 
@@ -1769,116 +1769,81 @@ class _ClassHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ink = AdminNoon.ink;
     final cap = room.capacity > 0 ? room.capacity : 30;
     final ratio = (students / cap).clamp(0.0, 1.0);
-    final onInk = AdminNoon.onInk;
-    final soft = AdminNoon.onInkSoft;
+    final full = students >= cap;
     final name = teacher?.name.trim() ?? '';
-    final initial = name.replaceFirst(RegExp(r'^أ\.\s*'), '').trim();
     final notes = room.notes.trim();
-    TextStyle t(double size, FontWeight w, Color c) => TextStyle(fontFamily: AppText.family, fontSize: size, fontWeight: w, color: c, height: 1.25);
+    final grade = room.gradeLevel.trim();
+
+    Widget line(String label, Widget value) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          child: Row(
+            children: [
+              Text(label, style: NoonText.style(12.5, color: AdminNoon.muted)),
+              const SizedBox(width: 12),
+              Expanded(child: Align(alignment: AlignmentDirectional.centerEnd, child: value)),
+            ],
+          ),
+        );
+    final divider = Divider(height: 1, thickness: 1, color: AdminNoon.line);
 
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        gradient: LinearGradient(
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-          colors: [ink, AdminNoon.mix(ink, 0.86), AdminNoon.mix(ink, 0.62, Colors.black)],
-        ),
-        boxShadow: [BoxShadow(color: ink.withValues(alpha: 0.25), blurRadius: 16, offset: const Offset(0, 6))],
-      ),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+      decoration: noonPanel(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(color: onInk.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(14)),
-                child: Icon(Icons.meeting_room_outlined, size: 24, color: onInk),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
+          Text(room.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: NoonText.style(20, weight: FontWeight.w700, height: 1.2)),
+          const SizedBox(height: 3),
+          Text(grade.isEmpty ? 'بلا مرحلة' : 'الصف $grade', style: NoonText.style(12.5, color: AdminNoon.muted)),
+          const SizedBox(height: 12),
+          divider,
+          line(
+            'المربي',
+            name.isNotEmpty
+                ? Text(name, style: NoonText.style(13.5, weight: FontWeight.w600))
+                : onAssign != null
+                    ? InkWell(
+                        onTap: onAssign,
+                        borderRadius: BorderRadius.circular(6),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                          child: Text('تعيين مربي', style: NoonText.style(13.5, weight: FontWeight.w700, color: AdminNoon.ink)),
+                        ),
+                      )
+                    : Text('بلا مربي', style: NoonText.style(13.5, color: AdminNoon.muted)),
+          ),
+          divider,
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 9),
+            child: Column(
+              children: [
+                Row(
                   children: [
-                    Text(room.gradeLevel.trim().isEmpty ? 'بلا مرحلة' : 'الصف ${room.gradeLevel.trim()}', style: t(12.5, FontWeight.w500, soft)),
-                    const SizedBox(height: 2),
-                    Text(room.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: t(22, FontWeight.w700, onInk)),
+                    Text('الطلاب', style: NoonText.style(12.5, color: AdminNoon.muted)),
+                    const Spacer(),
+                    Text('$students', style: NoonText.style(13.5, weight: FontWeight.w700, color: full ? AdminNoon.red600 : AdminNoon.text)),
+                    Text(' من $cap', style: NoonText.style(13, color: AdminNoon.muted)),
                   ],
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          // المربي
-          InkWell(
-            onTap: name.isEmpty ? onAssign : null,
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-              decoration: BoxDecoration(color: onInk.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(12)),
-              child: Row(
-                children: [
-                  Container(
-                    width: 30,
-                    height: 30,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(color: onInk.withValues(alpha: 0.2), shape: BoxShape.circle),
-                    child: name.isEmpty
-                        ? Icon(Icons.person_add_alt_1_outlined, size: 16, color: onInk)
-                        : Text(initial.isEmpty ? '؟' : initial.substring(0, 1), style: t(14, FontWeight.w700, onInk)),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: LinearProgressIndicator(
+                    value: ratio,
+                    minHeight: 4,
+                    backgroundColor: AdminNoon.band,
+                    valueColor: AlwaysStoppedAnimation(full ? AdminNoon.red600 : AdminNoon.ink),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('المربي', style: t(10.5, FontWeight.w500, soft)),
-                        Text(name.isEmpty ? (onAssign == null ? 'بلا مربي' : 'تعيين مربي للصف') : name, style: t(14, FontWeight.w700, onInk)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          // امتلاء الصف
-          Row(
-            children: [
-              Text('الطلاب', style: t(12, FontWeight.w500, soft)),
-              const Spacer(),
-              Text('$students', style: t(15, FontWeight.w700, onInk)),
-              Text(' من $cap', style: t(12, FontWeight.w500, soft)),
-            ],
-          ),
-          const SizedBox(height: 7),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: ratio,
-              minHeight: 6,
-              backgroundColor: onInk.withValues(alpha: 0.18),
-              valueColor: AlwaysStoppedAnimation(ratio >= 1 ? const Color(0xFFFCD34D) : onInk),
+                ),
+              ],
             ),
           ),
           if (notes.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(Icons.place_outlined, size: 15, color: soft),
-                const SizedBox(width: 6),
-                Expanded(child: Text(notes, style: t(12, FontWeight.w500, soft))),
-              ],
-            ),
+            divider,
+            line('القاعة', Text(notes, style: NoonText.style(13.5, weight: FontWeight.w600))),
           ],
         ],
       ),
