@@ -256,28 +256,38 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
       next = () => weekOffset++;
       atEnd = weekOffset >= 0;
     }
-    return Row(
-      children: [
-        IconButton(
-          tooltip: 'السابق',
-          icon: const Icon(Icons.chevron_left),
-          onPressed: () {
-            setState(prev);
-            _load();
-          },
-        ),
-        Text(label, style: NoonText.style(13, weight: FontWeight.w700)),
-        IconButton(
-          tooltip: 'التالي',
-          icon: const Icon(Icons.chevron_right),
-          onPressed: atEnd
-              ? null
-              : () {
-                  setState(next);
-                  _load();
-                },
-        ),
-      ],
+    // شريط بعرض الصفحة: السابق يميناً والتالي يساراً والتاريخ في المنتصف، فلا فراغ بجانبه
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(AdminNoon.rTile),
+        border: Border.all(color: AdminNoon.line),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: 'السابق',
+            icon: const Icon(Icons.chevron_left),
+            onPressed: () {
+              setState(prev);
+              _load();
+            },
+          ),
+          Expanded(
+            child: Text(label, textAlign: TextAlign.center, style: NoonText.style(14, weight: FontWeight.w700)),
+          ),
+          IconButton(
+            tooltip: 'التالي',
+            icon: const Icon(Icons.chevron_right),
+            onPressed: atEnd
+                ? null
+                : () {
+                    setState(next);
+                    _load();
+                  },
+          ),
+        ],
+      ),
     );
   }
 
