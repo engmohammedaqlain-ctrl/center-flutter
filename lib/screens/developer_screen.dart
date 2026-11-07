@@ -15,6 +15,7 @@ import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
 import 'app_installs_screen.dart';
 import 'developer_health_screen.dart';
+import 'demo_school_sheet.dart';
 import 'dev_contracts_screen.dart';
 import 'dev_expenses_sheet.dart';
 
@@ -138,6 +139,15 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                                   label: 'منشأة',
                                   icon: Icons.add,
                                   onPressed: () => _edit(context, null),
+                                ),
+                                const SizedBox(width: 6),
+                                // مدرسة تجريبية ببيانات وهمية لمدير يجرّب نون — `DemoSchoolModal`
+                                IconButton(
+                                  tooltip: 'مدرسة تجريبية',
+                                  icon: const Icon(Icons.science_outlined),
+                                  onPressed: () async {
+                                    if (await showDemoSchoolSheet(context)) await _refresh();
+                                  },
                                 ),
                                 const SizedBox(width: 6),
                                 GhostButton(
