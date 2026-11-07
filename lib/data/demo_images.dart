@@ -1,5 +1,5 @@
 /// صور البيانات التجريبية — المقابل لـ `demoImages.ts` ونموذجي الوثيقة وإشعار التحويل في `demoData.ts`.
-/// الويب يرسمها SVG ثم يحوّلها PNG؛ هنا تُرسم PNG مباشرة بالرسّام نفسه والأشكال نفسها.
+/// الويب يرسمها SVG ثم يحوّلها PNG؛ هنا تُرسم PNG مباشرة بمسارات SVG نفسها وإحداثياتها وألوانها.
 library;
 
 import 'dart:typed_data';
@@ -101,7 +101,7 @@ Future<Uint8List> avatarPng(int variant, String gender) => _render(200, 260, (c)
       );
     });
 
-void _text(Canvas c, String text, Offset center, {double size = 12, int color = 0xFF1E293B, bool bold = false, bool alignStart = false}) {
+void _text(Canvas c, String text, Offset center, {double size = 12, int color = 0xFF1E293B, bool bold = false, bool fromLeft = false, bool baseline = false}) {
   final p = TextPainter(
     text: TextSpan(
       text: text,
@@ -109,8 +109,9 @@ void _text(Canvas c, String text, Offset center, {double size = 12, int color = 
     ),
     textDirection: TextDirection.rtl,
   )..layout(maxWidth: 380);
-  final dx = alignStart ? center.dx - p.width : center.dx - p.width / 2;
-  p.paint(c, Offset(dx, center.dy - p.height / 2));
+  final dx = fromLeft ? center.dx : center.dx - p.width / 2;
+  final dy = baseline ? center.dy - p.computeDistanceToActualBaseline(TextBaseline.alphabetic) : center.dy - p.height / 2;
+  p.paint(c, Offset(dx, dy));
   p.dispose();
 }
 
@@ -125,13 +126,13 @@ Future<Uint8List> sampleDocPng() => _render(400, 260, (c) {
       c.drawRect(const Rect.fromLTWH(1, 1, 398, 258), _stroke(0xFFCBD5E1, 2));
       c.drawRRect(RRect.fromLTRBR(20, 20, 380, 60, const Radius.circular(4)), _fill(0xFF0B2545));
       _text(c, 'وثيقة مدرسية رسمية - نموذج تجريبي', const Offset(200, 40), size: 14, color: 0xFFFFFFFF, bold: true);
-      c.drawRect(const Rect.fromLTWH(270, 80, 100, 120), _fill(0xFFE2E8F0));
-      c.drawRect(const Rect.fromLTWH(270, 80, 100, 120), _stroke(0xFF94A3B8, 1));
-      _text(c, 'صورة شخصية', const Offset(320, 140), color: 0xFF64748B);
+      c.drawRect(const Rect.fromLTWH(30, 80, 100, 120), _fill(0xFFE2E8F0));
+      c.drawRect(const Rect.fromLTWH(30, 80, 100, 120), _stroke(0xFF94A3B8, 1));
+      _text(c, 'صورة شخصية', const Offset(80, 145), color: 0xFF64748B, baseline: true);
       final line = _stroke(0xFFCBD5E1, 3);
-      c.drawLine(const Offset(40, 95), const Offset(250, 95), line);
-      c.drawLine(const Offset(60, 125), const Offset(250, 125), line);
-      c.drawLine(const Offset(100, 155), const Offset(250, 155), line);
+      c.drawLine(const Offset(150, 95), const Offset(360, 95), line);
+      c.drawLine(const Offset(150, 125), const Offset(340, 125), line);
+      c.drawLine(const Offset(150, 155), const Offset(300, 155), line);
       _text(c, 'معتمد وموثق لدى الإدارة المدرسية', const Offset(200, 235), color: 0xFF059669, bold: true);
     });
 
@@ -141,9 +142,9 @@ Future<Uint8List> sampleTransferPng() => _render(400, 300, (c) {
       c.drawRect(const Rect.fromLTWH(1, 1, 398, 298), _stroke(0xFF059669, 2));
       c.drawRect(const Rect.fromLTWH(0, 0, 400, 45), _fill(0xFF059669));
       _text(c, 'إشعار تحويل مالي معتمد', const Offset(200, 24), size: 15, color: 0xFFFFFFFF, bold: true);
-      _text(c, 'الجهة: بنك فلسطين / جوال باي', const Offset(360, 80), size: 13, bold: true, alignStart: true);
-      _text(c, 'المبلغ: مسدد بالكامل', const Offset(360, 115), color: 0xFF475569, alignStart: true);
-      _text(c, 'حالة العملية: ناجحة ومقبوضة', const Offset(360, 150), color: 0xFF475569, alignStart: true);
+      _text(c, 'الجهة: بنك فلسطين / جوال باي', const Offset(40, 80), size: 13, bold: true, fromLeft: true, baseline: true);
+      _text(c, 'المبلغ: مسدد بالكامل', const Offset(40, 115), color: 0xFF475569, fromLeft: true, baseline: true);
+      _text(c, 'حالة العملية: ناجحة ومقبوضة', const Offset(40, 150), color: 0xFF475569, fromLeft: true, baseline: true);
       c.drawRect(const Rect.fromLTWH(40, 180, 320, 40), _fill(0xFFF0FDF4));
       c.drawRect(const Rect.fromLTWH(40, 180, 320, 40), _stroke(0xFFBBF7D0, 1));
       _text(c, 'TRX-PAL-VERIFIED-SUCCESS', const Offset(200, 200), size: 13, color: 0xFF16A34A, bold: true);
