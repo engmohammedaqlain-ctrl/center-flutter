@@ -11,6 +11,9 @@ import '../data/teacher_salary.dart';
 import '../data/user_message.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../widgets/admin_ui.dart' show AdminHero, HeroTone;
+import '../widgets/empty_note.dart';
+import '../widgets/noon_ui.dart' show NLoading;
 import '../widgets/owner_fold.dart';
 import '../widgets/widgets.dart';
 import 'expense_voucher_screen.dart';
@@ -645,24 +648,44 @@ class _PayrollScreenState extends State<PayrollScreen> {
     }, message: 'جارٍ التجهيز...');
   }
 
-  Widget _cell(String label, int value, {Color? color, VoidCallback? onTap}) => Expanded(
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(6),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 5),
-            decoration: onTap == null
-                ? null
-                : BoxDecoration(border: Border.all(color: AppColors.line), borderRadius: BorderRadius.circular(6)),
-            margin: const EdgeInsets.symmetric(horizontal: 2),
-            child: Column(
-              children: [
-                Text(label, style: const TextStyle(fontSize: 10, color: AppColors.muted)),
-                Text('$value', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: color ?? AppColors.heading)),
-              ],
-            ),
+  /// الموظفون المفتوحة تفاصيلهم: التفاصيل تُطوى افتراضياً فتتسع القائمة لكل الموظفين بشاشة واحدة.
+  final _expanded = <String>{};
+
+  String _typeLabel(PayTerms t) => switch (t.contractType) {
+        'fixed' => 'راتب ثابت',
+        'sessions' => 'بالحصة',
+        'mixed' => 'مختلط',
+        'percent' => 'نسبة',
+        _ => 'بلا أجر محدد',
+      };
+
+  /// سطر في تفاصيل الموظف: عنوانه وقيمته، وقلم صغير حين يُعدَّل بلمسه.
+  Widget _line(String label, int value, {Color? color, String sign = '', VoidCallback? onTap, bool strong = false}) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            children: [
+              Text(label, style: TextStyle(fontSize: strong ? 14 : 13, fontWeight: strong ? FontWeight.w700 : FontWeight.w500, color: strong ? AppColors.heading : AppColors.muted)),
+              const Spacer(),
+              Text(
+                '$sign$value',
+                style: TextStyle(fontSize: strong ? 16 : 14, fontWeight: FontWeight.w700, color: color ?? AppColors.heading),
+              ),
+              SizedBox(
+                width: 26,
+                child: onTap == null ? null : Icon(Icons.edit_outlined, size: 15, color: AppColors.faint),
+              ),
+            ],
           ),
         ),
+      );
+
+  Widget _chip(String text, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(20)),
+        child: Text(text, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: color)),
       );
 
   Widget _card(_Row r) {
@@ -672,120 +695,251 @@ class _PayrollScreenState extends State<PayrollScreen> {
     final applies = absenceApplies(r.calc.terms, r.calc.sessionsFrom, s.absenceDeduct, perLessonOn);
     final pay = r.calc.terms;
     final noPay = !r.done && pay.fixed <= 0 && pay.sessionRate <= 0 && pay.percent <= 0;
+    final open = _expanded.contains(r.teacher.id);
+    final name = r.teacher.name.trim();
+    final initial = name.replaceFirst(RegExp(r'^أ\.\s*'), '').trim();
+
+    Widget status;
+    if (r.done) {
+      status = _chip('صُرف', AppColors.success);
+    } else if (noPay) {
+      status = _chip('حدد الأجر', AppColors.danger);
+    } else {
+      status = _chip('مفتوح', AppColors.muted);
+    }
+
+    final deltas = <Widget>[
+      if (c.absence > 0) _chip('غياب −${c.absence}', AppColors.danger),
+      if (c.advance > 0) _chip('سلفة −${c.advance}', AppColors.danger),
+      if (c.other > 0) _chip('خصم −${c.other}', AppColors.danger),
+      if (a.extra > 0) _chip('إضافة +${a.extra}', AppColors.success),
+    ];
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(10),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: AppColors.line),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(14),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  r.teacher.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.heading),
-                ),
-              ),
-              if (r.calc.warnings.isNotEmpty)
-                Tooltip(
-                  message: r.calc.warnings.join('\n'),
-                  triggerMode: TooltipTriggerMode.tap,
-                  child: const Icon(Icons.warning_amber_rounded, size: 17, color: Color(0xFFB45309)),
-                ),
-              const SizedBox(width: 6),
-              if (r.done)
-                TextButton.icon(
-                  onPressed: r.payout == null
-                      ? null
-                      : () => ExpenseVoucher.open(
-                            context,
-                            ExpenseVoucher.fromPayout(r.payout!, fallbackName: r.teacher.name),
-                          ),
-                  icon: const Icon(Icons.check, size: 15, color: Color(0xFF15803D)),
-                  label: const Text('صُرف', style: TextStyle(color: Color(0xFF15803D), fontSize: 12)),
-                )
-              else if (r.payable)
-                GhostButton(label: 'صرف', onPressed: busy ? null : () => _pay([r])),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              if (noPay)
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => _editSalary(r),
-                    child: const Text('حدد الأجر', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+          InkWell(
+            onTap: () => setState(() => open ? _expanded.remove(r.teacher.id) : _expanded.add(r.teacher.id)),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(color: AppColors.navy.withValues(alpha: 0.08), shape: BoxShape.circle),
+                    child: Text(initial.isEmpty ? '؟' : initial.substring(0, 1), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.navy)),
                   ),
-                )
-              else
-                _cell('الراتب', a.salary, onTap: r.done ? null : () => _editSalary(r)),
-              _cell(
-                applies && !r.done && r.calc.absent > 0 ? 'غياب ${r.calc.absent} يوم' : 'غياب',
-                c.absence,
-                color: AppColors.danger,
-                onTap: !r.done && applies
-                    ? () => _editNumber(
-                          r,
-                          title: 'أيام الغياب المخصومة',
-                          current: r.calc.absent.toDouble(),
-                          onSave: (v) {
-                            final days = v ?? 0;
-                            final next = days == r.calc.attendanceAbsent ? null : days;
-                            if (next != r.entry?.absentDays) _save(r, {'absent_days': next});
-                          },
-                        )
-                    : null,
-              ),
-              _cell(
-                'سلفة',
-                c.advance,
-                color: AppColors.danger,
-                onTap: !r.done && r.calc.advanceBalance > 0
-                    ? () => _editNumber(
-                          r,
-                          title: 'مقتطع السلفة (باقي ${trimNum(r.calc.advanceBalance)})',
-                          current: c.advance.toDouble(),
-                          hint: 'فارغ = تلقائي',
-                          onSave: (v) => _save(r, {'advance_recovered': v?.roundToDouble()}),
-                        )
-                    : null,
-              ),
-              _cell(
-                'خصم',
-                c.other,
-                color: AppColors.danger,
-                onTap: r.done
-                    ? null
-                    : () => _editNumber(
-                          r,
-                          title: 'خصم ${monthLabel(month)}',
-                          current: c.other.toDouble(),
-                          onSave: (v) => _save(r, {'adjustments': _withAdjustment(r, -1, (v ?? 0).roundToDouble())}),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: AppColors.heading)),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Text(_typeLabel(pay), style: const TextStyle(fontSize: 11.5, color: AppColors.muted)),
+                            if (r.calc.warnings.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              Tooltip(
+                                message: r.calc.warnings.join('\n'),
+                                triggerMode: TooltipTriggerMode.tap,
+                                child: const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFB45309)),
+                              ),
+                            ],
+                          ],
                         ),
-              ),
-              _cell(
-                'إضافة',
-                a.extra,
-                color: AppColors.success,
-                onTap: r.done
-                    ? null
-                    : () => _editNumber(
-                          r,
-                          title: 'إضافة ${monthLabel(month)}',
-                          current: a.extra.toDouble(),
-                          onSave: (v) => _save(r, {'adjustments': _withAdjustment(r, 1, (v ?? 0).roundToDouble())}),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text.rich(
+                        TextSpan(
+                          text: '${a.net}',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.heading),
+                          children: const [TextSpan(text: ' شيكل', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppColors.muted))],
                         ),
+                      ),
+                      const SizedBox(height: 4),
+                      status,
+                    ],
+                  ),
+                  AnimatedRotation(
+                    turns: open ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 150),
+                    child: Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.faint),
+                  ),
+                ],
               ),
-              _cell('الصافي', a.net),
-            ],
+            ),
+          ),
+          if (!open && deltas.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+              child: Wrap(spacing: 6, runSpacing: 6, children: deltas),
+            ),
+          if (open) ...[
+            Divider(height: 1, thickness: 1, color: AppColors.line),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 4, 8, 4),
+              child: Column(
+                children: [
+                  if (noPay)
+                    _line('الراتب', 0, onTap: () => _editSalary(r))
+                  else
+                    _line('الراتب', a.salary, onTap: r.done ? null : () => _editSalary(r)),
+                  _line(
+                    applies && !r.done && r.calc.absent > 0 ? 'غياب (${r.calc.absent} يوم)' : 'غياب',
+                    c.absence,
+                    sign: c.absence > 0 ? '−' : '',
+                    color: c.absence > 0 ? AppColors.danger : AppColors.faint,
+                    onTap: !r.done && applies
+                        ? () => _editNumber(
+                              r,
+                              title: 'أيام الغياب المخصومة',
+                              current: r.calc.absent.toDouble(),
+                              onSave: (v) {
+                                final days = v ?? 0;
+                                final next = days == r.calc.attendanceAbsent ? null : days;
+                                if (next != r.entry?.absentDays) _save(r, {'absent_days': next});
+                              },
+                            )
+                        : null,
+                  ),
+                  _line(
+                    'سلفة',
+                    c.advance,
+                    sign: c.advance > 0 ? '−' : '',
+                    color: c.advance > 0 ? AppColors.danger : AppColors.faint,
+                    onTap: !r.done && r.calc.advanceBalance > 0
+                        ? () => _editNumber(
+                              r,
+                              title: 'مقتطع السلفة (باقي ${trimNum(r.calc.advanceBalance)})',
+                              current: c.advance.toDouble(),
+                              hint: 'فارغ = تلقائي',
+                              onSave: (v) => _save(r, {'advance_recovered': v?.roundToDouble()}),
+                            )
+                        : null,
+                  ),
+                  _line(
+                    'خصم',
+                    c.other,
+                    sign: c.other > 0 ? '−' : '',
+                    color: c.other > 0 ? AppColors.danger : AppColors.faint,
+                    onTap: r.done
+                        ? null
+                        : () => _editNumber(
+                              r,
+                              title: 'خصم ${monthLabel(month)}',
+                              current: c.other.toDouble(),
+                              onSave: (v) => _save(r, {'adjustments': _withAdjustment(r, -1, (v ?? 0).roundToDouble())}),
+                            ),
+                  ),
+                  _line(
+                    'إضافة',
+                    a.extra,
+                    sign: a.extra > 0 ? '+' : '',
+                    color: a.extra > 0 ? AppColors.success : AppColors.faint,
+                    onTap: r.done
+                        ? null
+                        : () => _editNumber(
+                              r,
+                              title: 'إضافة ${monthLabel(month)}',
+                              current: a.extra.toDouble(),
+                              onSave: (v) => _save(r, {'adjustments': _withAdjustment(r, 1, (v ?? 0).roundToDouble())}),
+                            ),
+                  ),
+                  Divider(height: 1, thickness: 1, color: AppColors.line),
+                  _line('الصافي', a.net, strong: true),
+                ],
+              ),
+            ),
+          ],
+          if (r.done && r.payout != null)
+            InkWell(
+              onTap: () => ExpenseVoucher.open(context, ExpenseVoucher.fromPayout(r.payout!, fallbackName: r.teacher.name)),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(color: AppColors.sunken, border: Border(top: BorderSide(color: AppColors.line))),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.receipt_long_outlined, size: 16, color: AppColors.heading),
+                    const SizedBox(width: 6),
+                    Text('عرض سند الصرف', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.heading)),
+                  ],
+                ),
+              ),
+            )
+          else if (r.payable)
+            InkWell(
+              onTap: busy ? null : () => _pay([r]),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 11),
+                decoration: BoxDecoration(color: AppColors.navy.withValues(alpha: 0.06), border: Border(top: BorderSide(color: AppColors.line))),
+                child: Center(
+                  child: Text('صرف الراتب', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.navy)),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// شريط الشهر: السابق يميناً والتالي يساراً (لا تالي بعد الشهر الحالي).
+  Widget _monthBar(String today, int workDays) {
+    final months = payrollMonths(today);
+    final i = months.indexOf(month);
+    void go(String m) {
+      setState(() {
+        month = m;
+        rows = null;
+        _expanded.clear();
+      });
+      _load();
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: 'الشهر السابق',
+            icon: const Icon(Icons.chevron_left),
+            onPressed: i >= 0 && i < months.length - 1 ? () => go(months[i + 1]) : null,
+          ),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(monthLabel(month), style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.heading)),
+                Text('$workDays يوم دوام', style: const TextStyle(fontSize: 11.5, color: AppColors.muted)),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'الشهر التالي',
+            icon: const Icon(Icons.chevron_right),
+            onPressed: i > 0 ? () => go(months[i - 1]) : null,
           ),
         ],
       ),
@@ -798,6 +952,9 @@ class _PayrollScreenState extends State<PayrollScreen> {
     final open = (list ?? const <_Row>[]).where((r) => r.payable).toList();
     final today = isoDate(DateTime.now());
     final workDays = payrollWorkDays(month, settings.weekend, calendar).length;
+    final total = (list ?? const <_Row>[]).fold<double>(0, (n, r) => n + r.amount);
+    final paid = (list ?? const <_Row>[]).where((r) => r.done).fold<double>(0, (n, r) => n + r.amount);
+    final remaining = open.fold<double>(0, (n, r) => n + r.amount);
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
@@ -825,60 +982,55 @@ class _PayrollScreenState extends State<PayrollScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-            child: Row(
-              children: [
-                DropdownButton<String>(
-                  value: month,
-                  underline: const SizedBox.shrink(),
-                  items: [
-                    for (final m in payrollMonths(today)) DropdownMenuItem(value: m, child: Text(monthLabel(m))),
-                  ],
-                  onChanged: (v) {
-                    if (v == null) return;
-                    setState(() {
-                      month = v;
-                      rows = null;
-                    });
-                    _load();
-                  },
-                ),
-                const SizedBox(width: 8),
-                Text('$workDays يوم دوام', style: const TextStyle(fontSize: 11.5, color: AppColors.muted)),
-                const Spacer(),
-                PrimaryButton(
-                  label: open.isEmpty ? 'صرف الكل' : 'صرف الكل (${open.length})',
+      // «صرف الكل» ثابت أسفل الشاشة في متناول الإبهام، ومعه مجموع ما سيُصرف
+      bottomNavigationBar: open.isEmpty
+          ? null
+          : SafeArea(
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                decoration: BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: AppColors.line))),
+                child: PrimaryButton(
+                  label: 'صرف الكل (${open.length}) · ${trimNum(remaining)} شيكل',
+                  expand: true,
+                  height: 48,
                   busy: busy,
-                  onPressed: open.isEmpty || busy ? null : () => _pay(open),
+                  onPressed: busy ? null : () => _pay(open),
                 ),
-              ],
+              ),
             ),
-          ),
-          Expanded(
-            child: failed
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('الرواتب تحتاج اتصالاً بالإنترنت', style: TextStyle(color: AppColors.muted)),
-                        TextButton(onPressed: _load, child: const Text('إعادة المحاولة')),
-                      ],
+      body: failed
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('الرواتب تحتاج اتصالاً بالإنترنت', style: TextStyle(color: AppColors.muted)),
+                  TextButton(onPressed: _load, child: const Text('إعادة المحاولة')),
+                ],
+              ),
+            )
+          : list == null
+              ? const NLoading(text: 'جارٍ تحميل الرواتب')
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                  children: [
+                    _monthBar(today, workDays),
+                    const SizedBox(height: 12),
+                    AdminHero(
+                      label: 'صافي رواتب ${monthLabel(month)}',
+                      icon: Icons.payments_outlined,
+                      value: trimNum(total),
+                      unit: 'شيكل',
+                      end: '${list.length} موظف',
+                      tone: remaining > 0 ? HeroTone.theme : HeroTone.paid,
+                      chips: ['المصروف ${trimNum(paid)}', 'المتبقي ${trimNum(remaining)}'],
                     ),
-                  )
-                : list == null
-                    ? const Center(child: AppLoader(compact: true, size: 24))
-                    : list.isEmpty
-                        ? const Center(child: Text('لا موظفين', style: TextStyle(color: AppColors.muted)))
-                        : ListView(
-                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
-                            children: [for (final r in list) _card(r)],
-                          ),
-          ),
-        ],
-      ),
+                    const SizedBox(height: 14),
+                    if (list.isEmpty)
+                      const EmptyNote('لا موظفين')
+                    else
+                      for (final r in list) _card(r),
+                  ],
+                ),
     );
   }
 }
