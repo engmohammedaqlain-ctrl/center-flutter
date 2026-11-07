@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'data/perf_log.dart';
 import 'data/perf_school.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'data/activity_ping.dart';
 import 'data/app_installs.dart';
 import 'data/app_update.dart';
@@ -1047,6 +1048,18 @@ class _LoginScreenState extends State<LoginScreen> {
               child: const Text('لإدارات المدارس: اطلب النظام لمدرستك'),
             ),
           ),
+        // سياسة Google Play: رابط السياسة داخل التطبيق لا في صفحة المتجر وحدها
+        Center(
+          child: TextButton(
+            onPressed: () => launchUrl(Uri.parse('https://noonschool.app/privacy'), mode: LaunchMode.externalApplication),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.faint,
+              textStyle: const TextStyle(fontSize: 11),
+              visualDensity: VisualDensity.compact,
+            ),
+            child: const Text('سياسة الخصوصية'),
+          ),
+        ),
       ],
     );
   }
