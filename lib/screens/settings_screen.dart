@@ -24,6 +24,7 @@ import '../widgets/widgets.dart';
 import 'developer_settings_screen.dart';
 import 'grade_plan_screen.dart';
 import 'payment_methods_tab.dart';
+import 'school_settings_tab.dart';
 import 'settings_forms.dart';
 import 'grading_scheme_tab.dart';
 import 'followup_settings_tab.dart';
@@ -70,6 +71,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// التبويبات بترتيب Settings.tsx — تُخفى بحسب الصلاحية.
   static const _allTabs = [
+    _Tab('school', Icons.apartment_outlined, 'المدرسة'),
     _Tab('academic_years', Icons.calendar_month_outlined, 'الأعوام الدراسية'),
     _Tab('grade_fees', Icons.payments_outlined, 'المراحل والرسوم'),
     _Tab('payment_methods', Icons.credit_card_outlined, 'وسائل الدفع'),
@@ -144,6 +146,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: ThumbActionLayer(
               action: _actionFor(context, active.id),
               child: switch (active.id) {
+                'school' => const SchoolSettingsTab(),
                 'academic_years' => const _AcademicYearsTab(),
                 'grade_fees' => const _FeesTab(),
                 'payment_methods' => const PaymentMethodsTab(),

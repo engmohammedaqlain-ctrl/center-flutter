@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/arabic_search.dart';
 import '../data/balance.dart';
+import '../data/school_options.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -281,7 +282,9 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           ),
                         ),
                         // إعلان للأسر: وجهته التصفية الحالية
-                        if (store.featureState['portal.notes'] == true && store.can('students')) ...[
+                        if (store.featureState['portal.notes'] == true &&
+                            store.can('students') &&
+                            store.settings.toolOn('announcements')) ...[
                           const SizedBox(width: 6),
                           NoonButton(
                             icon: Icons.campaign_outlined,

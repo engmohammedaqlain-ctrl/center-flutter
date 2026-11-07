@@ -2718,6 +2718,27 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     notifyListeners();
   }
 
+  /// الأقسام الظاهرة يحفظها مدير المدرسة — `school_set_features`.
+  Future<void> saveSchoolFeatures(Map<String, bool> selected) async {
+    if (!isAdminUser) throw StoreException('الأقسام يحفظها المدير');
+    final data = await supabaseRpcOrThrow('school_set_features', {'p_features': selected});
+    final tenant = currentTenant;
+    if (tenant != null) {
+      tenant.features = data is Map ? Map<String, dynamic>.from(data) : Map<String, dynamic>.from(selected);
+      final i = tenants.indexWhere((t) => t.id == tenant.id);
+      if (i >= 0) tenants[i] = tenant;
+      markDirty('tenants');
+    }
+    notifyListeners();
+  }
+
+  /// خيار من خيارات المدرسة (`SchoolOptions`) يُحفظ فوراً للمدرسة كلها.
+  Future<void> writeSchoolOption(Map<String, dynamic> patch) async {
+    if (!isAdminUser) throw StoreException('خيارات المدرسة للمدير');
+    await _writeSettings((prev) => prev.copyWith(extra: {...prev.extra, ...patch}));
+    notifyListeners();
+  }
+
   // ── إعدادات المنشأة المشتركة (المقابل لـ lib/appSettings.ts) ──────────────
 
   /// إعدادات المدرسة كما وصلت في عمود `settings`.

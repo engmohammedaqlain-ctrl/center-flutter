@@ -24,6 +24,8 @@ const featureKeys = <String>[
   'notify.absence',
   'notify.installments',
   'notify.payments',
+  'notify.grades',
+  'notify.messages',
 ];
 
 typedef FeatureState = Map<String, bool>;
@@ -186,7 +188,43 @@ const features = <String, FeatureDef>{
     defaultOn: true,
     requires: ['portal.parent'],
   ),
+  'notify.grades': FeatureDef(
+    label: 'إشعار العلامات',
+    description: 'إشعار جوال لولي الأمر حين تُنشر علامات جديدة لابنه',
+    group: FeatureGroup.familyPortal,
+    defaultOn: true,
+    requires: ['portal.parent', 'portal.grades'],
+  ),
+  'notify.messages': FeatureDef(
+    label: 'إشعار الرسائل',
+    description: 'إشعار جوال برسائل المدرسة والمعلم وإعلاناتها',
+    group: FeatureGroup.familyPortal,
+    defaultOn: true,
+    requires: ['portal.notes'],
+    requiresAny: _familyPortals,
+  ),
 };
+
+/// لماذا المفتاح المختار غير فعّال: المتطلبات المعطّلة — `featureBlockers`.
+List<String> featureBlockers(String key, Object? raw) {
+  final state = resolveFeatures(raw);
+  final def = features[key]!;
+  return [
+    for (final dep in def.requires)
+      if (state[dep] != true) dep,
+    if (def.requiresAny.isNotEmpty && !def.requiresAny.any((dep) => state[dep] == true)) ...def.requiresAny,
+  ];
+}
+
+/// ما تغيّر في الاختيارات بين نسختين، سطر لكل مفتاح — `describeFeatureChanges`.
+List<String> describeFeatureChanges(Object? before, Object? after) {
+  final a = selectedFeatures(before);
+  final b = selectedFeatures(after);
+  return [
+    for (final key in featureKeys)
+      if (a[key] != b[key]) '${b[key] == true ? 'تفعيل' : 'تعطيل'}: ${features[key]!.label}',
+  ];
+}
 
 /// إشعارات الجوال لولي الأمر: يفحصها الخادم مع `portal.parent` قبل أن يبعث.
 const pushFeatures = ['notify.absence', 'notify.installments', 'notify.payments'];

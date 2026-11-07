@@ -8,6 +8,7 @@ import '../data/attendance_days.dart';
 import '../data/balance.dart';
 import '../data/followup.dart';
 import '../data/phone.dart';
+import '../data/school_options.dart';
 import '../data/staff.dart';
 import '../data/store.dart';
 import '../models/models.dart';
@@ -371,7 +372,7 @@ class _HomeState extends State<_Home> {
         const SizedBox(height: 10),
         if (needs.isNotEmpty)
           card('يحتاج تدخلاً', [for (final n in needs) row(n.$1, '', n.$2, color: _red, onTap: n.$3)]),
-        if (store.isAdminUser && uncovered.isNotEmpty)
+        if (store.isAdminUser && uncovered.isNotEmpty && !store.settings.dashboardHidden.contains('uncovered'))
           card(
             'شعب بلا معلم اليوم',
             [
@@ -381,7 +382,7 @@ class _HomeState extends State<_Home> {
             count: uncovered.fold<int>(0, (n, u) => n + u.classes.length),
             hint: 'معلمها غائب أو في إجازة: تحتاج بديلاً',
           ),
-        if (d.birthdays.isNotEmpty)
+        if (d.birthdays.isNotEmpty && !store.settings.dashboardHidden.contains('birthdays'))
           card(
             'أعياد ميلاد اليوم',
             [
@@ -406,7 +407,7 @@ class _HomeState extends State<_Home> {
             ],
             count: d.birthdays.length,
           ),
-        if (d.chronic.isNotEmpty)
+        if (d.chronic.isNotEmpty && !store.settings.dashboardHidden.contains('chronic'))
           card(
             'الأكثر غياباً',
             [
