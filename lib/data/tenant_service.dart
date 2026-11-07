@@ -214,4 +214,10 @@ class OfflineTenantService implements TenantService {
 
   @override
   Future<String?> remove(String id) async => _offlineManagement;
+
+  @override
+  Future<String?> extendDemo(String id, int days) async => _offlineManagement;
+
+  @override
+  Future<String?> purgeDemo(String id) async => _offlineManagement;
 }
