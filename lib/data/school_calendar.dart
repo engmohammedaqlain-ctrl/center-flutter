@@ -1,6 +1,7 @@
 /// تقويم المدرسة (العطل والامتحانات) من الإعدادات — `schoolCalendar.ts` و`officialHolidays.ts`.
 library;
 
+import 'package:hijri/hijri_calendar.dart';
 import '../models/models.dart';
 import 'app_settings.dart';
 
@@ -98,20 +99,11 @@ const _gregorian = <({int month, int day, String title})>[
   (month: 12, day: 25, title: 'عيد الميلاد'),
 ];
 
-/// الشهر واليوم الهجريان بالحساب المدني: يختلف عن أم القرى في الويب يوماً أحياناً،
-/// والمقترح يعدّله المدير قبل إضافته.
+/// الشهر واليوم الهجريان بتقويم أم القرى — كالويب (`islamic-umalqura`). موعد العيد قد يختلف يوماً
+/// حسب الرؤية، فالمقترح يعتمده المدير أو يحذفه.
 ({int month, int day}) _hijriOf(DateTime d) {
-  final a = (14 - d.month) ~/ 12;
-  final y = d.year + 4800 - a;
-  final m = d.month + 12 * a - 3;
-  final jd = d.day + (153 * m + 2) ~/ 5 + 365 * y + y ~/ 4 - y ~/ 100 + y ~/ 400 - 32045;
-  var l = jd - 1948440 + 10632;
-  final n = (l - 1) ~/ 10631;
-  l = l - 10631 * n + 354;
-  final j = ((10985 - l) ~/ 5316) * ((50 * l) ~/ 17719) + (l ~/ 5670) * ((43 * l) ~/ 15238);
-  l = l - ((30 - j) ~/ 15) * ((17719 * j) ~/ 50) - (j ~/ 16) * ((15238 * j) ~/ 43) + 29;
-  final month = (24 * l) ~/ 709;
-  return (month: month, day: l - (709 * month) ~/ 24);
+  final h = HijriCalendar.fromDate(DateTime(d.year, d.month, d.day));
+  return (month: h.hMonth, day: h.hDay);
 }
 
 /// العطل الرسمية المعتادة في فلسطين لفترة — `officialHolidays`: اقتراح يعتمده المدير.
