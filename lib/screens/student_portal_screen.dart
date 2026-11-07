@@ -214,6 +214,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       loading = true;
       sections = const [];
       noteThreads = const [];
+      scheduleFile = null;
     });
     // الجلسة على الخادم لم تتبدّل بعد: تُجدَّد أول ما يتوفر الاتصال
     _setStale(fromDevice);
@@ -285,8 +286,14 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
   ScheduleFile? scheduleFile;
 
   Future<void> _loadScheduleFile() async {
+    final id = user.id;
     final found = await ScheduleFiles.mine();
-    if (mounted) setState(() => scheduleFile = found);
+    // ولي الأمر يبدّل الابن: لا يُكتب جدول ابن سابق على ابن فُتح بعده
+    if (!mounted || user.id != id) return;
+    setState(() {
+      scheduleFile = found;
+      if (found == null && tab == 'schedule') tab = 'subjects';
+    });
   }
 
   List<PortalNavItem> get _navItems {
@@ -529,6 +536,8 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
           if (!ids.contains(tab) && ids.isNotEmpty) tab = ids.first;
         }
       });
+      // جدول الشعبة يُعاد جلبه مع كل تحميل: عند تبديل الابن والتحديث وبعد أن تجهز الجلسة (ولي الأمر خاصة)
+      if (result != null) unawaited(_loadScheduleFile());
       // مشاركة وصلت قبل أن تجهز البيانات
       if (result != null && ShareInbox.instance.hasFiles) unawaited(_onShared());
       if (result != null) {
