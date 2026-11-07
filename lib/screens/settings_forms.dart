@@ -2,9 +2,11 @@
 import 'package:flutter/services.dart';
 
 import '../data/academic_matching.dart';
+import '../data/pay_terms.dart';
 import '../data/permissions.dart';
 import '../data/phone.dart';
 import '../data/store.dart';
+import '../data/teacher_salary.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
@@ -116,6 +118,7 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
   late String contractType = widget.teacher?.contractType ?? '';
   late String contractStart = widget.teacher?.contractStart ?? '';
   late String birthDate = widget.teacher?.birthDate ?? '';
+  late bool perLesson = widget.teacher?.payProfile?['per_lesson'] == true;
   final errors = FieldErrors();
   bool _seeded = false;
 
@@ -174,6 +177,19 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
     final store = StoreScope.of(context);
     // الراتب لا يُعرض في النموذج (كويب): عند التعديل يُحفظ كما كان، وعند الإضافة صفر.
     final rateValue = widget.teacher?.rate ?? 0.0;
+    // «معلم حصة» جزء من الأجر: يسري من هذا الشهر كأي تغيير أجر
+    final prev = widget.teacher;
+    var payProfile = prev?.payProfile;
+    var salaryHistory = prev?.salaryHistory ?? const <Map<String, dynamic>>[];
+    if ((prev?.payProfile?['per_lesson'] == true) != perLesson) {
+      if (prev == null) {
+        payProfile = {'per_lesson': true};
+      } else {
+        final u = payUpdate(prev, payInputOf(prev).copyWith(perLesson: perLesson), monthKeyOf(DateTime.now()));
+        payProfile = u['pay_profile'] as Map<String, dynamic>?;
+        salaryHistory = (u['salary_history'] as List<Map<String, dynamic>>?) ?? salaryHistory;
+      }
+    }
     final idDigits = digitsOnly(nationalId.text);
     final number = digitsOnly(phone.text);
     final gradYear = int.tryParse(digitsOnly(graduationYear.text));
@@ -220,8 +236,8 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
           birthDate: birthDate,
           // النموذج لا يعرضها: تبقى كما هي، فلا يمحو حفظ البيانات أجر المعلم ونصابه
           weeklyPeriods: widget.teacher?.weeklyPeriods,
-          payProfile: widget.teacher?.payProfile,
-          salaryHistory: widget.teacher?.salaryHistory ?? const [],
+          payProfile: payProfile,
+          salaryHistory: salaryHistory,
         ),
       );
       showAppSnack(context, widget.teacher == null ? 'تمت إضافة المدرس' : 'تم حفظ بيانات المدرس');
@@ -406,6 +422,16 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
                 _dateField(birthDate, (v) => birthDate = v),
               ],
             ),
+            if (store.isFeatureOn('payroll.per_lesson')) ...[
+              _gap,
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('معلم حصة', style: TextStyle(fontSize: 13)),
+                subtitle: const Text('أجره حصصه: يُرصد عددها كل يوم بدل الحضور والغياب', style: TextStyle(fontSize: 11.5)),
+                value: perLesson,
+                onChanged: (v) => setState(() => perLesson = v),
+              ),
+            ],
             _gap,
             const FieldLabel('المراحل'),
             Builder(builder: (context) {

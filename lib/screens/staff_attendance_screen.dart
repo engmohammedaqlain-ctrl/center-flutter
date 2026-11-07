@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../data/phone.dart';
 import '../data/staff.dart';
+import '../data/pay_terms.dart';
+import '../data/payroll_calc.dart';
 import '../data/school_calendar.dart';
 import '../data/store.dart';
 import '../models/models.dart';
@@ -114,10 +116,32 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
     }
   }
 
+  /// حصص يوم معلم الحصة.
+  Future<void> _savePeriods(AppStore store, String teacherId, String day, String text) async {
+    try {
+      store.assertOpenDate([day], 'دوام الموظفين', kind: 'school');
+      await StaffService.setPeriods(
+        store.tenantId ?? '',
+        teacherId,
+        day,
+        numOrNull(text),
+        lessonsOnly: true,
+        exists: statusOf(teacherId, day) != null,
+      );
+      await _load();
+    } on StoreException catch (e) {
+      if (mounted) showAppSnack(context, e.message, error: true);
+    } catch (_) {
+      if (mounted) showAppSnack(context, 'تعذّر الحفظ', error: true);
+    }
+  }
+
   Future<void> _allPresent(AppStore store, List<Teacher> teachers, String day) async {
     try {
       store.assertOpenDate([day], 'دوام الموظفين', kind: 'school');
+      final perLessonOn = store.isFeatureOn('payroll.per_lesson');
       for (final t in teachers) {
+        if (isPerLesson(termsFor(t, day.substring(0, 7)), perLessonOn)) continue;
         if (statusOf(t.id, day) == null && approvedLeaveOn(leaves, t.id, day) == null) {
           await StaffService.setDay(store.tenantId ?? '', t.id, day, 'present');
         }
@@ -311,7 +335,17 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
                         ],
                       ),
                     ),
-                    if (leave != null)
+                    // معلم الحصة: عدد حصص اليوم بدل الحضور والغياب
+                    if (isPerLesson(termsFor(t, date.substring(0, 7)), store.isFeatureOn('payroll.per_lesson')) && leave == null)
+                      SizedBox(
+                        width: 78,
+                        child: _PeriodsBox(
+                          key: ValueKey('periods_${t.id}_$date'),
+                          value: records?.where((d) => d.teacherId == t.id && d.date == date).firstOrNull?.periods,
+                          onSave: (text) => _savePeriods(store, t.id, date, text),
+                        ),
+                      )
+                    else if (leave != null)
                       NoonBadge('إجازة ${leave.paid == true ? 'مدفوعة' : 'غير مدفوعة'}')
                     else
                       for (final s in staffDayLabels.keys)
@@ -488,4 +522,57 @@ class _AttendanceHubState extends State<AttendanceHub> {
       ],
     );
   }
+}
+
+/// عدد حصص اليوم لمعلم الحصة: يُحفظ عند الانتهاء من الكتابة أو مغادرة الخانة.
+class _PeriodsBox extends StatefulWidget {
+  const _PeriodsBox({super.key, required this.value, required this.onSave});
+
+  final double? value;
+  final ValueChanged<String> onSave;
+
+  @override
+  State<_PeriodsBox> createState() => _PeriodsBoxState();
+}
+
+class _PeriodsBoxState extends State<_PeriodsBox> {
+  late final controller = TextEditingController(text: _text(widget.value));
+  final focus = FocusNode();
+
+  String _text(double? v) => v == null ? '' : trimNum(v);
+
+  void _commit() {
+    if (controller.text.trim() != _text(widget.value)) widget.onSave(controller.text);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    focus.addListener(() {
+      if (!focus.hasFocus) _commit();
+    });
+  }
+
+  @override
+  void didUpdateWidget(_PeriodsBox old) {
+    super.didUpdateWidget(old);
+    if (!focus.hasFocus && old.value != widget.value) controller.text = _text(widget.value);
+  }
+
+  @override
+  void dispose() {
+    focus.dispose();
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => TextField(
+        controller: controller,
+        focusNode: focus,
+        textAlign: TextAlign.center,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: const InputDecoration(isDense: true, hintText: 'حصص'),
+        onSubmitted: (_) => focus.unfocus(),
+      );
 }
