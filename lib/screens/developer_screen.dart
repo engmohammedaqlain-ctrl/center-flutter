@@ -15,6 +15,7 @@ import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
 import 'app_installs_screen.dart';
 import 'developer_health_screen.dart';
+import 'dev_expenses_sheet.dart';
 
 /// مطابق لـ USERNAME_RULE في دالة السيرفر `admin-tenants`.
 const _usernameRule = 'اسم المستخدم: 3 إلى 32 من الأحرف الإنجليزية الصغيرة والأرقام و . _ -';
@@ -212,6 +213,11 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                 Text('لوحة التحكم المركزية', style: TextStyle(color: AppColors.amber, fontSize: 10)),
               ],
             ),
+          ),
+          IconButton(
+            tooltip: 'المصاريف',
+            icon: const Icon(Icons.account_balance_wallet_outlined),
+            onPressed: () => showDevExpensesSheet(context),
           ),
           IconButton(
             tooltip: 'المتابعة',
