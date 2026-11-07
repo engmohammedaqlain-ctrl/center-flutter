@@ -49,7 +49,7 @@ void main() {
     expect(book, contains('name="جدول"'));
     expect(book, contains('name="جدول (2)"'));
     final sheet2 = _file(bytes, 'xl/worksheets/sheet2.xml');
-    expect(sheet2, contains('<mergeCell ref="A5:A6"/>'));
-    expect(sheet2, contains('<mergeCell ref="B5:C5"/>'));
+    expect(sheet2, contains('<mergeCell ref="A4:A5"/>'));
+    expect(sheet2, contains('<mergeCell ref="B4:C4"/>'));
   });
 }
