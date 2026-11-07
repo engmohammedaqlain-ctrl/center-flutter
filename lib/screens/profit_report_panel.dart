@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../data/doc_export.dart';
+import '../data/method_owners.dart';
 import '../data/printing.dart';
 import '../data/profit_report.dart';
 import '../data/store.dart';
@@ -10,6 +11,7 @@ import '../data/year_closing.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../widgets/finance_documents.dart';
+import '../widgets/ledger_row.dart';
 import '../widgets/owner_fold.dart';
 import '../widgets/widgets.dart';
 import 'accounts_statement_sheet.dart';
@@ -154,37 +156,39 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          crossAxisAlignment: WrapCrossAlignment.center,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _Choice(
-              value: period,
-              options: _periods,
-              onPick: (v) => setState(() => period = v),
-            ),
-            if (period == 'month') _DateChip(label: monthLabel(month), onTap: _pickMonth),
-            if (period == 'custom') ...[
-              _DateChip(label: from, onTap: () => _pickDate(true)),
-              _DateChip(label: to, onTap: () => _pickDate(false)),
-            ],
-            Tooltip(
-              message: basis == ProfitBasis.paid
-                  ? 'كل دفعة في شهر قبضها'
-                  : 'كل دفعة في شهر موعد قسطها؛ الإيراد العام والزائد على يوم القبض',
-              child: _Choice(
-                value: basis.name,
-                options: const {'paid': 'تاريخ الدفع', 'due': 'موعد القسط'},
-                onPick: (v) => setState(() => basis = ProfitBasis.values.byName(v)),
+            Expanded(
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  _Choice(
+                    value: period,
+                    options: _periods,
+                    onPick: (v) => setState(() => period = v),
+                  ),
+                  if (period == 'month') _DateChip(label: monthLabel(month), onTap: _pickMonth),
+                  if (period == 'custom') ...[
+                    _DateChip(label: from, onTap: () => _pickDate(true)),
+                    _DateChip(label: to, onTap: () => _pickDate(false)),
+                  ],
+                  Tooltip(
+                    message: basis == ProfitBasis.paid
+                        ? 'كل دفعة في شهر قبضها'
+                        : 'كل دفعة في شهر موعد قسطها؛ الإيراد العام والزائد على يوم القبض',
+                    child: _Choice(
+                      value: basis.name,
+                      options: const {'paid': 'تاريخ الدفع', 'due': 'موعد القسط'},
+                      onPick: (v) => setState(() => basis = ProfitBasis.values.byName(v)),
+                    ),
+                  ),
+                ],
               ),
             ),
-            IconButton(
-              tooltip: 'تنزيل PDF',
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.download_outlined, size: 20),
-              onPressed: () => _print(r),
-            ),
+            _toolsMenu(r),
           ],
         ),
         ..._wallets(),
@@ -208,7 +212,35 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
     );
   }
 
-  /// الباقي في كل حساب: افتتاحي السنة + ما دخله − ما خرج منه، وزر إقفال السنة.
+  /// قائمة الأدوات: التنزيل وكشف الحسابات وإقفال السنة في قائمة واحدة بدل أزرار تتجاوز عرض الشاشة.
+  Widget _toolsMenu(ProfitReport r) {
+    final store = widget.store;
+    final year = widget.year;
+    final wallets = year == null ? null : store.yearBook[year.id];
+    final canClose = year != null && wallets != null && store.isAdminUser;
+    final closeLabel = wallets == null ? '' : (wallets.stale ? 'أعد الإقفال' : (wallets.closed != null ? 'السنة مقفلة' : 'إقفال السنة'));
+    return PopupMenuButton<String>(
+      tooltip: 'المزيد',
+      icon: const Icon(Icons.more_vert),
+      onSelected: (v) async {
+        if (v == 'pdf') {
+          await _print(r);
+        } else if (v == 'statement' && year != null) {
+          await showAccountsStatementSheet(context, store, year);
+        } else if (v == 'close' && canClose) {
+          await showYearCloseSheet(context, store, year: year, wallets: wallets);
+          if (mounted) setState(() {});
+        }
+      },
+      itemBuilder: (_) => [
+        const PopupMenuItem(value: 'pdf', child: Text('تنزيل التقرير PDF')),
+        if (year != null) const PopupMenuItem(value: 'statement', child: Text('كشف الحسابات')),
+        if (canClose) PopupMenuItem(value: 'close', child: Text(closeLabel)),
+      ],
+    );
+  }
+
+  /// الباقي في كل حساب: لوحة بسطر لكل حساب (يفلتر التقرير بلمسه) ومجموع ختامي.
   List<Widget> _wallets() {
     final store = widget.store;
     final year = widget.year;
@@ -224,76 +256,89 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
           ),
     );
     final opening = wallets?.opening.values.fold<double>(0, (a, v) => a + v) ?? 0;
-    return [
-      const SizedBox(height: 10),
-      Row(
-        children: [
-          Expanded(
-            child: opening.abs() >= 0.01
-                ? Text(
-                    'افتتاحي من السنة السابقة ${webMoney(opening)}',
-                    style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
-                  )
-                : const SizedBox.shrink(),
-          ),
-          if (year != null) ...[
-            GhostButton(
-              label: 'كشف الحسابات',
-              icon: Icons.table_rows_outlined,
-              onPressed: () => showAccountsStatementSheet(context, store, year),
-            ),
-            const SizedBox(width: 6),
-          ],
-          if (year != null && wallets != null && store.isAdminUser)
-            GhostButton(
-              label: wallets.stale ? 'أعد الإقفال' : (wallets.closed != null ? 'السنة مقفلة' : 'إقفال السنة'),
-              icon: Icons.lock_outline,
-              onPressed: () async {
-                await showYearCloseSheet(context, store, year: year, wallets: wallets);
-                if (mounted) setState(() {});
-              },
-            ),
-        ],
-      ),
-      if (rows.isNotEmpty) ...[
-        const SizedBox(height: 8),
-        OwnerTiles<({String method, double amount})>(
-          items: rows,
-          ownerOf: (r) => store.paymentMethods.where((m) => m.id == r.method).firstOrNull?.owner,
-          amountOf: (r) => r.amount,
-          tile: (row) => InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => setState(() => spendMethod = spendMethod == row.method ? '' : row.method),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: spendMethod == row.method ? AppColors.sunken : Colors.white,
-                    border: Border.all(color: spendMethod == row.method ? AppColors.success : AppColors.line),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        row.method.isEmpty ? 'بلا طريقة' : store.paymentMethodLabel(row.method),
-                        style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
-                      ),
-                      Text(
-                        webMoney(row.amount),
-                        textDirection: TextDirection.ltr,
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                          color: row.amount < 0 ? AppColors.danger : AppColors.success,
-                        ),
-                      ),
-                    ],
-                  ),
+    final grouping = groupMethodsByOwner<({String method, double amount})>(
+      rows,
+      (r) => store.paymentMethods.where((m) => m.id == r.method).firstOrNull?.owner,
+    );
+    final groups = grouping.groups;
+    final ungrouped = grouping.ungrouped;
+    final total = rows.fold<double>(0, (a, r) => a + r.amount);
+
+    Widget accountRow(({String method, double amount}) row) {
+      final active = spendMethod == row.method;
+      return InkWell(
+        onTap: () => setState(() => spendMethod = active ? '' : row.method),
+        child: Container(
+          color: active ? AppColors.navy.withValues(alpha: 0.06) : Colors.transparent,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          child: Row(
+            children: [
+              if (active) ...[Icon(Icons.check_circle, size: 16, color: AppColors.navy), const SizedBox(width: 6)],
+              Expanded(
+                child: Text(
+                  row.method.isEmpty ? 'بلا طريقة' : store.paymentMethodLabel(row.method),
+                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: AppColors.heading),
                 ),
               ),
+              Text(
+                webMoney(row.amount),
+                textDirection: TextDirection.ltr,
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: row.amount < 0 ? AppColors.danger : AppColors.success),
+              ),
+            ],
+          ),
         ),
+      );
+    }
+
+    final items = <Widget>[
+      for (final g in groups) ...[
+        Container(
+          color: AppColors.sunken,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          child: Row(children: [
+            Expanded(child: Text(g.owner, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.muted))),
+            Text(webMoney(g.items.fold<double>(0, (a, i) => a + i.amount)),
+                textDirection: TextDirection.ltr, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.muted)),
+          ]),
+        ),
+        for (final i in g.items) accountRow(i),
       ],
+      for (final i in ungrouped) accountRow(i),
+    ];
+
+    return [
+      const SizedBox(height: 12),
+      if (opening.abs() >= 0.01)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text('افتتاحي من السنة السابقة ${webMoney(opening)}', style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
+        ),
+      if (rows.isNotEmpty)
+        Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.line),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+                child: Row(
+                  children: [
+                    Expanded(child: Text('أرصدة الحسابات', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: AppColors.heading))),
+                    if (rows.length > 1)
+                      Text(webMoney(total), textDirection: TextDirection.ltr, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: total < 0 ? AppColors.danger : AppColors.success)),
+                  ],
+                ),
+              ),
+              for (final w in items) ...[Divider(height: 1, thickness: 1, color: AppColors.line), w],
+            ],
+          ),
+        ),
     ];
   }
 
@@ -304,70 +349,22 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
 
   Color _signed(double v) => v < 0 ? AppColors.danger : AppColors.success;
 
-  Widget _stat(String label, double v, {Color? color}) => Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-            const SizedBox(height: 2),
-            Text(
-              _num(v),
-              textDirection: TextDirection.ltr,
-              style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: color ?? AppColors.heading),
-            ),
-          ],
-        ),
-      );
-
-  /// شهر (أو المجموع): اسمه وربحه الكبير، وتحته المقبوض والمصاريف والرواتب، والمسحوب والباقي إن وُجد مسحوب.
-  Widget _monthCard(ProfitRow row, {String? title, bool total = false}) {
-    final drawn = row.draws.abs() >= 0.005;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      decoration: BoxDecoration(
-        color: total ? AppColors.sunken : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: total ? AppColors.lineStrong : AppColors.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title ?? monthLabel(row.month),
-                  style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: AppColors.heading),
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  const Text('الربح', style: TextStyle(color: AppColors.muted, fontSize: 10.5)),
-                  Text(
-                    _num(row.net),
-                    textDirection: TextDirection.ltr,
-                    style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: _signed(row.net), height: 1.1),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Divider(height: 1, thickness: 1, color: AppColors.line),
-          const SizedBox(height: 10),
-          Row(children: [_stat('المقبوض', row.received), _stat('المصاريف', row.expenses), _stat('الرواتب', row.salaries)]),
-          if (drawn) ...[
-            const SizedBox(height: 10),
-            Row(children: [
-              _stat('المسحوب', row.draws),
-              _stat('الباقي', row.remaining, color: _signed(row.remaining)),
-              const Expanded(child: SizedBox.shrink()),
-            ]),
-          ],
-        ],
-      ),
+  /// شهر: ربحه عند الطرف، وتحت اسمه ما دخل وخرج بسطر واحد (الأصفار تُحذف).
+  Widget _monthRow(ProfitRow row) {
+    final parts = [
+      if (row.received.abs() >= 0.005) 'مقبوض ${_num(row.received)}',
+      if (row.expenses.abs() >= 0.005) 'مصاريف ${_num(row.expenses)}',
+      if (row.salaries.abs() >= 0.005) 'رواتب ${_num(row.salaries)}',
+      if (row.draws.abs() >= 0.005) 'مسحوب ${_num(row.draws)}',
+    ];
+    final up = row.net >= 0;
+    return LedgerRow(
+      icon: up ? Icons.trending_up_rounded : Icons.trending_down_rounded,
+      tone: up ? LedgerTone.paid : LedgerTone.due,
+      title: Text(monthLabel(row.month)),
+      subtitle: Text(parts.isEmpty ? 'لا حركة' : parts.join('  ·  ')),
+      amount: Text(_num(row.net), textDirection: TextDirection.ltr, style: TextStyle(color: _signed(row.net))),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
     );
   }
 
@@ -375,41 +372,74 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
     bool idle(ProfitRow x) => _columns.every((c) => c.$2(x).abs() < 0.005);
     final busy = [for (final row in r.rows) if (!idle(row)) row];
     final quiet = [for (final row in r.rows) if (idle(row)) row];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (final row in busy) _monthCard(row),
-        if (quiet.isNotEmpty)
-          InkWell(
-            onTap: () => setState(() => _showIdle = !_showIdle),
-            borderRadius: BorderRadius.circular(10),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    _showIdle ? 'إخفاء الأشهر بلا حركة' : '${quiet.length} أشهر بلا حركة',
-                    style: const TextStyle(color: AppColors.muted, fontSize: 12.5, fontWeight: FontWeight.w600),
-                  ),
-                  Icon(_showIdle ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 18, color: AppColors.muted),
-                ],
-              ),
+    final rows = <Widget>[
+      for (final row in busy) _monthRow(row),
+      if (quiet.isNotEmpty)
+        InkWell(
+          onTap: () => setState(() => _showIdle = !_showIdle),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 11),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  _showIdle ? 'إخفاء الأشهر بلا حركة' : '${quiet.length} أشهر بلا حركة',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 12.5, fontWeight: FontWeight.w600),
+                ),
+                Icon(_showIdle ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 18, color: AppColors.muted),
+              ],
             ),
           ),
-        if (_showIdle)
-          for (final row in quiet)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-              child: Row(children: [
-                Text(monthLabel(row.month), style: const TextStyle(color: AppColors.muted, fontSize: 12.5)),
-                const Spacer(),
-                const Text('0', style: TextStyle(color: AppColors.faint, fontSize: 12.5)),
-              ]),
+        ),
+      if (_showIdle)
+        for (final row in quiet)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            child: Row(children: [
+              Text(monthLabel(row.month), style: const TextStyle(color: AppColors.muted, fontSize: 12.5)),
+              const Spacer(),
+              const Text('لا حركة', style: TextStyle(color: AppColors.faint, fontSize: 12)),
+            ]),
+          ),
+    ];
+    final t = r.total;
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < rows.length; i++) ...[
+            if (i > 0) Divider(height: 1, thickness: 1, color: AppColors.line),
+            rows[i],
+          ],
+          Divider(height: 1, thickness: 1, color: AppColors.lineStrong),
+          Container(
+            color: AppColors.sunken,
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: Text('المجموع', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.heading))),
+                    Text(_num(t.net), textDirection: TextDirection.ltr, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: _signed(t.net))),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'مقبوض ${_num(t.received)}  ·  مصاريف ${_num(t.expenses)}  ·  رواتب ${_num(t.salaries)}',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+                ),
+              ],
             ),
-        const SizedBox(height: 4),
-        _monthCard(r.total, title: 'المجموع', total: true),
-      ],
+          ),
+        ],
+      ),
     );
   }
 }
