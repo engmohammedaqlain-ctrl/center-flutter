@@ -837,6 +837,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
             ],
           ),
       ],
+      if (a.records.isNotEmpty) _AttendanceCalendar(records: a.records),
       // آخر عشرة أيام بحالة كل يوم: شريط زمني من الأقدم (يميناً) إلى الأحدث (يساراً)
       if (recentDays.isNotEmpty)
         Container(
@@ -1694,3 +1695,114 @@ class _StudentSectionPage extends StatelessWidget {
 
 /// عنوان يوم مقروء: «12 أكتوبر»، والسنة إن لم تكن الحالية.
 String portalDayLabel(String raw) => nDayLabel(raw);
+
+
+/// تقويم شهري للحضور: يوم الدراسة بلون حالته، وتنقل بين الأشهر، وملخص الشهر في رأسه.
+class _AttendanceCalendar extends StatefulWidget {
+  const _AttendanceCalendar({required this.records});
+
+  final List<AttendanceMark> records;
+
+  @override
+  State<_AttendanceCalendar> createState() => _AttendanceCalendarState();
+}
+
+class _AttendanceCalendarState extends State<_AttendanceCalendar> {
+  late DateTime month;
+
+  @override
+  void initState() {
+    super.initState();
+    final latest = widget.records.map((r) => DateTime.tryParse(r.date.length >= 10 ? r.date.substring(0, 10) : r.date)).whereType<DateTime>();
+    final base = latest.isEmpty ? DateTime.now() : latest.reduce((a, b) => a.isAfter(b) ? a : b);
+    month = DateTime(base.year, base.month);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final byDay = <int, String>{};
+    for (final r in widget.records) {
+      final d = DateTime.tryParse(r.date.length >= 10 ? r.date.substring(0, 10) : r.date);
+      if (d != null && d.year == month.year && d.month == month.month) byDay[d.day] = r.status;
+    }
+    final count = (String s) => byDay.values.where((x) => x == s).length;
+    final daysIn = DateTime(month.year, month.month + 1, 0).day;
+    // الأحد أول أيام الأسبوع: weekday 7 => 0
+    final lead = DateTime(month.year, month.month, 1).weekday % 7;
+    final today = DateTime.now();
+    const heads = ['أحد', 'إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'];
+
+    Widget nav(IconData icon, VoidCallback? onTap) => InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: SizedBox(width: 36, height: 36, child: Icon(icon, size: 22, color: onTap == null ? Noon.faint : Noon.text)),
+        );
+
+    Widget cell(int day) {
+      final st = byDay[day];
+      final (fg, bg) = switch (st) {
+        'present' => (Noon.green700, Noon.green50),
+        'absent' => (Noon.red600, Noon.red50),
+        null => (Noon.muted, Colors.transparent),
+        _ => (Noon.warn, Noon.sunL),
+      };
+      final isToday = today.year == month.year && today.month == month.month && today.day == day;
+      return Container(
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: bg,
+          shape: BoxShape.circle,
+          border: isToday ? Border.all(color: Noon.ink, width: 1.5) : null,
+        ),
+        child: Text('$day', style: nText(13, weight: st == null ? FontWeight.w500 : FontWeight.w700, color: fg)),
+      );
+    }
+
+    final cells = <Widget>[
+      for (var i = 0; i < lead; i++) const SizedBox.shrink(),
+      for (var d = 1; d <= daysIn; d++) cell(d),
+    ];
+    final now = DateTime(today.year, today.month);
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 14),
+      decoration: nPanelDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              nav(Icons.chevron_left, () => setState(() => month = DateTime(month.year, month.month - 1))),
+              Expanded(
+                child: Column(
+                  children: [
+                    Text(nMonthLabel('${month.year}-${month.month.toString().padLeft(2, '0')}-01'), style: nText(14, weight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text(
+                      'حضور ${count('present')} · غياب ${count('absent')} · إذن ${count('excused')}',
+                      style: nText(11, weight: FontWeight.w500, color: Noon.muted),
+                    ),
+                  ],
+                ),
+              ),
+              nav(Icons.chevron_right, month.isBefore(now) ? () => setState(() => month = DateTime(month.year, month.month + 1)) : null),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [for (final h in heads) Expanded(child: Center(child: Text(h, style: nText(10.5, weight: FontWeight.w500, color: Noon.muted))))],
+          ),
+          const SizedBox(height: 6),
+          GridView.count(
+            crossAxisCount: 7,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 4,
+            crossAxisSpacing: 4,
+            children: cells,
+          ),
+        ],
+      ),
+    );
+  }
+}

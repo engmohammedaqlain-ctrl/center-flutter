@@ -723,7 +723,8 @@ class NMenu extends StatelessWidget {
 
 // ── الحالات ──────────────────────────────────────────────────────────────────
 
-/// تحميل: دائرة تدور بلون العنصر النشط، وتحتها النص.
+/// تحميل بالمنتصف: حلقة بلون الثيم حول أيقونة المدرسة، وتحتها النص. داخل قائمة (ارتفاع غير محدود)
+/// يملأ نحو نصف الشاشة كي لا يلتصق بأعلاها.
 class NLoading extends StatelessWidget {
   const NLoading({super.key, this.text = 'جارٍ التحميل'});
 
@@ -731,16 +732,37 @@ class NLoading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 56),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3, color: Noon.teal)),
-          const SizedBox(height: 10),
-          Text(text, textAlign: TextAlign.center, style: nText(14, weight: FontWeight.w500, color: Noon.muted)),
-        ],
-      ),
+    final body = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 64,
+          height: 64,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                width: 64,
+                height: 64,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  strokeCap: StrokeCap.round,
+                  color: Noon.ink,
+                  backgroundColor: Noon.ink.withValues(alpha: 0.10),
+                ),
+              ),
+              Icon(Icons.school_outlined, size: 26, color: Noon.ink),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(text, textAlign: TextAlign.center, style: nText(14, weight: FontWeight.w600, color: Noon.muted)),
+      ],
+    );
+    return LayoutBuilder(
+      builder: (context, c) => c.hasBoundedHeight
+          ? Center(child: body)
+          : SizedBox(height: MediaQuery.sizeOf(context).height * 0.55, child: Center(child: body)),
     );
   }
 }
