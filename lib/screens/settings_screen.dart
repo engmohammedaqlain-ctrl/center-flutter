@@ -7,6 +7,8 @@ import '../data/academic_matching.dart';
 import '../data/arabic_search.dart';
 import '../data/backup.dart';
 import '../data/backup_validate.dart';
+import '../data/doc_export.dart';
+import '../data/school_backups.dart';
 import '../data/permissions.dart';
 import '../data/phone.dart';
 import '../data/school_options.dart';
@@ -2555,6 +2557,10 @@ class _DataTabState extends State<_DataTab> {
           onTap: () => _restore(context, store),
         ),
 
+        if (!store.isStaffSession) ...[
+          const FormSection(icon: Icons.cloud_done_outlined, title: 'النسخ في السحابة'),
+          const _RestorePoints(),
+        ],
         const FormSection(icon: Icons.apartment_outlined, title: 'المنشأة'),
         InfoStrip(
           child: Column(
@@ -2878,11 +2884,142 @@ Future<void> _export(BuildContext context, AppStore store) async {
   }
 }
 
-Future<void> _restore(BuildContext context, AppStore store) async {
+/// نقاط الرجوع في السحابة — قسم النسخ في `BackupSettings`: اليومية واليدوية و«قبل استرجاع».
+class _RestorePoints extends StatefulWidget {
+  const _RestorePoints();
+
+  @override
+  State<_RestorePoints> createState() => _RestorePointsState();
+}
+
+class _RestorePointsState extends State<_RestorePoints> {
+  List<RestorePoint>? points;
+  bool busy = false;
+  bool failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    final id = StoreScope.of(context).tenantId;
+    if (id == null) return;
+    try {
+      final rows = await listRestorePoints(id);
+      if (mounted) setState(() {
+        points = rows;
+        failed = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => failed = true);
+    }
+  }
+
+  Future<void> _save(AppStore store) async {
+    setState(() => busy = true);
+    try {
+      await saveRestorePoint(store);
+      if (mounted) showAppSnack(context, 'حُفظت نسخة');
+      await _load();
+    } catch (e) {
+      if (mounted) showAppSnack(context, userMessage(e, 'تعذّر الحفظ'), error: true);
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _download(RestorePoint p) async {
+    final bytes = await downloadRestorePoint(p.path);
+    if (!mounted) return;
+    if (bytes == null) {
+      showAppSnack(context, 'تعذّر تنزيل النسخة', error: true);
+      return;
+    }
+    await DocExport.download(
+      context,
+      bytes,
+      'school_backup_${p.at.length >= 10 ? p.at.substring(0, 10) : 'copy'}.json',
+      mime: 'application/json',
+    );
+  }
+
+  Future<void> _restorePoint(AppStore store, RestorePoint p) async {
+    setState(() => busy = true);
+    try {
+      final bytes = await downloadRestorePoint(p.path);
+      if (!mounted) return;
+      if (bytes == null) {
+        showAppSnack(context, 'تعذّر تنزيل النسخة', error: true);
+        return;
+      }
+      await _restore(context, store, fromJson: utf8.decode(bytes));
+      await _load();
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = StoreScope.of(context);
+    final rows = points;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'كل ليلة نسخة تُبقى $dailyDays يوماً، وآخر $keepPoints يدوية، وآخر $keepPoints قبل كل استرجاع.',
+          style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+        ),
+        const SizedBox(height: 8),
+        PrimaryButton(label: 'نسخة الآن', busy: busy, expand: true, onPressed: busy ? null : () => _save(store)),
+        const SizedBox(height: 8),
+        if (failed)
+          const Text('تعذّر جلب النسخ', style: TextStyle(color: AppColors.danger, fontSize: 12))
+        else if (rows == null)
+          const Center(child: AppLoader(compact: true, size: 22))
+        else if (rows.isEmpty)
+          const Text('أول نسخة يومية الليلة', style: TextStyle(color: AppColors.muted, fontSize: 12))
+        else
+          for (final p in rows)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          p.at.length >= 16 ? p.at.substring(0, 16).replaceAll('T', ' ') : p.at,
+                          textDirection: TextDirection.ltr,
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                        Text(
+                          '${backupKindLabels[p.kind] ?? ''}${p.error.isEmpty ? '' : ' · فشلت'}',
+                          style: TextStyle(fontSize: 11, color: p.error.isEmpty ? AppColors.muted : AppColors.danger),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (p.error.isEmpty) ...[
+                    TextButton(onPressed: () => _download(p), child: const Text('تنزيل')),
+                    TextButton(onPressed: busy ? null : () => _restorePoint(store, p), child: const Text('استرجاع')),
+                  ],
+                ],
+              ),
+            ),
+      ],
+    );
+  }
+}
+
+Future<void> _restore(BuildContext context, AppStore store, {String? fromJson}) async {
   const service = BackupService();
-  String? json;
+  String? json = fromJson;
   try {
-    json = await service.pickFile();
+    json ??= await service.pickFile();
   } catch (e) {
     if (!context.mounted) return;
     showAppSnack(context, userMessage(e, 'تعذّر فتح الملف'), error: true);
@@ -2985,7 +3122,15 @@ Future<void> _restore(BuildContext context, AppStore store) async {
   try {
     final result = await runBusyOp(
       context,
-      () => service.write(store, plan),
+      () async {
+        // نقطة رجوع تلقائية قبل الكتابة: استرجاع بالخطأ يُتراجع عنه بها (للمالك وحده)
+        if (!store.isStaffSession) {
+          try {
+            await saveRestorePoint(store, auto: true);
+          } catch (_) {}
+        }
+        return service.write(store, plan);
+      },
       message: 'جارٍ استرجاع النسخة...',
     );
     if (!context.mounted) return;
