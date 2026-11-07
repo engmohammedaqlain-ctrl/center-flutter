@@ -12,6 +12,7 @@ import '../data/grade_deadlines.dart';
 import 'grade_deadline_banner.dart';
 import 'sheet_export.dart';
 import 'teacher_payslips.dart';
+import 'teacher_self_sheet.dart';
 import '../data/portal.dart';
 import '../data/material_limits.dart';
 import '../data/notes.dart';
@@ -2073,8 +2074,14 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
             action: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                TeacherSelfButton(
+                  tenantId: widget.user.tenantId,
+                  teacherId: widget.user.id,
+                  classes: data?.classes ?? const [],
+                  slips: payslips,
+                  color: Noon.onInkSoft,
+                ),
                 // «الراتب» لمن صُرف له راتب وفعّلت المدرسة قسائمه — زر «ملفي» في الويب
-                if (payslips.isNotEmpty) PayslipsButton(slips: payslips),
                 _PortalSyncButton(
                   offline: offline,
                   pending: pendingOps,

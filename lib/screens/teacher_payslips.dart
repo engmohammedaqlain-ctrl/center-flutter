@@ -47,6 +47,9 @@ Future<List<Payslip>> loadMyPayslips(String teacherId) async {
   ];
 }
 
+/// قائمة القسائم: داخل «ملفي» أو نافذتها.
+Widget payslipListView(List<Payslip> slips) => _PayslipList(slips: slips);
+
 /// زر الشريط العلوي: يظهر لمن صُرف له راتب، ويفتح قسائمه.
 class PayslipsButton extends StatelessWidget {
   const PayslipsButton({super.key, required this.slips});

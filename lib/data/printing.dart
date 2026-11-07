@@ -374,7 +374,7 @@ class PdfKit {
   static String fileName(String raw) {
     final base = raw.trim().replaceAll(RegExp(r'\s+'), '_');
     // صورة الوصل تبقى بامتدادها
-    if (RegExp(r'\.(pdf|png|csv)$', caseSensitive: false).hasMatch(base)) return base;
+    if (RegExp(r'\.(pdf|png|csv|xlsx)$', caseSensitive: false).hasMatch(base)) return base;
     return '$base.pdf';
   }
 
