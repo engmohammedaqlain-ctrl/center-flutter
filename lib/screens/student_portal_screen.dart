@@ -978,53 +978,19 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     // الأحدث أولاً
     final payments = [...f.payments]..sort((a, b) => b.date.compareTo(a.date));
 
-    // ملخص الرسوم: أهم ما في القسم، فخانات متجاورة بعنوان صغير وقيمة بارزة بدل سطر نص واحد
-    Widget cell(String label, String value, {Color? color, String? sub}) => Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(label, textAlign: TextAlign.center, style: nText(11, weight: FontWeight.w500, color: Noon.muted)),
-                const SizedBox(height: 4),
-                Text(value, textAlign: TextAlign.center, style: nText(15, weight: FontWeight.w700, color: color ?? Noon.text, height: 1.15)),
-                if (sub != null) ...[
-                  const SizedBox(height: 3),
-                  Text(sub, textAlign: TextAlign.center, style: nText(10.5, weight: FontWeight.w500, color: Noon.muted)),
-                ],
-              ],
-            ),
-          ),
-        );
-    final cells = <Widget>[
-      cell(
-        'الحالة',
-        paidInFull ? 'مسدد بالكامل' : (owes ? nMoney(f.currentDue) : 'مسدد حتى الآن'),
-        color: owes ? const Color(0xFFBE123C) : const Color(0xFF047857),
-        sub: owes ? 'مستحق الآن' : null,
-      ),
-      if (f.totalPaid > 0) cell(paidInFull ? 'إجمالي المسدد' : 'المدفوع', nMoney(f.totalPaid)),
-      if (!paidInFull && nextParts.isNotEmpty)
-        cell(
-          'القسط القادم',
-          nextLeft > 0 ? nMoney(nextLeft) : nDayLabel(next!.dueDate),
-          sub: nextLeft > 0 && next!.dueDate.isNotEmpty ? nDayLabel(next.dueDate) : null,
-        ),
-    ];
-    final summaryLine = Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
-      decoration: nPanelDecoration(),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            for (var k = 0; k < cells.length; k++) ...[
-              if (k > 0) VerticalDivider(width: 1, thickness: 1, color: Noon.line),
-              cells[k],
-            ],
-          ],
-        ),
-      ),
+    // ملخص الرسوم: أهم ما في القسم، فبطاقة كبيرة بلون الثيم كبطاقة الحضور (حمراء حين يوجد مستحق)
+    final summaryLine = NHeroCard(
+      label: owes ? 'مستحق الآن' : (paidInFull ? 'إجمالي المسدد' : 'المدفوع حتى الآن'),
+      icon: Icons.credit_card_rounded,
+      value: nAmount(owes ? f.currentDue : f.totalPaid),
+      unit: 'شيكل',
+      tone: owes ? NoonHeroTone.due : NoonHeroTone.paid,
+      end: all.isEmpty ? null : 'إجمالي ${nMoney(totalAmount)}',
+      chips: [
+        if (owes && f.totalPaid > 0) 'المدفوع ${nMoney(f.totalPaid)}',
+        if (!paidInFull && nextParts.isNotEmpty) 'القسط القادم ${nextParts.join(' · ')}',
+        if (paidInFull) 'مسدد بالكامل',
+      ],
     );
 
     return [
