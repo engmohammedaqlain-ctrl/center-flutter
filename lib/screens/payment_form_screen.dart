@@ -12,6 +12,7 @@ import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/form_layout.dart';
+import '../widgets/owner_fold.dart';
 import '../widgets/widgets.dart';
 import 'receipt_screen.dart';
 
@@ -608,14 +609,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                       value: method,
                       // الوسائل المفعّلة وحدها، ومعها وسيلة السند المعروض إن عُطّلت لاحقاً
                       items: [
-                        for (final m in store.activePaymentMethods)
-                          DropdownMenuItem(
-                            value: m.id,
-                            child: Text(
-                              m.name,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
+                        ...methodDropdownItems(store.activePaymentMethods),
                         if (store.activePaymentMethods.every(
                           (m) => m.id != method,
                         ))

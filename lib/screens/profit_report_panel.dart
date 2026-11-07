@@ -10,6 +10,7 @@ import '../data/year_closing.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../widgets/finance_documents.dart';
+import '../widgets/owner_fold.dart';
 import '../widgets/widgets.dart';
 import 'accounts_statement_sheet.dart';
 import 'year_close_sheet.dart';
@@ -289,12 +290,11 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
       ),
       if (rows.isNotEmpty) ...[
         const SizedBox(height: 8),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            for (final row in rows)
-              InkWell(
+        OwnerTiles<({String method, double amount})>(
+          items: rows,
+          ownerOf: (r) => store.paymentMethods.where((m) => m.id == r.method).firstOrNull?.owner,
+          amountOf: (r) => r.amount,
+          tile: (row) => InkWell(
                 borderRadius: BorderRadius.circular(8),
                 onTap: () => setState(() => spendMethod = spendMethod == row.method ? '' : row.method),
                 child: Container(
@@ -325,7 +325,6 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
                   ),
                 ),
               ),
-          ],
         ),
       ],
     ];
