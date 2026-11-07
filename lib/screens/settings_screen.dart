@@ -9,6 +9,7 @@ import '../data/backup.dart';
 import '../data/backup_validate.dart';
 import '../data/permissions.dart';
 import '../data/phone.dart';
+import '../data/school_options.dart';
 import '../data/fee_plan.dart';
 import '../data/store.dart';
 import '../data/sync.dart';
@@ -30,6 +31,7 @@ import 'school_settings_tab.dart';
 import 'settings_forms.dart';
 import 'grading_scheme_tab.dart';
 import 'followup_settings_tab.dart';
+import 'student_import_sheet.dart';
 import 'student_promotion_sheet.dart';
 import 'teacher_detail_screen.dart';
 import 'year_close_sheet.dart';
@@ -2470,6 +2472,14 @@ class _DataTabState extends State<_DataTab> {
           _FailedActions(failed: failed),
         ],
 
+        if (store.can('students') && store.settings.toolOn('student_import')) ...[
+          const FormSection(icon: Icons.upload_file_outlined, title: 'استيراد الطلاب'),
+          GhostButton(
+            label: 'استيراد الطلاب من Excel',
+            icon: Icons.table_chart_outlined,
+            onPressed: () => showStudentImportSheet(context, store),
+          ),
+        ],
         const FormSection(
           icon: Icons.storage_outlined,
           title: 'البيانات المحلية على هذا الجهاز',
