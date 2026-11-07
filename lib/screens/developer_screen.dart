@@ -15,6 +15,7 @@ import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
 import 'app_installs_screen.dart';
 import 'developer_health_screen.dart';
+import 'dev_contracts_screen.dart';
 import 'dev_expenses_sheet.dart';
 
 /// مطابق لـ USERNAME_RULE في دالة السيرفر `admin-tenants`.
@@ -218,6 +219,11 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
             tooltip: 'المصاريف',
             icon: const Icon(Icons.account_balance_wallet_outlined),
             onPressed: () => showDevExpensesSheet(context),
+          ),
+          IconButton(
+            tooltip: 'العقود',
+            icon: const Icon(Icons.description_outlined),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DevContractsScreen())),
           ),
           IconButton(
             tooltip: 'المتابعة',
