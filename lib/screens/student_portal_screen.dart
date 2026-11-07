@@ -759,7 +759,6 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       byMonth.putIfAbsent(nMonthLabel(r.date), () => []).add(r);
     }
 
-    final recentDays = a.records.take(10).toList();
 
     return [
       NHeroCard(
@@ -818,31 +817,6 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
           ),
       ],
       if (a.records.isNotEmpty) _AttendanceCalendar(records: a.records),
-      // آخر عشرة أيام بحالة كل يوم: شريط زمني من الأقدم (يميناً) إلى الأحدث (يساراً)
-      if (recentDays.isNotEmpty)
-        Container(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
-          decoration: nPanelDecoration(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(child: Text('آخر ${recentDays.length} أيام', style: nText(13, weight: FontWeight.w700))),
-                  _legendDot('حاضر', Noon.green700),
-                  const SizedBox(width: 10),
-                  _legendDot('غائب', Noon.red600),
-                  const SizedBox(width: 10),
-                  _legendDot('مأذون', Noon.warn),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [for (final r in recentDays.reversed) Expanded(child: _dayCell(r))],
-              ),
-            ],
-          ),
-        ),
     ];
   }
 
@@ -1076,44 +1050,6 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       amount: Text(nMoney(inst.amount)),
       badge: _installmentBadge(inst),
       progress: partial && inst.amount > 0 ? inst.paidAmount / inst.amount : null,
-    );
-  }
-
-  Widget _legendDot(String label, Color color) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(width: 7, height: 7, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-          const SizedBox(width: 4),
-          Text(label, style: nText(10.5, weight: FontWeight.w500, color: Noon.muted)),
-        ],
-      );
-
-  /// خلية يوم في الشريط: رقمه وتحته دائرة بحالته (✓ حاضر، ✕ غائب، ◷ مأذون).
-  Widget _dayCell(AttendanceMark r) {
-    final d = DateTime.tryParse(r.date.length >= 10 ? r.date.substring(0, 10) : r.date);
-    final (icon, fg, bg) = switch (r.status) {
-      'present' => (Icons.check_rounded, Noon.green700, Noon.green50),
-      'absent' => (Icons.close_rounded, Noon.red600, Noon.red50),
-      _ => (Icons.schedule_rounded, Noon.warn, Noon.sunL),
-    };
-    const names = ['إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت', 'أحد'];
-    return Tooltip(
-      message: d == null ? r.date : '${nWeekdayLabel(r.date)} · ${nMonthLabel(r.date)}',
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(d == null ? '' : names[d.weekday - 1], style: nText(9.5, weight: FontWeight.w500, color: Noon.muted)),
-          const SizedBox(height: 2),
-          Text(d == null ? '' : '${d.day}', style: nText(13, weight: FontWeight.w700)),
-          const SizedBox(height: 6),
-          Container(
-            width: 26,
-            height: 26,
-            decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
-            child: Icon(icon, size: 15, color: fg),
-          ),
-        ],
-      ),
     );
   }
 
