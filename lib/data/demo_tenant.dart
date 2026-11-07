@@ -144,7 +144,15 @@ Future<DemoLogins> seedDemoTenant({
       children: demo.logins.parent.children,
     );
   final teacherLogin = (name: logins.teacher.name, nationalId: teacherId, portalCode: _teacherCode);
+  await uploadAndInsertDemo(tenantId, demo, institution: {'name': name, 'logo': logo, 'colors': colors});
 
+  return DemoLogins(teacher: teacherLogin, student: logins.student, overdue: logins.overdue, parent: logins.parent);
+}
+
+/// رفع صور الديمو وصفوفه إلى منشأة: الصور في حاوياتها، ثم سجل الهوية إن طُلب، ثم الجداول بترتيب المزامنة،
+/// ثم المودل. مشترك بين المدرسة التجريبية وتوليد البيانات التجريبية.
+Future<void> uploadAndInsertDemo(String tenantId, DemoDataset demo, {Map<String, dynamic>? institution}) async {
+  final rows = demo.rows;
   // الصور: إشعارات طلبات الدفع، وصور الطلاب ووثائقهم، وإشعارات السندات، في حاوياتها الخاصة
   final jobs = <Future<void> Function()>[];
   for (final pr in rows['payment_requests']!) {
@@ -175,19 +183,21 @@ Future<DemoLogins> seedDemoTenant({
   await _inPool(jobs);
 
   final now = DateTime.now().toUtc().toIso8601String();
-  await _insertRows('institution_settings', [
+  if (institution != null) {
+   await _insertRows('institution_settings', [
     {
       'id': tenantId,
       'tenant_id': tenantId,
       'institution_type': 'school',
-      'institution_name': name,
-      'logo': logo,
-      'colors': {...?colors, '__custom_payment_methods': demoPaymentMethods},
+      'institution_name': institution['name'],
+      'logo': institution['logo'],
+      'colors': {...?(institution['colors'] as Map<String, dynamic>?), '__custom_payment_methods': demoPaymentMethods},
       'settings': AppSettings.fromMap({'seat_fee': demo.seatFee}).toMap(),
       'created_at': now,
       'updated_at': now,
     },
   ]);
+  }
 
   // ترتيب المزامنة نفسه: الأب قبل ابنه
   for (final table in syncedTables) {
@@ -199,8 +209,6 @@ Future<DemoLogins> seedDemoTenant({
     await _insertRows('course_sections', demo.moodleSections);
     await _insertRows('course_items', demo.moodleItems);
   }
-
-  return DemoLogins(teacher: teacherLogin, student: logins.student, overdue: logins.overdue, parent: logins.parent);
 }
 
 String _digits(int n) {

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../data/demo_data.dart';
+import '../data/demo_inject.dart';
 import '../data/features.dart';
 import '../data/institution.dart';
 import '../data/store.dart';
@@ -619,19 +620,37 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
         const SizedBox(height: 8),
         _toolTile(
           icon: Icons.science_outlined,
-          title: 'حقن بيانات تجريبية',
-          subtitle: 'تغذية النظام بسجلات للتجربة والاختبار',
+          title: 'توليد بيانات تجريبية',
+          subtitle: 'مدرسة كاملة للتجربة بدل بيانات هذه المنشأة',
           onTap: () async {
+            // كالويب (`injectDemoData`): مسح الجهاز والسحابة ثم مولّد الويب نفسه
             final ok = await confirmSheet(
               context,
-              title: 'حقن بيانات تجريبية',
-              message: 'ستُضاف منشآت وطلاب ومدرّسون تجريبيون إلى قاعدة البيانات المحلية. هل تريد المتابعة؟',
-              confirmLabel: 'حقن',
+              title: 'توليد بيانات تجريبية',
+              message: 'حذف كل البيانات من الجهاز والسحابة وتوليد بيانات تجريبية؟
+لا يمكن التراجع.',
+              confirmLabel: 'تنفيذ',
+              confirmColor: AppColors.danger,
             );
             if (!ok || !context.mounted) return;
-            final stats = injectDemoData(store);
-            await store.flush();
-            if (context.mounted) showDemoDataResult(context, stats);
+            final token = SupabaseAuth.developerAccess;
+            if (token == null || token.isEmpty) {
+              setState(() {
+                unlocked = false;
+                gateError = 'انتهت جلسة المطور، سجّل الدخول مجدداً';
+              });
+              return;
+            }
+            try {
+              final stats = await runBusyOp(
+                context,
+                () => injectDemoDataCloud(store, developerToken: token),
+                message: 'جارٍ توليد البيانات...',
+              );
+              if (context.mounted) showDemoDataResult(context, stats);
+            } catch (e) {
+              if (context.mounted) showAppSnack(context, userMessage(e, 'تعذّر توليد البيانات'), error: true);
+            }
           },
         ),
         const SizedBox(height: 8),
