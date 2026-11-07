@@ -751,8 +751,12 @@ Future<void> _showRoomActionsSheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(Corner.dialog)),
     ),
+    // الإجراءات قد تفوق الشاشة القصيرة: الورقة تتمرّر بدل أن تُقصّ
+    isScrollControlled: true,
+    constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.85),
     builder: (ctx) => SafeArea(
-      child: Column(
+      child: SingleChildScrollView(
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
@@ -844,6 +848,7 @@ Future<void> _showRoomActionsSheet(
             ),
           ],
         ],
+      ),
       ),
     ),
   );
