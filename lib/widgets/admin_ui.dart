@@ -843,7 +843,7 @@ class NoonActiveChip extends StatelessWidget {
   }
 }
 
-/// مفتاح خيارات — `NSegment`: خانات متجاورة بحد واحد، والمختار بتظليل `mist` وخط سفلي.
+/// مفتاح خيارات — `NSegment`: خانات متجاورة متساوية بحد واحد، والمختار ممتلئ بلون الثيم ونصه أبيض.
 class NoonSegment<T> extends StatelessWidget {
   const NoonSegment({super.key, required this.value, required this.options, required this.onChanged, this.scroll = false});
 
@@ -859,23 +859,20 @@ class NoonSegment<T> extends StatelessWidget {
     Widget cell(int i) {
       final (id, label) = options[i];
       final on = id == value;
+      final text = Text(label, maxLines: 1, style: _t(12, FontWeight.w700, on ? Colors.white : AdminNoon.text));
       final c = InkWell(
         onTap: () => onChanged(id),
         child: Container(
           height: 36,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+          padding: EdgeInsets.symmetric(horizontal: scroll ? 12 : 5),
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: on ? AdminNoon.mist : null,
+            color: on ? AdminNoon.ink : null,
             border: Border(
               right: i > 0 ? BorderSide(color: AdminNoon.line) : BorderSide.none,
-              bottom: on ? BorderSide(color: AdminNoon.teal, width: 2) : BorderSide.none,
             ),
           ),
-          child: Text(label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: _t(12, FontWeight.w700, on ? AdminNoon.text : AdminNoon.muted)),
+          child: scroll ? text : FittedBox(fit: BoxFit.scaleDown, child: text),
         ),
       );
       return scroll ? c : Expanded(child: c);

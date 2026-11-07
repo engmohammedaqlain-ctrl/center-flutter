@@ -690,7 +690,11 @@ class _ResultsReportState extends State<_ResultsReport> with _GradesState {
             })),
         // الأوائل: أول عشرة بالمعدل في النطاق؛ النقر ثانية يلغيها
         FilterChip(
-          avatar: const Icon(Icons.emoji_events_outlined, size: 16),
+          avatar: Icon(
+            Icons.emoji_events_outlined,
+            size: 16,
+            color: view == 'students' && limit > 0 && order == 'top' && metric.isEmpty ? Colors.white : AdminNoon.text,
+          ),
           label: const Text('الأوائل'),
           selected: view == 'students' && limit > 0 && order == 'top' && metric.isEmpty,
           onSelected: (on) => setState(() {
@@ -729,7 +733,6 @@ class _ResultsReportState extends State<_ResultsReport> with _GradesState {
               FilterChip(
                 label: Text(bands[i]),
                 selected: picked.contains(i),
-                selectedColor: _bandColors[i].withValues(alpha: 0.2),
                 onSelected: (on) => setState(() => on ? (picked..add(i)..sort()) : picked.remove(i)),
               ),
             Text('${ranked.length} طالب', style: NoonText.style(12, weight: FontWeight.w700, color: AdminNoon.muted)),

@@ -149,12 +149,6 @@ Future<bool> showGeneralIncomeSheet(
                           label: Text(c, style: const TextStyle(fontSize: 12)),
                           selected: category == c,
                           onSelected: (_) => setSt(() => category = c),
-                          selectedColor: AppColors.amberSoft,
-                          side: BorderSide(
-                            color: category == c
-                                ? AppColors.amber
-                                : AppColors.lineStrong,
-                          ),
                           visualDensity: VisualDensity.compact,
                         ),
                     ],
