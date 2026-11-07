@@ -688,20 +688,34 @@ class _FinanceStrip extends StatelessWidget {
                     ),
                   if (previousYearsDue > cent && notes.isNotEmpty) const SizedBox(height: 8),
                   if (notes.isNotEmpty)
+                    // ملاحظة الطالب (خصم إخوة، اتفاق خاص...): تنبيه كهرماني بأيقونة، فلا تُقرأ كحقل مقفل
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                       decoration: BoxDecoration(
-                        color: AdminNoon.mist,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: AdminNoon.headLine),
+                        color: const Color(0xFFFFFBEB),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFFDE68A)),
                       ),
-                      child: Text.rich(
-                        TextSpan(
-                          text: 'ملاحظة: ',
-                          style: TextStyle(color: AdminNoon.tealD),
-                          children: [TextSpan(text: notes, style: TextStyle(color: AdminNoon.text))],
-                        ),
-                        style: NoonText.style(12, weight: FontWeight.w600),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.only(top: 1),
+                            child: Icon(Icons.sticky_note_2_outlined, size: 20, color: Color(0xFFB45309)),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text('ملاحظة', style: NoonText.style(11, weight: FontWeight.w700, color: const Color(0xFF92400E))),
+                                const SizedBox(height: 2),
+                                Text(notes, style: NoonText.style(13, weight: FontWeight.w600, height: 1.4)),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                 ],
