@@ -115,10 +115,18 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
   late final specialization = TextEditingController(text: widget.teacher?.specialization ?? '');
   late final graduationYear = TextEditingController(text: widget.teacher?.graduationYear?.toString() ?? '');
   late final List<String> gradeLevels = [...?widget.teacher?.gradeLevels];
-  late String contractType = widget.teacher?.contractType ?? '';
   late String contractStart = widget.teacher?.contractStart ?? '';
   late String birthDate = widget.teacher?.birthDate ?? '';
   late bool perLesson = widget.teacher?.payProfile?['per_lesson'] == true;
+  // النصاب: حصصه بالأسبوع — `weekly_periods`
+  late final weekly = TextEditingController(
+    text: (widget.teacher?.weeklyPeriods ?? 0) > 0 ? widget.teacher!.weeklyPeriods!.floor().toString() : '',
+  );
+  // «المزيد» مفتوح إن كان فيه شيء — كالويب
+  late bool more = (widget.teacher?.graduationYear ?? 0) > 0 ||
+      (widget.teacher?.birthDate ?? '').isNotEmpty ||
+      (widget.teacher?.contractStart ?? '').isNotEmpty ||
+      (widget.teacher?.weeklyPeriods ?? 0) > 0;
   final errors = FieldErrors();
   bool _seeded = false;
 
@@ -144,6 +152,7 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
     jobTitle.dispose();
     specialization.dispose();
     graduationYear.dispose();
+    weekly.dispose();
     super.dispose();
   }
 
@@ -179,16 +188,29 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
     final rateValue = widget.teacher?.rate ?? 0.0;
     // «معلم حصة» جزء من الأجر: يسري من هذا الشهر كأي تغيير أجر
     final prev = widget.teacher;
+    final weeklyN = int.tryParse(digitsOnly(weekly.text)) ?? 0;
+    final weeklyValue = weeklyN > 0 ? weeklyN.toDouble() : null;
+    final month = monthKeyOf(DateTime.now());
     var payProfile = prev?.payProfile;
     var salaryHistory = prev?.salaryHistory ?? const <Map<String, dynamic>>[];
-    if ((prev?.payProfile?['per_lesson'] == true) != perLesson) {
+    var contract = prev?.contractType ?? '';
+    var rateOut = rateValue;
+    final perLessonOn = store.isFeatureOn('payroll.per_lesson') && store.can('finance.expenses');
+    // «معلم حصة» يُكتب حين يتغيّر وحده، فلا يُلمس أجر من لا يراه
+    if (perLessonOn && (prev?.payProfile?['per_lesson'] == true) != perLesson) {
       if (prev == null) {
-        payProfile = {'per_lesson': true};
+        payProfile = perLesson ? {'per_lesson': true} : null;
       } else {
-        final u = payUpdate(prev, payInputOf(prev).copyWith(perLesson: perLesson), monthKeyOf(DateTime.now()));
+        final u = payUpdate(prev, payInputOf(prev).copyWith(perLesson: perLesson), month, weeklyPeriods: weeklyValue);
         payProfile = u['pay_profile'] as Map<String, dynamic>?;
+        contract = '${u['contract_type'] ?? ''}';
+        rateOut = (u['payment_rate'] as num?)?.toDouble() ?? rateOut;
         salaryHistory = (u['salary_history'] as List<Map<String, dynamic>>?) ?? salaryHistory;
       }
+    } else if (prev != null && (prev.weeklyPeriods ?? 0) != (weeklyValue ?? 0)) {
+      // النصاب من شروط الأجر: تغيّره وحده يُسجَّل كي لا يُعاد حساب شهر سابق به
+      final u = payUpdate(prev, payInputOf(prev), month, weeklyPeriods: weeklyValue);
+      salaryHistory = (u['salary_history'] as List<Map<String, dynamic>>?) ?? salaryHistory;
     }
     final idDigits = digitsOnly(nationalId.text);
     final number = digitsOnly(phone.text);
@@ -221,7 +243,7 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
           name: name.text.trim(),
           phone: combinePhoneAndPrefix(number, prefix),
           subject: names.isEmpty ? '' : names.first,
-          rate: rateValue,
+          rate: rateOut,
           email: widget.teacher?.email ?? '',
           notes: widget.teacher?.notes ?? '',
           nationalId: idDigits,
@@ -231,11 +253,11 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
           specialization: specialization.text.trim(),
           graduationYear: gradYear,
           gradeLevels: [...gradeLevels],
-          contractType: contractType,
+          contractType: contract,
           contractStart: contractStart,
           birthDate: birthDate,
           // النموذج لا يعرضها: تبقى كما هي، فلا يمحو حفظ البيانات أجر المعلم ونصابه
-          weeklyPeriods: widget.teacher?.weeklyPeriods,
+          weeklyPeriods: weeklyValue,
           payProfile: payProfile,
           salaryHistory: salaryHistory,
         ),
@@ -383,46 +405,7 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
                 TextField(controller: specialization),
               ],
             ),
-            _gap,
-            FieldPair(
-              start: [
-                FieldLabel('سنة التخرج', key: errors.key('graduationYear')),
-                TextField(
-                  controller: graduationYear,
-                  keyboardType: TextInputType.number,
-                  maxLength: 4,
-                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩۰-۹]'))],
-                  onChanged: (_) {
-                    if (errors.clear('graduationYear')) setState(() {});
-                  },
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                  decoration: InputDecoration(hintText: '2015', counterText: '', errorText: errors['graduationYear']),
-                ),
-              ],
-              end: [
-                const FieldLabel('نظام العقد'),
-                AppDropdown<String>(
-                  value: contractType,
-                  items: [
-                    const DropdownMenuItem(value: '', child: Text('—')),
-                    for (final e in teacherContractLabels.entries) DropdownMenuItem(value: e.key, child: Text(e.value)),
-                  ],
-                  onChanged: (v) => setState(() => contractType = v ?? ''),
-                ),
-              ],
-            ),
-            _gap,
-            FieldPair(
-              start: [
-                const FieldLabel('بداية العقد'),
-                _dateField(contractStart, (v) => contractStart = v),
-              ],
-              end: [
-                const FieldLabel('تاريخ الميلاد'),
-                _dateField(birthDate, (v) => birthDate = v),
-              ],
-            ),
-            if (store.isFeatureOn('payroll.per_lesson')) ...[
+            if (store.isFeatureOn('payroll.per_lesson') && store.can('finance.expenses')) ...[
               _gap,
               SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
@@ -456,6 +439,65 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
                 ],
               );
             }),
+
+            _gap,
+            InkWell(
+              onTap: () => setState(() => more = !more),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  children: [
+                    AnimatedRotation(
+                      turns: more ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 150),
+                      child: const Icon(Icons.expand_more, size: 18, color: AppColors.muted),
+                    ),
+                    const SizedBox(width: 4),
+                    const Text('المزيد', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.muted)),
+                  ],
+                ),
+              ),
+            ),
+            if (more) ...[
+              FieldPair(
+                start: [
+                  FieldLabel('سنة التخرج', key: errors.key('graduationYear')),
+                  TextField(
+                    controller: graduationYear,
+                    keyboardType: TextInputType.number,
+                    maxLength: 4,
+                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩۰-۹]'))],
+                    onChanged: (_) {
+                      if (errors.clear('graduationYear')) setState(() {});
+                    },
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                    decoration: InputDecoration(hintText: '2015', counterText: '', errorText: errors['graduationYear']),
+                  ),
+                ],
+                end: [
+                  const FieldLabel('تاريخ الميلاد'),
+                  _dateField(birthDate, (v) => birthDate = v),
+                ],
+              ),
+              _gap,
+              FieldPair(
+                start: [
+                  const FieldLabel('بداية العقد'),
+                  _dateField(contractStart, (v) => contractStart = v),
+                ],
+                end: [
+                  const FieldLabel('النصاب (حصصه بالأسبوع)'),
+                  TextField(
+                    controller: weekly,
+                    keyboardType: TextInputType.number,
+                    maxLength: 2,
+                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩۰-۹]'))],
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                    decoration: const InputDecoration(hintText: '18', counterText: ''),
+                  ),
+                ],
+              ),
+            ],
 
             // ── ٤. المواد ───────────────────────────────────────────────────
             const FormSection(icon: Icons.menu_book_outlined, title: 'المواد التي يدرّسها'),
