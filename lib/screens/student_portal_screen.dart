@@ -960,21 +960,57 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     // الأحدث أولاً
     final payments = [...f.payments]..sort((a, b) => b.date.compareTo(a.date));
 
-    // سطر الملخص بدل البطاقة الكبيرة، وزر «تسديد دفعة» بجانبه لولي الأمر
-    final summaryLine = Wrap(
-      spacing: 12,
-      runSpacing: 2,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        Text(
-          paidInFull ? 'مسدد بالكامل' : (owes ? 'مستحق الآن ${nAmount(f.currentDue)} شيكل' : 'مسدد حتى الآن'),
-          style: nText(14, weight: FontWeight.w700, color: owes ? const Color(0xFFBE123C) : const Color(0xFF047857)),
+    // ملخص الرسوم: أهم ما في القسم، فخانات متجاورة بعنوان صغير وقيمة بارزة بدل سطر نص واحد
+    Widget cell(String label, String value, {Color? color, String? sub}) => Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label, textAlign: TextAlign.center, style: nText(11, weight: FontWeight.w500, color: Noon.muted)),
+                const SizedBox(height: 4),
+                Text(value, textAlign: TextAlign.center, style: nText(15, weight: FontWeight.w700, color: color ?? Noon.text, height: 1.15)),
+                if (sub != null) ...[
+                  const SizedBox(height: 3),
+                  Text(sub, textAlign: TextAlign.center, style: nText(10.5, weight: FontWeight.w500, color: Noon.muted)),
+                ],
+              ],
+            ),
+          ),
+        );
+    final cells = <Widget>[
+      cell(
+        'الحالة',
+        paidInFull ? 'مسدد بالكامل' : (owes ? nMoney(f.currentDue) : 'مسدد حتى الآن'),
+        color: owes ? const Color(0xFFBE123C) : const Color(0xFF047857),
+        sub: owes ? 'مستحق الآن' : null,
+      ),
+      if (f.totalPaid > 0) cell(paidInFull ? 'إجمالي المسدد' : 'المدفوع', nMoney(f.totalPaid)),
+      if (!paidInFull && nextParts.isNotEmpty)
+        cell(
+          'القسط القادم',
+          nextLeft > 0 ? nMoney(nextLeft) : nDayLabel(next!.dueDate),
+          sub: nextLeft > 0 && next!.dueDate.isNotEmpty ? nDayLabel(next.dueDate) : null,
         ),
-        for (final c in chips) Text(c, style: nText(12, weight: FontWeight.w500, color: Noon.muted)),
-      ],
+    ];
+    final summaryLine = Container(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
+      decoration: nPanelDecoration(),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            for (var k = 0; k < cells.length; k++) ...[
+              if (k > 0) VerticalDivider(width: 1, thickness: 1, color: Noon.line),
+              cells[k],
+            ],
+          ],
+        ),
+      ),
     );
 
     return [
+      summaryLine,
       if (isParent)
         ParentPaymentsSection(
           user: user,
@@ -983,10 +1019,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
           refreshTick: _realtimeTick,
           sharedReceipts: sharedReceipts,
           onSharedReceiptsUsed: () => sharedReceipts = const [],
-          summary: summaryLine,
-        )
-      else
-        summaryLine,
+        ),
       NColumn(
         gap: 8,
         children: [
