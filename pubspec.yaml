@@ -47,6 +47,8 @@ dependencies:
   # قراءة ملف Excel عند استيراد الطلاب وكتابة نموذجه
   archive: ^4.0.9
   xml: ^6.6.1
+  # العطل الهجرية المقترحة بتقويم أم القرى كالويب (Intl islamic-umalqura) — Dart خالص
+  hijri: ^3.0.0
   printing: ^5.14.2
   pdf: ^3.11.3
   web_socket_channel: ^3.0.1
