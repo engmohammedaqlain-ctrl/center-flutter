@@ -8170,6 +8170,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// والمعلم محذوفاً على الجهاز وحده.
   void deleteTeacher(String id) {
     requireSection('settings');
+    // سندات صرف المعلم تمنع حذفه في السحابة (ON DELETE RESTRICT): كان يُحذف محلياً ويعلق حذفه في الطابور
+    final payouts = teacherPayouts.where((p) => p.teacherId == id).length;
+    if (payouts > 0) {
+      throw StoreException('لا يمكن حذف هذا المعلم لأن له $payouts سند صرف مسجَّل. سجلات الصرف المالية لا تُحذف.');
+    }
     final now = _nowIso();
 
     for (final g in groups.where((g) => g.teacherId == id)) {
