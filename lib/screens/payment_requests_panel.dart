@@ -6,6 +6,7 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/owner_fold.dart';
 import '../widgets/widgets.dart';
 import 'receipt_screen.dart';
 
@@ -328,7 +329,7 @@ class _ApproveSheetState extends State<_ApproveSheet> {
           AppDropdown<String>(
             value: method,
             items: [
-              for (final m in methods) DropdownMenuItem(value: m.id, child: Text(m.name)),
+              ...methodDropdownItems(methods),
               if (!methods.any((m) => m.id == method))
                 DropdownMenuItem(value: method, child: Text(r.transferChannel.isNotEmpty ? r.transferChannel : widget.store.paymentMethodLabel(method))),
             ],
