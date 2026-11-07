@@ -8,6 +8,7 @@ import '../data/attendance_days.dart';
 import '../data/balance.dart';
 import '../data/followup.dart';
 import '../data/phone.dart';
+import '../data/school_calendar.dart';
 import '../data/school_options.dart';
 import '../data/staff.dart';
 import '../data/store.dart';
