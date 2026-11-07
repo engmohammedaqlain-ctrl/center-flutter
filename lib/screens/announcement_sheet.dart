@@ -105,7 +105,6 @@ class _AnnouncementSheetState extends State<_AnnouncementSheet> {
         Expanded(
           child: NoonButton(
             label: 'نشر',
-            icon: Icons.send_rounded,
             tone: NoonTone.sun,
             expand: true,
             busy: busy,
@@ -126,14 +125,13 @@ class _AnnouncementSheetState extends State<_AnnouncementSheet> {
           children: [
             const Text('يظهر لمدة', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
             const SizedBox(width: 10),
-            for (final d in _durations.entries) ...[
-              ChoiceChip(
-                label: Text(d.key),
-                selected: days == d.value,
-                onSelected: (_) => setState(() => days = d.value),
+            Expanded(
+              child: NoonSegment(
+                value: days,
+                options: [for (final d in _durations.entries) (d.value, d.key)],
+                onChanged: (v) => setState(() => days = v),
               ),
-              const SizedBox(width: 6),
-            ],
+            ),
           ],
         ),
         const SizedBox(height: 14),
