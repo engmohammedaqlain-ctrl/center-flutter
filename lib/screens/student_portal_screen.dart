@@ -758,6 +758,8 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       byMonth.putIfAbsent(nMonthLabel(r.date), () => []).add(r);
     }
 
+    final presentDays = a.records.where((r) => r.status == 'present').take(10).toList();
+
     return [
       NHeroCard(
         label: 'الحضور',
@@ -766,7 +768,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
         unit: '%',
         tone: tone == NTone.green ? NoonHeroTone.paid : (tone == NTone.red ? NoonHeroTone.due : NoonHeroTone.theme),
         end: '$total يوم',
-        chips: ['غياب ${a.absent}', 'إذن ${a.excused}'],
+        chips: ['حضور ${a.present}', 'غياب ${a.absent}', 'إذن ${a.excused}'],
       ),
       if (a.records.isEmpty)
         const NEmpty(text: 'لا سجل حضور', icon: Icons.event_available_rounded)
@@ -816,6 +818,32 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
             ],
           ),
       ],
+      // أيام الحضور الأخيرة: كي لا تبقى الصفحة فارغة حين لا غياب
+      if (presentDays.isNotEmpty)
+        NColumn(
+          gap: 8,
+          children: [
+            NSectionTitle(title: 'آخر أيام الحضور', count: presentDays.length),
+            Container(
+              clipBehavior: Clip.antiAlias,
+              decoration: nPanelDecoration(),
+              child: NDivided(
+                children: [
+                  for (final r in presentDays)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      child: Row(
+                        children: [
+                          Expanded(child: Text('${nWeekdayLabel(r.date)} · ${nMonthLabel(r.date)}', style: nText(14, weight: FontWeight.w700))),
+                          SizedBox(width: 112, child: Align(alignment: AlignmentDirectional.centerStart, child: _attendanceBadge(r.status))),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
     ];
   }
 
