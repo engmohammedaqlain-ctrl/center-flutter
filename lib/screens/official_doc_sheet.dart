@@ -105,20 +105,18 @@ class _OfficialDocSheetState extends State<_OfficialDocSheet> {
     final k = kind;
     return NoonSheetFrame(
       title: k == null ? 'ورقة رسمية' : officialDocKinds[k]!,
-      footer: [
-        if (k == null)
-          NoonButton(label: 'إغلاق', onPressed: () => Navigator.pop(context))
-        else ...[
-          NoonButton(label: 'رجوع', onPressed: busy ? null : () => setState(() => kind = null)),
-          NoonButton(
-            label: 'تنزيل PDF',
-            icon: Icons.download_outlined,
-            tone: NoonTone.sun,
-            busy: busy,
-            onPressed: busy ? null : _download,
-          ),
-        ],
-      ],
+      footer: k == null
+          ? null
+          : [
+              NoonButton(label: 'رجوع', onPressed: busy ? null : () => setState(() => kind = null)),
+              NoonButton(
+                label: 'تنزيل PDF',
+                icon: Icons.download_outlined,
+                tone: NoonTone.sun,
+                busy: busy,
+                onPressed: busy ? null : _download,
+              ),
+            ],
       children: k == null
           ? [
               // قائمة بنود بأيقونة وسهم، بدل أزرار حدّها أسود ونصها برتقالي

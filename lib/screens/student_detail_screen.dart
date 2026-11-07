@@ -410,7 +410,7 @@ class StudentDetailScreen extends StatelessWidget {
                 sec(
                   NoonFoldCard(
                     title: 'الدفعات (${pays.length})',
-                    gap: 6,
+                    gap: 0,
                     headerExtra: Text.rich(
                       TextSpan(
                         text: 'المقبوض: ',
@@ -438,7 +438,10 @@ class StudentDetailScreen extends StatelessWidget {
                           ),
                         )
                       else
-                        for (final p in pays) _PaymentTile(payment: p, student: student),
+                        for (var i = 0; i < pays.length; i++) ...[
+                          if (i > 0) Divider(height: 1, thickness: 1, color: AdminNoon.line),
+                          _PaymentTile(payment: pays[i], student: student),
+                        ],
                     ],
                   ),
                 ),
@@ -1930,8 +1933,8 @@ class _InstallmentYearsState extends State<_InstallmentYears> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
-                          color: current ? const Color(0xFFF8FAFC) : Colors.white,
-                          border: Border.all(color: current ? AppColors.lineStrong : AppColors.line),
+                          color: current ? AdminNoon.band : null,
+                          borderRadius: BorderRadius.circular(AdminNoon.rTile),
                         ),
                         child: Row(
                           children: [
@@ -1965,7 +1968,7 @@ class _InstallmentYearsState extends State<_InstallmentYears> {
                   ),
                 if (isOpen)
                   for (var i = 0; i < rows.length; i++) ...[
-                    if (i > 0) const SizedBox(height: 6),
+                    if (i > 0) Divider(height: 1, thickness: 1, color: AdminNoon.line),
                     _InstallmentTile(
                       student: widget.student,
                       inst: rows[i],
@@ -2140,10 +2143,8 @@ class _InstallmentTile extends StatelessWidget {
     );
 
     return Material(
-      color: payable ? Colors.white : const Color(0xFFF8FAFC),
-      borderRadius: BorderRadius.circular(6),
+      color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(6),
         onTap: payable
             ? () => Navigator.of(context).push(
                   MaterialPageRoute(
@@ -2151,12 +2152,8 @@ class _InstallmentTile extends StatelessWidget {
                   ),
                 )
             : null,
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: AppColors.line),
-          ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -2263,13 +2260,8 @@ class _PaymentTile extends StatelessWidget {
     final method = StoreScope.of(context).paymentMethodLabel(p.method);
     final reversed = p.reversedByPaymentId != null && p.reversedByPaymentId!.isNotEmpty;
 
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: AppColors.sunken,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: AppColors.line),
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
