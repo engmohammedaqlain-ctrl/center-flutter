@@ -198,7 +198,7 @@ Future<Uint8List?> buildStudentFile(AppStore store, Student student) async {
           headers: ['القسط', 'الاستحقاق', 'المبلغ', 'المتبقي'],
           flex: const [4, 2, 2, 2],
           rows: [
-            for (final i in unpaid) [i.title, _dmy(i.dueDate), _money(i.amount), _money(unpaidOf(i))],
+            for (final i in unpaid) [i.title, _dmy(isoDate(i.dueDate)), _money(i.amount), _money(unpaidOf(i))],
           ],
         ),
       ],
