@@ -362,6 +362,20 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
   }
 
   @override
+  /// قسم في النموذج: لوحة بيضاء بعنوان، وحقولها بمسافة منتظمة، فلا تتداخل الحقول بصرياً.
+  Widget _formSection(String title, List<Widget> children) => Container(
+        padding: const EdgeInsets.all(14),
+        decoration: nPanelDecoration(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(title, style: nText(14, weight: FontWeight.w700)),
+            const SizedBox(height: 14),
+            NColumn(gap: 16, children: children),
+          ],
+        ),
+      );
+
   Widget build(BuildContext context) {
     final account = _method?.accountNumber ?? '';
     final radius = BorderRadius.circular(NoonRadius.btn);
@@ -371,18 +385,8 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
         title: 'تسديد دفعة',
         footer: Row(
           children: [
-            Expanded(
-              child: NBtn(
-                tone: NBtnTone.ink,
-                label: 'إرسال للمراجعة',
-                expand: true,
-                busy: busy,
-                onTap: _ready ? _submit : null,
-              ),
-            ),
-          ],
-        ),
-        children: [
+          // ثلاثة أقسام متمايزة: المبلغ، ثم التحويل، ثم الإشعار والملاحظة
+          _formSection('المبلغ', [
           NField(
             label: 'المبلغ',
             child: NColumn(
@@ -419,6 +423,8 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
               ],
             ),
           ),
+          ]),
+          _formSection('بيانات التحويل', [
           NField(
             label: 'حوّل إلى',
             hint: 'تُحسب الدفعة بعد مراجعة المالية للإشعار',
@@ -462,6 +468,31 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
               ],
             ),
           ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: NField(
+                  label: 'اسم المحوِّل',
+                  child: TextField(
+                    controller: sender,
+                    style: nText(14, weight: FontWeight.w500),
+                    decoration: nInputDecoration(),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                )),
+                const SizedBox(width: 12),
+                Expanded(child: NField(
+                  label: 'تاريخ التحويل',
+                  child: NFieldBox(
+                    onTap: _pickDate,
+                    trailing: Icons.calendar_today_outlined,
+                    child: Text(date, textDirection: TextDirection.ltr, textAlign: TextAlign.right),
+                  ),
+                )),
+              ],
+            ),
+          ]),
+          _formSection('الإشعار والملاحظة', [
           NField(
             label: 'صورة الإشعار',
             child: LayoutBuilder(
@@ -531,33 +562,6 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
               },
             ),
           ),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: NField(
-                  label: 'اسم المحوِّل',
-                  child: TextField(
-                    controller: sender,
-                    style: nText(14, weight: FontWeight.w500),
-                    decoration: nInputDecoration(),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: NField(
-                  label: 'تاريخ التحويل',
-                  child: NFieldBox(
-                    onTap: _pickDate,
-                    trailing: Icons.calendar_today_outlined,
-                    child: Text(date, textDirection: TextDirection.ltr, textAlign: TextAlign.right),
-                  ),
-                ),
-              ),
-            ],
-          ),
           NField(
             label: 'ملاحظة',
             child: TextField(
@@ -568,6 +572,7 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
               decoration: nInputDecoration(hint: 'مثال: عن قسط شهر 10'),
             ),
           ),
+          ]),
           if (error.isNotEmpty) NNotice(text: error, sun: true),
         ],
       ),
