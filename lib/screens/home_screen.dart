@@ -383,16 +383,79 @@ class _HomeState extends State<_Home> {
         ),
       );
 
+  IconData _pendingIcon(String key) => switch (key) {
+        'att' => Icons.event_busy_outlined,
+        'alerts' => Icons.warning_amber_rounded,
+        'grades' => Icons.pending_actions_outlined,
+        'approvals' => Icons.fact_check_outlined,
+        'requests' => Icons.request_quote_outlined,
+        _ => Icons.error_outline_rounded,
+      };
+
+  /// بطاقة «يحتاج تدخلاً»: ما يطلب قراراً من المدير، فإطار وترويسة بلون التنبيه وأيقونة لكل بند وعدّاد بارز.
+  Widget _attentionCard(Map<String, _Pending> pending) => Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(AdminNoon.rPanel),
+          border: Border.all(color: const Color(0xFFFCD34D), width: 1.4),
+          boxShadow: [BoxShadow(color: const Color(0xFFF59E0B).withValues(alpha: 0.14), blurRadius: 14, offset: const Offset(0, 5))],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
+              color: const Color(0xFFFFFBEB),
+              child: Row(children: [
+                const Icon(Icons.notifications_active_outlined, size: 20, color: Color(0xFFB45309)),
+                const SizedBox(width: 8),
+                Expanded(child: Text('يحتاج تدخلاً', style: NoonText.style(14, weight: FontWeight.w700, color: const Color(0xFF92400E)))),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                  decoration: BoxDecoration(color: const Color(0xFFF59E0B), borderRadius: BorderRadius.circular(20)),
+                  child: Text('${pending.length}', style: NoonText.style(12.5, weight: FontWeight.w700, color: Colors.white)),
+                ),
+              ]),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 4, 14, 6),
+              child: Column(children: [for (final e in pending.entries) _pendingRow(e.key, e.value)]),
+            ),
+          ],
+        ),
+      );
+
   Widget _pendingRow(String key, _Pending p) {
     final open = _openPending.contains(key);
+    final urgent = key == 'alerts';
+    final tone = urgent ? const Color(0xFFDC2626) : const Color(0xFFD97706);
     final badge = Container(
-      constraints: const BoxConstraints(minWidth: 24),
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(20)),
-      child: Text(p.value, textAlign: TextAlign.center, style: NoonText.style(11.5, weight: FontWeight.w700, color: const Color(0xFF92400E))),
+      constraints: const BoxConstraints(minWidth: 28),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      decoration: BoxDecoration(color: tone, borderRadius: BorderRadius.circular(20)),
+      child: Text(p.value, textAlign: TextAlign.center, style: NoonText.style(12.5, weight: FontWeight.w700, color: Colors.white)),
+    );
+    final leading = Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(color: tone.withValues(alpha: 0.12), shape: BoxShape.circle),
+      child: Icon(_pendingIcon(key), size: 18, color: tone),
     );
     if (p.details == null) {
-      return _row(p.label, '', '', onTap: p.onTap, trailing: badge);
+      return _row(
+        p.label,
+        '',
+        '',
+        onTap: p.onTap,
+        leading: leading,
+        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+          badge,
+          const SizedBox(width: 2),
+          Icon(Icons.chevron_right_rounded, size: 20, color: AdminNoon.faint),
+        ]),
+      );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -402,6 +465,7 @@ class _HomeState extends State<_Home> {
           '',
           '',
           onTap: () => setState(() => open ? _openPending.remove(key) : _openPending.add(key)),
+          leading: leading,
           trailing: Row(mainAxisSize: MainAxisSize.min, children: [
             badge,
             const SizedBox(width: 4),
@@ -657,18 +721,15 @@ class _HomeState extends State<_Home> {
           return Wrap(spacing: 8, runSpacing: 8, children: [for (final t in tiles) SizedBox(width: w, child: t)]);
         }),
         const SizedBox(height: 12),
-        _card(
-          'يحتاج تدخلاً',
-          pending.isEmpty
-              ? [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: Text('لا شيء معلّق', textAlign: TextAlign.center, style: NoonText.style(12, color: AdminNoon.muted)),
-                  ),
-                ]
-              : [for (final e in pending.entries) _pendingRow(e.key, e.value)],
-          count: pending.isEmpty ? null : pending.length,
-        ),
+        if (pending.isEmpty)
+          _card('يحتاج تدخلاً', [
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Text('لا شيء معلّق', textAlign: TextAlign.center, style: NoonText.style(12, color: AdminNoon.muted)),
+            ),
+          ])
+        else
+          _attentionCard(pending),
         if (shown('uncovered') && store.isAdminUser && uncovered.isNotEmpty)
           _card(
             'شعب بلا معلم اليوم',
