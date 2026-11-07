@@ -260,16 +260,23 @@ class _NoonFoldCardState extends State<NoonFoldCard> {
                   : null,
               child: Row(
                 children: [
-                  Flexible(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Text(widget.title,
-                          maxLines: 1, overflow: TextOverflow.ellipsis, style: _t(14, FontWeight.w700, AdminNoon.text)),
+                  // العنوان وشارته يملآن ما بقي، فيقف الملخص والسهم في الطرف كالويب. كان العنوان
+                  // `Flexible` بجانب `Spacer` يتقاسمان الفراغ نصفين فيقف السهم في منتصف البطاقة
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Text(widget.title,
+                                maxLines: 1, overflow: TextOverflow.ellipsis, style: _t(14, FontWeight.w700, AdminNoon.text)),
+                          ),
+                        ),
+                        if (widget.badge != null) ...[const SizedBox(width: 8), Flexible(child: widget.badge!)],
+                      ],
                     ),
                   ),
-                  if (widget.badge != null) ...[const SizedBox(width: 8), Flexible(child: widget.badge!)],
-                  const Spacer(),
-                  if (widget.headerExtra != null) ...[widget.headerExtra!, const SizedBox(width: 8)],
+                  if (widget.headerExtra != null) ...[const SizedBox(width: 8), widget.headerExtra!, const SizedBox(width: 8)],
                   AnimatedRotation(
                     turns: open ? 0.5 : 0,
                     duration: const Duration(milliseconds: 150),
