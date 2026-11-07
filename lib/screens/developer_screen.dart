@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../data/dev_admin.dart';
 import '../data/push.dart';
 import '../data/store.dart';
 import '../data/supabase.dart';
@@ -16,6 +17,7 @@ import '../widgets/widgets.dart';
 import 'app_installs_screen.dart';
 import 'developer_health_screen.dart';
 import 'demo_school_sheet.dart';
+import 'dev_admin_screens.dart';
 import 'dev_contracts_screen.dart';
 import 'dev_expenses_sheet.dart';
 
@@ -225,15 +227,29 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
               ],
             ),
           ),
-          IconButton(
-            tooltip: 'المصاريف',
-            icon: const Icon(Icons.account_balance_wallet_outlined),
-            onPressed: () => showDevExpensesSheet(context),
-          ),
-          IconButton(
-            tooltip: 'العقود',
-            icon: const Icon(Icons.description_outlined),
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DevContractsScreen())),
+          PopupMenuButton<String>(
+            tooltip: 'المزيد',
+            icon: Icon(Icons.apps_rounded, color: AppColors.amber, size: 20),
+            onSelected: (v) {
+              if (v == 'expenses') {
+                showDevExpensesSheet(context);
+                return;
+              }
+              final Widget page = switch (v) {
+                'overview' => const DevOverviewScreen(),
+                'contracts' => const DevContractsScreen(),
+                'log' => const DevLogScreen(),
+                _ => const DevPlatformSettingsScreen(),
+              };
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'overview', child: Text('نظرة عامة')),
+              PopupMenuItem(value: 'expenses', child: Text('المصاريف')),
+              PopupMenuItem(value: 'contracts', child: Text('العقود')),
+              PopupMenuItem(value: 'log', child: Text('السجل')),
+              PopupMenuItem(value: 'settings', child: Text('إعدادات المنصة')),
+            ],
           ),
           IconButton(
             tooltip: 'المتابعة',
@@ -962,6 +978,7 @@ class _TenantCard extends StatelessWidget {
                 icon: const Icon(Icons.more_vert, size: 18, color: AppColors.muted),
                 onSelected: (v) => switch (v) {
                   'enter' => onEnter(),
+                  'page' => Navigator.of(context).push(MaterialPageRoute(builder: (_) => DevSchoolScreen(tenant: tenant))),
                   'edit' => onEdit(),
                   'extend' => onExtend(),
                   'toggle' => onToggle(),
@@ -969,6 +986,7 @@ class _TenantCard extends StatelessWidget {
                 },
                 itemBuilder: (_) => [
                   const PopupMenuItem(value: 'enter', child: Text('دخول للمنشأة')),
+                  const PopupMenuItem(value: 'page', child: Text('صفحة المدرسة')),
                   const PopupMenuItem(value: 'edit', child: Text('تعديل البيانات')),
                   PopupMenuItem(value: 'extend', child: Text(tenant.isDemo ? 'تمديد 7 أيام' : 'تمديد الاشتراك')),
                   PopupMenuItem(value: 'toggle', child: Text(tenant.active ? 'إيقاف الاشتراك' : 'تفعيل الاشتراك')),
