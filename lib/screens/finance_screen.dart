@@ -12,6 +12,8 @@ import '../data/teacher_salary.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/admin_tokens.dart' show AdminNoon;
+import '../widgets/admin_ui.dart' show NoonText, noonPanel;
 import '../widgets/animated_count.dart';
 import '../widgets/form_layout.dart';
 import '../widgets/list_paging.dart';
