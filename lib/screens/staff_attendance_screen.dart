@@ -5,6 +5,7 @@ import '../data/staff.dart';
 import '../data/pay_terms.dart';
 import '../data/payroll_calc.dart';
 import '../data/school_calendar.dart';
+import '../data/school_options.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -555,7 +556,8 @@ class _AttendanceHubState extends State<AttendanceHub> {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    if (!store.isAdminUser) return const AttendanceScreen();
+    // «الموظفون» أداة يطفئها المدير من خيارات المدرسة — `useToolOn('staff_attendance')`
+    if (!store.isAdminUser || !store.settings.toolOn('staff_attendance')) return const AttendanceScreen();
     return Column(
       children: [
         Padding(
