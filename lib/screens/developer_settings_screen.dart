@@ -663,8 +663,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
               title: 'توليد بيانات تجريبية شاملة (محمد)',
               message: 'حذف كل البيانات من الجهاز والسحابة وتوليد مدرسة تجريبية كاملة: طلاب ومالية وعلامات وموديل، '
                   'ورواتب المعلمين (ثابت وبالحصة ومختلط)، وجدول حصص معتمد، ودوام وإجازات.'
-                  '
-لا يمكن التراجع.',
+                  '\nلا يمكن التراجع.',
               confirmLabel: 'تنفيذ',
               confirmColor: AppColors.danger,
             );
