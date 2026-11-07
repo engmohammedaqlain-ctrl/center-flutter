@@ -97,7 +97,7 @@ class _Bar extends StatelessWidget {
           ...children,
           if (sheet != null) ...[
             NoonButton(small: true, icon: Icons.download_outlined, label: 'PDF', onPressed: () => printSheet(context, _toSheet(store, sheet!()))),
-            NoonButton(small: true, icon: Icons.table_view_outlined, label: 'Excel', onPressed: () => downloadSheetCsv(context, _toSheet(store, sheet!()))),
+            NoonButton(small: true, icon: Icons.table_view_outlined, label: 'Excel', onPressed: () => downloadSheetXlsx(context, _toSheet(store, sheet!()))),
           ],
         ],
       ),

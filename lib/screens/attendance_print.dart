@@ -361,7 +361,7 @@ Future<void> showAttendanceExport(
     ownerId: ownerId,
   );
   if (choice.endsWith('excel')) {
-    await downloadSheetCsv(context, sheet);
+    await downloadSheetXlsx(context, sheet);
   } else {
     await printSheet(context, sheet);
   }
