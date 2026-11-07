@@ -10,6 +10,8 @@ import '../data/schedule_files.dart';
 import '../data/store.dart';
 import '../data/user_message.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
+import '../widgets/noon_ui.dart' show NLoading;
 import '../widgets/widgets.dart';
 
 /// عرض الجدول داخل التطبيق — `ScheduleFileView`: الصورة بتكبير وتصغير، والـPDF مضمَّناً.
@@ -66,7 +68,7 @@ class _ScheduleFileViewState extends State<ScheduleFileView> {
       );
     }
     if (data == null) {
-      return SizedBox(height: 180, child: Center(child: AppLoader(message: 'جارٍ فتح الجدول', compact: true, size: 24)));
+      return const SizedBox(height: 260, child: NLoading(text: 'جارٍ فتح الجدول'));
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -87,11 +89,10 @@ class _ScheduleFileViewState extends State<ScheduleFileView> {
                   child: Image.memory(data, fit: BoxFit.contain),
                 ),
         ),
-        const SizedBox(height: 8),
-        GhostButton(
-          label: 'تنزيل',
-          icon: Icons.download_outlined,
-          onPressed: () => DocExport.download(
+        const SizedBox(height: 12),
+        _DownloadCard(
+          file: widget.file,
+          onTap: () => DocExport.download(
             context,
             data,
             widget.file.downloadName(widget.title),
@@ -245,4 +246,70 @@ Future<void> showScheduleFileSheet(BuildContext context, {required String kind, 
       ),
     ),
   );
+}
+
+
+/// زر تنزيل الجدول: بطاقة بلون الثيم الداكن، دائرة سهم التنزيل، والاسم ونوع الملف وحجمه.
+class _DownloadCard extends StatelessWidget {
+  const _DownloadCard({required this.file, required this.onTap});
+
+  final ScheduleFile file;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final type = file.isPdf ? 'PDF' : 'صورة';
+    final size = scheduleSizeLabel(file.sizeBytes);
+    final radius = BorderRadius.circular(16);
+    return Material(
+      color: Colors.transparent,
+      borderRadius: radius,
+      child: Ink(
+        decoration: BoxDecoration(
+          borderRadius: radius,
+          gradient: LinearGradient(
+            begin: Alignment.topRight,
+            end: Alignment.bottomLeft,
+            colors: [Noon.ink, Color.lerp(Noon.ink, Colors.white, 0.16)!],
+          ),
+          boxShadow: [BoxShadow(color: Noon.ink.withValues(alpha: 0.28), blurRadius: 14, offset: const Offset(0, 6))],
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: radius,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.16), shape: BoxShape.circle),
+                  child: Icon(Icons.download_rounded, size: 24, color: Noon.onInk),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'تنزيل الجدول',
+                        style: TextStyle(fontFamily: AppText.family, fontSize: 15.5, fontWeight: FontWeight.w700, color: Noon.onInk),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        [type, if (size.isNotEmpty) size].join(' · '),
+                        style: TextStyle(fontFamily: AppText.family, fontSize: 11.5, color: Noon.onInkSoft),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
