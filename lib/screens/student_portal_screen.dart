@@ -11,6 +11,7 @@ import '../data/push.dart';
 import '../data/realtime.dart';
 import '../data/share_inbox.dart';
 import '../data/store.dart';
+import '../data/schedule_files.dart';
 import '../data/school_calendar.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -20,6 +21,7 @@ import '../widgets/noon_moodle.dart';
 import '../widgets/noon_ui.dart';
 import '../widgets/subject_style.dart';
 import '../widgets/widgets.dart';
+import 'schedule_file_box.dart';
 import 'notes_parts.dart';
 import 'parent_payments.dart';
 import 'portal_chrome.dart';
@@ -277,9 +279,17 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     widget.onExit();
   }
 
+  /// ملف جدول شعبة الطالب إن رفعته الإدارة — `useMyScheduleFile`.
+  ScheduleFile? scheduleFile;
+
+  Future<void> _loadScheduleFile() async {
+    final found = await ScheduleFiles.mine();
+    if (mounted) setState(() => scheduleFile = found);
+  }
+
   List<PortalNavItem> get _navItems {
     final state = resolveFeatures(data?.features);
-    final ids = familyPortalTabs(state, isParent: isParent);
+    final ids = [...familyPortalTabs(state, isParent: isParent), if (scheduleFile != null) 'schedule'];
     PortalNavItem? item(String id) => switch (id) {
           'moodle' => const PortalNavItem(
               id: 'moodle',
@@ -304,6 +314,12 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
               label: 'علامات',
               icon: Icons.workspace_premium_outlined,
               activeIcon: Icons.workspace_premium,
+            ),
+          'schedule' => const PortalNavItem(
+              id: 'schedule',
+              label: 'الجدول',
+              icon: Icons.calendar_view_week_outlined,
+              activeIcon: Icons.calendar_view_week,
             ),
           'financial' => const PortalNavItem(
               id: 'financial',
@@ -406,6 +422,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     _rememberAccount(user, code: user.portalCode);
     if (widget.offlineStart) _setStale(true);
     _load();
+    unawaited(_loadScheduleFile());
     _startPortalRealtime();
     // ولي الأمر والطالب: الخادم يقرر ما يصل كلاً منهما
     _pushSubs = [
@@ -619,6 +636,9 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                                     'attendance' => _attendanceTab(),
                                     'evaluations' => _evaluationsTab(),
                                     'financial' => _financialTab(),
+                                    'schedule' => [
+                                      if (scheduleFile case final file?) ScheduleFileView(file: file, title: 'الجدول'),
+                                    ],
                                     _ => _moodleTab(),
                                   },
                                 ],

@@ -12,6 +12,7 @@ import '../data/grade_deadlines.dart';
 import 'grade_deadline_banner.dart';
 import 'sheet_export.dart';
 import 'teacher_payslips.dart';
+import 'schedule_file_box.dart';
 import 'teacher_self_sheet.dart';
 import '../data/portal.dart';
 import '../data/material_limits.dart';
@@ -27,6 +28,7 @@ import '../data/academic_matching.dart';
 import '../data/teacher_resources.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../data/schedule_files.dart';
 import '../data/school_calendar.dart';
 import '../models/models.dart';
 import '../widgets/attendance_view.dart';
@@ -571,7 +573,22 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   List<String> _tabIds([Map<String, dynamic>? features]) => [
         ...teacherPortalTabs(resolveFeatures(features ?? data?.features)),
         if ((homeroom?.rooms.length ?? 0) > 0) 'homeroom',
+        if (scheduleFile != null) 'schedule',
       ];
+
+  /// ملف جدوله إن رفعته الإدارة: تبويب «جدولي» بلا مفتاح ميزة.
+  ScheduleFile? scheduleFile;
+
+  Future<void> _loadScheduleFile() async {
+    final found = await ScheduleFiles.mine();
+    if (!mounted) return;
+    if (found?.id == scheduleFile?.id && found?.updatedAt == scheduleFile?.updatedAt) return;
+    setState(() {
+      scheduleFile = found;
+      final tabs = _tabIds();
+      if (tabs.isNotEmpty && !tabs.contains(tab)) tab = tabs.first;
+    });
+  }
 
   Future<void> _loadHomeroom() async {
     setState(() {
@@ -752,6 +769,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     }
     _load();
     unawaited(_loadHomeroom());
+    unawaited(_loadScheduleFile());
     unawaited(_loadPayslips());
     _startPortalRealtime();
     ShareInbox.instance.addListener(_onShared);
@@ -2126,6 +2144,9 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                               'evaluations' => _evaluationsTab(brand),
                               'moodle' => _moodleTab(brand),
                               'notes' => _notesTab(brand),
+                              'schedule' => [
+                                  if (scheduleFile case final file?) ScheduleFileView(file: file, title: 'جدولي'),
+                                ],
                               _ => _attendanceTab(brand),
                                   },
                                 ],
@@ -2138,7 +2159,9 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
           PortalBottomNav(
             items: [
               for (final id in _tabIds())
-                if (id == 'homeroom')
+                if (id == 'schedule')
+                  const PortalNavItem(id: 'schedule', label: 'جدولي', icon: Icons.calendar_view_week_outlined, activeIcon: Icons.calendar_view_week)
+                else if (id == 'homeroom')
                   const PortalNavItem(id: 'homeroom', label: 'صفي', icon: Icons.groups_outlined)
                 else if (id == 'attendance')
                   const PortalNavItem(id: 'attendance', label: 'الحضور', icon: Icons.how_to_reg_outlined)

@@ -20,6 +20,7 @@ import 'attendance_screen.dart';
 import 'passwords_print.dart';
 import 'report_cards_sheet.dart';
 import 'room_form_screen.dart';
+import 'schedule_file_box.dart';
 import 'student_detail_screen.dart';
 import 'section_students_sheet.dart';
 
@@ -597,6 +598,7 @@ List<PopupMenuEntry<String>> _manageItems(Teacher? teacher) => [
       _menuItem('edit', Icons.edit_outlined, 'تعديل الصف'),
       _menuItem('assign', Icons.school_outlined, teacher == null ? 'تعيين مربي' : 'تغيير المربي'),
       _menuItem('subjects', Icons.menu_book_outlined, 'معلمو المواد'),
+      _menuItem('schedule', Icons.calendar_view_week_outlined, 'الجدول'),
       const PopupMenuDivider(height: 8),
       _menuItem('delete', Icons.delete_outline, 'حذف الصف', danger: true),
     ];
@@ -867,6 +869,8 @@ Future<void> _showRoomActionsSheet(
       await _assignTeacher(context, room);
     case 'subjects':
       await _assignSubjectTeachers(context, room);
+    case 'schedule':
+      await showScheduleFileSheet(context, kind: 'room', ownerId: room.id, title: 'جدول ${room.gradeLevel} ${room.name}'.trim());
     case 'delete':
       await _confirmDeleteRoom(context, room);
   }

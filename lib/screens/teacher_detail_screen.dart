@@ -23,6 +23,7 @@ import '../widgets/admin_tokens.dart';
 import '../widgets/admin_ui.dart';
 import '../widgets/table_gate.dart';
 import '../widgets/widgets.dart';
+import 'schedule_file_box.dart';
 import 'settings_forms.dart';
 
 String _dm(String d) => d.length < 10 ? d : '${int.parse(d.substring(8, 10))}/${int.parse(d.substring(5, 7))}';
@@ -667,6 +668,11 @@ class _TeacherPageState extends State<_TeacherPage> {
           )),
 
           sec(NoonFoldCard(title: 'التحضير', children: [_LessonPlans(teacherId: t.id)])),
+          if (store.isAdminUser)
+            sec(NoonFoldCard(
+              title: 'الجدول',
+              children: [ScheduleFileBox(kind: 'teacher', ownerId: t.id, title: 'جدول ${t.name}')],
+            )),
         ],
       ),
     );
