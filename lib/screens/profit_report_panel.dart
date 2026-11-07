@@ -189,40 +189,7 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
         ),
         ..._wallets(),
         const SizedBox(height: 10),
-        AppCard(
-          padding: EdgeInsets.zero,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Table(
-              defaultColumnWidth: const IntrinsicColumnWidth(),
-              defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-              children: [
-                TableRow(
-                  decoration: const BoxDecoration(color: AppColors.sunken),
-                  children: [
-                    _cell('الشهر', head: true),
-                    for (final c in _columns) _cell(c.$1, head: true),
-                  ],
-                ),
-                for (final row in r.rows)
-                  TableRow(
-                    decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.line))),
-                    children: [
-                      _cell(monthLabel(row.month), muted: true),
-                      for (final c in _columns) _amount(c.$1, c.$2(row)),
-                    ],
-                  ),
-                TableRow(
-                  decoration: const BoxDecoration(color: AppColors.sunken),
-                  children: [
-                    _cell('المجموع', head: true),
-                    for (final c in _columns) _amount(c.$1, c.$2(r.total), bold: true),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
+        _monthsList(r),
         const SizedBox(height: 8),
         Text.rich(
           TextSpan(
@@ -330,32 +297,119 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
     ];
   }
 
-  Widget _cell(String text, {bool head = false, bool muted = false}) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 11.5,
-            fontWeight: head ? FontWeight.w700 : FontWeight.w500,
-            color: muted ? AppColors.muted : AppColors.heading,
-          ),
+  /// أشهر بلا حركة تُطوى في سطر واحد بدل صفوف أصفار.
+  bool _showIdle = false;
+
+  String _num(double v) => '${v < 0 ? '-' : ''}${trimNum(v.abs())}';
+
+  Color _signed(double v) => v < 0 ? AppColors.danger : AppColors.success;
+
+  Widget _stat(String label, double v, {Color? color}) => Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+            const SizedBox(height: 2),
+            Text(
+              _num(v),
+              textDirection: TextDirection.ltr,
+              style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: color ?? AppColors.heading),
+            ),
+          ],
         ),
       );
 
-  Widget _amount(String column, double v, {bool bold = false}) {
-    final signed = column == 'الربح' || column == 'الباقي';
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-      child: Text(
-        '${v < 0 ? '-' : ''}${money(v)}',
-        textDirection: TextDirection.ltr,
-        style: TextStyle(
-          fontSize: 11.5,
-          fontFamily: 'monospace',
-          fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
-          color: signed ? (v < 0 ? AppColors.danger : AppColors.success) : AppColors.heading,
-        ),
+  /// شهر (أو المجموع): اسمه وربحه الكبير، وتحته المقبوض والمصاريف والرواتب، والمسحوب والباقي إن وُجد مسحوب.
+  Widget _monthCard(ProfitRow row, {String? title, bool total = false}) {
+    final drawn = row.draws.abs() >= 0.005;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: total ? AppColors.sunken : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: total ? AppColors.lineStrong : AppColors.line),
       ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title ?? monthLabel(row.month),
+                  style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: AppColors.heading),
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  const Text('الربح', style: TextStyle(color: AppColors.muted, fontSize: 10.5)),
+                  Text(
+                    _num(row.net),
+                    textDirection: TextDirection.ltr,
+                    style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: _signed(row.net), height: 1.1),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Divider(height: 1, thickness: 1, color: AppColors.line),
+          const SizedBox(height: 10),
+          Row(children: [_stat('المقبوض', row.received), _stat('المصاريف', row.expenses), _stat('الرواتب', row.salaries)]),
+          if (drawn) ...[
+            const SizedBox(height: 10),
+            Row(children: [
+              _stat('المسحوب', row.draws),
+              _stat('الباقي', row.remaining, color: _signed(row.remaining)),
+              const Expanded(child: SizedBox.shrink()),
+            ]),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _monthsList(ProfitReport r) {
+    bool idle(ProfitRow x) => _columns.every((c) => c.$2(x).abs() < 0.005);
+    final busy = [for (final row in r.rows) if (!idle(row)) row];
+    final quiet = [for (final row in r.rows) if (idle(row)) row];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final row in busy) _monthCard(row),
+        if (quiet.isNotEmpty)
+          InkWell(
+            onTap: () => setState(() => _showIdle = !_showIdle),
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    _showIdle ? 'إخفاء الأشهر بلا حركة' : '${quiet.length} أشهر بلا حركة',
+                    style: const TextStyle(color: AppColors.muted, fontSize: 12.5, fontWeight: FontWeight.w600),
+                  ),
+                  Icon(_showIdle ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 18, color: AppColors.muted),
+                ],
+              ),
+            ),
+          ),
+        if (_showIdle)
+          for (final row in quiet)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              child: Row(children: [
+                Text(monthLabel(row.month), style: const TextStyle(color: AppColors.muted, fontSize: 12.5)),
+                const Spacer(),
+                const Text('0', style: TextStyle(color: AppColors.faint, fontSize: 12.5)),
+              ]),
+            ),
+        const SizedBox(height: 4),
+        _monthCard(r.total, title: 'المجموع', total: true),
+      ],
     );
   }
 }
