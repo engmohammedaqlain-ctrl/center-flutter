@@ -22,6 +22,13 @@ Future<void> showOfficialDocSheet(BuildContext context, AppStore store, Student 
   );
 }
 
+const _kindIcons = <String, IconData>{
+  'enrollment': Icons.school_outlined,
+  'conduct': Icons.verified_outlined,
+  'whom': Icons.description_outlined,
+  'transfer': Icons.swap_horiz_rounded,
+};
+
 class _OfficialDocSheet extends StatefulWidget {
   const _OfficialDocSheet({required this.store, required this.student});
 
@@ -113,21 +120,32 @@ class _OfficialDocSheetState extends State<_OfficialDocSheet> {
       ],
       children: k == null
           ? [
-              GridView.count(
-                crossAxisCount: 2,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: 2.6,
-                children: [
-                  for (final d in officialDocKinds.entries)
-                    OutlinedButton(
-                      onPressed: () => setState(() => kind = d.key),
-                      child: Text(d.value, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
-                    ),
-                ],
+              // قائمة بنود بأيقونة وسهم، بدل أزرار حدّها أسود ونصها برتقالي
+              Container(
+                clipBehavior: Clip.antiAlias,
+                decoration: noonPanel(),
+                child: Column(
+                  children: [
+                    for (final (n, d) in officialDocKinds.entries.indexed)
+                      InkWell(
+                        onTap: () => setState(() => kind = d.key),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                          decoration: n > 0 ? BoxDecoration(border: Border(top: BorderSide(color: AdminNoon.line))) : null,
+                          child: Row(
+                            children: [
+                              Icon(_kindIcons[d.key] ?? Icons.description_outlined, size: 20, color: AdminNoon.ink),
+                              const SizedBox(width: 12),
+                              Expanded(child: Text(d.value, style: NoonText.style(14, weight: FontWeight.w700))),
+                              Icon(Icons.chevron_right_rounded, size: 20, color: AdminNoon.faint),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
+              const SizedBox(height: 10),
               if (issued != null && issued!.isNotEmpty)
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
