@@ -4,7 +4,7 @@ import '../data/account_statement.dart';
 import '../data/doc_export.dart';
 import '../data/payment_methods.dart';
 import '../data/store.dart';
-import '../data/student_import.dart' show writeXlsx;
+import '../data/xlsx_styled.dart';
 import '../data/teacher_salary.dart';
 import '../data/year_closing.dart';
 import '../models/models.dart';
@@ -79,8 +79,6 @@ class _StatementSheetState extends State<_StatementSheet> {
     String sum(double Function(AccountStatement) pick) =>
         trimNum(accounts.fold<double>(0, (n, a) => n + pick(a.statement)));
     final rows = <List<String>>[
-      ['كشف حسابات $label · ${widget.year.label}'],
-      ['الشهر', for (final a in accounts) ...['${a.name} داخل', '${a.name} طالع'], 'الرصيد'],
       ['افتتاحي', for (final _ in accounts) ...['', ''], trimNum(balanceAt(-1))],
       for (var i = 0; i < months.length; i++)
         [
@@ -94,7 +92,17 @@ class _StatementSheetState extends State<_StatementSheet> {
         sum((s) => s.closing),
       ],
     ];
-    return DocExport.download(context, writeXlsx(rows, sheetName: 'كشف الحسابات'), 'كشف_حسابات_$label.xlsx', mime: _xlsxMime);
+    // كشف منسّق كالويب (`accountsSheet`): عنوان وتفاصيل ورأس ملوّن، بالعرض
+    final sheet = StyledSheet(
+      title: 'كشف حسابات $label',
+      details: [widget.year.label],
+      headers: ['الشهر', for (final a in accounts) ...['${a.name} داخل', '${a.name} طالع'], 'الرصيد'],
+      rows: rows,
+      landscape: true,
+      nameColumn: -1,
+    );
+    final bytes = styledXlsx([sheet], school: widget.store.institutionName, logo: widget.store.institutionLogo);
+    return DocExport.download(context, bytes, 'حسابات_${label}_${widget.year.label}.xlsx', mime: _xlsxMime);
   }
 
   Widget _account(String name, AccountStatement s) {

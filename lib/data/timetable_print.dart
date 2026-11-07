@@ -8,7 +8,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import 'printing.dart';
-import 'student_import.dart' show writeXlsxBook;
+import 'xlsx_styled.dart';
 import 'timetable_model.dart';
 
 class TimetableDoc {
@@ -250,17 +250,40 @@ Future<Uint8List?> buildCoversPdf({
 Uint8List buildTimetableXlsx(TimetableDoc doc, List<String> teacherIds) {
   final slots = doc.weekSlots;
   final max = doc.settings.periods.length;
-  final sheets = <String, List<List<String>>>{
-    'الجدول العام': [
-      ['المعلم', for (final s in slots) s.period == 1 ? dayNames[s.day] : ''],
-      ['', for (final s in slots) '${s.period}'],
-      for (final t in doc.masterTeachers(teacherIds))
-        [doc.teacherName(t), for (final s in slots) doc.masterCell(t, s.day, s.period)],
-    ],
-  };
+  final dayMerges = <(int, int, int, int)>[(0, 0, 1, 0)];
+  var col = 1;
+  for (final d in doc.days) {
+    final n = doc.settings.periodsOn(d);
+    if (n > 1) dayMerges.add((0, col, 0, col + n - 1));
+    col += n;
+  }
+  final sheets = <StyledSheet>[
+    StyledSheet(
+      title: 'الجدول العام',
+      details: [doc.year],
+      headers: ['المعلم', for (final s in slots) '${s.period}'],
+      head: [
+        ['المعلم', for (final s in slots) s.period == 1 ? dayNames[s.day] : ''],
+        ['', for (final s in slots) '${s.period}'],
+      ],
+      headMerges: dayMerges,
+      landscape: true,
+      nameColumn: 0,
+      rows: [
+        for (final t in doc.masterTeachers(teacherIds))
+          [doc.teacherName(t), for (final s in slots) doc.masterCell(t, s.day, s.period)],
+      ],
+    ),
+  ];
   for (final roomId in doc.roomIds) {
-    sheets[doc.roomCode(roomId).replaceAll('/', '-')] = [
-      ['اليوم', for (var i = 0; i < max; i++) '${i + 1}'],
+    sheets.add(StyledSheet(
+      title: 'جدول ${doc.roomName(roomId)}',
+      tab: doc.roomCode(roomId).replaceAll('/', '-'),
+      details: [doc.year],
+      headers: ['اليوم', for (var i = 0; i < max; i++) '${i + 1}'],
+      landscape: true,
+      nameColumn: -1,
+      rows: [
       for (final d in doc.days)
         [
           dayNames[d],
@@ -271,7 +294,8 @@ Uint8List buildTimetableXlsx(TimetableDoc doc, List<String> teacherIds) {
               return e == null ? '' : '${doc.subjectOf(e.groupId)} - ${doc.teacherName(doc.teacherOfGroup(e.groupId))}';
             }(),
         ],
-    ];
+      ],
+    ));
   }
-  return writeXlsxBook(sheets);
+  return styledXlsx(sheets, school: doc.institution, logo: doc.logo);
 }

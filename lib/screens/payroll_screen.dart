@@ -6,7 +6,7 @@ import '../data/payroll_calc.dart';
 import '../data/printing.dart';
 import '../data/staff.dart';
 import '../data/store.dart';
-import '../data/student_import.dart' show writeXlsx;
+import '../data/xlsx_styled.dart';
 import '../data/teacher_salary.dart';
 import '../data/user_message.dart';
 import '../models/models.dart';
@@ -608,12 +608,21 @@ class _PayrollScreenState extends State<PayrollScreen> {
           '${r.cuts.other}',
           '${r.amounts.extra}',
           '${r.amounts.net}',
-          r.done ? 'صُرف' : 'لم يُصرف',
+          r.done ? (r.payout == null ? 'صُرف' : 'صُرف ${r.payout!.paymentDate.padRight(10).substring(0, 10).trim().split('-').reversed.join('/')}') : 'لم يُصرف',
         ],
     ];
     final title = 'كشف رواتب ${monthLabel(month)}';
     if (excel) {
-      await DocExport.download(context, writeXlsx([headers, ...table], sheetName: 'الرواتب'), '$title.xlsx', mime: _xlsxMime);
+      // كشف منسّق كالويب (`payrollSheet`)
+      final sheet = StyledSheet(
+        title: title,
+        details: ['${list.length} موظف', 'الصافي ${money(list.fold<double>(0, (n, r) => n + r.amount))}'],
+        headers: headers,
+        rows: table,
+        nameColumn: 0,
+      );
+      final bytes = styledXlsx([sheet], school: store.institutionName, logo: store.institutionLogo);
+      await DocExport.download(context, bytes, 'رواتب_$month.xlsx', mime: _xlsxMime);
       return;
     }
     await runBusyOp(context, () async {
