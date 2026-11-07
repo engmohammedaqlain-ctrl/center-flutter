@@ -454,20 +454,8 @@ class StudentDetailScreen extends StatelessWidget {
                       style: NoonText.style(12, weight: FontWeight.w700).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
                     ),
                     children: [
-                      Text.rich(
-                        TextSpan(
-                          children: [
-                            const TextSpan(text: 'حضور '),
-                            TextSpan(text: '$present', style: const TextStyle(fontWeight: FontWeight.w700, color: AdminNoon.green700)),
-                            const TextSpan(text: '      غياب '),
-                            TextSpan(text: '$absent', style: const TextStyle(fontWeight: FontWeight.w700, color: AdminNoon.red600)),
-                            const TextSpan(text: '      مأذون '),
-                            TextSpan(text: '$excused', style: const TextStyle(fontWeight: FontWeight.w700, color: AdminNoon.warn)),
-                          ],
-                        ),
-                        style: NoonText.style(11, color: AdminNoon.muted),
-                      ),
-                      ..._attendanceMisses(marks),
+                      _attendanceTally(present, absent, excused),
+                      ..._recentDays(marks),
                     ],
                   ),
                 ),
@@ -913,40 +901,72 @@ class _MiniButton extends StatelessWidget {
   }
 }
 
-/// أيام الغياب والإذن وحدها — أيام الحضور لا تحتاج عرضاً.
-List<Widget> _attendanceMisses(List<AttendanceMark> marks) {
-  final misses = marks.where((m) => m.status == 'absent' || m.status == 'excused').toList()
-    ..sort((a, b) => b.date.compareTo(a.date));
-  if (misses.isEmpty) return const [];
-  return [
-    Column(
-      children: [
-        for (var i = 0; i < misses.length; i++) ...[
-          if (i > 0) Divider(height: 1, thickness: 1, color: AdminNoon.line),
-          Builder(builder: (_) {
-          final m = misses[i];
-          final date = parseIsoDate(m.date);
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    date == null ? m.date : noonDate(date),
-                    style: NoonText.style(11, color: AdminNoon.muted),
-                  ),
-                ),
-                Text(
-                  m.status == 'absent' ? 'غائب' : 'مأذون',
-                  style: NoonText.style(11, color: m.status == 'absent' ? AdminNoon.red600 : AdminNoon.warn),
-                ),
-              ],
-            ),
-          );
-          }),
+/// عدّاد الحضور والغياب والإذن: ثلاث خانات متساوية يفصلها خط.
+Widget _attendanceTally(int present, int absent, int excused) {
+  Widget cell(String label, int n, Color color) => Expanded(
+        child: Column(
+          children: [
+            Text('$n', style: NoonText.style(18, weight: FontWeight.w700, color: color, height: 1.1)),
+            const SizedBox(height: 2),
+            Text(label, style: NoonText.style(11, color: AdminNoon.muted)),
+          ],
+        ),
+      );
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: IntrinsicHeight(
+      child: Row(
+        children: [
+          cell('حضور', present, AdminNoon.green700),
+          VerticalDivider(width: 1, thickness: 1, color: AdminNoon.line),
+          cell('غياب', absent, AdminNoon.red600),
+          VerticalDivider(width: 1, thickness: 1, color: AdminNoon.line),
+          cell('مأذون', excused, AdminNoon.warn),
         ],
-      ],
+      ),
     ),
+  );
+}
+
+/// آخر خمسة أيام مرصودة بحالة كل يوم.
+List<Widget> _recentDays(List<AttendanceMark> marks) {
+  final recent = [...marks]..sort((a, b) => b.date.compareTo(a.date));
+  if (recent.isEmpty) return const [];
+  const labels = {'present': 'حاضر', 'absent': 'غائب', 'excused': 'مأذون', 'late': 'متأخر'};
+  Color tone(String s) => switch (s) {
+        'present' => AdminNoon.green700,
+        'absent' => AdminNoon.red600,
+        _ => AdminNoon.warn,
+      };
+  return [
+    const SizedBox(height: 8),
+    Text('آخر الأيام', style: NoonText.style(11, weight: FontWeight.w700, color: AdminNoon.muted)),
+    const SizedBox(height: 2),
+    for (final m in recent.take(5))
+      Container(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        decoration: BoxDecoration(border: Border(top: BorderSide(color: AdminNoon.line))),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                parseIsoDate(m.date) == null ? m.date : noonDate(parseIsoDate(m.date)!),
+                style: NoonText.style(12, color: AdminNoon.text),
+              ),
+            ),
+            Container(
+              width: 8,
+              height: 8,
+              margin: const EdgeInsetsDirectional.only(end: 6),
+              decoration: BoxDecoration(color: tone(m.status), shape: BoxShape.circle),
+            ),
+            SizedBox(
+              width: 44,
+              child: Text(labels[m.status] ?? m.status, style: NoonText.style(12, weight: FontWeight.w700, color: tone(m.status))),
+            ),
+          ],
+        ),
+      ),
   ];
 }
 
