@@ -1,9 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:pdf/widgets.dart' as pw;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data/academic_matching.dart';
+import '../data/doc_export.dart';
+import '../data/printing.dart';
+import '../data/student_file.dart';
 import '../data/followup.dart';
 import '../data/grading.dart';
 import '../data/phone.dart';
@@ -135,6 +139,116 @@ class _TeacherPageState extends State<_TeacherPage> {
       final usage = r[2] as Map<String, AccountUsage>?;
       lastSeen = usage == null ? null : lastSeenLabel(usage['teacher:$id']);
     });
+  }
+
+  /// ملف المعلم PDF — `exportPdf` في `TeacherDetail`.
+  Future<void> _exportPdf(
+    AppStore store,
+    Teacher t,
+    _PageData d, {
+    required bool canSeePay,
+    required String rateLabel,
+    required double paidMonth,
+    required double advancesYear,
+    required double payoutsTotal,
+    required int absentDays,
+  }) async {
+    String dmy(String v) => v.length >= 10 ? v.substring(0, 10).split('-').reversed.join('/') : '—';
+    String money(double v) => '${trimNum(v)} شيكل';
+    int? mean(Iterable<num?> vals) {
+      final v = [for (final x in vals) if (x != null) x];
+      return v.isEmpty ? null : (v.reduce((a, b) => a + b) / v.length).round();
+    }
+
+    final lines = d.lines;
+    final done = lines.fold<int>(0, (n, l) => n + (l.completion?.done ?? 0));
+    final total = lines.fold<int>(0, (n, l) => n + (l.completion?.total ?? 0));
+    final students = {for (final l in lines) l.room.id: l.students}.values.fold<int>(0, (a, b) => a + b);
+    final attendance = mean(lines.map((l) => l.attendance));
+    final average = mean(lines.map((l) => l.average));
+    final today = isoDate(DateTime.now());
+    await runBusyOp(context, () async {
+      final bytes = await PdfKit.buildSafe(
+        title: 'ملف المعلم',
+        institutionName: store.institutionName,
+        logoBase64: store.institutionLogo,
+        subtitle: [t.name, if (t.jobTitle.isNotEmpty) t.jobTitle, 'صدر ${dmy(today)}'].join(' · '),
+        body: (_) => [
+          docSection('البيانات الوظيفية'),
+          docFields([
+            ('الاسم', t.name),
+            ('الوظيفة', t.jobTitle.isEmpty ? '—' : t.jobTitle),
+            ('التخصص', t.specialization.isEmpty ? '—' : t.specialization),
+            ('الجوال', t.phone.isEmpty ? '—' : formatPhoneDisplay(t.phone)),
+            ('رقم الهوية', t.nationalId.isEmpty ? '—' : t.nationalId),
+            ('بداية العقد', dmy(t.contractStart)),
+            ('النصاب', t.weeklyPeriods == null ? '—' : '${trimNum(t.weeklyPeriods!)} حصة أسبوعياً'),
+          ]),
+          docSection('الأداء'),
+          docStats([
+            ('الشعب', '${{for (final l in lines) l.room.id}.length}'),
+            ('الطلاب', '$students'),
+            if (total > 0) ('الرصد', '${(done / total * 100).round()}%'),
+            if (average != null) ('معدل طلابه', '$average%'),
+            if (attendance != null) ('حضور طلابه', '$attendance%'),
+            ('غياب الشهر', '$absentDays'),
+          ]),
+          if (canSeePay) ...[
+            docSection('المالية'),
+            docFields([
+              (rateLabel, money(t.rate)),
+              ('المصروف هذا الشهر', money(paidMonth)),
+              ('السلف هذا العام', money(advancesYear)),
+              ('مجموع الصرف هذا العام', money(payoutsTotal)),
+            ]),
+          ],
+          docSection('المواد والشعب'),
+          if (lines.isEmpty)
+            pw.Text('لا مواد مسندة', style: const pw.TextStyle(fontSize: 9.5))
+          else
+            PdfKit.table(
+              headers: ['المادة', 'الشعبة', 'الطلاب', 'الحضور', 'المعدل', 'الرصد'],
+              flex: const [4, 3, 2, 2, 2, 2],
+              rows: [
+                for (final l in lines)
+                  [
+                    l.subject,
+                    l.room.name,
+                    '${l.students}',
+                    l.attendance == null ? '—' : '${l.attendance}%',
+                    l.average == null ? '—' : '${l.average!.round()}%',
+                    l.completion == null ? '—' : '${l.completion!.done}/${l.completion!.total}',
+                  ],
+              ],
+            ),
+          docSection('الإجازات'),
+          if (leaves.isEmpty)
+            pw.Text('لا إجازات', style: const pw.TextStyle(fontSize: 9.5))
+          else
+            PdfKit.table(
+              headers: ['من', 'إلى', 'السبب', 'الحالة'],
+              flex: const [2, 2, 5, 2],
+              rows: [
+                for (final l in leaves)
+                  [
+                    dmy(l.fromDate),
+                    dmy(l.toDate),
+                    l.reason,
+                    l.status == 'pending' ? 'معلّق' : (l.status == 'approved' ? 'موافق' : 'مرفوض'),
+                  ],
+              ],
+            ),
+          pw.SizedBox(height: 28),
+          PdfKit.signatureRow(['مدير المدرسة', 'الختم']),
+        ],
+      );
+      if (!mounted) return;
+      if (bytes == null) {
+        showAppSnack(context, 'تعذّر إعداد الملف', error: true);
+        return;
+      }
+      DocExport.showActions(context, bytes, 'ملف_${t.name}');
+    }, message: 'جارِ الإعداد...');
   }
 
   _PageData _compute(AppStore store) {
@@ -285,6 +399,21 @@ class _TeacherPageState extends State<_TeacherPage> {
         titleSpacing: 0,
         title: const Text('المعلمون'),
         actions: [
+          IconButton(
+            tooltip: 'ملف PDF',
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            onPressed: () => _exportPdf(
+              store,
+              t,
+              d,
+              canSeePay: canSeePay,
+              rateLabel: rateLabel,
+              paidMonth: paidMonth,
+              advancesYear: advancesYear,
+              payoutsTotal: sum(payouts),
+              absentDays: absentDays,
+            ),
+          ),
           if (store.canOpenSection('settings'))
             IconButton(
               tooltip: 'تعديل',
