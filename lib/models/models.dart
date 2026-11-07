@@ -1547,6 +1547,8 @@ const financeRequestLabels = <String, String>{
 const financeAuditActionLabels = <String, String>{
   'payment_cancel': 'إلغاء سند',
   'spend_cancel': 'إلغاء سند صرف',
+  'year_closed': 'إقفال سنة',
+  'year_reopened': 'فتح إقفال سنة',
   'payment_reverse': 'عكس سند',
   'payment_discount': 'خصم عند القبض',
   'installment_discount': 'خصم على قسط',

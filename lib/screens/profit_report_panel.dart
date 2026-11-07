@@ -6,9 +6,12 @@ import '../data/printing.dart';
 import '../data/profit_report.dart';
 import '../data/store.dart';
 import '../data/teacher_salary.dart';
+import '../data/year_closing.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../widgets/finance_documents.dart';
 import '../widgets/widgets.dart';
+import 'year_close_sheet.dart';
 
 /// تبويب الأرباح في المالية — `ProfitReportPanel.tsx`: ربح الفترة شهراً شهراً،
 /// بتاريخ الدفع أو بموعد القسط، والمسحوب منه والباقي.
@@ -50,6 +53,9 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
   late String to = today;
   ProfitBasis basis = ProfitBasis.paid;
 
+  /// حساب مختار من مربعات الباقي: التقرير يعرض حركته وحده.
+  String spendMethod = '';
+
   ({String from, String to}) get range {
     if (period == 'month') {
       final y = int.parse(month.substring(0, 4));
@@ -64,10 +70,16 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
   }
 
   ProfitReport get report => computeProfitReport(
-        payments: widget.store.payments,
+        payments: spendMethod.isEmpty
+            ? widget.store.payments
+            : widget.store.payments.where((p) => p.method == spendMethod).toList(),
         installments: widget.store.installments,
-        expenses: widget.store.expenses,
-        payouts: widget.store.teacherPayouts,
+        expenses: spendMethod.isEmpty
+            ? widget.store.expenses
+            : widget.store.expenses.where((e) => e.method == spendMethod).toList(),
+        payouts: spendMethod.isEmpty
+            ? widget.store.teacherPayouts
+            : widget.store.teacherPayouts.where((p) => p.method == spendMethod).toList(),
         range: range,
         basis: basis,
       );
@@ -173,6 +185,7 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
             ),
           ],
         ),
+        ..._wallets(),
         const SizedBox(height: 10),
         AppCard(
           padding: EdgeInsets.zero,
@@ -224,6 +237,89 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
         ),
       ],
     );
+  }
+
+  /// الباقي في كل حساب: افتتاحي السنة + ما دخله − ما خرج منه، وزر إقفال السنة.
+  List<Widget> _wallets() {
+    final store = widget.store;
+    final year = widget.year;
+    final wallets = year == null ? null : store.yearBook[year.id];
+    final rows = balanceRows(
+      wallets?.closing ??
+          walletFlows(
+            payments: store.payments,
+            expenses: store.expenses,
+            payouts: store.teacherPayouts,
+            from: '',
+            until: '9999-12-31',
+          ),
+    );
+    final opening = wallets?.opening.values.fold<double>(0, (a, v) => a + v) ?? 0;
+    return [
+      const SizedBox(height: 10),
+      Row(
+        children: [
+          Expanded(
+            child: opening.abs() >= 0.01
+                ? Text(
+                    'افتتاحي من السنة السابقة ${webMoney(opening)}',
+                    style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+                  )
+                : const SizedBox.shrink(),
+          ),
+          if (year != null && wallets != null && store.isAdminUser)
+            GhostButton(
+              label: wallets.stale ? 'أعد الإقفال' : (wallets.closed != null ? 'السنة مقفلة' : 'إقفال السنة'),
+              icon: Icons.lock_outline,
+              onPressed: () async {
+                await showYearCloseSheet(context, store, year: year, wallets: wallets);
+                if (mounted) setState(() {});
+              },
+            ),
+        ],
+      ),
+      if (rows.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final row in rows)
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => setState(() => spendMethod = spendMethod == row.method ? '' : row.method),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: spendMethod == row.method ? AppColors.sunken : Colors.white,
+                    border: Border.all(color: spendMethod == row.method ? AppColors.success : AppColors.line),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        row.method.isEmpty ? 'بلا طريقة' : store.paymentMethodLabel(row.method),
+                        style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
+                      ),
+                      Text(
+                        webMoney(row.amount),
+                        textDirection: TextDirection.ltr,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: row.amount < 0 ? AppColors.danger : AppColors.success,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    ];
   }
 
   Widget _cell(String text, {bool head = false, bool muted = false}) => Padding(

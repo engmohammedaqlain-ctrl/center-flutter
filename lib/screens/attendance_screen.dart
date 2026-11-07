@@ -139,6 +139,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         _saving = false;
       });
       showAppSnack(context, 'تم حفظ الرصد');
+    } on StoreException catch (e) {
+      // سنة مغلقة أو صلاحية: يبقى الرصد المؤقت ويُعرف السبب
+      if (!mounted) return;
+      setState(() => _saving = false);
+      showAppSnack(context, e.message, error: true);
     } catch (_) {
       if (mounted) setState(() => _saving = false);
     }

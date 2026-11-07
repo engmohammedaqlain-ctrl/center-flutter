@@ -34,6 +34,8 @@ import 'supabase.dart';
 import 'sync.dart';
 import 'tenant_service.dart';
 import 'user_message.dart';
+import 'followup.dart';
+import 'year_closing.dart';
 import 'year_structure_clone.dart';
 
 class AppStore extends ChangeNotifier implements SyncLocalStore {
@@ -1320,8 +1322,93 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final hasStructure = rooms.any((r) => r.academicYearId == opened!.id);
     if (!hasStructure) {
       await cloneYearStructure(this, current.id, opened.id);
+    } else if (settings.gradingByYear[current.id] == null) {
+      await snapshotGradingForYear(current.id);
     }
+    await _carryYearSettings();
     return (closed: current, opened: opened);
+  }
+
+  // ── إقفال السنة (yearClosing.ts وyearGuard.ts في الويب) ─────────────────────
+
+  /// إقفالات السنين في `settings.year_closings`.
+  Map<String, YearClosing> get yearClosings => YearClosing.allFrom(settings.extra['year_closings']);
+
+  /// أرصدة حسابات كل سنة: كل سنة تبدأ بما أُقفلت عليه التي قبلها.
+  Map<String, YearBalances> get yearBook => yearBalances(
+        years: academicYears,
+        closings: yearClosings,
+        payments: payments,
+        expenses: expenses,
+        payouts: teacherPayouts,
+      );
+
+  /// يرفض الكتابة بتاريخ داخل سنة مغلقة لهذا النوع — `assertOpenDate`.
+  void assertOpenDate(Iterable<String> dates, String what, {String kind = 'money'}) {
+    if (academicYears.isEmpty) return;
+    final closings = kind == 'money' ? yearClosings : const <String, YearClosing>{};
+    for (final d in dates) {
+      final closed = closedYearOf(d, academicYears, closings, kind: kind);
+      if (closed != null) throw StoreException(closedYearMessage(closed, what, kind: kind));
+    }
+  }
+
+  /// يثبّت رصيد كل حساب آخر السنة، فيصير افتتاحي التالية — `YearCloseModal`.
+  Future<void> closeYearBalances(
+    AcademicYear year, {
+    required Map<String, double> balances,
+    required Map<String, double> computed,
+  }) async {
+    if (!isAdminUser) throw StoreException('إقفال السنة للمدير');
+    final total = balances.values.fold<double>(0, (a, v) => a + v);
+    final diff = balances.keys.fold<double>(0, (a, m) => a + (balances[m] ?? 0) - (computed[m] ?? 0));
+    await _writeYearClosings((all) {
+      all[year.id] = YearClosing(
+        balances: balances,
+        computed: computed,
+        at: DateTime.now().toUtc().toIso8601String(),
+        by: receiptReceiver,
+      ).toMap();
+    });
+    _recordFinanceAudit(
+      action: 'year_closed',
+      summary: 'إقفال سنة ${year.label}${diff.abs() >= 0.01 ? ' بفرق جرد ${trimNum(diff)}' : ''}',
+      amount: total,
+    );
+    notifyListeners();
+  }
+
+  /// «فتح الإقفال»: تعود السنة مفتوحة، ويُسجَّل ذلك.
+  Future<void> reopenYearClosing(AcademicYear year) async {
+    if (!isAdminUser) throw StoreException('إقفال السنة للمدير');
+    await _writeYearClosings((all) => all.remove(year.id));
+    _recordFinanceAudit(action: 'year_reopened', summary: 'فتح إقفال سنة ${year.label}');
+    notifyListeners();
+  }
+
+  Future<void> _writeYearClosings(void Function(Map<String, dynamic> all) change) async {
+    final raw = settings.extra['year_closings'];
+    final all = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+    change(all);
+    await _writeSettings((prev) => prev.copyWith(extra: {...prev.extra, 'year_closings': all}));
+  }
+
+  /// مواعيد الرصد تُزاح سنة فلا تظهر كلها متأخرة من أول يوم — `carryYearSettings`.
+  Future<void> _carryYearSettings() async {
+    final followup = settings.followup;
+    if (followup.gradeDeadlines.isEmpty) return;
+    String nextYear(String date) {
+      final y = int.tryParse(date.length >= 4 ? date.substring(0, 4) : '');
+      return y == null ? date : '${y + 1}${date.substring(4)}';
+    }
+
+    await _writeSettings((prev) => prev.copyWith(extra: {
+          ...prev.extra,
+          'followup': followup.copyWith(gradeDeadlines: [
+            for (final g in followup.gradeDeadlines)
+              GradeDeadline(term: g.term, name: g.name, date: nextYear(g.date)),
+          ]).toMap(),
+        }));
   }
 
   /// تحديث تواريخ العام وفصوله — `AcademicYearsService.update`.
@@ -1573,6 +1660,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (request.status != 'pending') {
       throw StoreException('الطلب مُعالج مسبقاً');
     }
+    assertOpenDate(['${request.createdAt ?? ''}'], 'الطلب');
 
     // يُحسم في السحابة أولاً: مديران يوافقان على الطلب نفسه كانا ينفّذانه مرتين
     // (رد مبلغ مرتين). إن فشل التنفيذ بعد الحسم يعود الطلب معلقاً
@@ -2237,6 +2325,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (group == null) throw StoreException('الشعبة المختارة غير موجودة');
     checkScoreBounds(scores.values, maxScore);
     _assertGradesUnlocked([evaluationDate]);
+    assertOpenDate([evaluationDate], 'العلامات', kind: 'school');
 
     final now = _nowIso();
     final actor = gradeActorLabel;
@@ -2285,6 +2374,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (bucket == null || idx < 0) throw StoreException('العلامة غير موجودة');
     final current = Evaluation.fromCloud(bucket[idx]);
     _assertGradesUnlocked([current.evaluationDate]);
+    assertOpenDate([current.evaluationDate], 'العلامات', kind: 'school');
     checkScoreBounds([score], current.maxScore);
     _logApprovedEdit(current, reason);
     final now = _nowIso();
@@ -2313,6 +2403,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final target = bucket.where((e) => '${e['id']}' == id).firstOrNull;
     if (target != null) {
       _assertGradesUnlocked(['${target['evaluation_date'] ?? ''}']);
+      assertOpenDate(['${target['evaluation_date'] ?? ''}'], 'العلامات', kind: 'school');
       _logApprovedEdit(Evaluation.fromCloud(target), reason, deleted: true);
     }
     final before = bucket.length;
@@ -2411,6 +2502,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final desc = description.trim();
     if (desc.isEmpty) throw StoreException('البيان مطلوب لتسجيل سند الصرف');
     amount = validPayoutAmount(amount);
+    assertOpenDate([expenseDate], 'سند الصرف');
 
     final now = _nowIso();
     final e = Expense(
@@ -2454,6 +2546,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     requireSection('finance.expenses');
     if (teacherId.trim().isEmpty) throw StoreException('اختر المعلم المستفيد');
     amount = validPayoutAmount(amount);
+    assertOpenDate([paymentDate, if (periodStart.isNotEmpty) periodStart], 'سند الصرف');
 
     final now = _nowIso();
     final p = TeacherPayout(
@@ -2498,6 +2591,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         .firstOrNull;
     if (row == null) throw StoreException('السند غير موجود');
     if (row['is_cancelled'] == true) throw StoreException('السند ملغى من قبل');
+    assertOpenDate(['${row[isPayout ? 'payment_date' : 'expense_date'] ?? ''}'], 'إلغاء سند الصرف');
     final now = _nowIso();
     row['is_cancelled'] = true;
     row['cancelled_reason'] = why;
@@ -3319,6 +3413,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     requireSection('evaluations');
     // معدل الشهر بتاريخ أول يومه: شهرٌ داخل فترة الإقفال لا يُعدَّل إلا من المدير
     _assertGradesUnlocked([monthDate(month)]);
+    assertOpenDate([monthDate(month)], 'العلامات', kind: 'school');
     final now = _nowIso();
     final actor = gradeActorLabel;
     final allRows = monthlyRowsByStudent(evaluations, month);
@@ -5094,6 +5189,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// [ownerId] هو معرّف الصف (نظام مدرسة) أو المجموعة (نظام مركز).
   void setAttendance(String studentId, String date, String? status, {String? ownerId}) {
     requireSection('attendance');
+    assertOpenDate([date], 'الحضور', kind: 'school');
 
     // ما تغيّر في هذه اللمسة، ليُرقَّع في الفهارس بدل إعادة بنائها كاملةً
     final wasValid = _indexRev == _markStamp;
@@ -5181,6 +5277,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// بجلسة أخرى — وهو ما كان يجعل الزر يُغيّر البعض دون البعض.
   int markAllPresent(String date, List<Student> list, {String? ownerId}) {
     requireSection('attendance');
+    assertOpenDate([date], 'الحضور', kind: 'school');
     if (list.isEmpty) return 0;
 
     // الفهارس صالحة الآن؟ إذاً تُرقَّع مع كل رصد وتبقى صالحة. كانت تسقط مع كل
@@ -6122,6 +6219,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     bool deferSync = false,
   }) {
     requireFinanceAction('finance.collect');
+    assertOpenDate([isoDate(date)], 'سند القبض');
     final disc = discountAmount < 0 ? 0.0 : discountAmount;
     // amount = النقد المقبوض؛ original_amount = ما سُدِّد من الذمة قبل الخصم
     final cashReceived = amount < 0 ? 0.0 : amount;
@@ -6239,6 +6337,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (reason.trim().isEmpty) {
       throw StoreException('اكتب سبب الإلغاء أو العكس');
     }
+    assertOpenDate([isoDate(DateTime.now())], 'إبطال السند');
     if (dateOnly(p.date) == dateOnly(DateTime.now())) {
       cancelPayment(p, reason);
       return p;

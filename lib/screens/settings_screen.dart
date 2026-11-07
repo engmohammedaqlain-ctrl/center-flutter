@@ -29,6 +29,7 @@ import 'grading_scheme_tab.dart';
 import 'followup_settings_tab.dart';
 import 'student_promotion_sheet.dart';
 import 'teacher_detail_screen.dart';
+import 'year_close_sheet.dart';
 
 /// الإعدادات — المقابل لـ `pages/Settings.tsx`.
 ///
@@ -415,6 +416,8 @@ class _AcademicYearsTabState extends State<_AcademicYearsTab> {
           onPressed: () async {
             final cur = store.operationalAcademicYear;
             if (cur == null) return;
+            // فحص ثم جرد ثم إغلاق ثم ترقية — `YearEndWizard`
+            if (store.isAdminUser) return showYearEndWizard(context, store, cur);
             final ok = await confirmSheet(
               context,
               title: 'إغلاق ${cur.label}',

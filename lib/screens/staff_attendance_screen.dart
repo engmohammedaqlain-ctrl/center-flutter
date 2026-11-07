@@ -103,8 +103,11 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
   Future<void> _save(AppStore store, String teacherId, String day, String? status) async {
     if (day.compareTo(isoDate(DateTime.now())) > 0) return showAppSnack(context, 'يوم لم يأتِ بعد', error: true);
     try {
+      store.assertOpenDate([day], 'دوام الموظفين', kind: 'school');
       await StaffService.setDay(store.tenantId ?? '', teacherId, day, status);
       await _load();
+    } on StoreException catch (e) {
+      if (mounted) showAppSnack(context, e.message, error: true);
     } catch (_) {
       if (mounted) showAppSnack(context, 'تعذّر الحفظ', error: true);
     }
@@ -112,12 +115,15 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
 
   Future<void> _allPresent(AppStore store, List<Teacher> teachers, String day) async {
     try {
+      store.assertOpenDate([day], 'دوام الموظفين', kind: 'school');
       for (final t in teachers) {
         if (statusOf(t.id, day) == null && approvedLeaveOn(leaves, t.id, day) == null) {
           await StaffService.setDay(store.tenantId ?? '', t.id, day, 'present');
         }
       }
       await _load();
+    } on StoreException catch (e) {
+      if (mounted) showAppSnack(context, e.message, error: true);
     } catch (_) {
       if (mounted) showAppSnack(context, 'تعذّر الحفظ', error: true);
     }
