@@ -1003,10 +1003,20 @@ class _FinanceScreenState extends State<FinanceScreen> {
   /// نفس دمج القائمتين في جدول واحد في Finance.tsx. اختيار معلم يقصره على ما صُرف له.
   ({Widget? toolbar, List<Widget> slivers}) _expenses(AppStore store, String q) {
     final linked = statementTeacherId.isEmpty ? null : store.linkedTeacherIds(statementTeacherId);
-    final expenses = linked == null ? _periodExpenses(store) : <Expense>[];
+    // الملغى في السجل مشطوباً بسببه، خارج المجموع
+    final expenses = linked == null
+        ? [
+            ..._periodExpenses(store),
+            ...store.cancelledExpenses.where((e) => _matchesFinancePeriod(store, paymentDate: e.expenseDate)),
+          ]
+        : <Expense>[];
     final payouts = [
       for (final p in _periodPayouts(store))
         if (linked == null || linked.contains(p.teacherId)) p,
+      for (final p in store.cancelledPayouts)
+        if ((linked == null || linked.contains(p.teacherId)) &&
+            _matchesFinancePeriod(store, paymentDate: p.periodStart.isNotEmpty ? p.periodStart : p.paymentDate))
+          p,
     ];
     final all = <_SpendRow>[
       for (final e in expenses)
@@ -1046,7 +1056,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
           final d = parseIsoDate(r.date.length >= 10 ? r.date.substring(0, 10) : r.date);
           return d == null ? r.date : _dayLabel(d);
         },
-        amountOf: (r) => r.amount,
+        amountOf: (r) => r.voucher.isCancelled ? 0 : r.amount,
         row: (context, r) => _SpendCard(row: r),
       ),
     );
@@ -2512,10 +2522,11 @@ class _SpendCard extends StatelessWidget {
 
     return _Row(
       title: row.description.trim().isEmpty ? row.category : row.description.trim(),
-      meta: details,
+      meta: row.voucher.isCancelled ? 'ملغى: ${row.voucher.cancelledReason}' : details,
       amount: _AmountColumn(
         amount: '-${money(row.amount)}',
-        color: _owedColor,
+        color: row.voucher.isCancelled ? AppColors.muted : _owedColor,
+        struck: row.voucher.isCancelled,
         badge: _Badge(row.category, row.isPayout ? const Color(0xFF6E5DC6) : AppColors.muted),
       ),
       // السند المطبوع يُسلَّم لمن قبض المبلغ، فيُفتح بلمس صفّه

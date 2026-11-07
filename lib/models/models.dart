@@ -1546,6 +1546,7 @@ const financeRequestLabels = <String, String>{
 /// تسميات حركات سجل الرقابة — `AUDIT_ACTION_LABELS`.
 const financeAuditActionLabels = <String, String>{
   'payment_cancel': 'إلغاء سند',
+  'spend_cancel': 'إلغاء سند صرف',
   'payment_reverse': 'عكس سند',
   'payment_discount': 'خصم عند القبض',
   'installment_discount': 'خصم على قسط',
@@ -2023,6 +2024,8 @@ class Expense {
     this.method = 'cash',
     this.notes = '',
     this.kind = 'expense',
+    this.cancelled = false,
+    this.cancelReason = '',
     this.syncStatus = 'synced',
     this.createdAt,
     this.updatedAt,
@@ -2042,6 +2045,10 @@ class Expense {
   String recordedByName;
   String method;
   String notes;
+
+  /// سند أُلغي بسببه: يبقى في السجل ويخرج من كل مجموع — `is_cancelled`.
+  bool cancelled;
+  String cancelReason;
   String syncStatus;
   String? createdAt;
   String? updatedAt;
@@ -2057,6 +2064,8 @@ class Expense {
     'payment_method': method,
     'notes': notes.isEmpty ? null : notes,
     'kind': kind,
+    'is_cancelled': cancelled,
+    'cancelled_reason': cancelReason.isEmpty ? null : cancelReason,
     'created_at': createdAt,
     'updated_at': updatedAt,
     'sync_status': syncStatus,
@@ -2073,6 +2082,8 @@ class Expense {
     method: '${m['payment_method'] ?? 'cash'}',
     notes: '${m['notes'] ?? ''}',
     kind: '${m['kind'] ?? 'expense'}',
+    cancelled: m['is_cancelled'] == true,
+    cancelReason: '${m['cancelled_reason'] ?? ''}',
     syncStatus: '${m['sync_status'] ?? 'synced'}',
     createdAt: m['created_at']?.toString(),
     updatedAt: m['updated_at']?.toString(),
@@ -2105,6 +2116,8 @@ class TeacherPayout {
     this.paidByName = '',
     this.method = 'cash',
     this.notes = '',
+    this.cancelled = false,
+    this.cancelReason = '',
     this.syncStatus = 'synced',
     this.createdAt,
     this.updatedAt,
@@ -2128,6 +2141,10 @@ class TeacherPayout {
   String paidByName;
   String method;
   String notes;
+
+  /// سند أُلغي بسببه — كالمصروف.
+  bool cancelled;
+  String cancelReason;
   String syncStatus;
   String? createdAt;
   String? updatedAt;
@@ -2146,6 +2163,8 @@ class TeacherPayout {
     'paid_by_name': paidByName.isEmpty ? null : paidByName,
     'payment_method': method,
     'notes': notes.isEmpty ? null : notes,
+    'is_cancelled': cancelled,
+    'cancelled_reason': cancelReason.isEmpty ? null : cancelReason,
     'created_at': createdAt,
     'updated_at': updatedAt,
     'sync_status': syncStatus,
@@ -2165,6 +2184,8 @@ class TeacherPayout {
     paidByName: '${m['paid_by_name'] ?? ''}',
     method: '${m['payment_method'] ?? 'cash'}',
     notes: '${m['notes'] ?? ''}',
+    cancelled: m['is_cancelled'] == true,
+    cancelReason: '${m['cancelled_reason'] ?? ''}',
     syncStatus: '${m['sync_status'] ?? 'synced'}',
     createdAt: m['created_at']?.toString(),
     updatedAt: m['updated_at']?.toString(),

@@ -214,6 +214,19 @@ class PayrollEntries {
     return rows == null ? null : [for (final r in rows) PayrollEntryRow.fromMap(r)];
   }
 
+  /// إلغاء سند راتب يعيد شهره مفتوحاً: يفك السند والحساب المثبّت ومقتطع السلفة
+  /// من سطره — `FinanceService.cancelSpend`.
+  static Future<void> clearPayout(String payoutId) => supabaseUpdate(
+        'payroll_entries',
+        {'payout_id': 'eq.$payoutId'},
+        {
+          'payout_id': null,
+          'snapshot': null,
+          'advance_recovered': null,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        },
+      );
+
   /// يُثبّت الحساب كما صُرف ومقتطع السلفة وربط السند في سطر الشهر. بلا سند (`payoutId` فارغ):
   /// شهر أكلت السلفة راتبه كله، يُسوّى بلا نقد ويُقتطع من رصيدها.
   static Future<void> markPaid({

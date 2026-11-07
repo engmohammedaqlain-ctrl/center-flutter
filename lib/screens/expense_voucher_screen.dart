@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 
 import '../data/doc_export.dart';
 import '../data/printing.dart';
+import '../data/staff.dart';
 import '../data/store.dart';
 import '../data/teacher_salary.dart';
+import '../data/user_message.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
 import '../widgets/finance_documents.dart';
@@ -27,6 +29,7 @@ class ExpenseVoucher {
     this.notes = '',
     this.issuedBy = '',
     this.recipient = '',
+    this.cancelledReason = '',
   });
 
   final String id;
@@ -47,6 +50,11 @@ class ExpenseVoucher {
 
   /// المستلم إن وُجد (اسم المعلم في سند الأجر).
   final String recipient;
+
+  /// سبب إلغاء السند؛ الفارغ سند قائم.
+  final String cancelledReason;
+
+  bool get isCancelled => cancelledReason.isNotEmpty;
 
   String get title => isPayout ? 'سند صرف أجر معلم' : 'سند صرف';
 
@@ -69,6 +77,7 @@ class ExpenseVoucher {
         method: e.method,
         notes: e.notes,
         issuedBy: e.recordedByName,
+        cancelledReason: e.cancelled ? (e.cancelReason.isEmpty ? 'ملغى' : e.cancelReason) : '',
       );
 
   factory ExpenseVoucher.fromPayout(TeacherPayout p, {String fallbackName = ''}) {
@@ -89,6 +98,7 @@ class ExpenseVoucher {
       notes: note.isEmpty ? typeMonth : '$typeMonth — $note',
       issuedBy: p.paidByName,
       recipient: name,
+      cancelledReason: p.cancelled ? (p.cancelReason.isEmpty ? 'ملغى' : p.cancelReason) : '',
     );
   }
 
@@ -154,6 +164,71 @@ class _VoucherSheetState extends State<_VoucherSheet> {
 
   String get _fileName => 'سند صرف ${expenseVoucherNumber(voucher)}';
 
+  /// إلغاء السند بأثره وسببه — `VoidSpendModal`.
+  Future<void> _voidVoucher(AppStore store) async {
+    final salary = voucher.isPayout && voucher.notes.startsWith('راتب');
+    final advance = voucher.isPayout && voucher.notes.startsWith('سلفة');
+    final reason = TextEditingController();
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.viewInsetsOf(ctx).bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'إلغاء سند الصرف',
+              style: TextStyle(color: AppColors.navy, fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'يخرج من المصروفات والأرباح والحسابات، ويبقى في السجل «ملغى» بسببه.'
+              '${salary ? ' شهر الراتب يعود مفتوحاً في كشف الرواتب.' : ''}'
+              '${advance ? ' وتسقط السلفة من رصيد الموظف.' : ''}',
+              style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: reason,
+              autofocus: true,
+              decoration: const InputDecoration(hintText: 'السبب (إجباري)'),
+            ),
+            const SizedBox(height: 12),
+            PrimaryButton(
+              label: 'تأكيد الإلغاء',
+              color: AppColors.danger,
+              onPressed: () {
+                if (reason.text.trim().isEmpty) {
+                  showAppSnack(ctx, 'اكتب سبب الإلغاء', error: true);
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+    final why = reason.text;
+    reason.dispose();
+    if (ok != true || !mounted) return;
+    try {
+      await runBusyOp(context, () async {
+        // سطر الراتب في السحابة أولاً: بلا نت يبقى السند قائماً بدل شهر يبقى مغلقاً
+        if (voucher.isPayout) await PayrollEntries.clearPayout(voucher.id);
+        store.cancelSpend(isPayout: voucher.isPayout, id: voucher.id, reason: why);
+      }, message: 'جارٍ الإلغاء...');
+      if (!mounted) return;
+      showAppSnack(context, 'أُلغي السند');
+      Navigator.pop(context);
+    } catch (e) {
+      if (mounted) showAppSnack(context, userMessage(e, 'تعذّر الإلغاء'), error: true);
+    }
+  }
+
   /// المستند كما يُرى، ملف PDF بعرض 130مم كطباعة الويب.
   Future<Uint8List?> _pdf() => captureDocumentPdf(_document, widthMm: 130, title: _fileName);
 
@@ -195,6 +270,21 @@ class _VoucherSheetState extends State<_VoucherSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (voucher.isCancelled) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF2F2),
+                  border: Border.all(color: const Color(0xFFFECACA)),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'ملغى: ${voucher.cancelledReason}',
+                  style: const TextStyle(color: Color(0xFFB91C1C), fontWeight: FontWeight.w600, fontSize: 12),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
             // ما يُرى هو ما يُحفظ ويُرسل
             RepaintBoundary(key: _document, child: VoucherDocument(view: view)),
             const SizedBox(height: 12),
@@ -224,6 +314,14 @@ class _VoucherSheetState extends State<_VoucherSheet> {
                 ),
               ],
             ),
+            if (store.isAdminUser && !voucher.isCancelled) ...[
+              const SizedBox(height: 8),
+              GhostButton(
+                label: 'إلغاء السند',
+                icon: Icons.block_outlined,
+                onPressed: () => _voidVoucher(store),
+              ),
+            ],
             const SizedBox(height: 8),
             PrimaryButton(label: 'تم', expand: true, height: 48, onPressed: () => Navigator.pop(context)),
           ],

@@ -2328,32 +2328,60 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   ///
   /// تُبنى مرة لكل تغيّر في الجدول: كانت تُحوَّل وتُرتَّب من جديد مع كل قراءة، والمالية
   /// تقرؤها مرات في كل رسم.
+  ///
+  /// السند الملغى خارجها وخارج كل مجموع، ويُعرض في السجل من [cancelledExpenses].
   List<Expense> get expenses {
+    _loadExpenses();
+    return _expensesCache!;
+  }
+
+  /// السندات الملغاة، الأحدث أولاً — `cancelledSpend.expenses`.
+  List<Expense> get cancelledExpenses {
+    _loadExpenses();
+    return _cancelledExpensesCache!;
+  }
+
+  void _loadExpenses() {
     final rows = extraCloud['expenses'] ?? const [];
     final stamp = _listStamp('expenses', rows);
-    if (stamp == _expensesStamp && _expensesCache != null) return _expensesCache!;
+    if (stamp == _expensesStamp && _expensesCache != null) return;
     final out = rows.map(Expense.fromCloud).toList();
     out.sort((a, b) => b.expenseDate.compareTo(a.expenseDate));
     _expensesStamp = stamp;
-    return _expensesCache = List.unmodifiable(out);
+    _expensesCache = List.unmodifiable(out.where((e) => !e.cancelled));
+    _cancelledExpensesCache = List.unmodifiable(out.where((e) => e.cancelled));
   }
 
   int _expensesStamp = 0;
   List<Expense>? _expensesCache;
+  List<Expense>? _cancelledExpensesCache;
 
   /// دفعات أجور المعلمين، الأحدث أولاً — محفوظة كالمصروفات.
   List<TeacherPayout> get teacherPayouts {
+    _loadPayouts();
+    return _payoutsCache!;
+  }
+
+  /// سندات الأجور الملغاة، الأحدث أولاً — `cancelledSpend.payouts`.
+  List<TeacherPayout> get cancelledPayouts {
+    _loadPayouts();
+    return _cancelledPayoutsCache!;
+  }
+
+  void _loadPayouts() {
     final rows = extraCloud['teacher_payouts'] ?? const [];
     final stamp = _listStamp('teacher_payouts', rows);
-    if (stamp == _payoutsStamp && _payoutsCache != null) return _payoutsCache!;
+    if (stamp == _payoutsStamp && _payoutsCache != null) return;
     final out = rows.map(TeacherPayout.fromCloud).toList();
     out.sort((a, b) => b.paymentDate.compareTo(a.paymentDate));
     _payoutsStamp = stamp;
-    return _payoutsCache = List.unmodifiable(out);
+    _payoutsCache = List.unmodifiable(out.where((p) => !p.cancelled));
+    _cancelledPayoutsCache = List.unmodifiable(out.where((p) => p.cancelled));
   }
 
   int _payoutsStamp = 0;
   List<TeacherPayout>? _payoutsCache;
+  List<TeacherPayout>? _cancelledPayoutsCache;
 
   double get totalExpenses => expenses.fold<double>(0, (a, e) => a + e.amount);
   double get totalPayouts => teacherPayouts.fold<double>(0, (a, p) => a + p.amount);
@@ -2449,6 +2477,36 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     markDirty('teacher_payouts');
     notifyListeners();
     return p;
+  }
+
+  /// إلغاء سند صرف (مصروف أو أجر) — `FinanceService.cancelSpend`.
+  ///
+  /// يبقى في السجل «ملغى» بسببه، ويخرج من المصروفات والأرباح والحسابات. فك سطر
+  /// الراتب من السند (`PayrollEntries.clearPayout`) على المستدعي قبل هذه الدالة:
+  /// `payroll_entries` يُكتب في السحابة مباشرة لا عبر الطابور.
+  void cancelSpend({required bool isPayout, required String id, required String reason}) {
+    if (!isAdminUser) throw StoreException('إلغاء سند الصرف للمدير');
+    final why = reason.trim();
+    if (why.isEmpty) throw StoreException('اكتب سبب الإلغاء');
+    final table = isPayout ? 'teacher_payouts' : 'expenses';
+    final row = (extraCloud[table] ?? const <Map<String, dynamic>>[])
+        .where((r) => '${r['id']}' == id)
+        .firstOrNull;
+    if (row == null) throw StoreException('السند غير موجود');
+    if (row['is_cancelled'] == true) throw StoreException('السند ملغى من قبل');
+    final now = _nowIso();
+    row['is_cancelled'] = true;
+    row['cancelled_reason'] = why;
+    row['updated_at'] = now;
+    row['sync_status'] = 'pending';
+    _queue(table, id, 'UPDATE', row);
+    markDirty(table);
+    final amount = (row['amount'] as num?)?.toDouble() ?? 0;
+    final summary = isPayout
+        ? 'سند أجر ${row['teacher_name'] ?? 'معلم'}'
+        : 'سند صرف: ${row['description'] ?? ''}';
+    _recordFinanceAudit(action: 'spend_cancel', summary: summary, entityId: id, amount: amount, reason: why);
+    notifyListeners();
   }
 
   void deleteExpense(String id) {
