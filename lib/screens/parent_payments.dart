@@ -527,7 +527,7 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
           ]),
           _formSection('بيانات التحويل', [
           NField(
-            label: 'حوّل إلى',
+            label: 'التحويل إلى',
             hint: 'تُحسب الدفعة بعد مراجعة المالية للإشعار',
             child: NColumn(
               gap: 8,
@@ -546,23 +546,35 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
                     onChanged: (_) => setState(() {}),
                   ),
                 // رقم الحساب أو المحفظة: يحوّل إليه ولي الأمر دون أن يسأل المدرسة عنه
-                if (account.isNotEmpty)
+                if (_method != null)
                   Container(
-                    height: 48,
-                    padding: const EdgeInsetsDirectional.fromSTEB(14, 0, 6, 0),
+                    padding: const EdgeInsetsDirectional.fromSTEB(14, 10, 8, 10),
                     decoration: BoxDecoration(color: Noon.mist2, borderRadius: radius, border: Border.all(color: Noon.line)),
                     child: Row(
                       children: [
                         Expanded(
-                          child: SelectableText(
-                            account,
-                            textDirection: TextDirection.ltr,
-                            textAlign: TextAlign.right,
-                            style: nText(16, weight: FontWeight.w700),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('رقم الحساب أو المحفظة', style: nText(11, weight: FontWeight.w500, color: Noon.muted)),
+                              const SizedBox(height: 3),
+                              if (account.isNotEmpty)
+                                SelectableText(
+                                  account,
+                                  textDirection: TextDirection.ltr,
+                                  textAlign: TextAlign.start,
+                                  style: nText(18, weight: FontWeight.w700, height: 1.2),
+                                )
+                              else
+                                Text('لم تسجّل المدرسة رقماً لهذه الوسيلة، اسألها قبل التحويل', style: nText(12, color: Noon.muted)),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        NBtn(small: true, icon: copied ? Icons.check_rounded : Icons.copy_rounded, label: copied ? 'نُسخ' : 'نسخ', onTap: _copyNumber),
+                        if (account.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          NBtn(small: true, icon: copied ? Icons.check_rounded : Icons.copy_rounded, label: copied ? 'نُسخ' : 'نسخ', onTap: _copyNumber),
+                        ],
                       ],
                     ),
                   ),
@@ -636,8 +648,8 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
                       ),
                     if (images.length < maxRequestImages)
                       SizedBox(
-                        width: w,
-                        height: 88,
+                        width: images.isEmpty ? box.maxWidth : w,
+                        height: images.isEmpty ? 128 : 88,
                         child: InkWell(
                           onTap: _pickImage,
                           borderRadius: BorderRadius.circular(NoonRadius.tile),
@@ -646,13 +658,17 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.add_photo_alternate_outlined, size: 20, color: Noon.teal),
-                                const SizedBox(height: 4),
+                                Icon(Icons.add_photo_alternate_outlined, size: images.isEmpty ? 32 : 20, color: Noon.teal),
+                                SizedBox(height: images.isEmpty ? 8 : 4),
                                 Text(
                                   images.isEmpty ? 'أرفق صورة الإشعار' : 'صورة إضافية',
                                   textAlign: TextAlign.center,
-                                  style: nText(11, weight: FontWeight.w700, color: Noon.teal),
+                                  style: nText(images.isEmpty ? 14 : 11, weight: FontWeight.w700, color: Noon.teal),
                                 ),
+                                if (images.isEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text('لقطة شاشة من تطبيق البنك أو المحفظة', style: nText(11.5, color: Noon.muted)),
+                                ],
                               ],
                             ),
                           ),

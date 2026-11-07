@@ -23,10 +23,10 @@ int demoYearStart(DateTime date) => date.month >= 8 ? date.year : date.year - 1;
 /// وسائل الدفع المعتمدة في الديمو — `DEMO_PAYMENT_METHODS`.
 const demoPaymentMethods = <Map<String, dynamic>>[
   {'id': 'cash', 'name': 'نقداً', 'type': 'cash', 'is_default': true, 'enabled': true},
-  {'id': 'bop', 'name': 'بنك فلسطين', 'type': 'bank', 'is_default': true, 'enabled': true},
-  {'id': 'arabbank', 'name': 'البنك العربي', 'type': 'bank', 'is_default': false, 'enabled': true},
-  {'id': 'palpay', 'name': 'محفظة بال باي', 'type': 'wallet', 'is_default': true, 'enabled': true},
-  {'id': 'jawwal_pay', 'name': 'محفظة جوال باي', 'type': 'wallet', 'is_default': true, 'enabled': true},
+  {'id': 'bop', 'name': 'بنك فلسطين', 'type': 'bank', 'is_default': true, 'enabled': true, 'account_number': '1450-278391-00'},
+  {'id': 'arabbank', 'name': 'البنك العربي', 'type': 'bank', 'is_default': false, 'enabled': true, 'account_number': '0098-4567821'},
+  {'id': 'palpay', 'name': 'محفظة بال باي', 'type': 'wallet', 'is_default': true, 'enabled': true, 'account_number': '0599024136'},
+  {'id': 'jawwal_pay', 'name': 'محفظة جوال باي', 'type': 'wallet', 'is_default': true, 'enabled': true, 'account_number': '0597654321'},
 ];
 
 /// جداول الديمو بترتيب الرفع (الأب قبل ابنه) — `DEMO_TABLES`.
