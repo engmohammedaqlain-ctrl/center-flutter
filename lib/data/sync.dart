@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:isolate';
 
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,7 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import 'supabase.dart';
 import 'error_report.dart';
-import 'user_message.dart';
+import 'user_message.dart';
+import 'off_thread.dart';
 
 /// مطابق لـ TABLE_ALLOWED_COLUMNS في sync.ts
 const tableAllowedColumns = <String, List<String>>{
@@ -874,13 +874,13 @@ List<Map<String, dynamic>> _decodeRows(String body) {
 /// صفوف ردٍّ من السحابة، مفكوكةً خارج خيط الواجهة إن كان الردّ كبيراً.
 Future<List<Map<String, dynamic>>> decodeRowsOffThread(String body) {
   if (body.length < _offThreadBytes) return Future.value(_decodeRows(body));
-  return Isolate.run(() => _decodeRows(body));
+  return offThread(() => _decodeRows(body));
 }
 
 /// ترميز جسم الرفع خارج خيط الواجهة إن كان كبيراً.
 Future<String> encodeRowsOffThread(List<Map<String, dynamic>> rows) {
   if (rows.length < 100) return Future.value(jsonEncode(rows));
-  return Isolate.run(() => jsonEncode(rows));
+  return offThread(() => jsonEncode(rows));
 }
 
 typedef PullProgressCallback = void Function(PullProgress progress);

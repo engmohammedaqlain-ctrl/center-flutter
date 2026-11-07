@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite/sqflite.dart';
+import 'off_thread.dart';
 
 /// التخزين المحلي الدائم — المقابل لـ `lib/db.ts` (Dexie/IndexedDB) في النسخة المكتبية.
 ///
@@ -151,7 +151,7 @@ class SqflitePersistence implements Persistence {
     final encoded = <(String, String)>[
       for (final r in rows) ('${r['table_name']}', '${r['data']}'),
     ];
-    return Isolate.run(() => _decodeRecordRows(encoded));
+    return offThread(() => _decodeRecordRows(encoded));
   }
 
   @override
@@ -167,7 +167,7 @@ class SqflitePersistence implements Persistence {
       for (final r in rows) (table, '${r['data']}'),
     ];
     try {
-      final decoded = await Isolate.run(() => _decodeRecordRows(encoded));
+      final decoded = await offThread(() => _decodeRecordRows(encoded));
       return decoded[table] ?? const [];
     } catch (_) {
       return _decodeRecordRows(encoded)[table] ?? const [];
@@ -191,7 +191,7 @@ class SqflitePersistence implements Persistence {
     ];
     Map<String, List<Map<String, dynamic>>> decoded;
     try {
-      decoded = await Isolate.run(() => _decodeRecordRows(encoded));
+      decoded = await offThread(() => _decodeRecordRows(encoded));
     } catch (_) {
       // فشل الخيط المنفصل (ذاكرة/منصّة): فكّ على الخيط الحالي بدل إسقاط التحميل
       decoded = _decodeRecordRows(encoded);
@@ -209,7 +209,7 @@ class SqflitePersistence implements Persistence {
     final ids = [for (final r in kept) '${r['id']}'];
     // القليل يُرمَّز هنا: كلفة إنشاء خيط تفوق ترميز صفوفٍ معدودة
     if (kept.length < 200) return (ids: ids, data: [for (final r in kept) jsonEncode(r)]);
-    final data = await Isolate.run(() => [for (final r in kept) jsonEncode(r)]);
+    final data = await offThread(() => [for (final r in kept) jsonEncode(r)]);
     return (ids: ids, data: data);
   }
 

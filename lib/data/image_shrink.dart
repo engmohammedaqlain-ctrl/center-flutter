@@ -1,5 +1,5 @@
-import 'dart:isolate';
-import 'dart:typed_data';
+import 'dart:typed_data';
+import 'off_thread.dart';
 
 import 'package:image/image.dart' as img;
 
@@ -55,7 +55,7 @@ class ImageShrink {
     }
     try {
       // خارج خيط الواجهة: فكّ ترميز صورة بأربعة آلاف بكسل يُجمّد الشاشة
-      final out = await Isolate.run(() => _toJpeg(bytes, maxDimension, jpegQuality));
+      final out = await offThread(() => _toJpeg(bytes, maxDimension, jpegQuality));
       if (out == null || (uploadable && out.length >= bytes.length)) {
         return (bytes: bytes, fileName: fileName);
       }
@@ -69,7 +69,7 @@ class ImageShrink {
   /// (2 ميجا). `null` إن لم تكن صورة تُقرأ.
   static Future<Uint8List?> forReceipt(Uint8List bytes) async {
     try {
-      return await Isolate.run(() => _toJpeg(bytes, 1400, 70));
+      return await offThread(() => _toJpeg(bytes, 1400, 70));
     } catch (_) {
       return null;
     }
