@@ -6,6 +6,7 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../data/doc_export.dart';
 import '../data/printing.dart';
+import '../data/xlsx_styled.dart';
 import '../models/models.dart';
 import '../widgets/widgets.dart';
 
@@ -79,8 +80,22 @@ Uint8List sheetCsvBytes(List<String> headers, List<List<String>> rows) {
   return Uint8List.fromList([0xEF, 0xBB, 0xBF, ...utf8.encode(text)]);
 }
 
-/// تنزيل الكشف Excel في مجلد التنزيلات.
-Future<void> downloadSheetCsv(BuildContext context, SheetData sheet) {
-  final name = '${sheet.title.trim().replaceAll(RegExp(r'[\\/:*?"<>|]+'), '_').replaceAll(RegExp(r'\s+'), '_')}.csv';
-  return DocExport.download(context, sheetCsvBytes(sheet.headers, sheet.rows), name, mime: 'text/csv');
+/// تنزيل الكشف ملف Excel منسّقاً كالويب (`downloadSheetXlsx`): اسم المدرسة وشعارها، والعنوان
+/// وتفاصيله، ورأس ملوّن مثبّت، والأرقام أرقام فعلية.
+Future<void> downloadSheetXlsx(BuildContext context, SheetData sheet) {
+  final name = '${sheet.title.trim().replaceAll(RegExp(r'[\\/:*?"<>|]+'), '_').replaceAll(RegExp(r'\s+'), '_')}.xlsx';
+  final bytes = styledXlsx(
+    [
+      StyledSheet(
+        title: sheet.title,
+        details: [...sheet.meta, if (sheet.yearLabel.isNotEmpty) sheet.yearLabel],
+        headers: sheet.headers,
+        rows: sheet.rows,
+        landscape: sheet.landscape,
+      ),
+    ],
+    school: sheet.institution,
+    logo: sheet.logo,
+  );
+  return DocExport.download(context, bytes, name, mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }

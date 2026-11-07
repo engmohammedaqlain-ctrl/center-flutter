@@ -1451,7 +1451,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
       final sheet = await _monthAttendanceSheet();
       if (sheet == null || !mounted) return;
       if (excel) {
-        await downloadSheetCsv(context, sheet);
+        await downloadSheetXlsx(context, sheet);
       } else {
         await printSheet(context, sheet);
       }
@@ -2589,7 +2589,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                 locked: isGradeLocked(entry.rows.first.evaluationDate, _gradesLock),
                 onEditSheet: () => _openEvaluationForm(editing: entry.rows),
                 onPrint: () => printSheet(context, _evaluationSheet(entry.rows, nameOf)),
-                onExcel: () => downloadSheetCsv(context, _evaluationSheet(entry.rows, nameOf)),
+                onExcel: () => downloadSheetXlsx(context, _evaluationSheet(entry.rows, nameOf)),
               ),
           ],
         ),
