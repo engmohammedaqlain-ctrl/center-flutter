@@ -205,17 +205,6 @@ const features = <String, FeatureDef>{
   ),
 };
 
-/// لماذا المفتاح المختار غير فعّال: المتطلبات المعطّلة — `featureBlockers`.
-List<String> featureBlockers(String key, Object? raw) {
-  final state = resolveFeatures(raw);
-  final def = features[key]!;
-  return [
-    for (final dep in def.requires)
-      if (state[dep] != true) dep,
-    if (def.requiresAny.isNotEmpty && !def.requiresAny.any((dep) => state[dep] == true)) ...def.requiresAny,
-  ];
-}
-
 /// ما تغيّر في الاختيارات بين نسختين، سطر لكل مفتاح — `describeFeatureChanges`.
 List<String> describeFeatureChanges(Object? before, Object? after) {
   final a = selectedFeatures(before);
