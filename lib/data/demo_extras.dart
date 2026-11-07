@@ -196,7 +196,8 @@ Future<({int lessons, int attendanceDays, int leaves, int payrollRows})> seedDem
       final status = roll < 0.06 ? 'absent' : roll < 0.13 ? 'late' : 'present';
       final bySession = (t['pay_profile'] is Map && ((t['pay_profile'] as Map)['session_rate'] != null || (t['pay_profile'] as Map)['per_lesson'] == true)) ||
           t['contract_type'] == 'sessions';
-      final periods = bySession && status != 'absent' ? lessonsOf['${t['id']}']?[wd] : null;
+      final dayMap = lessonsOf['${t['id']}'];
+      final int? periods = (bySession && status != 'absent') ? (dayMap == null ? null : dayMap[wd]) : null;
       attendance.add({
         'id': staffAttendanceId('${t['id']}', _ymd(day)),
         'tenant_id': tenantId,
