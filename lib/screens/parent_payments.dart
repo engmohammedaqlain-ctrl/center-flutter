@@ -21,6 +21,29 @@ import '../widgets/widgets.dart';
 /// ولي الأمر يحوّل (بنك أو محفظة) ثم يرسل صورة الإشعار ومن حوّل وإلى أين والمبلغ.
 /// الطلب لا يمسّ حساب الطالب: المالية تراجعه، فإن قبلته صدر سند قبض عادي، وإن
 /// رفضته كتبت سبباً يراه هنا.
+/// نموذج «تسديد دفعة»: يعيد `true` إن أُرسل الطلب. يفتحه زر البوابة العائم وقسم الطلبات.
+Future<bool?> openPaymentRequestForm(
+  BuildContext context, {
+  required PortalUser user,
+  required double suggestedAmount,
+  required Color accent,
+  PortalService service = const PortalService(),
+  List<String> initialImages = const [],
+  List<PortalChild> siblings = const [],
+}) =>
+    Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => _PaymentRequestForm(
+          user: user,
+          suggestedAmount: suggestedAmount,
+          accent: accent,
+          service: service,
+          initialImages: initialImages,
+          siblings: siblings,
+        ),
+      ),
+    );
+
 class ParentPaymentsSection extends StatefulWidget {
   const ParentPaymentsSection({
     super.key,
@@ -94,17 +117,14 @@ class _ParentPaymentsSectionState extends State<ParentPaymentsSection> {
 
   Future<void> _openForm({List<String> initialImages = const []}) async {
     setState(() => sent = false);
-    final done = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => _PaymentRequestForm(
-          user: widget.user,
-          suggestedAmount: widget.suggestedAmount,
-          accent: widget.accent,
-          service: widget.service,
-          initialImages: initialImages,
-          siblings: widget.siblings,
-        ),
-      ),
+    final done = await openPaymentRequestForm(
+      context,
+      user: widget.user,
+      suggestedAmount: widget.suggestedAmount,
+      accent: widget.accent,
+      service: widget.service,
+      initialImages: initialImages,
+      siblings: widget.siblings,
     );
     if (done != true || !mounted) return;
     setState(() => sent = true);
@@ -126,20 +146,6 @@ class _ParentPaymentsSectionState extends State<ParentPaymentsSection> {
     return NColumn(
       gap: 12,
       children: [
-        Row(
-          children: [
-            if (widget.summary != null) Expanded(child: widget.summary!) else const Spacer(),
-            const SizedBox(width: 12),
-            NBtn(
-              tone: NBtnTone.sun,
-              small: true,
-              icon: Icons.send_rounded,
-              label: 'تسديد دفعة',
-              tooltip: 'تُحسب بعد مراجعة المالية للإشعار',
-              onTap: () => _openForm(),
-            ),
-          ],
-        ),
         if (sent)
           const NNotice(
             icon: Icons.check_rounded,
@@ -400,63 +406,19 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
       child: NPageScaffold(
         title: 'تسديد دفعة',
         footer: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            NBtn(label: 'إلغاء', onTap: busy ? null : () => Navigator.pop(context)),
-            const SizedBox(width: 8),
-            NBtn(
-              tone: NBtnTone.ink,
-              icon: Icons.send_rounded,
-              label: 'إرسال للمراجعة',
-              busy: busy,
-              onTap: _ready ? _submit : null,
+            Expanded(
+              child: NBtn(
+                tone: NBtnTone.ink,
+                label: 'إرسال للمراجعة',
+                expand: true,
+                busy: busy,
+                onTap: _ready ? _submit : null,
+              ),
             ),
           ],
         ),
         children: [
-          NField(
-            label: 'حوّل إلى',
-            hint: 'تُحسب الدفعة بعد مراجعة المالية للإشعار',
-            child: NColumn(
-              gap: 8,
-              children: [
-                if (methods.isNotEmpty)
-                  NFieldBox(
-                    trailing: Icons.keyboard_arrow_down_rounded,
-                    onTap: _pickMethod,
-                    child: Text(_method?.name ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
-                  )
-                else
-                  TextField(
-                    controller: channel,
-                    style: nText(14, weight: FontWeight.w500),
-                    decoration: nInputDecoration(hint: 'اسم البنك أو المحفظة'),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                // رقم الحساب أو المحفظة: يحوّل إليه ولي الأمر دون أن يسأل المدرسة عنه
-                if (account.isNotEmpty)
-                  Container(
-                    height: 48,
-                    padding: const EdgeInsetsDirectional.fromSTEB(14, 0, 6, 0),
-                    decoration: BoxDecoration(color: Noon.mist2, borderRadius: radius, border: Border.all(color: Noon.line)),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: SelectableText(
-                            account,
-                            textDirection: TextDirection.ltr,
-                            textAlign: TextAlign.right,
-                            style: nText(16, weight: FontWeight.w700),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        NBtn(small: true, icon: copied ? Icons.check_rounded : Icons.copy_rounded, label: copied ? 'نُسخ' : 'نسخ', onTap: _copyNumber),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ),
           if (_kids.length > 1)
             CheckboxListTile(
               dense: true,
@@ -509,35 +471,86 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
                 onChanged: (_) => setState(() {}),
               ),
             ),
-          ] else
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: NField(
-                  label: 'المبلغ (شيكل)',
-                  child: TextField(
+          ] else ...[
+            NField(
+              label: 'المبلغ',
+              child: NColumn(
+                gap: 10,
+                children: [
+                  TextField(
                     controller: amount,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    style: nText(14, weight: FontWeight.w500),
-                    decoration: nInputDecoration(),
+                    textAlign: TextAlign.center,
+                    style: nText(28, weight: FontWeight.w700),
+                    decoration: nInputDecoration(hint: '0').copyWith(suffixText: 'شيكل'),
                     onChanged: (_) => setState(() {}),
                   ),
-                ),
+                  if (widget.suggestedAmount > 0)
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(NoonRadius.btn),
+                        onTap: () => setState(() => amount.text = trimNum(widget.suggestedAmount)),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                          decoration: BoxDecoration(
+                            color: Noon.mist,
+                            borderRadius: BorderRadius.circular(NoonRadius.btn),
+                            border: Border.all(color: Noon.line),
+                          ),
+                          child: Text(
+                            'المستحق الآن ${trimNum(widget.suggestedAmount)} شيكل',
+                            style: nText(12, weight: FontWeight.w700, color: Noon.ink),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: NField(
-                  label: 'اسم المحوِّل',
-                  child: TextField(
-                    controller: sender,
+            ),
+          ],
+          NField(
+            label: 'حوّل إلى',
+            hint: 'تُحسب الدفعة بعد مراجعة المالية للإشعار',
+            child: NColumn(
+              gap: 8,
+              children: [
+                if (methods.isNotEmpty)
+                  NFieldBox(
+                    trailing: Icons.keyboard_arrow_down_rounded,
+                    onTap: _pickMethod,
+                    child: Text(_method?.name ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
+                  )
+                else
+                  TextField(
+                    controller: channel,
                     style: nText(14, weight: FontWeight.w500),
-                    decoration: nInputDecoration(),
+                    decoration: nInputDecoration(hint: 'اسم البنك أو المحفظة'),
                     onChanged: (_) => setState(() {}),
                   ),
-                ),
-              ),
-            ],
+                // رقم الحساب أو المحفظة: يحوّل إليه ولي الأمر دون أن يسأل المدرسة عنه
+                if (account.isNotEmpty)
+                  Container(
+                    height: 48,
+                    padding: const EdgeInsetsDirectional.fromSTEB(14, 0, 6, 0),
+                    decoration: BoxDecoration(color: Noon.mist2, borderRadius: radius, border: Border.all(color: Noon.line)),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: SelectableText(
+                            account,
+                            textDirection: TextDirection.ltr,
+                            textAlign: TextAlign.right,
+                            style: nText(16, weight: FontWeight.w700),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        NBtn(small: true, icon: copied ? Icons.check_rounded : Icons.copy_rounded, label: copied ? 'نُسخ' : 'نسخ', onTap: _copyNumber),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
           ),
           NField(
             label: 'صورة الإشعار',
@@ -608,14 +621,39 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
               },
             ),
           ),
-          NField(
-            label: 'تاريخ التحويل',
-            child: NFieldBox(
-              onTap: _pickDate,
-              trailing: Icons.calendar_today_outlined,
-              child: Text(date, textDirection: TextDirection.ltr, textAlign: TextAlign.right),
+          if (family)
+            NField(
+              label: 'تاريخ التحويل',
+              child: NFieldBox(
+                onTap: _pickDate,
+                trailing: Icons.calendar_today_outlined,
+                child: Text(date, textDirection: TextDirection.ltr, textAlign: TextAlign.right),
+              ),
+            )
+          else
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: NField(
+              label: 'اسم المحوِّل',
+              child: TextField(
+                controller: sender,
+                style: nText(14, weight: FontWeight.w500),
+                decoration: nInputDecoration(),
+                onChanged: (_) => setState(() {}),
+              ),
+            )),
+                const SizedBox(width: 12),
+                Expanded(child: NField(
+              label: 'تاريخ التحويل',
+              child: NFieldBox(
+                onTap: _pickDate,
+                trailing: Icons.calendar_today_outlined,
+                child: Text(date, textDirection: TextDirection.ltr, textAlign: TextAlign.right),
+              ),
+            )),
+              ],
             ),
-          ),
           NField(
             label: 'ملاحظة',
             child: TextField(

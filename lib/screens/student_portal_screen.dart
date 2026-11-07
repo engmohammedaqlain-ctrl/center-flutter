@@ -619,7 +619,10 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                 onPick: _switchChild,
               ),
             Expanded(
-              child: loading
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: loading
                   ? ListView(children: const [NLoading(text: 'جارٍ تحميل البيانات')])
                   : error != null
                       ? _ErrorBody(message: error!, onRetry: _load)
@@ -627,7 +630,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                           onRefresh: _load,
                           color: Noon.teal,
                           child: ListView(
-                            padding: const EdgeInsets.all(NoonSize.page),
+                            padding: EdgeInsets.fromLTRB(NoonSize.page, NoonSize.page, NoonSize.page, NoonSize.page + (_showPay ? 72 : 0)),
                             children: [
                               // الإعلان وشريط الملاحظة الجديدة يحملان فراغهما: لا فراغ حين يغيبان
                               ..._familyTop(),
@@ -662,6 +665,16 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                             ],
                           ),
                         ),
+                  ),
+                  if (_showPay)
+                    Positioned(
+                      left: 16,
+                      right: 16,
+                      bottom: 12,
+                      child: _payButton(),
+                    ),
+                ],
+              ),
             ),
             PortalBottomNav(
               items: _navItems,
@@ -925,6 +938,41 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
 
   // ── الرسوم ────────────────────────────────────────────────────────────────
 
+  /// الزر العائم يظهر لولي الأمر في تبويب الرسوم فقط: في متناول الإبهام أسفل الشاشة.
+  bool get _showPay => isParent && tab == 'financial' && !loading && error == null && data != null;
+
+  Widget _payButton() {
+    return Material(
+      color: Noon.action,
+      elevation: 6,
+      shadowColor: Colors.black.withValues(alpha: 0.25),
+      borderRadius: BorderRadius.circular(NoonRadius.btn + 4),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(NoonRadius.btn + 4),
+        onTap: () async {
+          final done = await openPaymentRequestForm(
+            context,
+            user: user,
+            suggestedAmount: data!.finance.currentDue,
+            accent: Noon.action,
+            siblings: [for (final c in user.children) if (c.id != user.id) c],
+          );
+          if (!mounted) return;
+          if (done == true) {
+            setState(() => _realtimeTick++);
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('أُرسل الطلب للمراجعة')));
+          }
+        },
+        child: SizedBox(
+          height: 52,
+          child: Center(
+            child: Text('تسديد دفعة', style: nText(16, weight: FontWeight.w700, color: Noon.onAction)),
+          ),
+        ),
+      ),
+    );
+  }
+
   List<Widget> _financialTab() {
     final f = data!.finance;
     final owes = f.currentDue > 0;
@@ -1139,82 +1187,97 @@ class _ChildBand extends StatelessWidget {
   final String? busyId;
   final ValueChanged<PortalChild> onPick;
 
+  /// الأبناء في ورقة سفلية: اسم كل ابن وصفه، والحالي معلَّم.
+  Future<void> _pick(BuildContext context) async {
+    final picked = await showModalBottomSheet<PortalChild>(
+      context: context,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Text('اختر الابن', style: nText(15, weight: FontWeight.w700)),
+              ),
+            ),
+            for (final k in kids)
+              ListTile(
+                leading: NInitial(name: k.name, on: k.id == currentId),
+                title: Text(k.name, style: nText(14, weight: FontWeight.w700)),
+                subtitle: [k.gradeLevel, k.section].where((s) => s.trim().isNotEmpty).isEmpty
+                    ? null
+                    : Text(
+                        [k.gradeLevel, if (k.section.trim().isNotEmpty) (k.section.startsWith('شعبة') ? k.section : 'شعبة ${k.section}')]
+                            .where((s) => s.trim().isNotEmpty)
+                            .join(' · '),
+                        style: nText(12, color: Noon.muted),
+                      ),
+                trailing: k.id == currentId ? Icon(Icons.check_rounded, color: Noon.teal) : null,
+                onTap: () => Navigator.pop(ctx, k),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (picked != null && picked.id != currentId) onPick(picked);
+  }
+
   @override
   Widget build(BuildContext context) {
     final many = kids.length > 1;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(color: Colors.white, border: Border(bottom: BorderSide(color: Noon.line))),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (many)
-            SizedBox(
-              height: 40,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: kids.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 8),
-                itemBuilder: (context, i) {
-                  final child = kids[i];
-                  final current = child.id == currentId;
-                  final radius = BorderRadius.circular(NoonRadius.btn);
-                  return Opacity(
-                    opacity: !current && busyId != null ? 0.6 : 1,
-                    child: Material(
-                      color: current ? Noon.mist : Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: radius, side: BorderSide(color: current ? Noon.teal : Noon.line)),
-                      child: InkWell(
-                        borderRadius: radius,
-                        onTap: current || busyId != null ? null : () => onPick(child),
-                        child: Padding(
-                          padding: const EdgeInsetsDirectional.only(start: 8, end: 16),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              NInitial(name: child.name, on: current),
-                              const SizedBox(width: 8),
-                              Text(
-                                busyId == child.id ? 'جارٍ الفتح' : child.shortName,
-                                style: nText(14, weight: FontWeight.w700),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
+    final switching = busyId != null;
+    // سطر واحد: الابن الحالي وصفه، ومن له أكثر من ابن يلمس السطر فتفتح قائمة الأبناء
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: many && !switching ? () => _pick(context) : null,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Noon.line))),
+          child: Row(
+            children: [
+              NInitial(name: studentName, size: 34, fontSize: 13),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      switching ? 'جارٍ فتح ملف الابن' : studentName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: nText(14, weight: FontWeight.w700, height: 1.2),
                     ),
-                  );
-                },
+                    if (details.isNotEmpty)
+                      Text(details, maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(11.5, color: Noon.muted)),
+                  ],
+                ),
               ),
-            )
-          else
-            Row(
-              children: [
-                NInitial(name: studentName, size: 36, fontSize: 14),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(studentName, maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(14, weight: FontWeight.w700)),
+              if (many) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(color: Noon.mist, borderRadius: BorderRadius.circular(NoonRadius.btn)),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('${kids.length} أبناء', style: nText(12, weight: FontWeight.w700, color: Noon.ink)),
+                      const SizedBox(width: 2),
+                      Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: Noon.ink),
+                    ],
+                  ),
                 ),
               ],
-            ),
-          if (many || details.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text.rich(
-              TextSpan(
-                children: [
-                  if (many) TextSpan(text: studentName, style: TextStyle(color: Noon.text)),
-                  if (many && details.isNotEmpty) const TextSpan(text: ' · '),
-                  TextSpan(text: details),
-                ],
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: nText(12, weight: FontWeight.w500, color: Noon.muted),
-            ),
-          ],
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }
