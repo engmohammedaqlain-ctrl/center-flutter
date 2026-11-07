@@ -2381,7 +2381,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                 textDirection: TextDirection.rtl,
                 child: Row(
                 children: [
-                    _weekArrow(Icons.chevron_right, () {
+                    _weekArrow(Icons.chevron_left, () {
                       setState(() => weekOffset--);
                       _loadMarks();
                     }),
@@ -2411,7 +2411,7 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                         ),
                       ),
                     ),
-                    _weekArrow(Icons.chevron_left, weekOffset >= 0 ? null : () {
+                    _weekArrow(Icons.chevron_right, weekOffset >= 0 ? null : () {
                       setState(() => weekOffset++);
                       _loadMarks();
                     }),

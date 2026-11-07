@@ -1180,8 +1180,8 @@ class NPageHeader extends StatelessWidget implements PreferredSizeWidget {
                   child: SizedBox(
                     width: 40,
                     height: 40,
-                    // سهم «رجوع» يشير لليمين في العربية (ArrowRight)
-                    child: Icon(Icons.arrow_forward_rounded, size: 18, color: Noon.onInk),
+                    // سهم «رجوع»: arrow_back ينقلب وحده في العربية فيشير لليمين
+                    child: Icon(Icons.arrow_back_rounded, size: 18, color: Noon.onInk),
                   ),
                 ),
               ),

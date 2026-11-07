@@ -89,7 +89,7 @@ class _OwnerTilesState<T> extends State<OwnerTiles<T>> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        collapsed.contains(g.owner) ? Icons.chevron_left : Icons.expand_more,
+                        collapsed.contains(g.owner) ? Icons.chevron_right : Icons.expand_more,
                         size: 16,
                         color: AppColors.muted,
                       ),

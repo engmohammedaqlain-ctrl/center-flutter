@@ -1022,7 +1022,7 @@ class _CoversTabState extends State<CoversTab> {
             children: [
               Row(
                 children: [
-                  IconButton(tooltip: 'السابق', icon: const Icon(Icons.chevron_right), onPressed: () => _shift(-1)),
+                  IconButton(tooltip: 'السابق', icon: const Icon(Icons.chevron_left), onPressed: () => _shift(-1)),
                   Expanded(
                     child: TextButton(
                       onPressed: () async {
@@ -1042,7 +1042,7 @@ class _CoversTabState extends State<CoversTab> {
                       child: Text('${dayNames[dayNumber]} $d'),
                     ),
                   ),
-                  IconButton(tooltip: 'التالي', icon: const Icon(Icons.chevron_left), onPressed: () => _shift(1)),
+                  IconButton(tooltip: 'التالي', icon: const Icon(Icons.chevron_right), onPressed: () => _shift(1)),
                 ],
               ),
               Row(

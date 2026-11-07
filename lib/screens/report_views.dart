@@ -355,9 +355,9 @@ class _AbsenceReportState extends State<_AbsenceReport> {
     return _body([
       _Bar(sheet: sheet, children: [
         Row(mainAxisSize: MainAxisSize.min, children: [
-          IconButton(tooltip: 'الشهر السابق', icon: const Icon(Icons.chevron_right), onPressed: () => setState(() => monthOffset--)),
+          IconButton(tooltip: 'الشهر السابق', icon: const Icon(Icons.chevron_left), onPressed: () => setState(() => monthOffset--)),
           Text(periodLabel, style: NoonText.style(12.5, weight: FontWeight.w700)),
-          IconButton(tooltip: 'الشهر التالي', icon: const Icon(Icons.chevron_left), onPressed: monthOffset >= 0 ? null : () => setState(() => monthOffset++)),
+          IconButton(tooltip: 'الشهر التالي', icon: const Icon(Icons.chevron_right), onPressed: monthOffset >= 0 ? null : () => setState(() => monthOffset++)),
         ]),
         _scopePick(store, grade: grade, sectionId: sectionId, view: view, onChanged: (g, s, v) => setState(() {
               grade = g;
@@ -1601,9 +1601,9 @@ class _StaffReportState extends State<_StaffReport> {
     return _body([
       _Bar(sheet: sheet, children: [
         Row(mainAxisSize: MainAxisSize.min, children: [
-          IconButton(tooltip: 'الشهر السابق', icon: const Icon(Icons.chevron_right), onPressed: () => setState(() => monthOffset--)),
+          IconButton(tooltip: 'الشهر السابق', icon: const Icon(Icons.chevron_left), onPressed: () => setState(() => monthOffset--)),
           Text(label, style: NoonText.style(12.5, weight: FontWeight.w700)),
-          IconButton(tooltip: 'الشهر التالي', icon: const Icon(Icons.chevron_left), onPressed: monthOffset >= 0 ? null : () => setState(() => monthOffset++)),
+          IconButton(tooltip: 'الشهر التالي', icon: const Icon(Icons.chevron_right), onPressed: monthOffset >= 0 ? null : () => setState(() => monthOffset++)),
         ]),
         _Search(onChanged: (v) => setState(() => q = v)),
       ]),

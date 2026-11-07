@@ -844,9 +844,9 @@ class _FamilyAnnouncementsCardState extends State<FamilyAnnouncementsCard> {
                       ),
                     ),
                     if (shown.length > 1) ...[
-                      arrow(Icons.chevron_right_rounded, 'السابق', () => setState(() => index = i == 0 ? shown.length - 1 : i - 1)),
+                      arrow(Icons.chevron_left_rounded, 'السابق', () => setState(() => index = i == 0 ? shown.length - 1 : i - 1)),
                       Text('${i + 1}/${shown.length}', style: nText(11, weight: FontWeight.w700, color: dim)),
-                      arrow(Icons.chevron_left_rounded, 'التالي', () => setState(() => index = (i + 1) % shown.length)),
+                      arrow(Icons.chevron_right_rounded, 'التالي', () => setState(() => index = (i + 1) % shown.length)),
                     ],
                     Tooltip(
                       message: 'إخفاء',
