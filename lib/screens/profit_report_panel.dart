@@ -11,6 +11,7 @@ import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../widgets/finance_documents.dart';
 import '../widgets/widgets.dart';
+import 'accounts_statement_sheet.dart';
 import 'year_close_sheet.dart';
 
 /// تبويب الأرباح في المالية — `ProfitReportPanel.tsx`: ربح الفترة شهراً شهراً،
@@ -267,6 +268,14 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
                   )
                 : const SizedBox.shrink(),
           ),
+          if (year != null) ...[
+            GhostButton(
+              label: 'كشف الحسابات',
+              icon: Icons.table_rows_outlined,
+              onPressed: () => showAccountsStatementSheet(context, store, year),
+            ),
+            const SizedBox(width: 6),
+          ],
           if (year != null && wallets != null && store.isAdminUser)
             GhostButton(
               label: wallets.stale ? 'أعد الإقفال' : (wallets.closed != null ? 'السنة مقفلة' : 'إقفال السنة'),
