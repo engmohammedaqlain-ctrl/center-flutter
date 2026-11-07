@@ -797,14 +797,17 @@ class NoonSheetChip extends StatelessWidget {
       onTap: onTap,
       child: Container(
         height: 36,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        // بلا alignment: وجوده يجعل الحاوية تملأ العرض فتصير كل شريحة سطراً كاملاً
         decoration: BoxDecoration(
           color: selected ? AdminNoon.ink : Colors.white,
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: selected ? AdminNoon.ink : AdminNoon.line),
         ),
-        child: Text(label, style: _t(12, FontWeight.w700, selected ? AdminNoon.onInk : AdminNoon.text)),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [Text(label, style: _t(12, FontWeight.w700, selected ? Colors.white : AdminNoon.text))],
+        ),
       ),
     );
   }
