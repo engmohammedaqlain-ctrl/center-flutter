@@ -22,6 +22,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/admin_tokens.dart';
 import '../widgets/admin_ui.dart';
+import '../widgets/ledger_row.dart';
 import '../widgets/custom_plan_rows.dart';
 import '../widgets/form_layout.dart';
 import '../widgets/panels.dart';
@@ -2142,106 +2143,75 @@ class _InstallmentTile extends StatelessWidget {
       ],
     );
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: payable
-            ? () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => PaymentFormScreen(studentId: student.id, installmentId: inst.id, amount: inst.remaining),
-                  ),
-                )
-            : null,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(inst.title, style: NoonText.style(12, weight: FontWeight.w700, color: AppColors.text)),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: bg,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: border),
-                    ),
-                    child: Text(
-                      badge,
-                      style: NoonText.style(10, weight: badge == 'مستحق' ? FontWeight.w700 : FontWeight.w600, color: fg),
-                    ),
-                  ),
-                ],
-              ),
-              if (inst.isExempt && inst.exemptReason.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text('إعفاء: ${inst.exemptReason}', style: NoonText.style(10, color: AppColors.muted)),
-                )
-              else if (!inst.isExempt && inst.discountAmount > cent)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text(
-                    'خصم ${money(inst.discountAmount)}${inst.discountReason.trim().isEmpty ? '' : ' — ${inst.discountReason.trim()}'}',
-                    style: NoonText.style(10, color: const Color(0xFF1D4ED8)),
-                  ),
-                ),
-              const SizedBox(height: 6),
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                spacing: 8,
-                runSpacing: 2,
-                children: [
-                  Text('استحقاق: ${noonDate(inst.dueDate)}', style: NoonText.style(11, color: AppColors.muted)),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      Text.rich(
-                        TextSpan(text: 'المطلوب: ', children: [amountText]),
-                        style: NoonText.style(11, color: AppColors.muted),
-                      ),
-                      if (!paid)
-                        Text(
-                          'المتبقي: ${money(inst.remaining)}',
-                          style: NoonText.style(11, weight: FontWeight.w700, color: const Color(0xFFDC2626)),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-              if (canAdjust)
-                Container(
-                  margin: const EdgeInsets.only(top: 6),
-                  padding: const EdgeInsets.only(top: 6),
-                  decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.hover))),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      if (!canDiscount && !canRemove)
-                        Text('—', style: NoonText.style(11, color: AppColors.lineStrong)),
-                      if (canDiscount)
-                        _MiniButton(
-                          label: 'خصم',
-                          onTap: () => _openInstallment(context, store, student, inst, canCollect: false, canAdjust: true, allowRemove: false),
-                        ),
-                      if (canDiscount && canRemove) const SizedBox(width: 6),
-                      if (canRemove)
-                        _MiniButton(
-                          label: 'حذف',
-                          color: const Color(0xFFDC2626),
-                          border: const Color(0xFFFECACA),
-                          onTap: () => _showInstallmentAdjustmentForm(context, store, inst, 'remove'),
-                        ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-        ),
+    final partial = !paid && inst.remaining < inst.amount - cent;
+    final tone = inst.isExempt
+        ? LedgerTone.neutral
+        : inst.isPaid
+            ? LedgerTone.paid
+            : future
+                ? LedgerTone.upcoming
+                : partial
+                    ? LedgerTone.partial
+                    : LedgerTone.due;
+    final icon = inst.isExempt
+        ? Icons.remove_rounded
+        : inst.isPaid
+            ? Icons.check_rounded
+            : future
+                ? Icons.schedule_rounded
+                : partial
+                    ? Icons.timelapse_rounded
+                    : Icons.priority_high_rounded;
+
+    return LedgerRow(
+      icon: icon,
+      tone: tone,
+      title: Text(inst.title),
+      subtitle: Text('استحقاق ${noonDate(inst.dueDate)}'),
+      amount: Text.rich(amountText),
+      badge: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4), border: Border.all(color: border)),
+        child: Text(badge, style: NoonText.style(10, weight: badge == 'مستحق' ? FontWeight.w700 : FontWeight.w600, color: fg)),
       ),
+      progress: partial && inst.amount > cent ? (inst.amount - inst.remaining) / inst.amount : null,
+      notes: [
+        if (inst.isExempt && inst.exemptReason.isNotEmpty)
+          Text('إعفاء: ${inst.exemptReason}', style: NoonText.style(10.5, color: AppColors.muted))
+        else if (!inst.isExempt && inst.discountAmount > cent)
+          Text(
+            'خصم ${money(inst.discountAmount)}${inst.discountReason.trim().isEmpty ? '' : ' — ${inst.discountReason.trim()}'}',
+            style: NoonText.style(10.5, color: const Color(0xFF1D4ED8)),
+          ),
+        if (!paid) Text('المتبقي ${money(inst.remaining)}', style: NoonText.style(11, weight: FontWeight.w700, color: const Color(0xFFDC2626))),
+      ],
+      onTap: payable
+          ? () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => PaymentFormScreen(studentId: student.id, installmentId: inst.id, amount: inst.remaining),
+                ),
+              )
+          : null,
+      footer: canAdjust && (canDiscount || canRemove)
+          ? Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                if (canDiscount)
+                  _MiniButton(
+                    label: 'خصم',
+                    onTap: () => _openInstallment(context, store, student, inst, canCollect: false, canAdjust: true, allowRemove: false),
+                  ),
+                if (canDiscount && canRemove) const SizedBox(width: 6),
+                if (canRemove)
+                  _MiniButton(
+                    label: 'حذف',
+                    color: const Color(0xFFDC2626),
+                    border: const Color(0xFFFECACA),
+                    onTap: () => _showInstallmentAdjustmentForm(context, store, inst, 'remove'),
+                  ),
+              ],
+            )
+          : null,
     );
   }
 }
@@ -2260,87 +2230,57 @@ class _PaymentTile extends StatelessWidget {
     final method = StoreScope.of(context).paymentMethodLabel(p.method);
     final reversed = p.reversedByPaymentId != null && p.reversedByPaymentId!.isNotEmpty;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    final color = p.cancelled
+        ? AppColors.faint
+        : p.amount < 0
+            ? const Color(0xFFB91C1C)
+            : const Color(0xFF16A34A);
+    return LedgerRow(
+      icon: Icons.receipt_long_outlined,
+      tone: p.cancelled
+          ? LedgerTone.cancelled
+          : p.amount < 0
+              ? LedgerTone.due
+              : LedgerTone.paid,
+      title: Text(p.receiptNumber, textDirection: TextDirection.ltr, textAlign: TextAlign.start),
+      subtitle: Text(
+        [noonDate(p.date), method, if (purpose.trim().isNotEmpty) purpose].join(' · '),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      amount: Text(
+        money(p.amount),
+        textDirection: TextDirection.ltr,
+        style: NoonText.style(14.5, weight: FontWeight.w700, color: color).copyWith(decoration: p.cancelled ? TextDecoration.lineThrough : null),
+      ),
+      badge: p.cancelled
+          ? Text('ملغى', style: NoonText.style(10.5, weight: FontWeight.w700, color: const Color(0xFFDC2626)))
+          : reversed
+              ? Text('معكوس', style: NoonText.style(10.5, weight: FontWeight.w700, color: const Color(0xFF9A4F05)))
+              : null,
+      footer: Row(
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(Icons.receipt_long_outlined, size: 14, color: AppColors.amber),
-              const SizedBox(width: 6),
-              Text(
-                p.receiptNumber,
-                textDirection: TextDirection.ltr,
-                style: NoonText.style(12, weight: FontWeight.w700, color: AppColors.heading),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(noonDate(p.date), style: NoonText.style(10, color: AppColors.muted)),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    money(p.amount),
-                    textDirection: TextDirection.ltr,
-                    style: NoonText.style(
-                      12,
-                      weight: FontWeight.w700,
-                      color: p.cancelled
-                          ? AppColors.faint
-                          : p.amount < 0
-                              ? const Color(0xFFB91C1C)
-                              : const Color(0xFF16A34A),
-                    ).copyWith(decoration: p.cancelled ? TextDecoration.lineThrough : null),
-                  ),
-                  if (p.cancelled)
-                    Text('ملغى', style: NoonText.style(10, color: const Color(0xFFDC2626)))
-                  else if (reversed)
-                    Text('معكوس', style: NoonText.style(10, color: const Color(0xFF9A4F05))),
-                ],
-              ),
-            ],
+          _MiniButton(
+            label: 'معاينة',
+            icon: Icon(Icons.visibility_outlined, size: 12, color: AppColors.heading),
+            color: AppColors.heading,
+            weight: FontWeight.w700,
+            fontSize: 10,
+            onTap: () => ReceiptScreen.open(context, p),
           ),
-          Container(
-            margin: const EdgeInsets.only(top: 6),
-            padding: const EdgeInsets.only(top: 4),
-            decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.hover))),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    [method, if (purpose.trim().isNotEmpty) purpose].join(' • '),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: NoonText.style(11, color: AppColors.muted),
-                  ),
-                ),
-                _MiniButton(
-                  label: 'معاينة',
-                  icon: Icon(Icons.visibility_outlined, size: 12, color: AppColors.heading),
-                  color: AppColors.heading,
-                  weight: FontWeight.w700,
-                  fontSize: 10,
-                  onTap: () => ReceiptScreen.open(context, p),
-                ),
-                if (!p.cancelled) ...[
-                  const SizedBox(width: 4),
-                  _MiniButton(
-                    label: 'واتساب',
-                    icon: const MessageCircleIcon(color: Color(0xFF16A34A), size: 12),
-                    color: const Color(0xFF16A34A),
-                    background: const Color(0xFFDCFCE7),
-                    border: const Color(0xFF86EFAC),
-                    weight: FontWeight.w700,
-                    fontSize: 10,
-                    onTap: () => ReceiptScreen.sendWhatsApp(context, p, student),
-                  ),
-                ],
-              ],
+          if (!p.cancelled) ...[
+            const SizedBox(width: 6),
+            _MiniButton(
+              label: 'واتساب',
+              icon: const MessageCircleIcon(color: Color(0xFF16A34A), size: 12),
+              color: const Color(0xFF16A34A),
+              background: const Color(0xFFDCFCE7),
+              border: const Color(0xFF86EFAC),
+              weight: FontWeight.w700,
+              fontSize: 10,
+              onTap: () => ReceiptScreen.sendWhatsApp(context, p, student),
             ),
-          ),
+          ],
         ],
       ),
     );
