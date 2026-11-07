@@ -227,7 +227,11 @@ class PortalBranding {
     this.grading = GradingSettings.empty,
     this.gradeDeadlines = const [],
     this.calendar = const [],
+    this.weekend = const [5],
   });
+
+  /// أيام العطلة الأسبوعية (`settings.weekend`).
+  final List<int> weekend;
 
   /// العطل والامتحانات (`settings.calendar`): شريط القريب للأسرة، ولا رصد في العطلة.
   final List<CalendarEvent> calendar;
@@ -1353,6 +1357,7 @@ class PortalService {
       grading: app.grading,
       gradeDeadlines: app.followup.gradeDeadlines,
       calendar: app.calendar,
+      weekend: app.weekend,
     );
   }
 

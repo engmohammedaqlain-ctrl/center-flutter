@@ -65,24 +65,24 @@ List<String> reportGrades(AppStore store) {
 }
 
 /// أيام دوام الشهر (بلا الجمعة).
-List<String> monthSchoolDays(String month) {
+List<String> monthSchoolDays(String month, {List<int> weekend = const [5]}) {
   final y = int.parse(month.substring(0, 4)), m = int.parse(month.substring(5, 7));
   final last = DateTime(y, m + 1, 0).day;
   return [
     for (var d = 1; d <= last; d++)
-      if (DateTime(y, m, d).weekday != DateTime.friday) '$month-${d.toString().padLeft(2, '0')}',
+      if (!isWeekendDay(DateTime(y, m, d), weekend)) '$month-${d.toString().padLeft(2, '0')}',
   ];
 }
 
 /// أيام الدوام بين تاريخين شاملين (بلا الجمعة).
-List<String> schoolDaysBetween(String from, String to) {
+List<String> schoolDaysBetween(String from, String to, {List<int> weekend = const [5]}) {
   final out = <String>[];
   if (from.isEmpty || to.isEmpty || to.compareTo(from) < 0) return out;
   var d = DateTime.parse(from);
   for (var guard = 0; guard < 400; guard++) {
     final iso = isoDate(d);
     if (iso.compareTo(to) > 0) break;
-    if (d.weekday != DateTime.friday) out.add(iso);
+    if (!isWeekendDay(d, weekend)) out.add(iso);
     d = d.add(const Duration(days: 1));
   }
   return out;

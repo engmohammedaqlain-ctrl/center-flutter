@@ -8,6 +8,7 @@ import '../data/attendance_days.dart';
 import '../data/balance.dart';
 import '../data/followup.dart';
 import '../data/phone.dart';
+import '../data/school_backups.dart';
 import '../data/school_calendar.dart';
 import '../data/school_options.dart';
 import '../data/staff.dart';
@@ -113,6 +114,9 @@ class _HomeState extends State<_Home> {
   Timer? _debounce;
   List<_Uncovered> uncovered = const [];
   int leaveRequests = 0;
+
+  /// آخر نسخة يومية فشلت أو تأخرت — `dailyBackupProblem`.
+  String? backupIssue;
   bool _stale = false;
 
   @override
@@ -163,6 +167,12 @@ class _HomeState extends State<_Home> {
   /// المعلم الغائب أو المُجاز اليوم: شعبه بلا معلم، تحتاج بديلاً.
   Future<void> _loadStaff(AppStore store) async {
     if (!store.isAdminUser) return;
+    final tenant = store.tenantId;
+    if (tenant != null && !store.isStaffSession) {
+      dailyBackupProblem(tenant).then((issue) {
+        if (mounted) setState(() => backupIssue = issue);
+      }).catchError((Object _) {});
+    }
     final today = isoDate(DateTime.now());
     final r = await Future.wait([StaffService.days(today, today), StaffService.leaves()]);
     if (!mounted) return;
@@ -276,6 +286,7 @@ class _HomeState extends State<_Home> {
       if (d.lateGrading > 0) ('رصد متأخر', '${d.lateGrading} معلم', () => widget.onReport('completion')),
       if (approvals > 0) ('علامات بانتظار الاعتماد', '$approvals', () => widget.onSection('evaluations')),
       if (leaveRequests > 0) ('طلبات إجازة', '$leaveRequests', () => widget.onSection('attendance')),
+      if (backupIssue != null) ('النسخة اليومية', backupIssue!, () => widget.onSection('settings')),
       if (showFinance && d.financeRequests > 0) ('طلبات موافقة', '${d.financeRequests}', () => widget.onSection('finance')),
     ];
 
@@ -424,6 +435,12 @@ class _HomeState extends State<_Home> {
             count: d.chronic.length,
             hint: 'غاب ${store.settings.followup.chronicPercent.round()}% فأكثر من أيام آخر 30 يوماً',
           ),
+        if (!store.settings.dashboardHidden.contains('upcoming') &&
+            upcomingEvents(store.settings.calendar, isoDate(DateTime.now())).isNotEmpty)
+          card('قادم', [
+            for (final e in upcomingEvents(store.settings.calendar, isoDate(DateTime.now())).take(4))
+              row(e.title, calendarKindLabels[e.kind] ?? '', eventRange(e)),
+          ]),
         if (needs.isEmpty && uncovered.isEmpty && d.birthdays.isEmpty && d.chronic.isEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 24),

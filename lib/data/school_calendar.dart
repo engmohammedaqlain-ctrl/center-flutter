@@ -62,6 +62,9 @@ extension SchoolCalendarSettings on AppSettings {
   }
 }
 
+/// عطلة أسبوعية؟ `weekend` بترقيم JavaScript، وDart يعدّ الأحد 7.
+bool isWeekendDay(DateTime d, List<int> weekend) => weekend.contains(d.weekday % 7);
+
 CalendarEvent? holidayEventOn(Iterable<CalendarEvent> events, String date) {
   for (final e in events) {
     if (e.kind == 'holiday' && e.from.compareTo(date) <= 0 && date.compareTo(e.to) <= 0) return e;

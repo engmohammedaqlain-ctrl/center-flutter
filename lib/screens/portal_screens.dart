@@ -1360,13 +1360,14 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   }
 
   /// أيام دوام شهر [month] (yyyy-MM)، عدا الجمعة؛ [untilToday] يقطعها عند اليوم.
-  static List<String> _monthSchoolDays(String month, {bool untilToday = false}) {
+  List<String> _monthSchoolDays(String month, {bool untilToday = false}) {
+    final weekend = data?.branding.weekend ?? const [5];
     final parts = month.split('-');
     final y = int.parse(parts[0]), m = int.parse(parts[1]);
     final today = isoDate(DateTime.now());
     return [
       for (var d = DateTime(y, m, 1); d.month == m; d = d.add(const Duration(days: 1)))
-        if (d.weekday != DateTime.friday && (!untilToday || isoDate(d).compareTo(today) <= 0)) isoDate(d),
+        if (!isWeekendDay(d, weekend) && (!untilToday || isoDate(d).compareTo(today) <= 0)) isoDate(d),
     ];
   }
 

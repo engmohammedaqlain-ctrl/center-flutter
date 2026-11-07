@@ -6,6 +6,7 @@ import '../data/followup.dart';
 import '../data/phone.dart';
 import '../data/portal_usage.dart';
 import '../data/reports_data.dart';
+import '../data/school_calendar.dart';
 import '../data/staff.dart';
 import '../data/store.dart';
 import '../models/models.dart';
@@ -325,7 +326,7 @@ class _AbsenceReportState extends State<_AbsenceReport> {
     final now = DateTime.now();
     final m = DateTime(now.year, now.month + monthOffset, 1);
     final month = isoDate(m).substring(0, 7);
-    final days = monthSchoolDays(month);
+    final days = monthSchoolDays(month, weekend: store.settings.weekend);
     final periodLabel = '${_monthNames[m.month - 1]} ${m.year}';
     final sections = _memo.get('$month|$grade', () => attendanceBySection(store, groupBySection(store, grade: grade), days.first, days.last));
     final scoped = [for (final s in sections) if (sectionId.isEmpty || s.group.room.id == sectionId) s];

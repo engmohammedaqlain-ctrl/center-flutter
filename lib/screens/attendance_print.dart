@@ -5,6 +5,7 @@ import 'package:pdf/widgets.dart' as pw;
 import '../data/phone.dart';
 import '../data/doc_export.dart';
 import '../data/printing.dart';
+import '../data/school_calendar.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../widgets/widgets.dart';
@@ -295,11 +296,11 @@ SheetData attendanceSheet({
 }
 
 /// أيام دوام شهر التاريخ [date]، عدا الجمعة.
-List<String> schoolDaysOfMonth(String date) {
+List<String> schoolDaysOfMonth(String date, {List<int> weekend = const [5]}) {
   final y = int.parse(date.substring(0, 4)), m = int.parse(date.substring(5, 7));
   return [
     for (var d = DateTime(y, m, 1); d.month == m; d = d.add(const Duration(days: 1)))
-      if (d.weekday != DateTime.friday) isoDate(d),
+      if (!isWeekendDay(d, weekend)) isoDate(d),
   ];
 }
 
@@ -355,7 +356,7 @@ Future<void> showAttendanceExport(
     store: store,
     title: title,
     periodLabel: isMonth ? '$monthName ${day.substring(0, 4)}' : '${week.first.shortDate} - ${week.last.shortDate}',
-    days: isMonth ? schoolDaysOfMonth(day) : [for (final d in week) d.dateStr],
+    days: isMonth ? schoolDaysOfMonth(day, weekend: store.settings.weekend) : [for (final d in week) d.dateStr],
     students: students,
     ownerId: ownerId,
   );

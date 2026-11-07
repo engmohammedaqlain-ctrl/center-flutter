@@ -999,6 +999,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   // ── المصروفات وأجور المعلمين ──────────────────────────────────────────────
 
+  /// حساب مختار من مربعات المصروفات: السجل يعرض حركته وحده.
+  String spendMethod = '';
+
   /// سجل موحّد للمصروفات وأجور المعلمين في الفترة، مرتّب بالتاريخ تنازلياً —
   /// نفس دمج القائمتين في جدول واحد في Finance.tsx. اختيار معلم يقصره على ما صُرف له.
   ({Widget? toolbar, List<Widget> slivers}) _expenses(AppStore store, String q) {
@@ -1043,13 +1046,37 @@ class _FinanceScreenState extends State<FinanceScreen> {
           voucher: ExpenseVoucher.fromPayout(p, fallbackName: store.teacherById(p.teacherId)?.name ?? ''),
         ),
     ]..sort((a, b) => b.date.compareTo(a.date));
+    // المصروف من كل حساب أو محفظة — `MethodTotals`
+    final spentBy = <String, ({double amount, int count})>{};
+    for (final r in all) {
+      if (r.voucher.isCancelled) continue;
+      final prev = spentBy[r.method] ?? (amount: 0.0, count: 0);
+      spentBy[r.method] = (amount: prev.amount + r.amount, count: prev.count + 1);
+    }
+    final methodRows = spentBy.entries.toList()..sort((a, b) => b.value.amount.compareTo(a.value.amount));
+    final byAccount = spendMethod.isEmpty ? all : all.where((r) => r.method == spendMethod).toList();
     final rows = q.isEmpty
-        ? all
-        : all.where((r) => r.description.toLowerCase().contains(q) || r.category.toLowerCase().contains(q)).toList();
+        ? byAccount
+        : byAccount.where((r) => r.description.toLowerCase().contains(q) || r.category.toLowerCase().contains(q)).toList();
 
     return (
       toolbar: _toolbar(hint: 'ابحث في البيان', shown: rows.length, total: all.length, store: store),
       slivers: _listSlivers(
+        header: methodRows.isEmpty
+            ? null
+            : _MethodTotals(
+                rows: [
+                  for (final m in methodRows)
+                    (
+                      id: m.key,
+                      label: m.key.isEmpty ? 'بلا طريقة' : store.paymentMethodLabel(m.key),
+                      amount: m.value.amount,
+                      count: m.value.count,
+                    ),
+                ],
+                selected: spendMethod,
+                onTap: (id) => setState(() => spendMethod = spendMethod == id ? '' : id),
+              ),
         items: rows,
         emptyMessage: 'لا مصروفات',
         groupOf: (r) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/phone.dart';
 import '../data/staff.dart';
+import '../data/school_calendar.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -35,7 +36,7 @@ List<SchoolDay> _schoolMonth(int offset) {
   final today = isoDate(now);
   return [
     for (var d = first; !d.isAfter(last); d = d.add(const Duration(days: 1)))
-      if (d.weekday != DateTime.friday)
+      if (!isWeekendDay(d, AppStore.instance.settings.weekend))
         SchoolDay(date: d, dateStr: isoDate(d), dayName: _dayNames[d.weekday - 1], shortDate: '${d.day}/${d.month}', isToday: isoDate(d) == today),
   ];
 }
@@ -220,7 +221,7 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
       label = '${_dayNames[d.weekday - 1]} ${_dm(date)}';
       DateTime shift(int by) {
         var x = d.add(Duration(days: by));
-        if (x.weekday == DateTime.friday) x = x.add(Duration(days: by)); // لا دوام الجمعة
+        if (isWeekendDay(x, AppStore.instance.settings.weekend)) x = x.add(Duration(days: by)); // لا دوام الجمعة
         return x;
       }
 
