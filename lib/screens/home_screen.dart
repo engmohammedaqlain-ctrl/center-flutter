@@ -1,13 +1,14 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../data/attendance_days.dart';
-import '../data/balance.dart';
+import '../data/dashboard_stats.dart';
 import '../data/followup.dart';
 import '../data/phone.dart';
+import '../data/portal_usage.dart';
 import '../data/school_backups.dart';
 import '../data/school_calendar.dart';
 import '../data/school_options.dart';
@@ -19,12 +20,51 @@ import '../widgets/admin_tokens.dart';
 import '../widgets/admin_ui.dart';
 import '../widgets/table_gate.dart';
 import '../widgets/widgets.dart';
+import 'announcement_sheet.dart';
 import 'finance_screen.dart' show financeAgingRequest;
 import 'student_detail_screen.dart';
 import 'teacher_detail_screen.dart';
 
-const _red = Color(0xFFBA1A1A);
-const _green = Color(0xFF16A34A);
+/// ألوان الحالات نفسها في البطاقات والرسوم: حاضر أخضر، مأذون عنبري، غائب أحمر — `C`.
+const _present = Color(0xFF16A34A);
+const _excused = Color(0xFFD97706);
+const _absent = Color(0xFFBA1A1A);
+const _empty = Color(0xFFE2E8F0);
+const _spent = Color(0xFF475569);
+const _tealC = Color(0xFF0F766E);
+const _parent = Color(0xFF0F766E);
+const _studentC = Color(0xFF7DD3C0);
+
+const _periods = [('1', 'اليوم'), ('7', 'الأسبوع'), ('30', 'الشهر')];
+const _vs = {'1': 'عن آخر يوم', '7': 'عن الأسبوع السابق', '30': 'عن الشهر السابق'};
+const _chartLabels = {
+  'attendance': 'الحضور',
+  'absent': 'الغياب',
+  'collected': 'التحصيل',
+  'expenses': 'المصروفات',
+  'enrolled': 'التسجيل',
+  'usage': 'الدخول',
+};
+const _chartColors = {
+  'attendance': _present,
+  'absent': _absent,
+  'collected': _present,
+  'expenses': _spent,
+  'enrolled': _tealC,
+  'usage': _parent,
+};
+const _weekdays = ['الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد'];
+const _months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+
+String _dayTitle(DateTime d) => '${_weekdays[d.weekday - 1]} ${d.day} ${_months[d.month - 1]}';
+String _dm(String date) => '${int.parse(date.substring(8))}/${int.parse(date.substring(5, 7))}';
+
+/// فرق بإشارة: «▲ 3%»، أو «بلا تغيير» — `delta`.
+String? _delta(num? now, num? before, String unit) {
+  if (now == null || before == null) return null;
+  final d = (now - before).round();
+  return d == 0 ? 'بلا تغيير' : '${d > 0 ? '▲' : '▼'} ${d.abs()}$unit';
+}
 
 class _Birthday {
   const _Birthday({required this.id, required this.student, required this.name, required this.sub, required this.age, required this.phone});
@@ -45,38 +85,19 @@ class _Uncovered {
   final List<String> classes;
 }
 
-class _HomeData {
-  const _HomeData({
-    required this.marked,
-    required this.present,
-    required this.absentToday,
-    required this.collectedMonth,
-    required this.expectedMonth,
-    required this.overdue,
-    required this.alerts,
-    required this.lateGrading,
-    required this.financeRequests,
-    required this.chronic,
-    required this.birthdays,
-  });
+/// سطر «يحتاج تدخلاً»: بتفاصيل ينفتح في مكانه، وبلا تفاصيل ينقل مباشرة — `PendingItem`.
+class _Pending {
+  const _Pending({required this.label, required this.value, this.onTap, this.details, this.open});
 
-  final int marked;
-  final int present;
-  final int absentToday;
-  final double collectedMonth;
-  final double expectedMonth;
-  final double overdue;
-  final int alerts;
-  /// المعلمون المتأخرون عن مواعيد الرصد — المدير يتابع أشخاصاً كالويب.
-  final int lateGrading;
-  final int financeRequests;
-  final List<({Student student, int days})> chronic;
-  final List<_Birthday> birthdays;
+  final String label;
+  final String value;
+  final VoidCallback? onTap;
+  final List<({String label, String sub, String value, VoidCallback onTap})>? details;
+  final ({String label, VoidCallback onTap})? open;
 }
 
-/// الرئيسية — مطابق لما في `Dashboard.tsx` مما يخص الجوال: حضور اليوم، والتحصيل بنسبة الشهر
-/// من المتوقع، والمتأخرات، و«يحتاج تدخلاً»، و«شعب بلا معلم اليوم»، و«أعياد ميلاد اليوم»،
-/// و«الأكثر غياباً» بعدد أيامه. الحساب عند الفتح ثم بتجميع ثانيتين، والسحابي يُجلب مرة.
+/// الرئيسية — `Dashboard.tsx` بتصميم الجوال: بطاقة اليوم، والفترة والمرحلة، وبطاقات الأرقام،
+/// و«يحتاج تدخلاً»، والرسم لآخر 30 يوماً وحلقة الحضور، ثم التفاصيل. الحساب عند الفتح ثم بتجميع ثانيتين.
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key, required this.onSection, required this.onReport, required this.active});
 
@@ -101,7 +122,6 @@ class _Home extends StatefulWidget {
   const _Home({required this.onSection, required this.onReport, required this.active});
 
   final ValueListenable<bool> active;
-
   final ValueChanged<String> onSection;
   final ValueChanged<String> onReport;
 
@@ -111,14 +131,23 @@ class _Home extends StatefulWidget {
 
 class _HomeState extends State<_Home> {
   AppStore? _store;
-  _HomeData? data;
+  DashboardStats? stats;
   Timer? _debounce;
+  bool _stale = false;
+
+  // كل فتح يبدأ باليوم وبالمدرسة كلها: اللوحة للمتابعة اليومية
+  String period = '1';
+  String grade = '';
+  String chart = 'attendance';
+  bool allAbsent = false;
+  bool allChronic = false;
+  final _openPending = <String>{};
+
   List<_Uncovered> uncovered = const [];
   int leaveRequests = 0;
-
-  /// آخر نسخة يومية فشلت أو تأخرت — `dailyBackupProblem`.
+  ({int absent, int late, int onLeave}) staff = (absent: 0, late: 0, onLeave: 0);
   String? backupIssue;
-  bool _stale = false;
+  List<({String day, String role, int users})>? usage;
 
   @override
   void initState() {
@@ -130,7 +159,7 @@ class _HomeState extends State<_Home> {
     if (!widget.active.value || !mounted) return;
     if (_stale) {
       _stale = false;
-      setState(() => data = _compute(_store!));
+      setState(_recompute);
     }
     unawaited(_loadStaff(_store!));
   }
@@ -142,8 +171,13 @@ class _HomeState extends State<_Home> {
     if (_store == store) return;
     _store?.removeListener(_onStore);
     _store = store..addListener(_onStore);
-    data = _compute(store);
+    _recompute();
     unawaited(_loadStaff(store));
+    if (store.isAdminUser) {
+      usageDaily(30).then((v) {
+        if (mounted) setState(() => usage = v);
+      }).catchError((Object _) {});
+    }
   }
 
   @override
@@ -161,11 +195,37 @@ class _HomeState extends State<_Home> {
     }
     _debounce?.cancel();
     _debounce = Timer(const Duration(seconds: 2), () {
-      if (mounted) setState(() => data = _compute(_store!));
+      if (mounted) setState(_recompute);
     });
   }
 
-  /// المعلم الغائب أو المُجاز اليوم: شعبه بلا معلم، تحتاج بديلاً.
+  void _recompute() {
+    final store = _store!;
+    stats = buildDashboard(
+      today: isoDate(DateTime.now()),
+      students: store.students,
+      rooms: store.roomsInViewedYear,
+      sessions: store.sessions,
+      attendance: store.attendance,
+      installments: store.installments,
+      payments: store.payments,
+      expenses: store.can('finance.expenses') ? store.expenses : const [],
+      calendar: store.settings.calendar,
+      days: int.parse(period),
+      grade: grade,
+      chronicPercent: store.settings.followup.chronicPercent,
+    );
+  }
+
+  void _update({String? period, String? grade}) {
+    setState(() {
+      if (period != null) this.period = period;
+      if (grade != null) this.grade = grade;
+      _recompute();
+    });
+  }
+
+  /// المعلم الغائب أو المُجاز اليوم: شعبه بلا معلم، وأعداد الموظفين اليوم.
   Future<void> _loadStaff(AppStore store) async {
     if (!store.isAdminUser) return;
     final tenant = store.tenantId;
@@ -183,6 +243,11 @@ class _HomeState extends State<_Home> {
     final away = {for (final d in days) if (d.status == 'absent') d.teacherId, for (final l in onLeave) l.teacherId};
     setState(() {
       leaveRequests = leaves.where((l) => l.status == 'pending').length;
+      staff = (
+        absent: days.where((d) => d.status == 'absent').length,
+        late: days.where((d) => d.status == 'late').length,
+        onLeave: onLeave.length,
+      );
       uncovered = [
         for (final t in store.teachersInViewedYear)
           if (away.contains(t.id))
@@ -201,49 +266,11 @@ class _HomeState extends State<_Home> {
     });
   }
 
-  _HomeData _compute(AppStore store) {
-    final now = DateTime.now();
-    final today = isoDate(now);
-    final month = today.substring(0, 7);
-    final active = store.students.where((s) => s.status == 'active').toList();
-
-    // حضور اليوم ومن غاب في آخر 30 يوماً: يوم واحد لكل طالب
-    final since = isoDate(now.subtract(const Duration(days: 30)));
-    final sessions = store.sessions.where((s) => s.sessionDate.compareTo(since) >= 0 && s.sessionDate.compareTo(today) <= 0).toList();
-    final ids = {for (final s in sessions) s.id};
-    final byStudent = <String, List<AttendanceMark>>{};
-    for (final a in store.attendance) {
-      if (ids.contains(a.sessionId)) byStudent.putIfAbsent(a.studentId, () => []).add(a);
-    }
-    var marked = 0, present = 0, absentToday = 0;
-    final chronicPct = store.settings.followup.chronicPercent;
-    final chronic = <({Student student, int days})>[];
-    for (final s in active) {
-      final days = dailyAttendance(byStudent[s.id] ?? const [], sessions, calendar: store.settings.calendar);
-      final t = days.where((d) => d.date == today).firstOrNull;
-      if (t != null) {
-        marked++;
-        if (t.status == 'present') present++;
-        if (t.status == 'absent') absentToday++;
-      }
-      final absent = days.where((d) => d.status == 'absent').length;
-      // الغياب المزمن: نسبة من الأيام المرصودة في آخر 30 يوماً
-      if (days.length >= 5 && absent / days.length * 100 >= chronicPct) chronic.add((student: s, days: absent));
-    }
-    chronic.sort((a, b) => b.days - a.days);
-
-    final collected = store.payments
-        .where((p) => !p.cancelled && isoDate(p.date).startsWith(month))
-        .fold<double>(0, (n, p) => n + p.amount);
-    final expected = store.installments
-        .where((i) => isoDate(i.dueDate).startsWith(month))
-        .fold<double>(0, (n, i) => n + i.amount);
-    final overdue = store.installments.where((i) => isInstallmentDue(i)).fold<double>(0, (n, i) => n + unpaidOf(i));
-
-    final md = today.substring(5);
-    final birthdays = [
-      for (final s in active)
-        if (s.birthDate.length >= 10 && s.birthDate.substring(5, 10) == md)
+  List<_Birthday> _birthdays(AppStore store, DateTime now) {
+    final md = isoDate(now).substring(5);
+    return [
+      for (final s in store.students)
+        if (s.status == 'active' && s.birthDate.length >= 10 && s.birthDate.substring(5, 10) == md)
           _Birthday(
             id: s.id,
             student: true,
@@ -256,169 +283,558 @@ class _HomeState extends State<_Home> {
         if (t.birthDate.length >= 10 && t.birthDate.substring(5, 10) == md)
           _Birthday(id: t.id, student: false, name: t.name, sub: t.jobTitle.trim().isEmpty ? 'معلم' : t.jobTitle.trim(), age: 0, phone: t.phone),
     ];
-
-    final completion = loadCompletion(store).rows;
-    return _HomeData(
-      marked: marked,
-      present: present,
-      absentToday: absentToday,
-      collectedMonth: collected,
-      expectedMonth: expected,
-      overdue: overdue,
-      alerts: loadAbsenceAlerts(store).length,
-      lateGrading: {for (final r in completion) if (r.late > 0) r.teacherId}.length,
-      financeRequests: store.pendingFinanceRequests.length,
-      chronic: chronic,
-      birthdays: birthdays,
-    );
   }
 
   void _push(Widget page) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
 
-  @override
-  Widget build(BuildContext context) {
-    final store = StoreScope.of(context);
-    final d = data!;
-    final showFinance = store.can('finance');
-    final rate = d.marked == 0 ? null : (d.present / d.marked * 100).round();
-    final approvals = store.can('evaluations') ? store.pendingApprovals.length : 0;
-    // طلاب عليهم قسط مضى على موعده أكثر من 60 يوماً — `longOverdue`
-    final now = DateTime.now();
-    final longCut = DateTime(now.year, now.month, now.day - 60);
-    final activeIds = {
-      for (final s in store.studentsInViewedYear)
-        if (s.status == 'active') s.id,
-    };
-    final longOverdue = showFinance
-        ? {
-            for (final i in store.installments)
-              if (activeIds.contains(i.studentId) && unpaidOf(i) > 0 && i.dueDate.isBefore(longCut)) i.studentId,
-          }.length
-        : 0;
-    final needs = <(String, String, VoidCallback)>[
-      if (d.alerts > 0) ('إنذارات غياب لم تُرسل', '${d.alerts}', () => widget.onReport('alerts')),
-      if (d.lateGrading > 0) ('رصد متأخر', '${d.lateGrading} معلم', () => widget.onReport('completion')),
-      if (approvals > 0) ('علامات بانتظار الاعتماد', '$approvals', () => widget.onSection('evaluations')),
-      if (leaveRequests > 0) ('طلبات إجازة', '$leaveRequests', () => widget.onSection('attendance')),
-      if (backupIssue != null) ('النسخة اليومية', backupIssue!, () => widget.onSection('settings')),
-      if (showFinance && d.financeRequests > 0) ('طلبات موافقة', '${d.financeRequests}', () => widget.onSection('finance')),
-      if (longOverdue > 0)
-        ('متأخرون +60 يوم', '$longOverdue طالب', () {
-          financeAgingRequest.value = '60';
-          widget.onSection('finance');
-        }),
-    ];
+  // ── لبنات العرض ──
 
-    Widget card(String title, List<Widget> children, {int? count, String? hint}) => Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: AppCard(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(children: [
-                  Expanded(
-                    child: Tooltip(
-                      message: hint ?? '',
-                      child: Text(title, style: NoonText.style(13, weight: FontWeight.w700)),
-                    ),
-                  ),
-                  if (count != null) Text('$count', style: NoonText.style(12, weight: FontWeight.w700, color: AdminNoon.muted)),
-                ]),
-                const SizedBox(height: 4),
-                ...children,
-              ],
-            ),
-          ),
-        );
-    Widget row(String label, String sub, String value, {Color? color, VoidCallback? onTap, Widget? trailing}) => InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 7),
-            child: Row(children: [
+  Widget _card(String title, List<Widget> children, {int? count, String? hint, Widget? trailing}) => Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+        decoration: noonPanel(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: NoonText.style(12.5, weight: FontWeight.w700)),
-                    if (sub.isNotEmpty) Text(sub, maxLines: 2, overflow: TextOverflow.ellipsis, style: NoonText.style(11, color: AdminNoon.muted)),
-                  ],
+                child: Tooltip(
+                  message: hint ?? '',
+                  child: Text(title, style: NoonText.style(13.5, weight: FontWeight.w700)),
                 ),
               ),
-              if (value.isNotEmpty) Text(value, style: NoonText.style(12, weight: FontWeight.w700, color: color)),
+              if (count != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(color: AdminNoon.band, borderRadius: BorderRadius.circular(20)),
+                  child: Text('$count', style: NoonText.style(11.5, weight: FontWeight.w700, color: AdminNoon.muted)),
+                ),
               ?trailing,
             ]),
-          ),
-        );
-    Widget tile(String label, String value, String sub, {Color? color, VoidCallback? onTap, String? hint}) => Expanded(
-          child: Tooltip(
-            message: hint ?? '',
-            child: AppCard(
-              onTap: onTap,
-              padding: const EdgeInsets.all(12),
+            if (hint != null) Text(hint, style: NoonText.style(10.5, color: AdminNoon.muted)),
+            const SizedBox(height: 4),
+            ...children,
+          ],
+        ),
+      );
+
+  Widget _row(String label, String sub, String value, {Color? color, VoidCallback? onTap, Widget? leading, Widget? trailing}) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(children: [
+            if (leading != null) ...[leading, const SizedBox(width: 8)],
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label, style: NoonText.style(11.5, color: AdminNoon.muted)),
+                  Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: NoonText.style(12.5, weight: FontWeight.w700)),
+                  if (sub.isNotEmpty) Text(sub, maxLines: 2, overflow: TextOverflow.ellipsis, style: NoonText.style(11, color: AdminNoon.muted)),
+                ],
+              ),
+            ),
+            if (value.isNotEmpty) Text(value, style: NoonText.style(12, weight: FontWeight.w700, color: color)),
+            ?trailing,
+          ]),
+        ),
+      );
+
+  Widget _more(bool open, int count, VoidCallback onTap) => TextButton(
+        onPressed: onTap,
+        child: Text(open ? 'أقل' : '+$count', style: NoonText.style(12, weight: FontWeight.w700, color: AdminNoon.tealD)),
+      );
+
+  /// بطاقة رقم: عنوان صغير، ورقم كبير بلونه، وسطر تحته — `NKpiCards`.
+  Widget _kpi(String label, String value, String sub, {Color? color, VoidCallback? onTap, String? hint}) => Tooltip(
+        message: hint ?? '',
+        child: Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(AdminNoon.rPanel),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(AdminNoon.rPanel),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              decoration: noonPanel(color: Colors.transparent),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    if (color != null) ...[
+                      Container(width: 7, height: 7, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                      const SizedBox(width: 6),
+                    ],
+                    Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: NoonText.style(11.5, color: AdminNoon.muted))),
+                  ]),
                   const SizedBox(height: 4),
-                  FittedBox(child: Text(value, style: NoonText.style(17, weight: FontWeight.w700, color: color))),
-                  if (sub.isNotEmpty) Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: NoonText.style(10.5, color: AdminNoon.muted)),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Text(value, style: NoonText.style(19, weight: FontWeight.w800, color: color ?? AdminNoon.text)),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: NoonText.style(10.5, color: AdminNoon.muted)),
                 ],
               ),
             ),
           ),
-        );
+        ),
+      );
 
+  Widget _pendingRow(String key, _Pending p) {
+    final open = _openPending.contains(key);
+    final badge = Container(
+      constraints: const BoxConstraints(minWidth: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(20)),
+      child: Text(p.value, textAlign: TextAlign.center, style: NoonText.style(11.5, weight: FontWeight.w700, color: const Color(0xFF92400E))),
+    );
+    if (p.details == null) {
+      return _row(p.label, '', '', onTap: p.onTap, trailing: badge);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _row(
+          p.label,
+          '',
+          '',
+          onTap: () => setState(() => open ? _openPending.remove(key) : _openPending.add(key)),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            badge,
+            const SizedBox(width: 4),
+            AnimatedRotation(
+              turns: open ? 0.5 : 0,
+              duration: const Duration(milliseconds: 150),
+              child: Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: AdminNoon.muted),
+            ),
+          ]),
+        ),
+        if (open)
+          Container(
+            margin: const EdgeInsetsDirectional.only(start: 6, bottom: 6),
+            padding: const EdgeInsetsDirectional.only(start: 10),
+            decoration: BoxDecoration(border: BorderDirectional(start: BorderSide(color: AdminNoon.line, width: 2))),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final d in p.details!) _row(d.label, d.sub, d.value, onTap: d.onTap, color: AdminNoon.muted),
+                if (p.open != null)
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: TextButton(
+                      onPressed: p.open!.onTap,
+                      child: Text(p.open!.label, style: NoonText.style(12, weight: FontWeight.w700, color: AdminNoon.tealD)),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = StoreScope.of(context);
+    final s = stats!;
+    final now = DateTime.now();
+    final features = store.featureState;
+    final showAttendance = store.isFeatureOn('attendance') && store.can('attendance');
+    final showFinance = store.can('finance');
+    final hidden = store.settings.dashboardHidden;
+    bool shown(String id) => !hidden.contains(id);
+    final canAnnounce = features['portal.notes'] == true && store.can('students') && store.settings.toolOn('announcements');
+    final today1 = period == '1';
+    final counts = today1 ? s.today : s.range;
+    final rate = rateOf(counts);
+    final prevRate = rateOf(s.previous);
+    final month = isoDate(now).substring(0, 7);
+    final expectedMonth = store.installments.where((i) => isoDate(i.dueDate).startsWith(month)).fold<double>(0, (n, i) => n + i.amount);
+    final collectedDelta = s.collectedPrevious > 0 ? ((s.collectedRange - s.collectedPrevious) / s.collectedPrevious * 100).round() : null;
+
+    final attendanceSub = rate == null
+        ? (s.holiday != null ? 'عطلة' : 'لم يُرصد بعد')
+        : today1
+            ? (s.roomsMarked < s.roomsTotal
+                ? 'رُصد ${s.roomsMarked} من ${s.roomsTotal} شعبة'
+                : (prevRate == null ? '${counts.present} حاضر' : 'آخر يوم $prevRate%'))
+            : (_delta(rate, prevRate, '%') == null ? '${counts.present} حاضر' : '${_delta(rate, prevRate, '%')} ${_vs[period]}');
+    final collectedSub = today1
+        ? 'أمس ${money(s.collectedPrevious)}'
+        : (collectedDelta == null ? 'الشهر ${money(s.collectedMonth)}' : '${_delta(collectedDelta, 0, '%')} ${_vs[period]}');
+    final streaks = s.absentToday.where((a) => a.streak > 1).length;
+
+    // ما ينتظر قراراً اليوم: سطر لكل نوع بعدده، ومن له تفاصيل ينفتح في مكانه
+    final alerts = showAttendance ? loadAbsenceAlerts(store) : const <AbsenceAlert>[];
+    final completion = store.isFeatureOn('evaluations') && store.isAdminUser ? loadCompletion(store).rows : const <CompletionRow>[];
+    final lateByTeacher = <String, List<CompletionRow>>{};
+    for (final r in completion) {
+      if (r.late > 0) (lateByTeacher[r.teacherId] ??= []).add(r);
+    }
+    String roomLabel(Classroom r) => [r.gradeLevel, r.name].where((x) => x.trim().isNotEmpty).join(' · ');
+    final approvals = store.can('evaluations') ? store.pendingApprovals.length : 0;
+    final requests = (showFinance ? store.pendingPaymentRequests.length : 0) + (store.can('finance.discount') ? store.pendingFinanceRequests.length : 0);
+    final unmarked = showAttendance && s.holiday == null ? s.unmarkedRooms : const <({Classroom room, int students})>[];
+    final pending = <String, _Pending>{
+      if (unmarked.isNotEmpty)
+        'att': _Pending(
+          label: 'شعب لم تُرصد',
+          value: '${unmarked.length}',
+          details: [
+            for (final u in unmarked) (label: roomLabel(u.room), sub: '', value: '${u.students} طالب', onTap: () => widget.onSection('attendance')),
+          ],
+          open: (label: 'رصد الحضور', onTap: () => widget.onSection('attendance')),
+        ),
+      if (alerts.isNotEmpty)
+        'alerts': _Pending(
+          label: 'إنذارات غياب',
+          value: '${alerts.length}',
+          details: [
+            for (final a in alerts)
+              (
+                label: a.student.fullName,
+                sub: '${[a.student.gradeLevel, a.student.section].where((x) => x.trim().isNotEmpty).join(' · ')} · ${a.days} يوم',
+                value: a.levelName,
+                onTap: () => _push(StudentDetailScreen(studentId: a.student.id)),
+              ),
+          ],
+          open: (label: 'الإرسال للأهل', onTap: () => widget.onReport('alerts')),
+        ),
+      // سطر لكل معلم متأخر لا لكل مادة وشعبة: المدير يتابع أشخاصاً
+      if (lateByTeacher.isNotEmpty)
+        'grades': _Pending(
+          label: 'رصد متأخر',
+          value: '${lateByTeacher.length}',
+          details: [
+            for (final e in lateByTeacher.entries)
+              (
+                label: e.value.first.teacherName,
+                sub: e.value.map((r) => '${r.subjectName} ${roomLabel(r.room)}').join('، '),
+                value: '${e.value.length}',
+                onTap: () => _push(TeacherDetailScreen(teacherId: e.key)),
+              ),
+          ],
+          open: (label: 'تقرير الرصد', onTap: () => widget.onReport('completion')),
+        ),
+      if (showFinance && s.longOverdue > 0)
+        'late': _Pending(
+          label: 'متأخرون +60 يوم',
+          value: '${s.longOverdue}',
+          onTap: () {
+            financeAgingRequest.value = '60';
+            widget.onSection('finance');
+          },
+        ),
+      if (approvals > 0) 'approve': _Pending(label: 'علامات بانتظار الاعتماد', value: '$approvals', onTap: () => widget.onSection('evaluations')),
+      if (requests > 0) 'fin': _Pending(label: 'طلبات مالية', value: '$requests', onTap: () => widget.onSection('finance')),
+      if (store.isAdminUser && leaveRequests > 0) 'leave': _Pending(label: 'طلبات إجازة', value: '$leaveRequests', onTap: () => widget.onSection('attendance')),
+      if (backupIssue != null) 'backup': _Pending(label: 'النسخة اليومية', value: backupIssue!, onTap: () => widget.onSection('settings')),
+      if (store.isAdminUser && staff.absent > 0) 'staff': _Pending(label: 'موظفون غائبون', value: '${staff.absent}', onTap: () => widget.onSection('attendance')),
+    };
+
+    // الرسم: الحضور خطاً، والبقية أعمدة يومية لآخر 30 يوماً
+    final usageDays = [
+      for (var i = 0; i < 30; i++)
+        () {
+          final d = isoDate(DateTime(now.year, now.month, now.day + i - 29));
+          int of(String role) => usage?.where((r) => r.day == d && r.role == role).firstOrNull?.users ?? 0;
+          return (date: d, parent: of('parent'), student: of('student'));
+        }(),
+    ];
+    final chartKinds = [
+      for (final k in _chartLabels.keys)
+        if (k == 'usage'
+            ? usage != null && usage!.isNotEmpty
+            : (k == 'attendance' || k == 'absent')
+                ? showAttendance
+                : k == 'expenses'
+                    ? store.can('finance.expenses')
+                    : k == 'collected'
+                        ? showFinance
+                        : store.can('students'))
+          k,
+    ];
+    final chartKind = chartKinds.contains(chart) ? chart : chartKinds.firstOrNull;
+    final List<({String label, double value})> series = switch (chartKind) {
+      'attendance' => [for (final t in s.trend) (label: _dm(t.date), value: t.rate.toDouble())],
+      'absent' => [for (final t in s.trend) (label: _dm(t.date), value: t.absent.toDouble())],
+      'collected' => [for (final t in s.collectedTrend) (label: _dm(t.date), value: t.amount)],
+      'expenses' => [for (final t in s.expenseTrend) (label: _dm(t.date), value: t.amount)],
+      'enrolled' => [for (final t in s.enrollTrend) (label: _dm(t.date), value: t.amount)],
+      'usage' => [for (final d in usageDays) (label: _dm(d.date), value: (d.parent + d.student).toDouble())],
+      _ => const [],
+    };
+    final seriesTotal = series.fold<double>(0, (n, p) => n + p.value);
+    final isMoney = chartKind == 'collected' || chartKind == 'expenses';
+
+    final birthdays = _birthdays(store, now);
     final institution = store.institutionName.trim();
+    final absentList = allAbsent ? s.absentToday : s.absentToday.take(6).toList();
+    final chronicList = allChronic ? s.chronic : s.chronic.take(6).toList();
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
       children: [
+        AdminHero(
+          icon: Icons.space_dashboard_outlined,
+          label: s.holiday == null ? _dayTitle(now) : '${_dayTitle(now)} · عطلة: ${s.holiday!.title}',
+          value: '${s.activeStudents}',
+          unit: 'طالب نشط',
+          chips: [
+            '${s.roomsTotal} شعبة',
+            if (s.newThisMonth > 0) '+${s.newThisMonth} هذا الشهر',
+            if (grade.isNotEmpty) grade,
+          ],
+        ),
+        const SizedBox(height: 12),
         Row(children: [
-          tile(
-            'حضور اليوم',
-            rate == null ? '—' : '$rate%',
-            d.marked == 0 ? 'لم يُرصد بعد' : '${d.absentToday} غائب',
-            color: rate == null ? null : (rate >= 90 ? _green : _red),
-            onTap: () => widget.onSection('attendance'),
+          Expanded(
+            child: NoonSegment<String>(
+              value: period,
+              options: _periods,
+              onChanged: (v) => _update(period: v),
+            ),
           ),
-          if (showFinance) ...[
-            const SizedBox(width: 8),
-            tile(
-              'التحصيل',
-              money(d.collectedMonth),
-              // نسبة ما حُصّل هذا الشهر من أقساطه المستحقة فيه
-              d.expectedMonth > 0 ? 'الشهر ${(d.collectedMonth / d.expectedMonth * 100).round()}% من المتوقع' : 'هذا الشهر',
-              color: _green,
-              hint: d.expectedMonth > 0 ? 'حُصّل هذا الشهر ${money(d.collectedMonth)} من ${money(d.expectedMonth)} مستحقة فيه' : null,
-              onTap: () => widget.onSection('finance'),
+          if (grade.isNotEmpty) ...[
+            const SizedBox(width: 6),
+            InputChip(
+              label: Text(grade, style: NoonText.style(11.5, weight: FontWeight.w700)),
+              onDeleted: () => _update(grade: ''),
+              tooltip: 'كل المدرسة',
+            ),
+          ],
+          if (canAnnounce) ...[
+            const SizedBox(width: 6),
+            IconButton.outlined(
+              tooltip: grade.isEmpty ? 'إعلان لكل المدرسة' : 'إعلان لـ$grade',
+              icon: const Icon(Icons.campaign_outlined, size: 20),
+              onPressed: () => showAnnouncementSheet(context, grade: grade),
             ),
           ],
         ]),
-        if (showFinance) ...[
-          const SizedBox(height: 8),
-          Row(children: [
-            tile('المتأخرات', money(d.overdue), 'أقساط حلّ موعدها', color: d.overdue > 0 ? _red : null, onTap: () => widget.onReport('arrears')),
-          ]),
-        ],
-        const SizedBox(height: 10),
-        if (needs.isNotEmpty)
-          card('يحتاج تدخلاً', [for (final n in needs) row(n.$1, '', n.$2, color: _red, onTap: n.$3)]),
-        if (store.isAdminUser && uncovered.isNotEmpty && !store.settings.dashboardHidden.contains('uncovered'))
-          card(
+        const SizedBox(height: 12),
+        // بطاقات الأرقام: عمودان
+        LayoutBuilder(builder: (context, c) {
+          final tiles = <Widget>[
+            if (showAttendance) ...[
+              _kpi(
+                'الحضور',
+                rate == null ? '—' : '$rate%',
+                attendanceSub,
+                color: rate == null ? null : (rate < 85 ? _absent : _present),
+                onTap: () => widget.onSection('attendance'),
+              ),
+              _kpi(
+                'الغياب',
+                '${counts.absent}',
+                '${counts.excused} مأذون${today1 && streaks > 0 ? ' · $streaks متتالٍ' : ''}',
+                color: counts.absent > 0 ? _absent : null,
+                onTap: () => widget.onReport('alerts'),
+              ),
+            ],
+            if (showFinance) ...[
+              _kpi(
+                'التحصيل',
+                money(s.collectedRange),
+                expectedMonth > 0 ? 'الشهر ${(s.collectedMonth / expectedMonth * 100).round()}% من المتوقع' : collectedSub,
+                color: _present,
+                hint: expectedMonth > 0 ? 'حُصّل هذا الشهر ${money(s.collectedMonth)} من ${money(expectedMonth)} مستحقة فيه · $collectedSub' : null,
+                onTap: () => widget.onSection('finance'),
+              ),
+              _kpi(
+                'المتأخرات',
+                money(s.overdueTotal),
+                '${s.debtors} طالب${s.dueSoonAmount > 0 ? ' · الأسبوع ${money(s.dueSoonAmount)}' : ''}',
+                color: s.overdueTotal > 0 ? _absent : null,
+                onTap: () => widget.onSection('finance'),
+              ),
+            ],
+          ];
+          final w = (c.maxWidth - 8) / 2;
+          return Wrap(spacing: 8, runSpacing: 8, children: [for (final t in tiles) SizedBox(width: w, child: t)]);
+        }),
+        const SizedBox(height: 12),
+        _card(
+          'يحتاج تدخلاً',
+          pending.isEmpty
+              ? [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Text('لا شيء معلّق', textAlign: TextAlign.center, style: NoonText.style(12, color: AdminNoon.muted)),
+                  ),
+                ]
+              : [for (final e in pending.entries) _pendingRow(e.key, e.value)],
+          count: pending.isEmpty ? null : pending.length,
+        ),
+        if (shown('uncovered') && store.isAdminUser && uncovered.isNotEmpty)
+          _card(
             'شعب بلا معلم اليوم',
             [
               for (final u in uncovered)
-                row(u.teacher.name, u.classes.join('، '), u.away, color: _red, onTap: () => _push(TeacherDetailScreen(teacherId: u.teacher.id))),
+                _row(u.teacher.name, u.classes.join('، '), u.away, color: _absent, onTap: () => _push(TeacherDetailScreen(teacherId: u.teacher.id))),
             ],
             count: uncovered.fold<int>(0, (n, u) => n + u.classes.length),
             hint: 'معلمها غائب أو في إجازة: تحتاج بديلاً',
           ),
-        if (d.birthdays.isNotEmpty && !store.settings.dashboardHidden.contains('birthdays'))
-          card(
+        if (shown('chart') && chartKind != null)
+          _card(
+            _chartLabels[chartKind]!,
+            [
+              if (chartKinds.length > 1)
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(children: [
+                    for (final k in chartKinds)
+                      Padding(
+                        padding: const EdgeInsetsDirectional.only(end: 6),
+                        child: ChoiceChip(
+                          label: Text(_chartLabels[k]!, style: NoonText.style(11.5, weight: FontWeight.w600)),
+                          selected: k == chartKind,
+                          visualDensity: VisualDensity.compact,
+                          onSelected: (_) => setState(() => chart = k),
+                        ),
+                      ),
+                  ]),
+                ),
+              const SizedBox(height: 10),
+              if ((chartKind == 'attendance' || chartKind == 'absent') && s.trend.length < 2)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Text('لا رصد بعد', textAlign: TextAlign.center, style: NoonText.style(12, color: AdminNoon.muted)),
+                )
+              else
+                SizedBox(
+                  height: 140,
+                  child: _TrendChart(
+                    points: series,
+                    line: chartKind == 'attendance',
+                    max: chartKind == 'attendance' ? 100 : null,
+                    color: _chartColors[chartKind]!,
+                    stacks: chartKind == 'usage' ? [for (final d in usageDays) [d.parent.toDouble(), d.student.toDouble()]] : null,
+                  ),
+                ),
+              if (chartKind == 'usage')
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Row(children: [
+                    _legend('أهالي', _parent),
+                    const SizedBox(width: 12),
+                    _legend('طلاب', _studentC),
+                  ]),
+                ),
+            ],
+            hint: '30 يوماً',
+            trailing: chartKind == 'attendance'
+                ? null
+                : Text(
+                    isMoney ? money(seriesTotal) : trimNum(seriesTotal),
+                    style: NoonText.style(12, weight: FontWeight.w700, color: _chartColors[chartKind]),
+                  ),
+          ),
+        if (showAttendance)
+          _card(
+            today1 ? 'حضور اليوم' : 'توزيع الحضور',
+            [
+              _Donut(
+                parts: [
+                  ('حاضر', counts.present, _present),
+                  ('مأذون', counts.excused, _excused),
+                  ('غائب', counts.absent, _absent),
+                  if (today1 && s.unmarkedToday > 0) ('لم يُرصد', s.unmarkedToday, _empty),
+                ],
+                center: rate == null ? '—' : '$rate%',
+              ),
+            ],
+          ),
+        if (shown('grades') && showAttendance && s.byGrade.isNotEmpty)
+          _card('حسب المرحلة', [
+            for (final g in s.byGrade)
+              InkWell(
+                onTap: () => _update(grade: grade == g.grade ? '' : g.grade),
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  color: grade == g.grade ? AdminNoon.band : null,
+                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+                  child: Row(children: [
+                    SizedBox(width: 74, child: Text(g.grade, maxLines: 1, overflow: TextOverflow.ellipsis, style: NoonText.style(12.5, weight: FontWeight.w700))),
+                    // شريط واحد بنسبة الحضور، والغائبون عدداً بجانبه
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: LinearProgressIndicator(
+                          value: g.rate / 100,
+                          minHeight: 8,
+                          backgroundColor: AdminNoon.line,
+                          valueColor: AlwaysStoppedAnimation(g.rate < 85 ? _absent : _present),
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 42,
+                      child: Text('${g.rate}%', textAlign: TextAlign.end, style: NoonText.style(12, weight: FontWeight.w700, color: g.rate < 85 ? _absent : null)),
+                    ),
+                    SizedBox(
+                      width: 54,
+                      child: Text(g.absent > 0 ? '${g.absent} غائب' : '', textAlign: TextAlign.end, style: NoonText.style(10.5, color: AdminNoon.muted)),
+                    ),
+                  ]),
+                ),
+              ),
+          ]),
+        if (shown('absent') && showAttendance && s.absentToday.isNotEmpty)
+          _card(
+            'غائبون اليوم',
+            [
+              for (final a in absentList)
+                _row(
+                  a.student.fullName,
+                  [a.student.gradeLevel, a.student.section].where((x) => x.trim().isNotEmpty).join(' · '),
+                  a.streak > 1 ? '${a.streak} أيام' : '',
+                  color: _absent,
+                  onTap: () => _push(StudentDetailScreen(studentId: a.student.id)),
+                ),
+              if (s.absentToday.length > 6) _more(allAbsent, s.absentToday.length - 6, () => setState(() => allAbsent = !allAbsent)),
+            ],
+            count: s.absentToday.length,
+          ),
+        if (shown('chronic') && showAttendance && s.chronic.isNotEmpty)
+          _card(
+            'الأكثر غياباً',
+            [
+              for (final c in chronicList)
+                _row(
+                  c.student.fullName,
+                  '${[c.student.gradeLevel, c.student.section].where((x) => x.trim().isNotEmpty).join(' · ')} · من ${c.marked} يوماً مرصوداً',
+                  '${c.absent} ${c.absent > 10 ? 'يوماً' : 'أيام'}',
+                  color: _absent,
+                  leading: Tooltip(
+                    message: 'آخر أسبوعين ${c.recent} · قبلهما ${c.before}',
+                    child: c.trend == 'up'
+                        ? const Icon(Icons.trending_up_rounded, size: 18, color: _absent)
+                        : c.trend == 'down'
+                            ? const Icon(Icons.trending_down_rounded, size: 18, color: _present)
+                            : const SizedBox(width: 18),
+                  ),
+                  onTap: () => _push(StudentDetailScreen(studentId: c.student.id)),
+                ),
+              if (s.chronic.length > 6) _more(allChronic, s.chronic.length - 6, () => setState(() => allChronic = !allChronic)),
+            ],
+            count: s.chronic.length,
+            hint: 'غاب ${store.settings.followup.chronicPercent.round()}% من الأيام فأكثر · آخر 30 يوماً',
+          ),
+        if (shown('staff') && store.isAdminUser && staff.late + staff.onLeave > 0)
+          _card('الموظفون اليوم', [
+            if (staff.late > 0) _row('متأخر', '', '${staff.late}', color: _excused, onTap: () => widget.onSection('attendance')),
+            if (staff.onLeave > 0) _row('في إجازة', '', '${staff.onLeave}', onTap: () => widget.onSection('attendance')),
+          ]),
+        if (shown('birthdays') && birthdays.isNotEmpty)
+          _card(
             'أعياد ميلاد اليوم',
             [
-              for (final b in d.birthdays)
-                row(
+              for (final b in birthdays)
+                _row(
                   b.name,
                   '${b.sub}${b.age > 0 ? ' · ${b.age} سنة' : ''}',
                   '',
@@ -436,36 +852,211 @@ class _HomeState extends State<_Home> {
                         ),
                 ),
             ],
-            count: d.birthdays.length,
+            count: birthdays.length,
           ),
-        if (d.chronic.isNotEmpty && !store.settings.dashboardHidden.contains('chronic'))
-          card(
-            'الأكثر غياباً',
-            [
-              for (final c in d.chronic.take(5))
-                row(
-                  c.student.fullName,
-                  [c.student.gradeLevel, c.student.section].where((x) => x.trim().isNotEmpty).join(' · '),
-                  '${c.days} أيام',
-                  color: _red,
-                  onTap: () => _push(StudentDetailScreen(studentId: c.student.id)),
-                ),
-            ],
-            count: d.chronic.length,
-            hint: 'غاب ${store.settings.followup.chronicPercent.round()}% فأكثر من أيام آخر 30 يوماً',
-          ),
-        if (!store.settings.dashboardHidden.contains('upcoming') &&
-            upcomingEvents(store.settings.calendar, isoDate(DateTime.now())).isNotEmpty)
-          card('قادم', [
-            for (final e in upcomingEvents(store.settings.calendar, isoDate(DateTime.now())).take(4))
-              row(e.title, calendarKindLabels[e.kind] ?? '', eventRange(e)),
+        if (shown('upcoming') && s.upcoming.isNotEmpty)
+          _card('قادم', [
+            for (final e in s.upcoming)
+              _row(
+                e.title,
+                calendarKindLabels[e.kind] ?? '',
+                eventRange(e),
+                leading: Icon(Icons.event_outlined, size: 18, color: e.kind == 'exam' ? _excused : AdminNoon.muted),
+              ),
           ]),
-        if (needs.isEmpty && uncovered.isEmpty && d.birthdays.isEmpty && d.chronic.isEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 24),
-            child: Text('لا شيء يحتاج تدخلاً اليوم', textAlign: TextAlign.center, style: NoonText.style(12.5, color: AppColors.muted)),
-          ),
       ],
     );
   }
+
+  Widget _legend(String label, Color color) => Row(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 9, height: 9, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
+        const SizedBox(width: 4),
+        Text(label, style: NoonText.style(11, color: AdminNoon.muted)),
+      ]);
+}
+
+/// حلقة بنسب الحالات، والنسبة في وسطها، ومفتاح الألوان بأعدادها — `Donut`.
+class _Donut extends StatelessWidget {
+  const _Donut({required this.parts, required this.center});
+
+  final List<(String, int, Color)> parts;
+  final String center;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(children: [
+        SizedBox(
+          width: 110,
+          height: 110,
+          child: CustomPaint(
+            painter: _DonutPainter(parts),
+            child: Center(child: Text(center, style: NoonText.style(18, weight: FontWeight.w800))),
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(children: [
+            for (final (label, value, color) in parts)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(children: [
+                  Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(label, style: NoonText.style(12.5, color: AdminNoon.muted))),
+                  Text('$value', style: NoonText.style(13, weight: FontWeight.w700)),
+                ]),
+              ),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
+class _DonutPainter extends CustomPainter {
+  _DonutPainter(this.parts);
+
+  final List<(String, int, Color)> parts;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const stroke = 14.0;
+    final rect = Rect.fromCircle(center: size.center(Offset.zero), radius: size.shortestSide / 2 - stroke / 2);
+    final base = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..color = _empty;
+    canvas.drawArc(rect, 0, math.pi * 2, false, base);
+    final total = parts.fold<int>(0, (n, p) => n + p.$2);
+    if (total == 0) return;
+    var start = -math.pi / 2;
+    for (final (_, value, color) in parts) {
+      final sweep = value / total * math.pi * 2;
+      canvas.drawArc(rect, start, sweep, false, base..color = color);
+      start += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DonutPainter old) => old.parts != parts;
+}
+
+/// رسم آخر 30 يوماً: النسبة خطاً، والبقية أعمدة يومية (والدخول عمودان متراكبان) — `TrendChart`.
+class _TrendChart extends StatelessWidget {
+  const _TrendChart({required this.points, required this.color, this.line = false, this.max, this.stacks});
+
+  final List<({String label, double value})> points;
+  final Color color;
+  final bool line;
+  final double? max;
+  final List<List<double>>? stacks;
+
+  @override
+  Widget build(BuildContext context) {
+    final top = max ?? points.fold<double>(0, (m, p) => math.max(m, p.value));
+    return Column(children: [
+      Expanded(
+        child: Directionality(
+          // الزمن من اليسار لليمين: الأقدم أولاً والأحدث آخراً كما في الويب
+          textDirection: TextDirection.ltr,
+          child: CustomPaint(
+            size: Size.infinite,
+            painter: _TrendPainter(points: points, color: color, line: line, top: top <= 0 ? 1 : top, stacks: stacks),
+          ),
+        ),
+      ),
+      if (points.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(points.first.label, style: NoonText.style(10, color: AdminNoon.muted)),
+                Text(points.last.label, style: NoonText.style(10, color: AdminNoon.muted)),
+              ],
+            ),
+          ),
+        ),
+    ]);
+  }
+}
+
+class _TrendPainter extends CustomPainter {
+  _TrendPainter({required this.points, required this.color, required this.line, required this.top, this.stacks});
+
+  final List<({String label, double value})> points;
+  final Color color;
+  final bool line;
+  final double top;
+  final List<List<double>>? stacks;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final grid = Paint()
+      ..color = _empty
+      ..strokeWidth = 1;
+    for (var i = 0; i <= 2; i++) {
+      final y = size.height * i / 2;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+    }
+    if (points.isEmpty) return;
+    final n = points.length;
+    if (line) {
+      final path = Path();
+      final fill = Path();
+      for (var i = 0; i < n; i++) {
+        final x = n == 1 ? size.width / 2 : size.width * i / (n - 1);
+        final y = size.height - points[i].value / top * size.height;
+        if (i == 0) {
+          path.moveTo(x, y);
+          fill.moveTo(x, size.height);
+          fill.lineTo(x, y);
+        } else {
+          path.lineTo(x, y);
+          fill.lineTo(x, y);
+        }
+        if (i == n - 1) fill.lineTo(x, size.height);
+      }
+      canvas.drawPath(fill..close(), Paint()..color = color.withValues(alpha: 0.10));
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.2
+          ..strokeJoin = StrokeJoin.round,
+      );
+      final last = Offset(n == 1 ? size.width / 2 : size.width, size.height - points.last.value / top * size.height);
+      canvas.drawCircle(last, 3.5, Paint()..color = color);
+      return;
+    }
+    final slot = size.width / n;
+    final w = math.max(2.0, slot * 0.62);
+    for (var i = 0; i < n; i++) {
+      final x = slot * i + (slot - w) / 2;
+      final parts = stacks != null && i < stacks!.length ? stacks![i] : [points[i].value];
+      var bottom = size.height;
+      for (var p = 0; p < parts.length; p++) {
+        final h = parts[p] / top * size.height;
+        if (h <= 0) continue;
+        final c = stacks == null ? color : (p == 0 ? _parent : _studentC);
+        canvas.drawRRect(
+          RRect.fromRectAndCorners(
+            Rect.fromLTWH(x, bottom - h, w, h),
+            topLeft: const Radius.circular(2),
+            topRight: const Radius.circular(2),
+          ),
+          Paint()..color = c,
+        );
+        bottom -= h;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_TrendPainter old) => true;
 }
