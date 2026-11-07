@@ -3887,9 +3887,6 @@ class _NewSectionSheetState extends State<_NewSectionSheet> {
                       }
                     });
                   },
-                  selectedColor: widget.color.withValues(alpha: 0.15),
-                  checkmarkColor: widget.color,
-                  side: BorderSide(color: selectedRooms.contains(r.id) ? widget.color : _C.line),
                   visualDensity: VisualDensity.compact,
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
@@ -3952,9 +3949,6 @@ class _SectionRoomsSheetState extends State<_SectionRoomsSheet> {
                     }
                   });
                 },
-                selectedColor: widget.color.withValues(alpha: 0.15),
-                checkmarkColor: widget.color,
-                side: BorderSide(color: selected.contains(r.id) ? widget.color : _C.line),
                 visualDensity: VisualDensity.compact,
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),

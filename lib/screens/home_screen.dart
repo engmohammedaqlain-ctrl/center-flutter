@@ -684,20 +684,10 @@ class _HomeState extends State<_Home> {
             _chartLabels[chartKind]!,
             [
               if (chartKinds.length > 1)
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(children: [
-                    for (final k in chartKinds)
-                      Padding(
-                        padding: const EdgeInsetsDirectional.only(end: 6),
-                        child: ChoiceChip(
-                          label: Text(_chartLabels[k]!, style: NoonText.style(11.5, weight: FontWeight.w600)),
-                          selected: k == chartKind,
-                          visualDensity: VisualDensity.compact,
-                          onSelected: (_) => setState(() => chart = k),
-                        ),
-                      ),
-                  ]),
+                NoonSegment<String>(
+                  value: chartKind,
+                  options: [for (final k in chartKinds) (k, _chartLabels[k]!)],
+                  onChanged: (k) => setState(() => chart = k),
                 ),
               const SizedBox(height: 10),
               if ((chartKind == 'attendance' || chartKind == 'absent') && s.trend.length < 2)
