@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/notes.dart';
 import '../theme/app_colors.dart';
 import '../widgets/admin_ui.dart';
+import '../widgets/empty_note.dart';
 import '../widgets/widgets.dart';
 
 const _durations = <String, int>{'يوم': 1, 'أسبوع': 7, 'شهر': 30};
@@ -108,47 +109,48 @@ class _AnnouncementSheetState extends State<_AnnouncementSheet> {
             tone: NoonTone.sun,
             expand: true,
             busy: busy,
-            onPressed: busy ? null : _send,
+            onPressed: busy || _text.text.trim().isEmpty ? null : _send,
           ),
         ),
       ],
       children: [
+        NoonSheetLabel('نص الإعلان'),
         TextField(
           controller: _text,
           maxLines: 4,
           maxLength: noteMax,
-          decoration: const InputDecoration(hintText: 'نص الإعلان'),
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'اكتب الإعلان الذي سيظهر في البوابات',
+            filled: true,
+            fillColor: Colors.white,
+            counterText: '',
+          ),
           onChanged: (_) => setState(() {}),
         ),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            const Text('يظهر لمدة', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-            const SizedBox(width: 10),
-            Expanded(
-              child: NoonSegment(
-                value: days,
-                options: [for (final d in _durations.entries) (d.value, d.key)],
-                onChanged: (v) => setState(() => days = v),
-              ),
-            ),
-          ],
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: Text('${_text.text.length} / $noteMax', style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+          ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 10),
+        NoonSheetLabel('يظهر لمدة'),
+        NoonSegment(
+          value: days,
+          options: [for (final d in _durations.entries) (d.value, d.key)],
+          onChanged: (v) => setState(() => days = v),
+        ),
+        const SizedBox(height: 18),
+        if (rows != null && rows.isNotEmpty) NoonSheetLabel('الإعلانات السابقة (${rows.length})'),
         if (rows == null)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 20),
             child: Center(child: AppLoader(message: 'جارٍ تحميل الإعلانات', compact: true, size: 22)),
           )
         else if (rows.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
-            child: Text(
-              'لا إعلانات سابقة',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.faint, fontSize: 12),
-            ),
-          )
+          const EmptyNote('لا إعلانات سابقة', icon: Icons.campaign_outlined)
         else
           for (final a in rows)
             Opacity(
