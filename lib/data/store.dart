@@ -8063,6 +8063,31 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return created;
   }
 
+  /// ملف aSc: يملأ نصاب المعلم ويضيف مواده المطابقة — `AscImportModal`.
+  void applyAscTeacher(Teacher t, {required int periods, required List<String> subjectIds}) {
+    upsertTeacher(Teacher.fromCloud({
+      ...t.toCloud(),
+      'weekly_periods': periods,
+      'subject_ids': {...t.subjectIds, ...subjectIds}.toList(),
+    }));
+  }
+
+  /// حصص المادة في شعبتها الأسبوعية: تصل الرواتب ونسبة المعلم.
+  void setGroupWeeklyPeriods(String id, int periods) {
+    final i = groups.indexWhere((g) => g.id == id);
+    if (i < 0 || groups[i].weeklyPeriods == periods) return;
+    final next = Group.fromCloud({
+      ...groups[i].toCloud(),
+      'weekly_periods': periods,
+      'updated_at': _nowIso(),
+      'sync_status': 'pending',
+    });
+    groups[i] = next;
+    _queue('groups', id, 'UPDATE', next.toCloud());
+    markDirty('groups');
+    notifyListeners();
+  }
+
   void upsertTeacher(Teacher t) {
     requireSection('settings');
     if (t.name.trim().isEmpty) throw StoreException('يرجى إدخال اسم المعلم');

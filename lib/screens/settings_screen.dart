@@ -1,10 +1,12 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/services.dart';
 
 import '../data/academic_matching.dart';
 import '../data/arabic_search.dart';
+import '../data/asc_import.dart';
 import '../data/backup.dart';
 import '../data/backup_validate.dart';
 import '../data/doc_export.dart';
@@ -1768,6 +1770,83 @@ class _TeachersTab extends StatefulWidget {
 class _TeachersTabState extends State<_TeachersTab> {
   final search = TextEditingController();
 
+  /// ملف aSc: يملأ النصاب ويضيف مواد المعلم المطابقة وحصص كل مادة في شعبتها.
+  Future<void> _importAsc(AppStore store) async {
+    const type = XTypeGroup(label: 'aSc', extensions: ['xml']);
+    final file = await openFile(acceptedTypeGroups: const [type]);
+    if (file == null || !mounted) return;
+    List<AscTeacherRow> rows;
+    List<({String groupId, int periods})> periods;
+    try {
+      final asc = parseAsc(utf8.decode(await file.readAsBytes(), allowMalformed: true));
+      rows = planAscImport(asc, store.teachersInViewedYear, store.subjectsInViewedYear);
+      periods = planAscPeriods(asc, store.teachersInViewedYear, store.subjectsInViewedYear, store.roomsInViewedYear, store.groupsInViewedYear);
+    } catch (_) {
+      if (mounted) showAppSnack(context, 'ليس ملف aSc صالحاً', error: true);
+      return;
+    }
+    if (!mounted) return;
+    if (rows.isEmpty) {
+      showAppSnack(context, 'لا حصص في الملف', error: true);
+      return;
+    }
+    final matched = rows.where((r) => r.teacher != null).toList();
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.white,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('استيراد aSc', style: _titleStyle),
+            const SizedBox(height: 8),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final r in rows)
+                    ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(r.teacher?.name ?? r.ascName),
+                      subtitle: r.teacher == null
+                          ? const Text('غير موجود', style: TextStyle(color: AppColors.danger))
+                          : (r.missingSubjects.isEmpty ? null : Text('بلا مقابل: ${r.missingSubjects.join('، ')}')),
+                      trailing: Text('${r.periods}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            PrimaryButton(
+              label: 'تطبيق (${matched.length})',
+              expand: true,
+              onPressed: matched.isEmpty ? null : () => Navigator.pop(ctx, true),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      for (final r in matched) {
+        store.applyAscTeacher(r.teacher!, periods: r.periods, subjectIds: r.subjectIds);
+      }
+      for (final u in periods) {
+        store.setGroupWeeklyPeriods(u.groupId, u.periods);
+      }
+      if (mounted) {
+        showAppSnack(context, 'حُدّث ${matched.length} معلم${periods.isEmpty ? '' : ' و${periods.length} مادة في شعبها'}');
+      }
+    } on StoreException catch (e) {
+      if (mounted) showAppSnack(context, e.message, error: true);
+    }
+  }
+
   @override
   void dispose() {
     search.dispose();
@@ -1793,6 +1872,14 @@ class _TeachersTabState extends State<_TeachersTab> {
           shown: list.length,
           total: store.teachersInViewedYear.length,
           onChanged: (_) => setState(() {}),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+          child: GhostButton(
+            label: 'استيراد ملف aSc',
+            icon: Icons.schedule_outlined,
+            onPressed: () => _importAsc(store),
+          ),
         ),
         Expanded(
           child: _cardList(
