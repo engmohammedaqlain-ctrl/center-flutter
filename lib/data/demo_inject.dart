@@ -6,11 +6,14 @@ library;
 import '../models/models.dart';
 import 'demo_data.dart' show DemoAccount, DemoDataStats;
 import 'demo_dataset.dart';
+import 'demo_extras.dart';
 import 'demo_tenant.dart';
 import 'payment_methods.dart';
 import 'store.dart';
+import 'user_message.dart';
 
-Future<DemoDataStats> injectDemoDataCloud(AppStore store, {required String developerToken}) async {
+/// [full]: النسخة الشاملة (محمد) — تُضيف الرواتب والجدول ودوام الموظفين والإجازات (`demo_extras.dart`).
+Future<DemoDataStats> injectDemoDataCloud(AppStore store, {required String developerToken, bool full = false}) async {
   final tenantId = store.tenantId;
   if (tenantId == null || tenantId.isEmpty) {
     throw StoreException('توليد البيانات التجريبية يحتاج منشأة متصلة بالسحابة');
@@ -20,8 +23,10 @@ Future<DemoDataStats> injectDemoDataCloud(AppStore store, {required String devel
   final me = store.deviceUser;
 
   await store.wipeAllDataIncludingCloud(developerToken: developerToken);
+  if (full) await purgeDemoExtras(tenantId);
 
   final demo = await buildDemoDataset(tenantId: tenantId, keptUsers: keptUsers, keptName: me?.name, keptUserId: me?.id);
+  final plan = full ? enrichDemoDataset(demo) : null;
   await uploadAndInsertDemo(tenantId, demo);
 
   // هوية المدرسة كما في الويب: الاسم المخصص يبقى، ورسوم المقعد ووسائل الدفع المعتمدة في الديمو
@@ -33,6 +38,13 @@ Future<DemoDataStats> injectDemoDataCloud(AppStore store, {required String devel
   ]);
   await store.forceFullResourcePull();
   store.viewedAcademicYearId = demo.currentAcademicYearId;
+  if (plan != null) {
+    try {
+      await seedDemoExtras(store, tenantId, demo, plan);
+    } catch (e) {
+      throw StoreException('تم توليد البيانات الأساسية، لكن تعذّر توليد الرواتب والجدول: ${userMessage(e)}');
+    }
+  }
 
   final l = demo.logins;
   return DemoDataStats(
