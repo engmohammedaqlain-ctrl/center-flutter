@@ -95,7 +95,7 @@ class ReportsScreen extends StatelessWidget {
                       decoration: BoxDecoration(border: i == 0 ? null : Border(top: BorderSide(color: AdminNoon.line))),
                       child: Row(children: [
                         Expanded(child: Text(g.items[i].label, style: NoonText.style(13.5, weight: FontWeight.w700))),
-                        Icon(Icons.chevron_left_rounded, color: AdminNoon.faint),
+                        Icon(Icons.chevron_right_rounded, color: AdminNoon.faint),
                       ]),
                     ),
                   ),
