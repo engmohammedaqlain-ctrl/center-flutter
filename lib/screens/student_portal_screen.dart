@@ -950,6 +950,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
         ParentPaymentsSection(
           user: user,
           suggestedAmount: f.currentDue,
+          siblings: [for (final c in user.children) if (c.id != user.id) c],
           accent: Noon.action,
           refreshTick: _realtimeTick,
           sharedReceipts: sharedReceipts,

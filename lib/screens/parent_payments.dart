@@ -32,7 +32,11 @@ class ParentPaymentsSection extends StatefulWidget {
     this.sharedReceipts = const [],
     this.onSharedReceiptsUsed,
     this.summary,
+    this.siblings = const [],
   });
+
+  /// باقي أبناء ولي الأمر: يسدد عنهم بتحويل واحد.
+  final List<PortalChild> siblings;
 
   final PortalUser user;
 
@@ -98,6 +102,7 @@ class _ParentPaymentsSectionState extends State<ParentPaymentsSection> {
           accent: widget.accent,
           service: widget.service,
           initialImages: initialImages,
+          siblings: widget.siblings,
         ),
       ),
     );
@@ -117,7 +122,7 @@ class _ParentPaymentsSectionState extends State<ParentPaymentsSection> {
       final at = DateTime.tryParse(r.decidedAt ?? r.createdAt ?? '');
       return at != null && !at.isBefore(weekAgo);
     });
-    final approvedTotal = requests.where((r) => r.status == 'approved').fold<double>(0, (s, r) => s + r.amount);
+    final approvedTotal = requests.where((r) => r.status == 'approved').fold<double>(0, (s, r) => s + r.shareOf(widget.user.id));
     return NColumn(
       gap: 12,
       children: [
@@ -185,6 +190,11 @@ class _RequestRow extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(nMoney(r.amount), style: nText(14, weight: FontWeight.w700)),
+                    if (r.isFamily)
+                      Text(
+                        r.allocations.map((a) => '${a.studentName} ${trimNum(a.amount)}').join(' · '),
+                        style: nText(11, color: Noon.muted),
+                      ),
                     Text('$who · $date', maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(11, weight: FontWeight.w500, color: Noon.muted)),
                   ],
                 ),
@@ -226,8 +236,10 @@ class _PaymentRequestForm extends StatefulWidget {
     required this.accent,
     required this.service,
     this.initialImages = const [],
+    this.siblings = const [],
   });
 
+  final List<PortalChild> siblings;
   final PortalUser user;
   final double suggestedAmount;
   final Color accent;
@@ -241,6 +253,27 @@ class _PaymentRequestForm extends StatefulWidget {
 }
 
 class _PaymentRequestFormState extends State<_PaymentRequestForm> {
+  /// دفعة عن عدة أبناء: مبلغ لكل ابن، والمجموع هو المحوَّل.
+  bool family = false;
+  late final List<({String id, String name})> _kids = [
+    (id: widget.user.id, name: widget.user.studentName.isNotEmpty ? widget.user.studentName : widget.user.name),
+    for (final c in widget.siblings) (id: c.id, name: c.name),
+  ];
+  late final Map<String, TextEditingController> _shares = {
+    for (final k in _kids)
+      k.id: TextEditingController(
+        text: k.id == widget.user.id && widget.suggestedAmount > 0 ? trimNum(widget.suggestedAmount) : '',
+      ),
+  };
+
+  List<({String studentId, String studentName, double amount})> get _allocations => [
+        for (final k in _kids)
+          if ((double.tryParse(_shares[k.id]!.text.trim()) ?? 0) > 0)
+            (studentId: k.id, studentName: k.name, amount: double.parse(_shares[k.id]!.text.trim())),
+      ];
+
+  double get _familyTotal => (_allocations.fold<double>(0, (a, x) => a + x.amount) * 100).round() / 100;
+
   late final amount = TextEditingController(text: widget.suggestedAmount > 0 ? trimNum(widget.suggestedAmount) : '');
   late final sender = TextEditingController(
     text: widget.user.name.trim().isNotEmpty && widget.user.name != 'ولي الأمر' ? widget.user.name.trim() : '',
@@ -296,7 +329,7 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
   }
 
   bool get _ready =>
-      (double.tryParse(amount.text.trim()) ?? 0) > 0 &&
+      (family ? _allocations.length >= 2 : (double.tryParse(amount.text.trim()) ?? 0) > 0) &&
       sender.text.trim().isNotEmpty &&
       images.isNotEmpty &&
       (methodId.isNotEmpty || channel.text.trim().isNotEmpty);
@@ -339,7 +372,8 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
         tenantId: widget.user.tenantId,
         studentId: widget.user.id,
         studentName: widget.user.studentName.isNotEmpty ? widget.user.studentName : widget.user.name,
-        amount: double.tryParse(amount.text.trim()) ?? 0,
+        amount: family ? _familyTotal : double.tryParse(amount.text.trim()) ?? 0,
+        allocations: family ? _allocations : const [],
         senderName: sender.text,
         paymentMethod: methodId,
         transferChannel: methodId.isNotEmpty ? (methodName ?? '') : channel.text,
@@ -423,6 +457,59 @@ class _PaymentRequestFormState extends State<_PaymentRequestForm> {
               ],
             ),
           ),
+          if (_kids.length > 1)
+            CheckboxListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: family,
+              onChanged: (v) => setState(() => family = v ?? false),
+              title: Text('عن عدة أبناء', style: nText(13, weight: FontWeight.w700)),
+            ),
+          if (family) ...[
+            NField(
+              label: 'المبلغ عن كل ابن (شيكل)',
+              child: Column(
+                children: [
+                  for (final k in _kids)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          Expanded(child: Text(k.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: nText(13, weight: FontWeight.w700))),
+                          SizedBox(
+                            width: 110,
+                            child: TextField(
+                              controller: _shares[k.id],
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              style: nText(14, weight: FontWeight.w500),
+                              decoration: nInputDecoration(),
+                              onChanged: (_) => setState(() {}),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('المجموع', style: nText(13, weight: FontWeight.w700)),
+                      Text('${trimNum(_familyTotal)} شيكل', style: nText(13, weight: FontWeight.w700)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            NField(
+              label: 'اسم المحوِّل',
+              child: TextField(
+                controller: sender,
+                style: nText(14, weight: FontWeight.w500),
+                decoration: nInputDecoration(),
+                onChanged: (_) => setState(() {}),
+              ),
+            ),
+          ] else
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

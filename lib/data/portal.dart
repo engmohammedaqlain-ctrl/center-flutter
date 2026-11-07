@@ -2141,6 +2141,7 @@ class PortalService {
     required double amount,
     required String senderName,
     required List<String> images,
+    List<({String studentId, String studentName, double amount})> allocations = const [],
     String paymentMethod = '',
     String transferChannel = '',
     String transferDate = '',
@@ -2185,6 +2186,7 @@ class PortalService {
       imagePaths: paths,
       createdAt: now,
       updatedAt: now,
+      allocations: allocations,
     );
     try {
       await supabaseInsert('payment_requests', [
@@ -2204,7 +2206,17 @@ class PortalService {
       filters: {'student_id': 'eq.$studentId'},
       order: 'created_at.desc',
     );
-    return rows?.map(PaymentRequest.fromCloud).toList();
+    if (rows == null) return null;
+    // وما كان ابنه طرفاً في توزيعه من دفعات العائلة
+    final family = await supabaseSelect(
+      'payment_requests',
+      filters: {'allocations': 'cs.[{"student_id":"$studentId"}]'},
+      order: 'created_at.desc',
+    );
+    final byId = <String, PaymentRequest>{
+      for (final r in [...rows, ...?family]) '${r['id']}': PaymentRequest.fromCloud(r),
+    };
+    return byId.values.toList()..sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
   }
 
   /// وسائل الدفع الإلكترونية للمدرسة: إليها يُحوَّل، والنقد لا يمرّ بالبوابة.
