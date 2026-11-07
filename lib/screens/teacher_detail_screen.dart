@@ -421,6 +421,29 @@ class _TeacherPageState extends State<_TeacherPage> {
               icon: const Icon(Icons.edit_outlined),
               onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => TeacherFormScreen(teacher: t))),
             ),
+          if (store.canOpenSection('settings'))
+            // الحذف من «⋯» وحده: من له سندات صرف لا يُحذف (المخزن يرفضه)
+            PopupMenuButton<String>(
+              onSelected: (_) async {
+                final ok = await confirmSheet(
+                  context,
+                  title: 'حذف المعلم',
+                  message: 'حذف «${t.name}» نهائياً؟',
+                  confirmLabel: 'حذف',
+                );
+                if (!ok || !context.mounted) return;
+                try {
+                  store.deleteTeacher(t.id);
+                  showAppSnack(context, 'حُذف المعلم');
+                  Navigator.of(context).pop();
+                } on StoreException catch (e) {
+                  showAppSnack(context, e.message, error: true);
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'delete', child: Text('حذف المعلم', style: TextStyle(color: AppColors.danger))),
+              ],
+            ),
         ],
       ),
       body: ListView(
