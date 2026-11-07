@@ -1,3 +1,4 @@
+import '../widgets/empty_note.dart';
 import 'package:flutter/material.dart';
 
 import '../data/academic_matching.dart';
@@ -429,7 +430,7 @@ class _GroupList extends StatelessWidget {
   Widget build(BuildContext context) {
     if (groups.isEmpty) {
       return const Center(
-        child: Text('لا شعب مطابقة', style: TextStyle(color: AppColors.muted, fontWeight: FontWeight.w700)),
+        child: EmptyNote('لا شعب مطابقة'),
       );
     }
     return ListView.separated(

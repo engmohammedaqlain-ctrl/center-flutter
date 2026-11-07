@@ -1,3 +1,4 @@
+import '../widgets/empty_note.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -770,7 +771,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       if (a.records.isEmpty)
         const NEmpty(text: 'لا سجل حضور', icon: Icons.event_available_rounded)
       else if (byMonth.isEmpty)
-        Text('لا غياب ولا إذن', style: nText(12, weight: FontWeight.w500, color: const Color(0xFF047857)))
+        EmptyNote('لا غياب ولا إذن', good: true)
       else ...[
         for (final entry in byMonth.entries)
           NColumn(
@@ -1424,14 +1425,14 @@ class _SubjectGradesCardState extends State<_SubjectGradesCard> {
                         ] else
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                            child: Text('لا علامات بعد', style: nText(12, weight: FontWeight.w500, color: Noon.muted)),
+                            child: EmptyNote('لا علامات بعد'),
                           ),
                       ]
                     : rows.isEmpty
                         ? [
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              child: Text('لا اختبارات', style: nText(12, weight: FontWeight.w500, color: Noon.muted)),
+                              child: EmptyNote('لا اختبارات'),
                             ),
                           ]
                         : [

@@ -1,3 +1,4 @@
+import '../widgets/empty_note.dart';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
@@ -254,7 +255,7 @@ class _CalendarSettingsTabState extends State<CalendarSettingsTab> {
         if (calendar.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text('لا عطل ولا امتحانات', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+            child: EmptyNote('لا عطل ولا امتحانات'),
           )
         else ...[
           for (final e in upcoming) _row(store, calendar, e, false),

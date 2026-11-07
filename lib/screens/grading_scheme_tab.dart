@@ -1,3 +1,4 @@
+import '../widgets/empty_note.dart';
 import 'package:flutter/material.dart';
 
 import '../data/academic_matching.dart';
@@ -746,7 +747,7 @@ class _SubjectMarks extends StatelessWidget {
     if (grades.isEmpty) {
       return const Padding(
         padding: EdgeInsets.all(14),
-        child: Text('لا مراحل معرّفة', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+        child: EmptyNote('لا مراحل معرّفة'),
       );
     }
 
@@ -775,7 +776,7 @@ class _SubjectMarks extends StatelessWidget {
         if (subjects.isEmpty)
           const Padding(
             padding: EdgeInsets.all(14),
-            child: Text('لا مواد لهذه المرحلة', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+            child: EmptyNote('لا مواد لهذه المرحلة'),
           )
         else
           for (final sub in subjects) ...[
