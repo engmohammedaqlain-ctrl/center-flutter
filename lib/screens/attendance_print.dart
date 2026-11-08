@@ -170,16 +170,22 @@ Future<void> printClassRoster(
           '${i + 1}',
           students[i].fullName,
           students[i].gender.trim().isEmpty ? '-' : genderLabel(students[i].gender),
+          students[i].nationalId.trim().isEmpty ? '-' : students[i].nationalId.trim(),
+          _dmy(students[i].birthDate),
+          _dmy(isoDate(students[i].enrollmentDate)),
           students[i].phone.trim().isEmpty
               ? '-'
               : formatPhoneDisplay(students[i].phone, students[i].phonePrefix),
           _parentCellText(students[i]),
+          students[i].parentNationalId.trim().isEmpty ? '-' : students[i].parentNationalId.trim(),
           '',
         ],
     ];
 
     final bytes = await PdfKit.buildSafe(
       title: 'كشف بيانات وحضور طلاب الصف',
+      // عشرة أعمدة: الكشف عرضياً
+      landscape: true,
       institutionName: store.institutionName,
       logoBase64: store.institutionLogo,
       header: (_) => pw.Column(
@@ -201,14 +207,15 @@ Future<void> printClassRoster(
       ),
       body: (_) => [
         PdfKit.table(
-          headers: const ['م', 'اسم الطالب الكامل', 'الجنس', 'الجوال', 'ولي الأمر / الجوال', 'ملاحظات / الحضور'],
+          // هويتا الطالب وولي أمره وتاريخا ميلاده وتسجيله — كشف الويب
+          headers: const ['م', 'اسم الطالب الكامل', 'الجنس', 'هوية الطالب', 'تاريخ الميلاد', 'تاريخ التسجيل', 'الجوال', 'ولي الأمر / الجوال', 'هوية ولي الأمر', 'ملاحظات / الحضور'],
           rows: rows.isEmpty
               ? [
-                  ['', 'لا يوجد طلاب مسجلين في هذا الصف', '', '', '', ''],
+                  ['', 'لا يوجد طلاب مسجلين في هذا الصف', '', '', '', '', '', '', '', ''],
                 ]
               : rows,
-          flex: const [1, 5, 2, 3, 4, 3],
-          ltrColumns: const {3},
+          flex: const [1, 5, 2, 3, 3, 3, 3, 4, 3, 3],
+          ltrColumns: const {3, 4, 5, 6, 8},
         ),
       ],
       endMatter: [
@@ -240,6 +247,9 @@ Future<void> printClassRoster(
     }
   }, message: 'جارٍ تجهيز كشف الصف...');
 }
+
+/// تاريخ الجدول يوماً/شهراً/سنة، والفارغ شرطة
+String _dmy(String iso) => iso.length >= 10 ? iso.substring(0, 10).split('-').reversed.join('/') : '-';
 
 String _parentCellText(Student s) {
   final name = s.parentName.trim();
