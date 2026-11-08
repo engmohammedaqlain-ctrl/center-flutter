@@ -1,0 +1,42 @@
+# الاختبارات كلها وصور الشاشات — يدوياً، لا ينشر شيئاً لأحد.
+#
+# «Check build» يبني الحزمة ويشغّل اختبارات مختارة؛ هذا يشغّل كل ما في test/، ثم يرسم
+# شاشات التطبيق ببيانات المدرسة التجريبية ويرفعها في صفحة التشغيل (Artifacts):
+#   screens-<sha>  → صور PNG لكل شاشة، و_errors.txt بما رماه الرسم لكل شاشة.
+name: Tests and screens
+
+on:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.6'
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter test --reporter expanded
+
+  screens:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.6'
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      # شاشة تفشل لا توقف الباقي: الصور تُرفع مهما كانت النتيجة
+      - run: flutter test test/screens --dart-define=SCREENSHOTS=true --reporter expanded || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screens-${{ github.sha }}
+          path: build/screens
+          retention-days: 7
