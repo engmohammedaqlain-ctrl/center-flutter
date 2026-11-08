@@ -22,7 +22,7 @@ import 'teacher_detail_screen.dart';
 
 const _red = Color(0xFFBA1A1A);
 const _green = Color(0xFF16A34A);
-const _amber = Color(0xFF92400E);
+const _amber = Color(0xFF475569);
 const _bandColors = [Color(0xFF15803D), Color(0xFF22C55E), Color(0xFF0EA5E9), Color(0xFFD97706), Color(0xFFBA1A1A)];
 const _bandCells = [
   (bg: Color(0xFFDCFCE7), fg: Color(0xFF166534)),
@@ -77,7 +77,8 @@ SheetData _toSheet(AppStore store, _Sheet s) => SheetData(
       signatures: const [],
     );
 
-/// شريط التقرير: الفلاتر، وقائمة «تصدير» واحدة (PDF أو Excel) بدل زرين يزدحمان معها.
+/// شريط التقرير: الفلاتر في شبكة منتظمة (المنتقيات بنصف العرض، والبحث والشروط بعرض كامل)،
+/// وقائمة «تصدير» واحدة في طرف أول صف.
 class _Bar extends StatelessWidget {
   const _Bar({required this.children, this.sheet});
 
@@ -93,11 +94,24 @@ class _Bar extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: children,
+            child: LayoutBuilder(
+              builder: (context, c) {
+                final half = (c.maxWidth - 8) / 2;
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    for (final w in children)
+                      if (w is _Search || w is _NumLine)
+                        SizedBox(width: c.maxWidth, child: w)
+                      else if (w is _Pick || w is _MonthNav || w is _AdvToggle)
+                        SizedBox(width: half, child: w)
+                      else
+                        w,
+                  ],
+                );
+              },
             ),
           ),
           if (sheet != null)
@@ -137,7 +151,6 @@ class _MonthNav extends StatelessWidget {
         height: 40,
         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: AdminNoon.line)),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
               tooltip: 'الشهر السابق',
@@ -145,7 +158,7 @@ class _MonthNav extends StatelessWidget {
               icon: const Icon(Icons.chevron_left, size: 22),
               onPressed: onPrev,
             ),
-            Text(label, style: NoonText.style(13, weight: FontWeight.w700)),
+            Expanded(child: Text(label, textAlign: TextAlign.center, style: NoonText.style(13, weight: FontWeight.w700))),
             IconButton(
               tooltip: 'الشهر التالي',
               visualDensity: VisualDensity.compact,
@@ -210,6 +223,7 @@ class _Pick<T> extends StatelessWidget {
           child: DropdownButton<T>(
             value: options.containsKey(value) ? value : options.keys.first,
             isDense: true,
+            isExpanded: true,
             style: NoonText.style(12.5, weight: FontWeight.w700),
             items: [for (final e in options.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
             onChanged: (v) {
@@ -263,7 +277,7 @@ Widget _scopePick(
   );
 }
 
-/// الحد يُقرأ جملة: «غاب [3] أيام فأكثر» — `MinInput`.
+/// الحد يُقرأ جملة: «غاب [3] أيام فأكثر» — `MinInput`. صف بعرض كامل بإطار الحقول، والخانة في طرفه.
 class _NumLine extends StatelessWidget {
   const _NumLine({required this.label, required this.suffix, required this.value, required this.onChanged});
 
@@ -273,21 +287,27 @@ class _NumLine extends StatelessWidget {
   final ValueChanged<int> onChanged;
 
   @override
-  Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
-        Text('$label ', style: NoonText.style(12, color: AdminNoon.muted)),
-        SizedBox(
-          width: 52,
-          height: 36,
-          child: TextFormField(
-            initialValue: value > 0 ? '$value' : '',
-            keyboardType: TextInputType.number,
-            textAlign: TextAlign.center,
-            decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 8)),
-            onChanged: (v) => onChanged(int.tryParse(v) ?? 0),
+  Widget build(BuildContext context) => Container(
+        height: 44,
+        padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 6, 0),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: AdminNoon.line)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text('$label ', style: NoonText.style(12.5, color: AdminNoon.muted)),
+          SizedBox(
+            width: 64,
+            height: 32,
+            child: TextFormField(
+              initialValue: value > 0 ? '$value' : '',
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+              style: NoonText.style(13.5, weight: FontWeight.w700),
+              decoration: const InputDecoration(isDense: true, hintText: '0', contentPadding: EdgeInsets.symmetric(vertical: 6)),
+              onChanged: (v) => onChanged(int.tryParse(v) ?? 0),
+            ),
           ),
-        ),
-        Text(' $suffix', style: NoonText.style(12, color: AdminNoon.muted)),
-      ]);
+          Text(' $suffix', style: NoonText.style(12.5, color: AdminNoon.muted)),
+        ]),
+      );
 }
 
 class _Search extends StatelessWidget {
@@ -409,6 +429,7 @@ class _AbsenceReportState extends State<_AbsenceReport> {
   int minAbsent = 0;
   int maxRate = 0;
   String q = '';
+  bool showAdv = false;
   final _memo = _Memo<List<SectionAttendance>>();
 
   @override
@@ -464,7 +485,9 @@ class _AbsenceReportState extends State<_AbsenceReport> {
               q = v;
               if (v.isNotEmpty) view = 'students';
             })),
-        if (view == 'students') ...[
+        if (view == 'students')
+          _AdvToggle(open: showAdv, active: minAbsent > 0 || maxRate > 0, onTap: () => setState(() => showAdv = !showAdv)),
+        if (view == 'students' && showAdv) ...[
           _NumLine(label: 'غاب', suffix: 'أيام فأكثر', value: minAbsent, onChanged: (v) => setState(() => minAbsent = v)),
           _NumLine(label: 'حضوره', suffix: '% فأقل', value: maxRate, onChanged: (v) => setState(() => maxRate = v.clamp(0, 100))),
         ],
