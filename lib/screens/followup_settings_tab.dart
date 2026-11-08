@@ -6,6 +6,7 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/admin_ui.dart' show NoonSegment;
 import '../widgets/widgets.dart';
 
 /// المتابعة في صفحة واحدة بسطور قصيرة — `FollowupSettings.tsx`: متى يُنذر الأهل بالغياب،
@@ -179,15 +180,13 @@ class _FollowupSettingsTabState extends State<FollowupSettingsTab> {
               line(
                 Tooltip(message: 'بعد الموعد يظهر الرصد الناقص في الرئيسية', child: Text('موعد الرصد', style: AppText.label)),
                 [
-                  SegmentedButton<String>(
-                    showSelectedIcon: false,
-                    style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                    segments: const [
-                      ButtonSegment(value: 'term_1', label: Text('الفصل الأول', style: TextStyle(fontSize: 11.5))),
-                      ButtonSegment(value: 'term_2', label: Text('الفصل الثاني', style: TextStyle(fontSize: 11.5))),
-                    ],
-                    selected: {term},
-                    onSelectionChanged: (v) => setState(() => term = v.first),
+                  SizedBox(
+                    width: 200,
+                    child: NoonSegment<String>(
+                      value: term,
+                      options: const [('term_1', 'الفصل الأول'), ('term_2', 'الفصل الثاني')],
+                      onChanged: (v) => setState(() => term = v),
+                    ),
                   ),
                 ],
                 last: true,
@@ -205,8 +204,9 @@ class _FollowupSettingsTabState extends State<FollowupSettingsTab> {
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Row(children: [
                     Expanded(child: Text(name, style: AppText.label)),
-                    OutlinedButton(
-                      onPressed: () async {
+                    InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () async {
                         final now = DateTime.now();
                         final cur = DateTime.tryParse(deadlineOf(name));
                         final picked = await showDatePicker(
@@ -217,7 +217,19 @@ class _FollowupSettingsTabState extends State<FollowupSettingsTab> {
                         );
                         if (picked != null) setDeadline(name, isoDate(picked));
                       },
-                      child: Text(deadlineOf(name).isEmpty ? 'بلا موعد' : deadlineOf(name).split('-').reversed.join('/')),
+                      child: Container(
+                        height: 38,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.line)),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const Icon(Icons.calendar_today_outlined, size: 15, color: AppColors.muted),
+                          const SizedBox(width: 6),
+                          Text(
+                            deadlineOf(name).isEmpty ? 'بلا موعد' : deadlineOf(name).split('-').reversed.join('/'),
+                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: deadlineOf(name).isEmpty ? AppColors.muted : AppColors.heading),
+                          ),
+                        ]),
+                      ),
                     ),
                     if (deadlineOf(name).isNotEmpty)
                       IconButton(
