@@ -82,6 +82,7 @@ const tableAllowedColumns = <String, List<String>>{
     'weekly_periods',
     'pay_profile',
     'salary_history',
+    'user_id',
     'academic_year_id',
     'tenant_id',
     'created_at',

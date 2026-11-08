@@ -749,7 +749,10 @@ class _PayrollScreenState extends State<PayrollScreen> {
                         const SizedBox(height: 2),
                         Row(
                           children: [
-                            Text(_typeLabel(pay), style: const TextStyle(fontSize: 11.5, color: AppColors.muted)),
+                            Text(
+                              r.teacher.isAdminStaff ? 'إدارة · ${_typeLabel(pay)}' : _typeLabel(pay),
+                              style: const TextStyle(fontSize: 11.5, color: AppColors.muted),
+                            ),
                             if (r.calc.warnings.isNotEmpty) ...[
                               const SizedBox(width: 6),
                               Tooltip(

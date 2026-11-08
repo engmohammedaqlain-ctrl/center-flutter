@@ -94,7 +94,7 @@ class TimetableState extends ChangeNotifier {
 
   void _recompute() {
     rooms = [...store.roomsInViewedYear]..sort(compareSchoolRooms);
-    teachers = [...store.teachersInViewedYear]..sort((a, b) => a.name.compareTo(b.name));
+    teachers = [...store.teachingStaffInViewedYear]..sort((a, b) => a.name.compareTo(b.name));
     final groups = store.groupsInViewedYear.where((g) => g.status != 'archived').toList();
     groupMap = {for (final g in groups) g.id: g};
     _codes = roomCodes(rooms);

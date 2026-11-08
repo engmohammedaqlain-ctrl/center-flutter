@@ -1784,8 +1784,8 @@ class _TeachersTabState extends State<_TeachersTab> {
     List<({String groupId, int periods})> periods;
     try {
       final asc = parseAsc(utf8.decode(await file.readAsBytes(), allowMalformed: true));
-      rows = planAscImport(asc, store.teachersInViewedYear, store.subjectsInViewedYear);
-      periods = planAscPeriods(asc, store.teachersInViewedYear, store.subjectsInViewedYear, store.roomsInViewedYear, store.groupsInViewedYear);
+      rows = planAscImport(asc, store.teachingStaffInViewedYear, store.subjectsInViewedYear);
+      periods = planAscPeriods(asc, store.teachingStaffInViewedYear, store.subjectsInViewedYear, store.roomsInViewedYear, store.groupsInViewedYear);
     } catch (_) {
       if (mounted) showAppSnack(context, 'ليس ملف aSc صالحاً', error: true);
       return;
@@ -1862,7 +1862,7 @@ class _TeachersTabState extends State<_TeachersTab> {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final q = search.text.trim();
-    final list = store.teachersInViewedYear.where((t) {
+    final list = store.teachingStaffInViewedYear.where((t) {
       if (q.isEmpty) return true;
       return t.name.contains(q) ||
           t.phone.contains(q) ||
@@ -1875,7 +1875,7 @@ class _TeachersTabState extends State<_TeachersTab> {
           controller: search,
           hint: 'ابحث باسم المدرس أو رقم الجوال...',
           shown: list.length,
-          total: store.teachersInViewedYear.length,
+          total: store.teachingStaffInViewedYear.length,
           onChanged: (_) => setState(() {}),
           action: Tooltip(
             message: 'استيراد ملف aSc',
@@ -2090,7 +2090,7 @@ class _SubjectCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final s = subject;
-    final teachers = store.teachersInViewedYear
+    final teachers = store.teachingStaffInViewedYear
         .where((t) => t.subjectIds.contains(s.id) || t.subject == s.name)
         .length;
 
@@ -2238,6 +2238,10 @@ class _UserCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final u = user;
     final tabs = effectiveSections(u.capabilities, u.role).length;
+    final store = StoreScope.of(context);
+    // رواتب الإدارة لمن يرى المصروفات والأجور: الموظف يُضاف للرواتب من هنا، لا كمعلم
+    final canPay = store.can('finance.expenses');
+    final payRecord = store.staffPayRecord(u.id);
 
     return AppCard(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
@@ -2269,7 +2273,7 @@ class _UserCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${roleLabel(u.role)}  ·  $tabs تبويب',
+                      '${roleLabel(u.role)}  ·  $tabs تبويب${payRecord != null ? '  ·  بالرواتب' : ''}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: _metaStyle,
@@ -2304,6 +2308,15 @@ class _UserCard extends StatelessWidget {
                   border: AppColors.lineStrong,
                   onTap: () => _open(context, UserAccessScreen(user: u)),
                 ),
+                if (canPay)
+                  TileButton(
+                    label: payRecord == null ? 'إضافة للرواتب' : 'إزالة من الرواتب',
+                    icon: const Icon(Icons.payments_outlined, size: 13),
+                    color: AppColors.heading,
+                    background: Colors.white,
+                    border: AppColors.lineStrong,
+                    onTap: () => payRecord == null ? _addToPayroll(context, u) : _removeFromPayroll(context, u),
+                  ),
                 if (canDelete && !isThisDevice)
                   TileButton(
                     label: 'حذف',
@@ -2495,6 +2508,88 @@ Future<void> _staffLogin(BuildContext context, AppUser u) async {
       },
     ),
   );
+}
+
+/// إضافة موظف إدارة للرواتب بوظيفته وراتبه الشهري — `StaffPayModal`. البدلات وخصم الغياب
+/// من الرواتب كأي موظف.
+Future<void> _addToPayroll(BuildContext context, AppUser u) async {
+  final store = StoreScope.of(context);
+  final job = TextEditingController(text: roleLabel(u.role));
+  final salary = TextEditingController();
+  String? error;
+
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setSt) {
+        void save() {
+          try {
+            store.addStaffToPayroll(u, jobTitle: job.text, salary: double.tryParse(digitsOnly(salary.text)) ?? 0);
+            Navigator.pop(ctx);
+            showAppSnack(context, 'أُضيف للرواتب');
+          } catch (e) {
+            setSt(() => error = e is StoreException ? e.message : userMessage(e, 'تعذّرت الإضافة'));
+          }
+        }
+
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 12 + MediaQuery.viewInsetsOf(ctx).bottom),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'الرواتب: ${u.name}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.heading),
+                ),
+                const SizedBox(height: 14),
+                const FieldLabel('الوظيفة'),
+                TextField(controller: job, decoration: const InputDecoration(hintText: 'سكرتيرة، محاسب...')),
+                const SizedBox(height: 12),
+                const FieldLabel('الراتب الشهري'),
+                TextField(
+                  controller: salary,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩۰-۹]'))],
+                  textDirection: TextDirection.ltr,
+                  onSubmitted: (_) => save(),
+                  decoration: InputDecoration(hintText: '0', errorText: error),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'يظهر في الرواتب والدوام والإجازات، ولا يظهر مع المعلمين.',
+                  style: TextStyle(fontSize: 11.5, color: AppColors.muted),
+                ),
+                const SizedBox(height: 16),
+                ActionButtons(
+                  primary: PrimaryButton(label: 'إضافة للرواتب', icon: Icons.payments_outlined, height: 40, onPressed: save),
+                  secondary: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx)),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
+
+Future<void> _removeFromPayroll(BuildContext context, AppUser u) async {
+  final store = StoreScope.of(context);
+  final ok = await confirmSheet(context, title: 'إزالة من الرواتب', message: 'إزالة ${u.name} من الرواتب؟', confirmLabel: 'إزالة');
+  if (!ok || !context.mounted) return;
+  try {
+    store.removeStaffFromPayroll(u.id);
+  } on StoreException catch (e) {
+    showAppSnack(context, e.message, error: true);
+  }
 }
 
 Future<void> _deleteUser(BuildContext context, AppUser u) async {

@@ -2003,7 +2003,7 @@ class _DataReportState extends State<_DataReport> {
     final staff = grade.isNotEmpty
         ? const <({Teacher t, List<String> problems})>[]
         : [
-            for (final t in store.teachersInViewedYear)
+            for (final t in store.teachingStaffInViewedYear)
               (
                 t: t,
                 problems: [
@@ -2155,7 +2155,7 @@ class _UsageReportState extends State<_UsageReport> {
           roleRow('الأهالي', all.map(parentOf).toList(), all.length, 'parent_never'),
           roleRow('الطلاب', all.map(studentOf).toList(), all.length, 'student_never'),
           if (grade.isEmpty)
-            roleRow('المعلمون', teacherUsage, store.teachersInViewedYear.length > teacherUsage.length ? store.teachersInViewedYear.length : teacherUsage.length, null),
+            roleRow('المعلمون', teacherUsage, store.teachingStaffInViewedYear.length > teacherUsage.length ? store.teachingStaffInViewedYear.length : teacherUsage.length, null),
         ];
         bool matchWho(Student s) => switch (who) {
               'parent_never' => parentOf(s)?.lastSeen == null,
