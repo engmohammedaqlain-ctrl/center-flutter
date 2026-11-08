@@ -188,7 +188,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onPressed: () => open(const GradeFeeFormScreen()),
       ),
       'teachers' => ThumbAction(
-        label: 'إضافة مدرس',
+        label: 'إضافة معلم',
         icon: Icons.person_add_alt_1_outlined,
         onPressed: () => open(const TeacherFormScreen()),
       ),
@@ -281,6 +281,7 @@ class _AcademicYearsTabState extends State<_AcademicYearsTab> {
     final years = [...store.academicYears]
       ..sort((a, b) => b.startsOn.compareTo(a.startsOn));
     final current = store.operationalAcademicYear;
+    final previous = [for (final y in years) if (y.id != current?.id) y];
     if (!openDates && current != null && startsOn.isEmpty) {
       _loadDraft(current);
     }
@@ -288,47 +289,66 @@ class _AcademicYearsTabState extends State<_AcademicYearsTab> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, thumbActionClearance),
       children: [
-        for (final year in years)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: AppCard(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(year.label, style: _titleStyle),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${year.startsOn} — ${year.endsOn}',
-                          style: _metaStyle,
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (year.isCurrent)
-                    StatusChip.success('الحالي')
-                  else if (year.status == 'closed')
-                    StatusChip.muted('مغلق')
-                  else
-                    GhostButton(
-                      label: 'جعله الحالي',
-                      onPressed: () async {
-                        await store.setCurrentAcademicYear(year.id);
-                        if (context.mounted) {
-                          showAppSnack(
-                            context,
-                            'تم تعيين ${year.label} عاماً حالياً',
-                          );
-                        }
-                      },
-                    ),
-                ],
-              ),
+        if (current != null) ...[
+          const _SectionLabel('العام الحالي'),
+          AppCard(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: Text(current.label, style: _titleStyle.copyWith(fontSize: 15))),
+                    StatusChip.success('الحالي'),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text('${current.startsOn} — ${current.endsOn}', style: _metaStyle),
+                const _Rule(),
+                _TermLine('الفصل الأول', current.term1Start, current.term1End),
+                const SizedBox(height: 4),
+                _TermLine('الفصل الثاني', current.term2Start, current.term2End),
+              ],
             ),
           ),
+        ],
+        if (previous.isNotEmpty) ...[
+          const _SectionLabel('الأعوام السابقة'),
+          for (final year in previous)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: AppCard(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(year.label, style: _titleStyle),
+                          const SizedBox(height: 2),
+                          Text('${year.startsOn} — ${year.endsOn}', style: _metaStyle),
+                        ],
+                      ),
+                    ),
+                    if (year.status == 'closed')
+                      StatusChip.muted('مغلق')
+                    else
+                      GhostButton(
+                        label: 'جعله الحالي',
+                        onPressed: () async {
+                          await store.setCurrentAcademicYear(year.id);
+                          if (context.mounted) {
+                            showAppSnack(context, 'تم تعيين ${year.label} عاماً حالياً');
+                          }
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+        if (years.isEmpty) const EmptyState(message: 'لا أعوام دراسية بعد', icon: Icons.calendar_month_outlined),
         if (current != null) ...[
           const SizedBox(height: 8),
           GhostButton(
@@ -424,15 +444,20 @@ class _AcademicYearsTabState extends State<_AcademicYearsTab> {
             ),
           ],
         ],
-        const SizedBox(height: 12),
-        PrimaryButton(
+        const SizedBox(height: 20),
+        const _Rule(),
+        const Text(
+          'إغلاق العام ينقل الصفوف والمواد والخطط إلى عام جديد ولا يُتراجع عنه بسهولة.',
+          style: _metaStyle,
+        ),
+        const SizedBox(height: 8),
+        GhostButton(
           label: 'إغلاق العام وفتح التالي',
           icon: Icons.next_plan_outlined,
-          color: AppColors.navy,
           onPressed: () async {
             final cur = store.operationalAcademicYear;
             if (cur == null) return;
-            // فحص ثم جرد ثم إغلاق ثم ترقية — `YearEndWizard`
+            // معالج الإغلاق خطوات فحص وجرد وتأكيد قبل أي تغيير — `YearEndWizard`
             if (store.isAdminUser) return showYearEndWizard(context, store, cur);
             final ok = await confirmSheet(
               context,
@@ -451,6 +476,35 @@ class _AcademicYearsTabState extends State<_AcademicYearsTab> {
       ],
     );
   }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(2, 10, 2, 6),
+        child: Text(text, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: AppColors.muted)),
+      );
+}
+
+class _TermLine extends StatelessWidget {
+  const _TermLine(this.label, this.from, this.to);
+
+  final String label;
+  final String from;
+  final String to;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          Text(label, style: _metaStyle),
+          const Spacer(),
+          Text(from.isEmpty && to.isEmpty ? 'بلا تواريخ' : '$from — $to', style: _metaStyle),
+        ],
+      );
 }
 
 // ═══ عناصر مشتركة ═══════════════════════════════════════════════════════════
@@ -1627,7 +1681,7 @@ class _GradePlanRow extends StatelessWidget {
             Expanded(
               child: Text(
                 missing
-                    ? 'لا خطة أقساط — من يُسجَّل في المرحلة لا تُقيَّد عليه أقساط'
+                    ? 'بلا خطة أقساط'
                     : monthly
                         ? 'شهري  ·  ${money(fee.monthlyFee)} من تاريخ التسجيل'
                         : '${items.length} قسطاً  ·  ${money(total)}',
@@ -1640,7 +1694,21 @@ class _GradePlanRow extends StatelessWidget {
                 ),
               ),
             ),
-            const Icon(Icons.chevron_right_rounded, size: 20, color: AppColors.faint),
+            if (missing)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.dangerSoft,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.dangerBorder),
+                ),
+                child: const Text(
+                  'أنشئ خطة ←',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.danger),
+                ),
+              )
+            else
+              const Icon(Icons.chevron_right_rounded, size: 20, color: AppColors.faint),
           ],
         ),
       ),
@@ -1874,7 +1942,7 @@ class _TeachersTabState extends State<_TeachersTab> {
       children: [
         _Toolbar(
           controller: search,
-          hint: 'ابحث باسم المدرس أو رقم الجوال...',
+          hint: 'ابحث باسم المعلم أو رقم الجوال...',
           shown: list.length,
           total: store.teachingStaffInViewedYear.length,
           onChanged: (_) => setState(() {}),
@@ -1897,8 +1965,8 @@ class _TeachersTabState extends State<_TeachersTab> {
             count: list.length,
             empty: EmptyState(
               message: q.isEmpty
-                  ? 'لا يوجد مدرسون مسجلون.'
-                  : 'لا يوجد مدرسون مطابقون للبحث.',
+                  ? 'لا يوجد معلمون مسجلون.'
+                  : 'لا يوجد معلمون مطابقون للبحث.',
             ),
             item: (context, i) => _TeacherCard(teacher: list[i]),
           ),
@@ -2124,7 +2192,7 @@ class _SubjectCard extends StatelessWidget {
           if (teachers > 0) ...[
             const SizedBox(width: 10),
             Text(
-              '$teachers مدرس',
+              '$teachers معلم',
               style: const TextStyle(color: AppColors.faint, fontSize: 11, fontWeight: FontWeight.w600),
             ),
           ],
@@ -2151,7 +2219,6 @@ class _UsersTab extends StatelessWidget {
       item: (context, i) => _UserCard(
         user: users[i],
         isThisDevice: users[i].id == store.deviceUserId,
-        canDelete: users.length > 1,
       ),
     );
   }
@@ -2222,116 +2289,48 @@ class _DeviceCard extends StatelessWidget {
   }
 }
 
-/// مستخدم: الاسم وشارة «هذا الجهاز» مقابل حالته، ودوره وعدد صلاحياته، ثم خط رفيع
-/// وأزرار الدخول والصلاحيات والحذف.
+/// مستخدم: اسمه ودوره وشارات حالته (دخول، رواتب، هذا الجهاز). لمسه يفتح صفحته وفيها كل
+/// الإجراءات: الدخول والصلاحيات والرواتب والحذف.
 class _UserCard extends StatelessWidget {
-  const _UserCard({
-    required this.user,
-    required this.isThisDevice,
-    required this.canDelete,
-  });
+  const _UserCard({required this.user, required this.isThisDevice});
 
   final AppUser user;
   final bool isThisDevice;
-  final bool canDelete;
 
   @override
   Widget build(BuildContext context) {
     final u = user;
-    final tabs = effectiveSections(u.capabilities, u.role).length;
     final store = StoreScope.of(context);
-    // رواتب الإدارة لمن يرى المصروفات والأجور: الموظف يُضاف للرواتب من هنا، لا كمعلم
-    final canPay = store.can('finance.expenses');
-    final payRecord = store.staffPayRecord(u.id);
+    final inPayroll = store.staffPayRecord(u.id) != null;
 
     return AppCard(
-      // البطاقة تفتح صفحة المستخدم: حسابه وصلاحياته وراتبه ودوامه
       onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => UserDetailScreen(userId: u.id))),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+      child: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(u.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: _titleStyle),
+                const SizedBox(height: 2),
+                Text(roleLabel(u.role), maxLines: 1, overflow: TextOverflow.ellipsis, style: _metaStyle),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
                   children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            u.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: _titleStyle,
-                          ),
-                        ),
-                        if (isThisDevice) ...[
-                          const SizedBox(width: 6),
-                          StatusChip.success('هذا الجهاز'),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${roleLabel(u.role)}  ·  $tabs تبويب${payRecord != null ? '  ·  بالرواتب' : ''}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: _metaStyle,
-                    ),
+                    if (!u.isActive) StatusChip.danger('موقوف'),
+                    if (isThisDevice) StatusChip.success('هذا الجهاز'),
+                    u.hasLogin ? StatusChip.success('له دخول') : StatusChip.muted('بلا دخول'),
+                    if (inPayroll) StatusChip.muted('بالرواتب'),
                   ],
                 ),
-              ),
-              if (!u.isActive) StatusChip.danger('موقوف'),
-            ],
-          ),
-          const _Rule(),
-          Align(
-            alignment: AlignmentDirectional.centerEnd,
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              alignment: WrapAlignment.end,
-              children: [
-                TileButton(
-                  label: u.hasLogin ? 'الدخول' : 'إنشاء دخول',
-                  icon: const Icon(Icons.key_outlined, size: 13),
-                  color: AppColors.amber,
-                  background: AppColors.amberSoft,
-                  border: AppColors.amberBorder,
-                  onTap: () => showStaffLoginSheet(context, u),
-                ),
-                TileButton(
-                  label: 'الصلاحيات',
-                  icon: const Icon(Icons.tune, size: 13),
-                  color: AppColors.heading,
-                  background: Colors.white,
-                  border: AppColors.lineStrong,
-                  onTap: () => _open(context, UserAccessScreen(user: u)),
-                ),
-                if (canPay)
-                  TileButton(
-                    label: payRecord == null ? 'إضافة للرواتب' : 'إزالة من الرواتب',
-                    icon: const Icon(Icons.payments_outlined, size: 13),
-                    color: AppColors.heading,
-                    background: Colors.white,
-                    border: AppColors.lineStrong,
-                    onTap: () => payRecord == null ? showAddToPayrollSheet(context, u) : confirmRemoveFromPayroll(context, u),
-                  ),
-                if (canDelete && !isThisDevice)
-                  TileButton(
-                    label: 'حذف',
-                    icon: const Icon(Icons.delete_outline, size: 13),
-                    color: AppColors.danger,
-                    background: Colors.white,
-                    border: AppColors.dangerBorder,
-                    onTap: () => confirmDeleteUser(context, u),
-                  ),
               ],
             ),
           ),
+          _chevron,
         ],
       ),
     );
@@ -2734,29 +2733,6 @@ class _DataTabState extends State<_DataTab> {
           icon: Icons.storage_outlined,
           title: 'البيانات المحلية على هذا الجهاز',
         ),
-        if (totalSynced != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: InfoStrip(
-              child: Row(
-                children: [
-                  const Text(
-                    'إجمالي سجلات الموارد',
-                    style: TextStyle(color: AppColors.muted, fontSize: 12),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '$totalSynced',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 16,
-                      color: AppColors.navy,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
         if (inv == null && countsError == null)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
@@ -2771,20 +2747,49 @@ class _DataTabState extends State<_DataTab> {
             ),
           )
         else
-          _CountGrid(counts: inv!),
-        const SizedBox(height: 8),
-        _NavTile(
-          icon: Icons.refresh,
-          title: 'تحديث الإحصاءات',
-          subtitle: 'عدّ الصفوف من القرص كما على الويب',
-          onTap: _loadCounts,
-        ),
-        const SizedBox(height: 8),
-        _NavTile(
-          icon: Icons.cloud_download_outlined,
-          title: 'إعادة تنزيل كل الموارد',
-          subtitle: 'إن نقصت السجلات عن الويب — سحب كامل من السحابة',
-          onTap: () => _forceFullPull(context),
+          InfoStrip(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text('إجمالي سجلات الموارد', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+                    const Spacer(),
+                    Text(
+                      '${totalSynced ?? inv!.fold<int>(0, (n, c) => n + c.$2)}',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: AppColors.navy),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  [for (final c in inv!) if (c.$2 > 0) '${c.$2} ${c.$1}'].join('  ·  ').isEmpty
+                      ? 'لا بيانات محلية بعد'
+                      : [for (final c in inv) if (c.$2 > 0) '${c.$2} ${c.$1}'].join('  ·  '),
+                  style: _metaStyle,
+                ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 4),
+        _Collapsible(
+          title: 'متقدم',
+          children: [
+            _NavTile(
+              icon: Icons.refresh,
+              title: 'تحديث الإحصاءات',
+              subtitle: 'عدّ الصفوف من القرص كما على الويب',
+              onTap: _loadCounts,
+            ),
+            const SizedBox(height: 8),
+            _NavTile(
+              icon: Icons.cloud_download_outlined,
+              title: 'إعادة تنزيل كل الموارد',
+              subtitle: 'إن نقصت السجلات عن الويب — سحب كامل من السحابة',
+              onTap: () => _forceFullPull(context),
+            ),
+            const SizedBox(height: 8),
+          ],
         ),
 
         const FormSection(
@@ -2904,75 +2909,6 @@ Widget _infoRow(String label, String value) {
       ],
     ),
   );
-}
-
-/// أعداد السجلات المحلية في شبكة من أربعة أعمدة متساوية.
-class _CountGrid extends StatelessWidget {
-  const _CountGrid({required this.counts});
-
-  final List<(String, int)> counts;
-
-  static const _columns = 4;
-
-  @override
-  Widget build(BuildContext context) {
-    final rows = <Widget>[];
-    for (var i = 0; i < counts.length; i += _columns) {
-      final slice = counts.sublist(i, (i + _columns).clamp(0, counts.length));
-      rows.add(
-        Row(
-          children: [
-            for (var j = 0; j < _columns; j++) ...[
-              if (j > 0) const SizedBox(width: 6),
-              Expanded(
-                child: j < slice.length
-                    ? _cell(slice[j])
-                    : const SizedBox.shrink(),
-              ),
-            ],
-          ],
-        ),
-      );
-    }
-    return Column(
-      children: [
-        for (var i = 0; i < rows.length; i++) ...[
-          if (i > 0) const SizedBox(height: 6),
-          rows[i],
-        ],
-      ],
-    );
-  }
-
-  Widget _cell((String, int) c) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
-      decoration: tileDecoration(),
-      child: Column(
-        children: [
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              '${c.$2}',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 15,
-                color: AppColors.heading,
-              ),
-            ),
-          ),
-          const SizedBox(height: 2),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              c.$1,
-              style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 /// سطر يُفتح بلمسة: أيقونة في صندوق، وعنوان وشرح، وسهم الفتح.

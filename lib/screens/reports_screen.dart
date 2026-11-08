@@ -84,7 +84,7 @@ class ReportsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final groups = reportGroups(store);
-    if (groups.isEmpty) return const NoonEmpty('لا تقارير متاحة لحسابك');
+    if (groups.isEmpty) return const Padding(padding: EdgeInsets.all(24), child: NoonEmpty('لا تقارير متاحة لحسابك'));
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
       children: [

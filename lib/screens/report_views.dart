@@ -10,7 +10,6 @@ import '../data/school_calendar.dart';
 import '../data/staff.dart';
 import '../data/store.dart';
 import '../models/models.dart';
-import '../theme/app_colors.dart';
 import '../widgets/admin_tokens.dart';
 import '../widgets/admin_ui.dart';
 import '../widgets/widgets.dart';
@@ -19,6 +18,21 @@ import 'settings_screen.dart';
 import 'sheet_export.dart';
 import 'student_detail_screen.dart';
 import 'teacher_detail_screen.dart';
+
+/// اسم الشعبة بلا تكرار المرحلة: «عاشر - عاشر (أ)» ← «عاشر (أ)»، «حادي عشر علمي - 11 علمي» ← «11 علمي».
+String _sec(String label) {
+  final i = label.indexOf(' - ');
+  if (i < 0) return label;
+  final a = label.substring(0, i).trim();
+  final b = label.substring(i + 3).trim();
+  final dup = b.contains(a) ||
+      b.contains(a.split(' ').first) ||
+      (RegExp(r'^\d+\s').hasMatch(b) && a.contains(b.split(' ').last));
+  return dup ? b : label;
+}
+
+/// لون نسبة التحصيل: أحمر تحت 50، عنبري تحت 70، أخضر من 90.
+Color? _rateColor(int? r) => r == null ? null : r < 50 ? _red : r < 70 ? _amber : r >= 90 ? AdminNoon.green700 : null;
 
 const _red = Color(0xFFBA1A1A);
 const _green = Color(0xFF16A34A);
@@ -147,7 +161,10 @@ class _Bar extends StatelessWidget {
               items.add(SizedBox(width: w, child: x));
             } else if (half(x)) {
               final first = export != null && halves < 2;
-              items.add(SizedBox(width: first ? (w - 16 - 44) / 2 : (w - 8) / 2, child: x));
+              // عنصر وحيد في الشريط يملأ ما بقي من السطر بدل نصفه وفراغٍ بعده
+              final alone = children.where(half).length == 1;
+              final width = alone ? (export != null ? w - 8 - 44 : w) : (first ? (w - 16 - 44) / 2 : (w - 8) / 2);
+              items.add(SizedBox(width: width, child: x));
               halves++;
               if (first) exportAt = items.length;
             } else {
@@ -533,7 +550,7 @@ class _AbsenceReportState extends State<_AbsenceReport> {
     final studentRows = [
       for (final s in scoped)
         for (final r in s.rows)
-          if (r.absent >= minAbsent && (maxRate == 0 || r.rate <= maxRate) && _matches(r.student.fullName, q)) (r: r, section: s.group.label),
+          if (r.absent >= minAbsent && (maxRate == 0 || r.rate <= maxRate) && _matches(r.student.fullName, q)) (r: r, section: _sec(s.group.label)),
     ]..sort((a, b) => b.r.absent != a.r.absent ? b.r.absent - a.r.absent : a.r.student.fullName.compareTo(b.r.student.fullName));
     final present = scoped.fold<int>(0, (n, s) => n + s.present);
     final absent = scoped.fold<int>(0, (n, s) => n + s.absent);
@@ -548,7 +565,7 @@ class _AbsenceReportState extends State<_AbsenceReport> {
           headers: view == 'students' ? ['#', 'اسم الطالب', 'الشعبة', 'غياب', 'مأذون', 'حضور'] : ['الشعبة', 'الطلاب', 'غياب', 'مأذون', 'الحضور'],
           rows: view == 'students'
               ? [for (var i = 0; i < studentRows.length; i++) [i + 1, studentRows[i].r.student.fullName, studentRows[i].section, studentRows[i].r.absent, studentRows[i].r.excused, studentRows[i].r.present]]
-              : [for (final s in scoped) [s.group.label, s.rows.length, s.absent, s.excused, s.rate == null ? '—' : '${s.rate}%']],
+              : [for (final s in scoped) [_sec(s.group.label), s.rows.length, s.absent, s.excused, s.rate == null ? '—' : '${s.rate}%']],
           landscape: false,
         );
 
@@ -611,7 +628,7 @@ class _AbsenceReportState extends State<_AbsenceReport> {
                   sectionId = s.group.room.id;
                   view = 'students';
                 })),
-          _row(grade.isEmpty ? 'المدرسة' : grade, '$students طالب · $absent غياب · $excused مأذون', [_val(rate == null ? '—' : '$rate%')],
+          _row(grade.isEmpty ? 'المدرسة' : grade, '$students طالب · $absent غياب · $excused مأذون', [_val(rate == null ? '—' : '$rate%', color: _rateColor(rate))],
               onTap: () => setState(() => view = 'students')),
         ]),
     ], onRefresh: () async => setState(_memo.clear));
@@ -845,7 +862,7 @@ class _ResultsReportState extends State<_ResultsReport> with _GradesState {
     final failing = parts.fold<int>(0, (n, p) => n + p.failing);
 
     final ranked = rankStudents(
-      [for (final s in scoped) SectionGrades(id: s.id, label: s.label, cards: [for (final c in s.cards) if (_matches(c.studentName, q)) c])],
+      [for (final s in scoped) SectionGrades(id: s.id, label: _sec(s.label), cards: [for (final c in s.cards) if (_matches(c.studentName, q)) c])],
       metric: metric,
       period: period,
       order: order,
@@ -878,7 +895,7 @@ class _ResultsReportState extends State<_ResultsReport> with _GradesState {
             meta: [grade.isEmpty ? 'المدرسة' : grade, 'النجاح ${_num(pass)}%'],
             headers: ['الشعبة', 'مرصود', 'المعدل', 'دون النجاح'],
             rows: [
-              for (var i = 0; i < scoped.length; i++) [scoped[i].label, parts[i].graded, parts[i].average == null ? '—' : '${_num(parts[i].average!)}%', parts[i].failing],
+              for (var i = 0; i < scoped.length; i++) [_sec(scoped[i].label), parts[i].graded, parts[i].average == null ? '—' : '${_num(parts[i].average!)}%', parts[i].failing],
             ],
             landscape: false,
           );
@@ -1205,7 +1222,7 @@ class _DeclineReportState extends State<_DeclineReport> {
     final pass = store.gradingForViewedYear.passPercent;
     final people = <String, ({String name, String section})>{
       for (final g in groupBySection(store, grade: grade))
-        for (final s in g.students) s.id: (name: s.fullName, section: g.label),
+        for (final s in g.students) s.id: (name: s.fullName, section: _sec(g.label)),
     };
     final declines = examDeclines(store.evaluations.where((e) => people.containsKey(e.studentId)), minDrop < 1 ? 1 : minDrop.toDouble());
     String subjectName(String id) => store.subjectById(id)?.name ?? '—';
@@ -1289,7 +1306,7 @@ class _CompletionReportState extends State<_CompletionReport> {
     final total = rows.fold<int>(0, (n, r) => n + r.total);
     final late = rows.fold<int>(0, (n, r) => n + r.late);
     final pct = total == 0 ? 0 : (done / total * 100).round();
-    String label(CompletionRow r) => sectionLabel(r.room);
+    String label(CompletionRow r) => _sec(sectionLabel(r.room));
 
     final byTeacher = <String, List<CompletionRow>>{};
     for (final r in rows) {
@@ -1334,7 +1351,7 @@ class _CompletionReportState extends State<_CompletionReport> {
           landscape: true,
         );
 
-    if (data.rows.isEmpty) return const NoonEmpty('لا مواد مسندة لمعلمين');
+    if (data.rows.isEmpty) return _body([const NoonEmpty('لا مواد مسندة لمعلمين')]);
     return _body([
       _Bar(sheet: sheet, children: [
         _gradePick(store, grade, (g) => setState(() => grade = g)),
@@ -1551,7 +1568,7 @@ class _StudentsReportState extends State<_StudentsReport> {
     final groups = [
       for (final g in groupBySection(store, grade: grade, withWithdrawn: true))
         (
-          label: g.label,
+          label: _sec(g.label),
           students: [
             for (final s in g.students)
               if (asked &&
@@ -1583,7 +1600,7 @@ class _StudentsReportState extends State<_StudentsReport> {
                 [
                   '',
                   s.fullName,
-                  g.label,
+                  _sec(g.label),
                   s.nationalId,
                   s.gender,
                   s.birthDate,
@@ -1688,7 +1705,7 @@ class _StudentsReportState extends State<_StudentsReport> {
               _row(
                 s.fullName,
                 [
-                  g.label,
+                  _sec(g.label),
                   if (traits.contains('sick')) (s.medicalCondition.trim().isNotEmpty ? s.medicalCondition.trim() : 'مريض') else formatPhoneDisplay(s.parentPhone, s.parentPhonePrefix),
                   if (appTraits.isNotEmpty) seenText(s),
                 ].join(' · '),
@@ -1747,7 +1764,7 @@ class _DuesReportState extends State<_DuesReport> {
       for (final s in all)
         if (sectionId.isEmpty || s.group.room.id == sectionId)
           for (final st in s.students)
-            if ((due[st.id] ?? 0) > 0.005 && (due[st.id] ?? 0) >= minDue && _matches(st.fullName, q)) (student: st, due: due[st.id]!, paid: paid[st.id] ?? 0, section: s.group.label),
+            if ((due[st.id] ?? 0) > 0.005 && (due[st.id] ?? 0) >= minDue && _matches(st.fullName, q)) (student: st, due: due[st.id]!, paid: paid[st.id] ?? 0, section: _sec(s.group.label)),
     ]..sort((a, b) => b.due.compareTo(a.due));
     final debtorsDue = debtors.fold<double>(0, (n, d) => n + d.due);
 
@@ -1768,7 +1785,7 @@ class _DuesReportState extends State<_DuesReport> {
             headers: ['الشعبة', 'الطلاب', 'المطلوب', 'المدفوع', 'المتأخر', 'التحصيل'],
             rows: [
               for (final s in all)
-                [s.group.label, s.students.length, money(sumOf(required, s.students)), money(sumOf(paid, s.students)), money(sumOf(due, s.students)), '${rateOf(sumOf(paid, s.students), sumOf(required, s.students)) ?? 0}%'],
+                [_sec(s.group.label), s.students.length, money(sumOf(required, s.students)), money(sumOf(paid, s.students)), money(sumOf(due, s.students)), '${rateOf(sumOf(paid, s.students), sumOf(required, s.students)) ?? 0}%'],
               ['المدرسة', everyone.length, money(totalRequired), money(totalPaid), money(totalDue), '${rate ?? 0}%'],
             ],
             landscape: false,
@@ -1814,13 +1831,13 @@ class _DuesReportState extends State<_DuesReport> {
             () {
               final r = rateOf(sumOf(paid, s.students), sumOf(required, s.students));
               return _row(s.group.label, 'المدفوع ${money(sumOf(paid, s.students))} · المتأخر ${money(sumOf(due, s.students))}', [
-                _val(r == null ? '—' : '$r%', color: r != null && r < 70 ? _amber : null, hint: 'التحصيل'),
+                _val(r == null ? '—' : '$r%', color: _rateColor(r), hint: 'التحصيل'),
               ], onTap: () => setState(() {
                     sectionId = s.group.room.id;
                     view = 'students';
                   }));
             }(),
-          _row(grade.isEmpty ? 'المدرسة' : grade, 'المدفوع ${money(totalPaid)} · المتأخر ${money(totalDue)}', [_val(rate == null ? '—' : '$rate%')],
+          _row(grade.isEmpty ? 'المدرسة' : grade, 'المدفوع ${money(totalPaid)} · المتأخر ${money(totalDue)}', [_val(rate == null ? '—' : '$rate%', color: _rateColor(rate))],
               onTap: () => setState(() => view = 'students')),
         ]),
     ]);
@@ -1925,7 +1942,13 @@ class _StaffReportState extends State<_StaffReport> {
         _Search(onChanged: (v) => setState(() => q = v)),
       ]),
       if (failed)
-        const NoonEmpty('يحتاج اتصالاً بالإنترنت', icon: Icons.wifi_off_rounded)
+        NoonOffline(onRetry: () {
+          setState(() {
+            failed = false;
+            data = null;
+          });
+          _load(force: true);
+        })
       else if (d == null)
         const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
       else if (rows.isEmpty)
@@ -2016,7 +2039,7 @@ class _DataReportState extends State<_DataReport> {
             } else if (year == 0 || thisYear - year < 3 || thisYear - year > 22) {
               p.add(('birth', 'غير معقول'));
             }
-            return (student: s, section: g.label, problems: p);
+            return (student: s, section: _sec(g.label), problems: p);
           }(),
     ].where((r) => r.problems.isNotEmpty).toList();
     final staff = grade.isNotEmpty
@@ -2082,7 +2105,7 @@ class _DataReportState extends State<_DataReport> {
       ]),
       if (all.isNotEmpty)
         _kpis([
-          for (final k in ['parent_phone', 'parent_id', 'student_id'])
+          for (final k in ['parent_phone', 'parent_id', 'student_id', 'birth'])
             (label: _issues[k]!, value: '${countOf(k)}', sub: '', color: countOf(k) > 0 ? _red : null, onTap: () => setState(() => issue = issue == k ? '' : k)),
         ]),
       if (rows.isEmpty && staff.isEmpty)
@@ -2147,7 +2170,7 @@ class _UsageReportState extends State<_UsageReport> {
         if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
         final usage = snap.data?.$1;
         if (usage == null) {
-          return _body([const NoonEmpty('يحتاج اتصالاً بالإنترنت', icon: Icons.wifi_off_rounded)], onRefresh: () async => setState(() => _load = _fetch()));
+          return _body([NoonOffline(onRetry: () => setState(() => _load = _fetch()))], onRefresh: () async => setState(() => _load = _fetch()));
         }
         final daily = snap.data?.$2;
         final groups = groupBySection(store, grade: grade, activeOnly: true);
@@ -2184,7 +2207,7 @@ class _UsageReportState extends State<_UsageReport> {
               _ => true,
             };
         final listed = [
-          for (final g in groups) (label: g.label, students: [for (final s in g.students) if (matchWho(s) && _matches(s.fullName, q)) s]),
+          for (final g in groups) (label: _sec(g.label), students: [for (final s in g.students) if (matchWho(s) && _matches(s.fullName, q)) s]),
         ].where((g) => g.students.isNotEmpty).toList();
         final count = listed.fold<int>(0, (n, g) => n + g.students.length);
         int pctOf(int n, int of) => of == 0 ? 0 : (n / of * 100).round();
@@ -2220,7 +2243,7 @@ class _UsageReportState extends State<_UsageReport> {
                 meta: [grade.isEmpty ? 'المدرسة' : grade, '$count طالب'],
                 headers: ['#', 'اسم الطالب', 'الشعبة', 'ولي الأمر', 'جوال ولي الأمر', 'دخول ولي الأمر', 'دخول الطالب'],
                 rows: [
-                  for (final (i, s) in [for (final g in listed) for (final s in g.students) (g.label, s)].indexed)
+                  for (final (i, s) in [for (final g in listed) for (final s in g.students) (_sec(g.label), s)].indexed)
                     [i + 1, s.$2.fullName, s.$1, s.$2.parentName, formatPhoneDisplay(s.$2.parentPhone, s.$2.parentPhonePrefix), lastSeenLabel(parentOf(s.$2)), lastSeenLabel(studentOf(s.$2))],
                 ],
                 landscape: true,
@@ -2229,7 +2252,7 @@ class _UsageReportState extends State<_UsageReport> {
                 title: 'استخدام النظام',
                 meta: [grade.isEmpty ? 'المدرسة' : grade],
                 headers: ['الشعبة', 'الطلاب', 'دخل الطالب', 'دخل ولي الأمر', 'نشط هذا الأسبوع'],
-                rows: [for (final r in sectionStats) [r.g.label, r.g.students.length, '${r.stP}%', '${r.paP}%', '${r.wkP}%']],
+                rows: [for (final r in sectionStats) [_sec(r.g.label), r.g.students.length, '${r.stP}%', '${r.paP}%', '${r.wkP}%']],
                 landscape: false,
               );
 
@@ -2261,7 +2284,7 @@ class _UsageReportState extends State<_UsageReport> {
               _list([
                 for (final g in listed)
                   for (final s in g.students)
-                    _row(s.fullName, g.label, [
+                    _row(s.fullName, _sec(g.label), [
                       _val(lastSeenLabel(parentOf(s)), color: parentOf(s)?.lastSeen == null ? _red : null, hint: 'ولي الأمر'),
                       _val(lastSeenLabel(studentOf(s)), color: studentOf(s)?.lastSeen == null ? _red : null, hint: 'الطالب'),
                     ], onTap: () => _openStudent(context, s.id)),
@@ -2370,7 +2393,7 @@ class _UsageReportState extends State<_UsageReport> {
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(borderRadius: BorderRadius.circular(6), border: Border.all(color: AdminNoon.line)),
                               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                Text(r.g.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: NoonText.style(11.5, weight: FontWeight.w700)),
+                                Text(_sec(r.g.label), maxLines: 1, overflow: TextOverflow.ellipsis, style: NoonText.style(11.5, weight: FontWeight.w700)),
                                 const SizedBox(height: 4),
                                 bar(r.paP, _parentColor),
                                 const SizedBox(height: 3),

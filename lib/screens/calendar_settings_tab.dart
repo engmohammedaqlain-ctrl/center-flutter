@@ -1,4 +1,3 @@
-import '../widgets/empty_note.dart';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
@@ -6,6 +5,8 @@ import '../data/school_calendar.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../widgets/admin_ui.dart' show NoonButton, NoonSegment, NoonTone, showNoonSheet;
+import '../widgets/empty_note.dart';
 import '../widgets/widgets.dart';
 
 const _days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
@@ -20,18 +21,8 @@ class CalendarSettingsTab extends StatefulWidget {
 }
 
 class _CalendarSettingsTabState extends State<CalendarSettingsTab> {
-  final _title = TextEditingController();
-  String kind = 'holiday';
-  String from = isoDate(DateTime.now());
-  String to = '';
   bool suggesting = false;
   final skip = <String>{};
-
-  @override
-  void dispose() {
-    _title.dispose();
-    super.dispose();
-  }
 
   Future<String?> _pick(String initial, {String? first}) async {
     final picked = await showDatePicker(
@@ -46,34 +37,116 @@ class _CalendarSettingsTabState extends State<CalendarSettingsTab> {
   Future<void> _write(AppStore store, List<CalendarEvent> events) =>
       store.writeSchoolOption({'calendar': [for (final e in events) e.toMap()]});
 
-  Future<void> _add(AppStore store, List<CalendarEvent> calendar) async {
-    final title = _title.text.trim();
-    if (title.isEmpty || from.isEmpty) return;
-    await _write(store, [
-      ...calendar,
-      CalendarEvent(
-        id: const Uuid().v4(),
-        kind: kind,
-        title: title,
-        from: from,
-        to: to.isNotEmpty && to.compareTo(from) >= 0 ? to : from,
+  /// نافذة إضافة عطلة أو امتحان: النموذج لا يبقى مفتوحاً في الصفحة.
+  Future<void> _openAdd(AppStore store, List<CalendarEvent> calendar) async {
+    final title = TextEditingController();
+    var kind = 'holiday';
+    var from = isoDate(DateTime.now());
+    var to = '';
+    await showNoonSheet<void>(
+      context,
+      title: 'إضافة عطلة أو امتحان',
+      body: (ctx, set) => [
+        NoonSegment<String>(
+          value: kind,
+          options: const [('holiday', 'عطلة'), ('exam', 'امتحان')],
+          onChanged: (v) => set(() => kind = v),
+        ),
+        TextField(
+          controller: title,
+          autofocus: true,
+          onChanged: (_) => set(() {}),
+          decoration: const InputDecoration(hintText: 'العنوان'),
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: _dateChip(from, () async {
+                final v = await _pick(from);
+                if (v != null) set(() => from = v);
+              }),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _dateChip(to.isEmpty ? 'إلى (اختياري)' : to, () async {
+                final v = await _pick(to.isEmpty ? from : to, first: from);
+                if (v != null) set(() => to = v);
+              }),
+            ),
+          ],
+        ),
+      ],
+      footer: (ctx, set) => [
+        NoonButton(
+          label: 'إضافة',
+          icon: Icons.add,
+          tone: NoonTone.ink,
+          onPressed: title.text.trim().isEmpty
+              ? null
+              : () async {
+                  await _write(store, [
+                    ...calendar,
+                    CalendarEvent(
+                      id: const Uuid().v4(),
+                      kind: kind,
+                      title: title.text.trim(),
+                      from: from,
+                      to: to.isNotEmpty && to.compareTo(from) >= 0 ? to : from,
+                    ),
+                  ]);
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  if (mounted) showAppSnack(context, 'أُضيف');
+                },
+        ),
+      ],
+    );
+    title.dispose();
+  }
+
+  /// ترتيب الأسبوع كما يبدأ عندنا: السبت أولاً.
+  static const _weekOrder = [6, 0, 1, 2, 3, 4, 5];
+
+  Widget _dayCell(AppStore store, int d, List<int> weekend, bool isAdmin) {
+    final on = !weekend.contains(d);
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: !isAdmin
+          ? null
+          : () {
+              final next = weekend.contains(d) ? weekend.where((x) => x != d).toList() : ([...weekend, d]..sort());
+              if (next.length < 7) store.writeSchoolOption({'weekend': next});
+            },
+      child: Container(
+        height: 44,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: on ? AppColors.navy : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: on ? AppColors.navy : AppColors.line),
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: Text(
+              _days[d],
+              maxLines: 1,
+              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: on ? Colors.white : AppColors.muted),
+            ),
+          ),
+        ),
       ),
-    ]);
-    if (!mounted) return;
-    setState(() {
-      _title.clear();
-      to = '';
-    });
-    showAppSnack(context, 'أُضيف');
+    );
   }
 
   Widget _dateChip(String label, VoidCallback? onTap) => InkWell(
         borderRadius: BorderRadius.circular(6),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           decoration: BoxDecoration(border: Border.all(color: AppColors.line), borderRadius: BorderRadius.circular(6)),
-          child: Text(label, textDirection: TextDirection.ltr, style: const TextStyle(fontSize: 11.5)),
+          child: Text(label, textDirection: TextDirection.ltr, style: const TextStyle(fontSize: 12)),
         ),
       );
 
@@ -144,21 +217,12 @@ class _CalendarSettingsTabState extends State<CalendarSettingsTab> {
       children: [
         Text('أيام الدوام', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.heading)),
         const SizedBox(height: 8),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
+        Row(
           children: [
-            for (var d = 0; d < _days.length; d++)
-              FilterChip(
-                label: Text(_days[d], style: const TextStyle(fontSize: 11.5)),
-                selected: !weekend.contains(d),
-                onSelected: !isAdmin
-                    ? null
-                    : (_) {
-                        final next = weekend.contains(d) ? weekend.where((x) => x != d).toList() : ([...weekend, d]..sort());
-                        if (next.length < 7) store.writeSchoolOption({'weekend': next});
-                      },
-              ),
+            for (var i = 0; i < _weekOrder.length; i++) ...[
+              if (i > 0) const SizedBox(width: 4),
+              Expanded(child: _dayCell(store, _weekOrder[i], weekend, isAdmin)),
+            ],
           ],
         ),
         const Divider(height: 24),
@@ -209,48 +273,10 @@ class _CalendarSettingsTabState extends State<CalendarSettingsTab> {
           const SizedBox(height: 10),
         ],
         if (isAdmin) ...[
-          Row(
-            children: [
-              DropdownButton<String>(
-                value: kind,
-                underline: const SizedBox.shrink(),
-                items: const [
-                  DropdownMenuItem(value: 'holiday', child: Text('عطلة', style: TextStyle(fontSize: 12.5))),
-                  DropdownMenuItem(value: 'exam', child: Text('امتحان', style: TextStyle(fontSize: 12.5))),
-                ],
-                onChanged: (v) => setState(() => kind = v ?? 'holiday'),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: _title,
-                  onChanged: (_) => setState(() {}),
-                  decoration: const InputDecoration(isDense: true, hintText: 'العنوان'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              _dateChip(from, () async {
-                final v = await _pick(from);
-                if (v != null) setState(() => from = v);
-              }),
-              const SizedBox(width: 6),
-              _dateChip(to.isEmpty ? 'إلى (اختياري)' : to, () async {
-                final v = await _pick(to.isEmpty ? from : to, first: from);
-                if (v != null) setState(() => to = v);
-              }),
-              const Spacer(),
-              PrimaryButton(
-                label: 'إضافة',
-                icon: Icons.add,
-                onPressed: _title.text.trim().isEmpty ? null : () => _add(store, calendar),
-              ),
-            ],
-          ),
-          const Divider(height: 22),
+          const SizedBox(height: 4),
+          GhostButton(label: 'إضافة عطلة أو امتحان', icon: Icons.add, onPressed: () => _openAdd(store, calendar)),
+          const SizedBox(height: 10),
+          const Divider(height: 12),
         ],
         if (calendar.isEmpty)
           const Padding(

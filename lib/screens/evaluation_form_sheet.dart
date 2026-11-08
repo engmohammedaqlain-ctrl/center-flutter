@@ -310,6 +310,10 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
     }
   }
 
+  /// حقل يتبع ما قبله: باهت وغير قابل للّمس حتى يُختار الحقل الأعلى.
+  Widget _gated(bool on, Widget child) =>
+      on ? child : Opacity(opacity: 0.5, child: IgnorePointer(child: child));
+
   @override
   Widget build(BuildContext context) {
     final store = widget.store;
@@ -350,7 +354,7 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
                   ),
                   const SizedBox(height: 10),
                   FieldLabel('الشعبة', key: errors.key('room'), requiredField: true),
-                  AppDropdown<String>(
+                  _gated(grade.isNotEmpty, AppDropdown<String>(
                     value: roomId.isEmpty ? null : roomId,
                     hint: grade.isEmpty ? 'اختر الصف أولاً' : 'اختر الشعبة',
                     errorText: errors['room'],
@@ -361,10 +365,10 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
                     onChanged: (v) {
                       if (grade.isNotEmpty) _selectRoom(v);
                     },
-                  ),
+                  )),
                   const SizedBox(height: 10),
                   FieldLabel('المادة', key: errors.key('subject'), requiredField: true),
-                  AppDropdown<String>(
+                  _gated(roomId.isNotEmpty, AppDropdown<String>(
                     value: subjectId.isEmpty ? null : subjectId,
                     hint: roomId.isEmpty ? 'اختر الشعبة أولاً' : 'اختر المادة',
                     errorText: errors['subject'],
@@ -375,7 +379,7 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
                     onChanged: (v) {
                       if (roomId.isNotEmpty) _selectSubject(v);
                     },
-                  ),
+                  )),
                   const SizedBox(height: 10),
                   FieldLabel('اسم الاختبار', key: errors.key('title'), requiredField: true),
                   if (useComponents)

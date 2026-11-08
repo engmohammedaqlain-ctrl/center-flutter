@@ -268,7 +268,7 @@ class CompletionRow {
     for (final roomId in g.allRoomIds) {
       final room = rooms.where((r) => r.id == roomId).firstOrNull;
       if (room == null) continue;
-      final scheme = grading.schemeForSubject(room.gradeLevel, g.subjectId);
+      final scheme = grading.recordingSchemeForSubject(room.gradeLevel, g.subjectId);
       final comps = (term == 'term_2' ? scheme.term2 : scheme.term1).where((c) => c.weight > 0).toList();
       final ids = {for (final c in comps) c.id};
       final components = [

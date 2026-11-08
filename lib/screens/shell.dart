@@ -547,7 +547,7 @@ class _SideMenu extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 16),
               children: [
                 if (reportGroups(store).isNotEmpty) ...[
-                  sectionLabel('المتابعة'),
+                  sectionLabel('نظرة عامة'),
                   item(
                     icon: Icons.insights_rounded,
                     label: 'التقارير',

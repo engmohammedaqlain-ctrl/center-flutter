@@ -1037,7 +1037,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
       _section(
         Icons.sell_outlined,
         'الرسوم والخصم',
-        note: gradeFee > 0 ? 'رسم المرحلة: ${money(gradeFee)}' : 'لا رسم محدد لهذه المرحلة',
+        note: grade.trim().isEmpty ? null : (gradeFee > 0 ? 'رسم المرحلة: ${money(gradeFee)}' : 'لا رسم محدد لهذه المرحلة'),
       ),
       Row(
         children: [

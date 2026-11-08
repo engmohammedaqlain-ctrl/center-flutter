@@ -528,8 +528,9 @@ class _HomeState extends State<_Home> {
             : (_delta(rate, prevRate, '%') == null ? '${counts.present} حاضر' : '${_delta(rate, prevRate, '%')} ${_vs[period]}');
     final collectedSub = today1
         ? 'أمس ${money(s.collectedPrevious)}'
-        : (collectedDelta == null ? 'الشهر ${money(s.collectedMonth)}' : '${_delta(collectedDelta, 0, '%')} ${_vs[period]}');
+        : (collectedDelta == null ? 'هذا الشهر ${money(s.collectedMonth)}' : '${_delta(collectedDelta, 0, '%')} ${_vs[period]}');
     final streaks = s.absentToday.where((a) => a.streak > 1).length;
+    final periodLabel = switch (period) { '1' => 'اليوم', '7' => 'آخر 7 أيام', _ => 'آخر 30 يوماً' };
 
     // ما ينتظر قراراً اليوم: سطر لكل نوع بعدده، ومن له تفاصيل ينفتح في مكانه
     final alerts = showAttendance ? loadAbsenceAlerts(store) : const <AbsenceAlert>[];
@@ -672,10 +673,10 @@ class _HomeState extends State<_Home> {
           ],
           if (canAnnounce) ...[
             const SizedBox(width: 6),
-            IconButton.outlined(
-              tooltip: grade.isEmpty ? 'إعلان لكل المدرسة' : 'إعلان لـ$grade',
-              icon: const Icon(Icons.campaign_outlined, size: 20),
+            OutlinedButton.icon(
               onPressed: () => showAnnouncementSheet(context, grade: grade),
+              icon: const Icon(Icons.campaign_outlined, size: 18),
+              label: Text(grade.isEmpty ? 'إعلان' : 'إعلان لـ$grade'),
             ),
           ],
         ]),
@@ -685,15 +686,15 @@ class _HomeState extends State<_Home> {
           final tiles = <Widget>[
             if (showAttendance) ...[
               _kpi(
-                'الحضور',
+                'الحضور · $periodLabel',
                 rate == null ? '—' : '$rate%',
                 attendanceSub,
                 color: rate == null ? null : (rate < 85 ? _absent : _present),
                 onTap: () => widget.onSection('attendance'),
               ),
               _kpi(
-                'الغياب',
-                '${counts.absent}',
+                'الغياب · $periodLabel',
+                rate == null ? '—' : '${counts.absent}',
                 '${counts.excused} مأذون${today1 && streaks > 0 ? ' · $streaks متتالٍ' : ''}',
                 color: counts.absent > 0 ? _absent : null,
                 onTap: () => widget.onReport('alerts'),
@@ -701,17 +702,17 @@ class _HomeState extends State<_Home> {
             ],
             if (showFinance) ...[
               _kpi(
-                'التحصيل',
+                'التحصيل · $periodLabel',
                 money(s.collectedRange),
-                expectedMonth > 0 ? 'الشهر ${(s.collectedMonth / expectedMonth * 100).round()}% من المتوقع' : collectedSub,
+                expectedMonth > 0 ? 'هذا الشهر ${(s.collectedMonth / expectedMonth * 100).round()}% من المتوقع' : collectedSub,
                 color: _present,
                 hint: expectedMonth > 0 ? 'حُصّل هذا الشهر ${money(s.collectedMonth)} من ${money(expectedMonth)} مستحقة فيه · $collectedSub' : null,
                 onTap: () => widget.onSection('finance'),
               ),
               _kpi(
-                'المتأخرات',
+                'المتأخرات حتى اليوم',
                 money(s.overdueTotal),
-                '${s.debtors} طالب${s.dueSoonAmount > 0 ? ' · الأسبوع ${money(s.dueSoonAmount)}' : ''}',
+                '${s.debtors} طالب${s.dueSoonAmount > 0 ? ' · قريباً ${money(s.dueSoonAmount)}' : ''}',
                 color: s.overdueTotal > 0 ? _absent : null,
                 onTap: () => widget.onSection('finance'),
               ),

@@ -414,14 +414,9 @@ class _TimetableScreenState extends State<TimetableScreen> {
           body: f.loading
               ? const Center(child: AppLoader(compact: true))
               : f.failed
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text('الجداول تحتاج اتصالاً بالإنترنت', style: TextStyle(color: AppColors.muted)),
-                          TextButton(onPressed: f.load, child: const Text('إعادة المحاولة')),
-                        ],
-                      ),
+                  ? Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Center(child: NoonOffline(what: 'الجداول', onRetry: f.load)),
                     )
                   : Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,

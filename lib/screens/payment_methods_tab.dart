@@ -6,7 +6,6 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
-import '../widgets/animated_count.dart';
 import '../widgets/panels.dart';
 import '../widgets/thumb_action.dart';
 import '../widgets/widgets.dart';
@@ -336,21 +335,14 @@ class _MethodCard extends StatelessWidget {
         padding: const EdgeInsetsDirectional.fromSTEB(10, 8, 6, 8),
         child: Row(
           children: [
-            PressableScale(
-              onTap: onToggle,
-              child: Container(
-                width: 32,
-                height: 32,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(Corner.box),
-                  color: on ? const Color(0xFFF0FDF4) : const Color(0xFFF1F5F9),
-                  border: Border.all(color: on ? AppColors.successBorder : AppColors.line),
-                ),
-                child: Icon(
-                  Icons.power_settings_new,
-                  size: 15,
-                  color: on ? AppColors.success : AppColors.faint,
+            Tooltip(
+              message: on ? 'مفعّلة — اضغط للتعطيل' : 'معطّلة — اضغط للتفعيل',
+              child: Transform.scale(
+                scale: 0.8,
+                child: Switch.adaptive(
+                  value: on,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: (_) => onToggle(),
                 ),
               ),
             ),

@@ -6,6 +6,7 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/admin_ui.dart' show NoonSegment;
 import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
 
@@ -65,6 +66,15 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
           : isoDate(DateTime.now());
 
   bool _isRowLocked(String id) => readOnly || (lockedIds?.contains(id) ?? false);
+
+  /// سبب قفل القسط: حلّ موعده أو دُفع منه.
+  String _lockReason(_EditablePlanItem item) {
+    if (readOnly || !(lockedIds?.contains(item.id) ?? false)) return '';
+    final due = parseIsoDate(item.dueDate);
+    final today = DateTime.now();
+    final passed = due != null && !DateTime(due.year, due.month, due.day).isAfter(DateTime(today.year, today.month, today.day));
+    return passed ? 'مقفل: حلّ موعده' : 'مقفل: دُفع منه';
+  }
 
   @override
   void initState() {
@@ -351,10 +361,13 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
           children: [
             const SizedBox(height: 12),
-            _ModeToggle(
-              value: mode,
-              enabled: !readOnly && !busy,
-              onChanged: (v) => setState(() => mode = v),
+            IgnorePointer(
+              ignoring: readOnly || busy,
+              child: NoonSegment<String>(
+                value: mode,
+                options: const [('installments', 'أقساط بتواريخ ثابتة'), ('monthly', 'شهري من تاريخ التسجيل')],
+                onChanged: (v) => setState(() => mode = v),
+              ),
             ),
             if (mode == 'monthly')
               ..._monthlyPanel(store)
@@ -406,10 +419,13 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
                 ],
                 end: [
                   const FieldLabel(' '),
-                  GhostButton(
-                    label: 'توليد',
-                    icon: Icons.auto_awesome,
-                    onPressed: busy ? null : _generate,
+                  SizedBox(
+                    height: 44,
+                    child: FilledButton.icon(
+                      onPressed: busy ? null : _generate,
+                      icon: const Icon(Icons.auto_awesome, size: 18),
+                      label: const Text('توليد'),
+                    ),
                   ),
                 ],
               ),
@@ -432,6 +448,7 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
                   index: i + 1,
                   item: items[i],
                   locked: _isRowLocked(items[i].id),
+                  lockReason: _lockReason(items[i]),
                   onPickDue: _isRowLocked(items[i].id)
                       ? null
                       : () => _pickDate(items[i].dueDate, (v) => setState(() => items[i].dueDate = v)),
@@ -546,57 +563,6 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
           ),
       ],
     ];
-  }
-}
-
-/// نظام الرسوم: أقساط بتواريخ ثابتة، أو رسوم شهرية من تاريخ التسجيل.
-class _ModeToggle extends StatelessWidget {
-  const _ModeToggle({required this.value, required this.enabled, required this.onChanged});
-
-  final String value;
-  final bool enabled;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget segment(String key, String label) {
-      final selected = value == key;
-      return Expanded(
-        child: GestureDetector(
-          onTap: enabled && !selected ? () => onChanged(key) : null,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 140),
-            height: 36,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: selected ? Colors.white : Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: selected ? const [BoxShadow(color: Color(0x14000000), blurRadius: 3, offset: Offset(0, 1))] : null,
-            ),
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-                color: selected ? AppColors.heading : AppColors.muted,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(color: AppColors.hover, borderRadius: BorderRadius.circular(10)),
-      child: Row(
-        children: [
-          segment('installments', 'أقساط بتواريخ ثابتة'),
-          const SizedBox(width: 3),
-          segment('monthly', 'شهري من تاريخ التسجيل'),
-        ],
-      ),
-    );
   }
 }
 
@@ -920,6 +886,7 @@ class _PlanItemRow extends StatelessWidget {
     required this.index,
     required this.item,
     required this.locked,
+    this.lockReason = '',
     this.onPickDue,
     this.onDelete,
   });
@@ -927,64 +894,81 @@ class _PlanItemRow extends StatelessWidget {
   final int index;
   final _EditablePlanItem item;
   final bool locked;
+  final String lockReason;
   final VoidCallback? onPickDue;
   final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppColors.line),
         color: locked ? AppColors.surface : null,
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              Text('$index', style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.muted)),
-              const SizedBox(width: 8),
+              SizedBox(
+                width: 18,
+                child: Text('$index', style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.muted, fontSize: 12)),
+              ),
               Expanded(
+                flex: 5,
                 child: TextField(
                   controller: item.title,
                   enabled: !locked,
+                  style: const TextStyle(fontSize: 12.5),
                   decoration: const InputDecoration(hintText: 'عنوان القسط', isDense: true),
                 ),
               ),
+              const SizedBox(width: 6),
+              Expanded(
+                flex: 3,
+                child: TextField(
+                  controller: item.amount,
+                  enabled: !locked,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  style: const TextStyle(fontSize: 12.5),
+                  decoration: const InputDecoration(hintText: 'المبلغ', isDense: true),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                flex: 4,
+                child: SelectField(
+                  text: item.dueDate.isEmpty ? 'الاستحقاق' : item.dueDate,
+                  icon: Icons.calendar_today_outlined,
+                  placeholder: item.dueDate.isEmpty,
+                  onTap: onPickDue,
+                ),
+              ),
               if (locked)
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8),
-                  child: Icon(Icons.lock_outline, size: 18, color: AppColors.muted),
+                Tooltip(
+                  message: lockReason,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Icon(Icons.lock_outline, size: 18, color: AppColors.muted),
+                  ),
                 )
               else if (onDelete != null)
                 IconButton(
                   onPressed: onDelete,
+                  visualDensity: VisualDensity.compact,
                   icon: const Icon(Icons.delete_outline, color: AppColors.danger, size: 20),
-                ),
+                )
+              else
+                const SizedBox(width: 8),
             ],
           ),
-          const SizedBox(height: 8),
-          FieldPair(
-            start: [
-              const FieldLabel('المبلغ'),
-              TextField(
-                controller: item.amount,
-                enabled: !locked,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(hintText: '0', isDense: true),
-              ),
-            ],
-            end: [
-              const FieldLabel('الاستحقاق'),
-              SelectField(
-                text: item.dueDate.isEmpty ? 'اختر' : item.dueDate,
-                icon: locked ? Icons.lock_outline : Icons.calendar_today_outlined,
-                placeholder: item.dueDate.isEmpty,
-                onTap: onPickDue,
-              ),
-            ],
-          ),
+          if (lockReason.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4, right: 18),
+              child: Text(lockReason, style: const TextStyle(fontSize: 10.5, color: AppColors.muted)),
+            ),
         ],
       ),
     );

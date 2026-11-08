@@ -218,8 +218,8 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
     setState(() {
       errors
         ..reset()
-        ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المدرس')
-        ..check('phone', number.isEmpty, 'يرجى إدخال رقم جوال المدرس')
+        ..check('name', name.text.trim().isEmpty, 'يرجى إدخال اسم المعلم')
+        ..check('phone', number.isEmpty, 'يرجى إدخال رقم جوال المعلم')
         ..check('nationalId', idDigits.isNotEmpty && idDigits.length != 9, 'رقم الهوية يجب أن يتكون من 9 أرقام')
         // البوابة تقبل 6 أرقام وحدها: كلمة بغير ذلك تُنشئ حساباً لا يدخل
         ..check(
@@ -262,7 +262,7 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
           salaryHistory: salaryHistory,
         ),
       );
-      showAppSnack(context, widget.teacher == null ? 'تمت إضافة المدرس' : 'تم حفظ بيانات المدرس');
+      showAppSnack(context, widget.teacher == null ? 'تمت إضافة المعلم' : 'تم حفظ بيانات المعلم');
       Navigator.pop(context);
     } on StoreException catch (e) {
       showAppSnack(context, e.message, error: true);
@@ -273,14 +273,14 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
     final store = StoreScope.of(context);
     final ok = await confirmSheet(
       context,
-      title: 'حذف المدرس',
-      message: 'سيتم فك ارتباط المدرس بالمواد والشعب وحذف بياناته نهائياً.',
+      title: 'حذف المعلم',
+      message: 'سيتم فك ارتباط المعلم بالمواد والشعب وحذف بياناته نهائياً.',
       confirmLabel: 'تأكيد الحذف',
     );
     if (!ok || !mounted) return;
     try {
       store.deleteTeacher(widget.teacher!.id);
-      showAppSnack(context, 'تم حذف المدرس');
+      showAppSnack(context, 'تم حذف المعلم');
       Navigator.pop(context);
     } on StoreException catch (e) {
       showAppSnack(context, e.message, error: true);
@@ -291,22 +291,22 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final editing = widget.teacher != null;
-    final title = editing ? 'تعديل بيانات: ${widget.teacher!.name}' : 'إضافة مدرس جديد';
+    final title = editing ? 'تعديل بيانات: ${widget.teacher!.name}' : 'إضافة معلم جديد';
     if (!store.can('settings')) return _denied(store, title);
     final target = phoneTargetLength(prefix);
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: _formBar(title),
-      bottomNavigationBar: FormActionBar(label: editing ? 'حفظ التعديلات' : 'إضافة المدرس', onSave: _save),
+      bottomNavigationBar: FormActionBar(label: editing ? 'حفظ التعديلات' : 'إضافة المعلم', onSave: _save),
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
           children: [
             // ── ١. بيانات المدرس ─────────────────────────────────────────────
-            const FormSection(icon: Icons.badge_outlined, title: 'بيانات المدرس', note: 'الحقول ذات * مطلوبة'),
-            FieldLabel('اسم المدرس', key: errors.key('name'), requiredField: true),
+            const FormSection(icon: Icons.badge_outlined, title: 'بيانات المعلم', note: 'الحقول ذات * مطلوبة'),
+            FieldLabel('اسم المعلم', key: errors.key('name'), requiredField: true),
             TextField(
               controller: name,
               textInputAction: TextInputAction.next,
@@ -524,7 +524,7 @@ class _TeacherFormScreenState extends State<TeacherFormScreen> {
                 ],
               ),
 
-            if (editing) _DeleteButton(label: 'حذف المدرس', onPressed: _delete),
+            if (editing) _DeleteButton(label: 'حذف المعلم', onPressed: _delete),
           ],
         ),
       ),
@@ -666,10 +666,11 @@ class _SubjectFormScreenState extends State<SubjectFormScreen> {
             Row(
               children: [
                 const Expanded(child: FieldLabel('المراحل الدراسية')),
-                Text(
-                  allGrades ? 'كل المراحل' : '${selectedGrades.length} مرحلة محدّدة',
-                  style: const TextStyle(color: AppColors.muted, fontSize: 11.5, fontWeight: FontWeight.w700),
-                ),
+                if (!allGrades)
+                  Text(
+                    '${selectedGrades.length} مرحلة محدّدة',
+                    style: const TextStyle(color: AppColors.muted, fontSize: 11.5, fontWeight: FontWeight.w700),
+                  ),
               ],
             ),
             const SizedBox(height: 6),
@@ -894,7 +895,9 @@ class AccessEditor extends StatelessWidget {
                 on: selected.contains(accessSections[i].id),
                 blocked: accessSections[i].parent != null && !selected.contains(accessSections[i].parent),
                 last: i == accessSections.length - 1,
-                onTap: enabled ? () => onChanged(toggleSection(value, accessSections[i].id)) : null,
+                onTap: enabled && !(accessSections[i].parent != null && !selected.contains(accessSections[i].parent))
+                    ? () => onChanged(toggleSection(value, accessSections[i].id))
+                    : null,
               ),
           ],
         ),
@@ -921,10 +924,13 @@ class _AccessRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final child = section.parent != null;
-    return InkWell(
+    return Opacity(
+      opacity: blocked ? 0.5 : 1,
+      child: InkWell(
       onTap: onTap,
       child: Container(
-        padding: EdgeInsetsDirectional.fromSTEB(child ? 28 : 12, 10, 12, 10),
+        padding: EdgeInsetsDirectional.fromSTEB(child ? 12 : 12, 10, 12, 10),
+        margin: EdgeInsetsDirectional.only(start: child ? 24 : 0),
         decoration: BoxDecoration(
           color: on ? AppColors.successSoft : Colors.white,
           border: last ? null : const Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
@@ -965,6 +971,37 @@ class _AccessRow extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    ),
+    );
+  }
+}
+
+/// شريط شرح بدل قائمة صلاحيات معطّلة: المدير يرى كل شيء فلا شيء يُختار.
+class _AdminAccessNote extends StatelessWidget {
+  const _AdminAccessNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(Corner.box),
+        color: AppColors.amberSoft,
+        border: Border.all(color: AppColors.amberBorder),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, size: 16, color: AppColors.amber),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'المدير يرى كل الصلاحيات ولا تُقيَّد. لتقييد حساب اختر له دوراً آخر.',
+              style: TextStyle(color: AppColors.heading, fontSize: 11.5, height: 1.5),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1043,7 +1080,7 @@ class _UserFormScreenState extends State<UserFormScreen> {
                   items: [
                     for (final r in roleList) DropdownMenuItem(value: r.id, child: Text(r.label)),
                   ],
-                  // الدور قالب بداية: اختياره يملأ التبويبات، ثم تُعدَّل واحداً واحداً
+                  // الدور قالب بداية: اختياره يملأ الصلاحيات، ثم تُعدَّل واحدة واحدة
                   onChanged: (v) => setState(() {
                     role = v ?? role;
                     sections = [...roleDefinition(role).sections];
@@ -1051,18 +1088,16 @@ class _UserFormScreenState extends State<UserFormScreen> {
                 ),
               ],
             ),
-            FormSection(
-              icon: Icons.tab_outlined,
-              title: 'التبويبات الظاهرة له',
-              note: normalizeRole(role) == 'admin'
-                  ? 'المدير يرى كل التبويبات. لتقييد حساب اختر له دوراً آخر'
-                  : '${sections.length} من ${allSections.length}',
-            ),
-            AccessEditor(
-              value: normalizeRole(role) == 'admin' ? [...allSections] : sections,
-              enabled: normalizeRole(role) != 'admin',
-              onChanged: (v) => setState(() => sections = v),
-            ),
+            if (normalizeRole(role) == 'admin')
+              const _AdminAccessNote()
+            else ...[
+              FormSection(
+                icon: Icons.tab_outlined,
+                title: 'الصلاحيات المتاحة له',
+                note: '${sections.length} من ${allSections.length}',
+              ),
+              AccessEditor(value: sections, onChanged: (v) => setState(() => sections = v)),
+            ],
           ],
         ),
       ),
@@ -1100,8 +1135,8 @@ class _UserAccessScreenState extends State<UserAccessScreen> {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     final u = widget.user;
-    if (!store.can('settings.users')) return _denied(store, 'تبويبات ${u.name}');
-    // الحساب المستخدم على هذا الجهاز الآن لا تُعدَّل تبويباته منه — كما في
+    if (!store.can('settings.users')) return _denied(store, 'صلاحيات ${u.name}');
+    // الحساب المستخدم على هذا الجهاز الآن لا تُعدَّل صلاحياته منه — كما في
     // AccessEditor.tsx — كي لا يُغلق المدير الباب على نفسه
     final isAdmin = normalizeRole(u.role) == 'admin';
     final locked = u.id == store.deviceUserId || isAdmin;
@@ -1115,7 +1150,7 @@ class _UserAccessScreenState extends State<UserAccessScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'تبويبات ${u.name}',
+              'صلاحيات ${u.name}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14.5),
@@ -1128,38 +1163,42 @@ class _UserAccessScreenState extends State<UserAccessScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: FormActionBar(label: 'حفظ التبويبات', onSave: locked ? null : _save),
+      bottomNavigationBar: isAdmin ? null : FormActionBar(label: 'حفظ الصلاحيات', onSave: locked ? null : _save),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
         children: [
-          if (locked)
-            Container(
-              margin: const EdgeInsets.only(top: 14),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(Corner.box),
-                color: AppColors.amberSoft,
-                border: Border.all(color: AppColors.amberBorder),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.info_outline, size: 16, color: AppColors.amber),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      isAdmin ? 'المدير يرى كل التبويبات. لتقييد حساب اختر له دوراً آخر' : 'تبويبات حسابك تُعدَّل من جهاز آخر',
-                      style: TextStyle(color: AppColors.heading, fontSize: 11.5),
+          if (isAdmin)
+            const _AdminAccessNote()
+          else ...[
+            if (locked)
+              Container(
+                margin: const EdgeInsets.only(top: 14),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(Corner.box),
+                  color: AppColors.amberSoft,
+                  border: Border.all(color: AppColors.amberBorder),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 16, color: AppColors.amber),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'صلاحيات حسابك تُعدَّل من جهاز آخر',
+                        style: TextStyle(color: AppColors.heading, fontSize: 11.5),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+            FormSection(
+              icon: Icons.tab_outlined,
+              title: 'الصلاحيات المتاحة له',
+              note: '${sections.length} من ${allSections.length}',
             ),
-          FormSection(
-            icon: Icons.tab_outlined,
-            title: 'التبويبات الظاهرة له',
-            note: '${sections.length} من ${allSections.length}',
-          ),
-          AccessEditor(value: sections, enabled: !locked, onChanged: (v) => setState(() => sections = v)),
+            AccessEditor(value: sections, enabled: !locked, onChanged: (v) => setState(() => sections = v)),
+          ],
         ],
       ),
     );

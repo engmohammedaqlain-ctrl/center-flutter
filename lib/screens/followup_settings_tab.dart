@@ -100,7 +100,8 @@ class _FollowupSettingsTabState extends State<FollowupSettingsTab> {
                 Tooltip(
                   message: 'يُرسل للأهل من التقارير ← الإنذارات، مرة لكل مستوى',
                   child: Row(children: [
-                    Checkbox(value: f.absenceEnabled, onChanged: (v) => _edit(f.copyWith(absenceEnabled: v == true))),
+                    Switch.adaptive(value: f.absenceEnabled, onChanged: (v) => _edit(f.copyWith(absenceEnabled: v))),
+                    const SizedBox(width: 6),
                     Text('إنذار الأهل بالغياب', style: AppText.label),
                   ]),
                 ),
@@ -195,7 +196,7 @@ class _FollowupSettingsTabState extends State<FollowupSettingsTab> {
                 Text('المكوّنات من ', style: muted),
                 InkWell(
                   onTap: widget.onOpenGrading,
-                  child: Text('نظام العلامات', style: muted.copyWith(color: AppColors.info, decoration: TextDecoration.underline)),
+                  child: Text('نظام العلامات', style: muted.copyWith(color: AppColors.amber, decoration: TextDecoration.underline)),
                 ),
                 Text('، وتتغيّر بتغييره', style: muted),
               ]),

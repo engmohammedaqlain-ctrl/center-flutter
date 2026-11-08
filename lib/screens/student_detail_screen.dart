@@ -163,7 +163,7 @@ class StudentDetailScreen extends StatelessWidget {
         }
 
         // ملخص للقراءة أعلى الشاشة — الأفعال اليومية أسفلها قرب الإبهام
-        final showBottomBar = canCollect || canEdit || canRefundStudent;
+        final showBottomBar = canCollect || canRefundStudent;
         final status = student.status == 'inactive' ? 'withdrawn' : student.status;
         final yearRows = _studentYearHistory(store, student);
         final portalStudent = store.isFeatureOn('portal.student');
@@ -183,6 +183,12 @@ class StudentDetailScreen extends StatelessWidget {
           appBar: AppBar(
             titleSpacing: 0,
             actions: [
+              if (canEdit)
+                IconButton(
+                  tooltip: 'تعديل الطالب',
+                  icon: const Icon(Icons.edit_outlined, color: Colors.white),
+                  onPressed: edit,
+                ),
               if (store.can('students'))
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.more_vert, color: Colors.white),
@@ -250,8 +256,6 @@ class StudentDetailScreen extends StatelessWidget {
                   onPay: canCollect && !settled ? pay : null,
                   showRefund: canRefundStudent,
                   onRefund: canRefundStudent ? refund : null,
-                  showEdit: canEdit,
-                  onEdit: canEdit ? edit : null,
                 )
               : null,
           body: ListView(
@@ -266,6 +270,31 @@ class StudentDetailScreen extends StatelessWidget {
                     scheduledRemaining: scheduledRemaining,
                     isDebtor: isDebtor,
                     previousYearsDue: previousYearsDue,
+                  ),
+                ),
+
+              if (parentPhone.isNotEmpty || student.phone.trim().isNotEmpty)
+                sec(
+                  Row(
+                    children: [
+                      Expanded(
+                        child: NoonButton(
+                          label: parentPhone.isNotEmpty ? 'اتصال بولي الأمر' : 'اتصال بالطالب',
+                          icon: Icons.call_outlined,
+                          expand: true,
+                          onPressed: () => launchTel(parentPhone.isNotEmpty ? parentPhone : student.phone.trim()),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: NoonButton(
+                          label: parentPhone.isNotEmpty ? 'واتساب ولي الأمر' : 'واتساب الطالب',
+                          icon: Icons.chat_bubble_outline,
+                          expand: true,
+                          onPressed: () => launchWa(parentPhone.isNotEmpty ? parentPhone : student.phone.trim()),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
 
@@ -556,23 +585,19 @@ bool _hasExtraIdentity(Student student, DateTime? birth, String medical) {
 
 // ═══ عناصر الصفحة ═══════════════════════════════════════════════════════════
 
-/// الأفعال اليومية أسفل الشاشة قرب الإبهام: «تسديد دفعة» بلون الإجراء، ثم رد وتعديل.
+/// الأفعال اليومية أسفل الشاشة قرب الإبهام: «تسديد دفعة» بلون الإجراء، ثم رد المبلغ.
 class _ThumbBar extends StatelessWidget {
   const _ThumbBar({
     required this.showPay,
     required this.onPay,
     required this.showRefund,
     required this.onRefund,
-    required this.showEdit,
-    required this.onEdit,
   });
 
   final bool showPay;
   final VoidCallback? onPay;
   final bool showRefund;
   final VoidCallback? onRefund;
-  final bool showEdit;
-  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -592,22 +617,16 @@ class _ThumbBar extends StatelessWidget {
                 Expanded(
                   flex: 3,
                   child: NoonButton(
-                    label: 'تسديد دفعة',
-                    icon: Icons.credit_card,
+                    label: onPay == null ? 'كل الأقساط مسددة' : 'تسديد دفعة',
+                    icon: onPay == null ? Icons.check_circle_outline : Icons.credit_card,
                     tone: NoonTone.sun,
                     expand: true,
                     onPressed: onPay,
                   ),
                 ),
-              if (showPay && (showRefund || showEdit)) const SizedBox(width: 8),
+              if (showPay && showRefund) const SizedBox(width: 8),
               if (showRefund)
                 Expanded(flex: 2, child: NoonButton(label: 'رد مبلغ', expand: true, onPressed: onRefund)),
-              if (showRefund && showEdit) const SizedBox(width: 8),
-              if (showEdit)
-                Expanded(
-                  flex: 2,
-                  child: NoonButton(label: 'تعديل', icon: Icons.edit_outlined, expand: true, onPressed: onEdit),
-                ),
             ],
           ),
         ),

@@ -454,16 +454,15 @@ class _GroupList extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          cleanGroupName(g.name, g.gradeLevel),
+                          [
+                            if (subject.isNotEmpty && subject != 'غير محدد') subject else cleanGroupName(g.name, g.gradeLevel),
+                            if (g.gradeLevel.trim().isNotEmpty) g.gradeLevel.trim(),
+                          ].join(' · '),
                           style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.heading),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          [
-                            if (g.gradeLevel.trim().isNotEmpty) g.gradeLevel.trim(),
-                            if (subject.isNotEmpty && subject != 'غير محدد') subject,
-                            teacher,
-                          ].join(' · '),
+                          teacher,
                           style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
                         ),
                       ],
