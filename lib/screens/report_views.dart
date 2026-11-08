@@ -122,7 +122,7 @@ class _Bar extends StatelessWidget {
                         const SizedBox.shrink()
                       else if (children[i] is _Search || children[i] is _NumLine)
                         SizedBox(width: c.maxWidth, child: children[i])
-                      else if (children[i] is _Pick || children[i] is _MonthNav || children[i] is _AdvToggle || children[i] is PopupMenuButton)
+                      else if (children[i] is _Pick || children[i] is _MonthNav || children[i] is _AdvToggle || children[i] is PopupMenuButton || children[i] is _ToggleBtn)
                         SizedBox(width: half, child: children[i])
                       else
                         children[i],
@@ -231,6 +231,36 @@ class _AdvToggle extends StatelessWidget {
       );
 }
 
+/// زر تبديل بإطار المنتقيات وارتفاعها: أيقونة واسم، ويمتلئ بلون الثيم حين يُفعَّل.
+class _ToggleBtn extends StatelessWidget {
+  const _ToggleBtn({required this.icon, required this.label, required this.selected, required this.onTap});
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: selected ? AdminNoon.ink : Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: selected ? AdminNoon.ink : AdminNoon.line),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(icon, size: 17, color: selected ? Colors.white : AdminNoon.ink),
+            const SizedBox(width: 6),
+            Text(label, style: NoonText.style(12.5, weight: FontWeight.w700, color: selected ? Colors.white : AdminNoon.text)),
+          ]),
+        ),
+      );
+}
+
 class _Pick<T> extends StatelessWidget {
   const _Pick({required this.value, required this.options, required this.onChanged});
 
@@ -335,9 +365,10 @@ class _NumLine extends StatelessWidget {
 }
 
 class _Search extends StatelessWidget {
-  const _Search({required this.onChanged});
+  const _Search({required this.onChanged, this.hint = 'بحث بالاسم'});
 
   final ValueChanged<String> onChanged;
+  final String hint;
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -345,7 +376,7 @@ class _Search extends StatelessWidget {
         height: 40,
         child: TextField(
           onChanged: onChanged,
-          decoration: const InputDecoration(isDense: true, hintText: 'بحث بالاسم', prefixIcon: Icon(Icons.search, size: 18), filled: true, fillColor: Colors.white),
+          decoration: InputDecoration(isDense: true, hintText: hint, prefixIcon: const Icon(Icons.search, size: 18), filled: true, fillColor: Colors.white),
         ),
       );
 }
@@ -848,15 +879,12 @@ class _ResultsReportState extends State<_ResultsReport> with _GradesState {
               }
             })),
         // الأوائل: أول عشرة بالمعدل في النطاق؛ النقر ثانية يلغيها
-        FilterChip(
-          avatar: Icon(
-            Icons.emoji_events_outlined,
-            size: 16,
-            color: view == 'students' && limit > 0 && order == 'top' && metric.isEmpty ? Colors.white : AdminNoon.text,
-          ),
-          label: const Text('الأوائل'),
+        _ToggleBtn(
+          icon: Icons.emoji_events_outlined,
+          label: 'الأوائل',
           selected: view == 'students' && limit > 0 && order == 'top' && metric.isEmpty,
-          onSelected: (on) => setState(() {
+          onTap: () => setState(() {
+            final on = !(view == 'students' && limit > 0 && order == 'top' && metric.isEmpty);
             if (!on) {
               limit = 0;
               return;
@@ -1592,8 +1620,12 @@ class _StudentsReportState extends State<_StudentsReport> {
         for (final t in traits) InputChip(label: Text(_traits[t]!), onDeleted: () => setState(() => traits.remove(t))),
         _gradePick(store, grade, (g) => setState(() => grade = g)),
         _Search(onChanged: (v) => setState(() => q = v)),
-        if (asked) Text('$total', style: NoonText.style(12, weight: FontWeight.w700, color: AdminNoon.muted)),
       ]),
+      if (asked && total > 0)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+          child: Text('$total طالب', style: NoonText.style(12.5, weight: FontWeight.w700, color: AdminNoon.muted)),
+        ),
       if (!asked) ...[
         Padding(
           padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
@@ -1874,7 +1906,7 @@ class _StaffReportState extends State<_StaffReport> {
         _Search(onChanged: (v) => setState(() => q = v)),
       ]),
       if (failed)
-        const NoonEmpty('يحتاج اتصالاً بالإنترنت')
+        const NoonEmpty('يحتاج اتصالاً بالإنترنت', icon: Icons.wifi_off_rounded)
       else if (d == null)
         const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
       else if (rows.isEmpty)
@@ -2096,7 +2128,7 @@ class _UsageReportState extends State<_UsageReport> {
         if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
         final usage = snap.data?.$1;
         if (usage == null) {
-          return _body([const NoonEmpty('يحتاج اتصالاً بالإنترنت')], onRefresh: () async => setState(() => _load = _fetch()));
+          return _body([const NoonEmpty('يحتاج اتصالاً بالإنترنت', icon: Icons.wifi_off_rounded)], onRefresh: () async => setState(() => _load = _fetch()));
         }
         final daily = snap.data?.$2;
         final groups = groupBySection(store, grade: grade, activeOnly: true);
@@ -2375,11 +2407,7 @@ class _EditLogReportState extends State<_EditLogReport> {
     return _body([
       _Bar(children: [
         _Pick<String>(value: kind, options: const {'': 'الكل', 'grades': 'العلامات', 'students': 'بيانات الطلاب'}, onChanged: (v) => setState(() => kind = v)),
-        SizedBox(
-          width: 180,
-          height: 36,
-          child: TextField(onChanged: (v) => setState(() => q = v), decoration: const InputDecoration(isDense: true, hintText: 'طالب أو مستخدم')),
-        ),
+        _Search(hint: 'طالب أو مستخدم', onChanged: (v) => setState(() => q = v)),
       ]),
       if (shown.isEmpty)
         const NoonEmpty('لا تعديلات')

@@ -487,6 +487,7 @@ class _Toolbar extends StatelessWidget {
     required this.shown,
     required this.total,
     required this.onChanged,
+    this.action,
   });
 
   final TextEditingController controller;
@@ -495,11 +496,12 @@ class _Toolbar extends StatelessWidget {
   final int total;
   final ValueChanged<String> onChanged;
 
+  /// إجراء ثانوي (استيراد مثلاً) مربع بجانب البحث بدل سطر مستقل تحته.
+  final Widget? action;
+
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-      child: SearchField(
+    final field = SearchField(
         controller: controller,
         hint: hint,
         onChanged: onChanged,
@@ -511,7 +513,10 @@ class _Toolbar extends StatelessWidget {
             fontWeight: FontWeight.w700,
           ),
         ),
-      ),
+      );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+      child: action == null ? field : Row(children: [Expanded(child: field), const SizedBox(width: 8), action!]),
     );
   }
 }
@@ -1872,13 +1877,18 @@ class _TeachersTabState extends State<_TeachersTab> {
           shown: list.length,
           total: store.teachersInViewedYear.length,
           onChanged: (_) => setState(() {}),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-          child: GhostButton(
-            label: 'استيراد ملف aSc',
-            icon: Icons.schedule_outlined,
-            onPressed: () => _importAsc(store),
+          action: Tooltip(
+            message: 'استيراد ملف aSc',
+            child: InkWell(
+              onTap: () => _importAsc(store),
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.line)),
+                child: const Icon(Icons.upload_file_outlined, size: 20, color: AppColors.heading),
+              ),
+            ),
           ),
         ),
         Expanded(
