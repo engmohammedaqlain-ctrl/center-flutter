@@ -754,20 +754,17 @@ class _SubjectMarks extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SizedBox(
-          height: 34,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
             children: [
               for (final g in grades)
-                Padding(
-                  padding: const EdgeInsetsDirectional.only(end: 6),
-                  child: _Pill(
-                    label: _customizedIn(g) > 0 ? '$g (${_customizedIn(g)})' : g,
-                    selected: g == grade,
-                    onTap: () => onGrade(g),
-                  ),
+                _Pill(
+                  label: _customizedIn(g) > 0 ? '$g (${_customizedIn(g)})' : g,
+                  selected: g == grade,
+                  onTap: () => onGrade(g),
                 ),
             ],
           ),

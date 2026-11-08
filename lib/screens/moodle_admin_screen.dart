@@ -340,22 +340,17 @@ class _MoodleAdminScreenState extends State<MoodleAdminScreen> {
                     style: const TextStyle(color: AppColors.faint, fontSize: 11.5, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 8),
-                  SizedBox(
-                    height: 34,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      children: [
-                        for (final e in options.entries)
-                          Padding(
-                            padding: const EdgeInsetsDirectional.only(end: 6),
-                            child: _ChoicePill(
-                              label: e.value,
-                              selected: e.key == value,
-                              onTap: () => pick(() => onPick(e.key)),
-                            ),
-                          ),
-                      ],
-                    ),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final e in options.entries)
+                        _ChoicePill(
+                          label: e.value,
+                          selected: e.key == value,
+                          onTap: () => pick(() => onPick(e.key)),
+                        ),
+                    ],
                   ),
                 ],
               ),
