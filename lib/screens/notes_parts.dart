@@ -636,8 +636,8 @@ class _NoteComposerState extends State<NoteComposer> {
                           ? Center(
                               child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Noon.onTeal)),
                             )
-                          // السهم يشير إلى جهة الإرسال في العربية
-                          : Transform.flip(flipX: true, child: Icon(Icons.send_rounded, size: 18, color: Noon.onTeal)),
+                          // send_rounded ينقلب وحده في العربية فيشير لليسار، جهة الكتابة
+                          : Icon(Icons.send_rounded, size: 18, color: Noon.onTeal),
                     ),
                   ),
                 ),

@@ -2360,13 +2360,14 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
           ],
         ),
       ),
-      // بطاقة اليوم: عدد الطلاب وشرائح الحاضر والغائب والمأذون ومن لم يُرصد
-      NHeroCard(
-        label: '${selected.dayName} ${selected.shortDate}',
-        icon: Icons.how_to_reg_rounded,
-        value: '${students.length}',
-        unit: 'طالب',
-        chips: ['حاضر $present', 'غائب $absent', 'مأذون $excused', 'بلا رصد $unmarked'],
+      // ملخص اليوم: شريط مضغوط بالحاضر والغائب والمأذون ومن لم يُرصد، والتاريخ في شريط الأيام فوقه
+      AttendanceDaySummary(
+        day: selected,
+        total: students.length,
+        present: present,
+        absent: absent,
+        excused: excused,
+        unmarked: unmarked,
       ),
       if (students.isNotEmpty)
         Container(
@@ -2710,7 +2711,6 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                 _loadMoodle();
               },
             ),
-            if (storage != null) NStorageMeter(status: storage!),
           ],
         ),
       ),
