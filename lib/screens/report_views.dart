@@ -386,6 +386,20 @@ Widget _list(List<Widget> rows) => Container(
       ]),
     );
 
+/// مفتاح الأرقام الملوّنة في أطراف الصفوف (نقطة بلونها واسمها) أول القائمة.
+Widget _legendRow(List<(String, Color)> items) => Container(
+      color: AdminNoon.band,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(children: [
+        for (final (label, color) in items) ...[
+          Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 5),
+          Text(label, style: NoonText.style(11.5, weight: FontWeight.w600, color: AdminNoon.muted)),
+          const SizedBox(width: 14),
+        ],
+      ]),
+    );
+
 Widget _val(String v, {Color? color, String? hint}) {
   final t = Text(v, style: NoonText.style(12.5, weight: FontWeight.w700, color: color));
   return hint == null ? t : Tooltip(message: hint, child: t);
@@ -505,6 +519,7 @@ class _AbsenceReportState extends State<_AbsenceReport> {
         studentRows.isEmpty
             ? const NoonEmpty('لا طلاب')
             : _list([
+                _legendRow([('غياب', _red), ('مأذون', _amber), ('الحضور', AdminNoon.ink)]),
                 // الحضور نسبة كما في ملخص الشعب، و«—» لمن لم يُرصد
                 for (final x in studentRows)
                   _row(x.r.student.fullName, sectionId.isEmpty ? x.section : '', [
@@ -1715,7 +1730,7 @@ class _DuesReportState extends State<_DuesReport> {
             : _list([
                 for (final d in debtors)
                   _row(d.student.fullName, [if (sectionId.isEmpty) d.section, formatPhoneDisplay(d.student.parentPhone, d.student.parentPhonePrefix)].where((x) => x.trim().isNotEmpty).join(' · '),
-                      [_val(money(d.due), color: _amber, hint: 'المتأخر')],
+                      [_val(money(d.due), color: _red, hint: 'المتأخر')],
                       onTap: () => _openStudent(context, d.student.id)),
               ])
       else
@@ -1842,9 +1857,10 @@ class _StaffReportState extends State<_StaffReport> {
         const NoonEmpty('لا موظفين')
       else
         _list([
+          _legendRow([('حاضر', AdminNoon.green700), ('غائب', _red), ('متأخر', _amber)]),
           for (final r in rows)
             _row(r.teacher.name, [if (r.teacher.jobTitle.isNotEmpty) r.teacher.jobTitle, if (r.leave > 0) 'إجازة ${r.leave}', if (r.unmarked > 0) 'بلا رصد ${r.unmarked}'].join(' · '), [
-              _val('${r.present}', hint: 'حاضر'),
+              _val('${r.present}', color: AdminNoon.green700, hint: 'حاضر'),
               _val('${r.absent}', color: r.absent > 0 ? _red : AdminNoon.muted, hint: 'غائب'),
               _val('${r.late}', color: r.late > 0 ? _amber : AdminNoon.muted, hint: 'متأخر'),
             ], onTap: () => _openTeacher(context, r.teacher.id)),
