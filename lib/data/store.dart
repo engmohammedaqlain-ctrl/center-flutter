@@ -8280,6 +8280,65 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return t;
   }
 
+  /// سجلات في المعلمين تصلح ملفاً لهذا الموظف: بلا شعب يدرّسها ولا حساب مربوط، الأقرب
+  /// أولاً (رقم هويته ثم اسمه) — `StaffPayrollService.candidates`. مدارس سجّلت إدارييها
+  /// معلمين («حكمت … ( ادارة )») تنقلهم بها ولا تُعيد إدخالهم.
+  List<Teacher> staffPayCandidates(AppUser u) {
+    String key(String s) => s
+        .replaceAll(RegExp(r'\([^)]*\)'), ' ')
+        .replaceAll(RegExp('[\u064B-\u0652]'), '')
+        .replaceAll(RegExp('[أإآ]'), 'ا')
+        .replaceAll('ة', 'ه')
+        .replaceAll('ى', 'ي')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim()
+        .toLowerCase();
+    final teaching = {for (final g in groups) if (g.status != 'archived') g.teacherId};
+    final name = key(u.name);
+    final first = name.split(' ').first;
+    int score(Teacher t) =>
+        ((u.nationalId ?? '').isNotEmpty && t.nationalId == u.nationalId ? 4 : 0) +
+        (name.isNotEmpty && key(t.name) == name ? 3 : 0) +
+        (first.isNotEmpty && key(t.name).startsWith(first) ? 1 : 0) +
+        (t.jobTitle.isNotEmpty && !t.jobTitle.contains('معلم') ? 1 : 0);
+    final list = [for (final t in teachersInViewedYear) if (!t.isAdminStaff && !teaching.contains(t.id)) t];
+    list.sort((a, b) {
+      final d = score(b) - score(a);
+      return d != 0 ? d : a.name.compareTo(b.name);
+    });
+    return list;
+  }
+
+  /// سجلٌّ قائم في المعلمين يصير ملف راتب الموظف بنسخه في الأعوام — `StaffPayrollService.link`.
+  Teacher linkStaffToPayroll(AppUser u, String teacherId, {String jobTitle = ''}) {
+    requireSection('finance.expenses');
+    if (staffPayRecord(u.id) != null) throw StoreException('له ملف في الرواتب أصلاً');
+    final record = teacherById(teacherId);
+    if (record == null) throw StoreException('السجل غير موجود');
+    if (record.isAdminStaff) throw StoreException('السجل مربوط بحساب آخر');
+    final taught = groups.where((g) => g.teacherId == teacherId && g.status != 'archived').length;
+    if (taught > 0) throw StoreException('له $taught شعبة يدرّسها، فيبقى معلماً');
+    final ids = linkedTeacherIds(teacherId);
+    final now = _nowIso();
+    for (var i = 0; i < teachers.length; i++) {
+      final t = teachers[i];
+      if (!ids.contains(t.id) || t.isAdminStaff) continue;
+      final next = Teacher.fromCloud({
+        ...t.toCloud(),
+        'subject': t.subject,
+        'user_id': u.id,
+        if (t.id == teacherId && jobTitle.trim().isNotEmpty) 'job_title': jobTitle.trim(),
+        'updated_at': now,
+        'sync_status': 'pending',
+      });
+      teachers[i] = next;
+      _queue('teachers', next.id, 'UPDATE', next.toCloud());
+    }
+    markDirty('teachers');
+    notifyListeners();
+    return teacherById(teacherId)!;
+  }
+
   /// إزالة ملف الراتب. موظف صُرف له سند يبقى (سجلات الصرف لا تُحذف) — `StaffPayrollService.remove`.
   void removeStaffFromPayroll(String userId) {
     requireSection('finance.expenses');

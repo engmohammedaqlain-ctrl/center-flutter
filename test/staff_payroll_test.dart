@@ -54,6 +54,24 @@ void main() {
     expect(store.linkedTeacherIds(t.id), {t.id});
   });
 
+  // مدرسة سجّلت إدارييها معلمين: «سكرتيرة ( ادارة )» بلا شعب
+  test('إداريٌّ مسجّل معلماً يُنقل للإدارة بسجله نفسه، والمدرّس لا يُنقل', () {
+    final store = school();
+    final admin = Teacher(id: 'old-sec', name: 'سكرتيرة ( ادارة )', phone: '', subject: '', rate: 900, jobTitle: 'السكرتيرة', academicYearId: store.viewedAcademicYearId);
+    store.teachers.add(admin);
+    final teaching = store.teachingStaffInViewedYear.firstWhere((t) => store.groups.any((g) => g.teacherId == t.id));
+
+    final list = store.staffPayCandidates(store.users.last);
+    expect(list.first.id, 'old-sec');
+    expect(list.any((t) => t.id == teaching.id), isFalse);
+
+    final linked = store.linkStaffToPayroll(store.users.last, 'old-sec');
+    expect(linked.userId, 'u-sec');
+    expect(linked.rate, 900);
+    expect(store.teachingStaffInViewedYear.any((t) => t.id == 'old-sec'), isFalse);
+    expect(() => store.linkStaffToPayroll(store.users.last, teaching.id), throwsA(isA<StoreException>()));
+  });
+
   test('الإزالة تحذف ملف الراتب، إلا إن صُرف له سند', () {
     final store = school();
     store.addStaffToPayroll(store.users.last, jobTitle: '', salary: 1000);
