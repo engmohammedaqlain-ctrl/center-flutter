@@ -91,7 +91,7 @@ class AuthFrame extends StatelessWidget {
                               // شعار المنشأة إن وصل، وإلا شعار النظام نفسه الذي
                               // يحمله تطبيق سطح المكتب
                               child: image == null
-                                  ? Image.asset('assets/logo.png', fit: BoxFit.contain)
+                                  ? Image.asset('assets/logo.png', fit: BoxFit.contain, errorBuilder: (_, __, ___) => Icon(Icons.school_outlined, size: 40, color: AppColors.navy))
                                   : Image.memory(image, fit: BoxFit.contain, gaplessPlayback: true),
                             ),
                           ),

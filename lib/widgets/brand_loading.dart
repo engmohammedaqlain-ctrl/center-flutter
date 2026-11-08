@@ -29,6 +29,9 @@ class BrandLoadingScreen extends StatelessWidget {
   final String logo;
   final String name;
 
+  /// شعار تعذّر تحميله: أيقونة مدرسة بدل مربع الخطأ الأحمر.
+  static Widget get _fallback => Icon(Icons.school_outlined, size: 30, color: Noon.ink);
+
   @override
   Widget build(BuildContext context) {
     final image = decodeLogo(logo);
@@ -47,46 +50,46 @@ class BrandLoadingScreen extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               SizedBox(
-                width: 148,
-                height: 148,
+                width: 104,
+                height: 104,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
                     SizedBox(
-                      width: 148,
-                      height: 148,
+                      width: 104,
+                      height: 104,
                       child: CircularProgressIndicator(
-                        strokeWidth: 3,
+                        strokeWidth: 2.5,
                         strokeCap: StrokeCap.round,
                         color: Noon.onInk,
                         backgroundColor: Noon.onInk.withValues(alpha: 0.14),
                       ),
                     ),
                     Container(
-                      width: 108,
-                      height: 108,
-                      padding: const EdgeInsets.all(14),
+                      width: 72,
+                      height: 72,
+                      padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.circular(28),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.28), blurRadius: 22, offset: const Offset(0, 10))],
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.22), blurRadius: 14, offset: const Offset(0, 6))],
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(Corner.box),
                         child: image == null
-                            ? Image.asset('assets/logo.png', fit: BoxFit.contain)
-                            : Image.memory(image, fit: BoxFit.contain, gaplessPlayback: true),
+                            ? Image.asset('assets/logo.png', fit: BoxFit.contain, errorBuilder: (_, __, ___) => _fallback)
+                            : Image.memory(image, fit: BoxFit.contain, gaplessPlayback: true, errorBuilder: (_, __, ___) => _fallback),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 28),
+              const SizedBox(height: 22),
               if (name.trim().isNotEmpty) ...[
                 Text(
                   name.trim(),
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontFamily: AppText.family, fontSize: 20, fontWeight: FontWeight.w700, color: Noon.onInk, height: 1.3),
+                  style: TextStyle(fontFamily: AppText.family, fontSize: 17, fontWeight: FontWeight.w700, color: Noon.onInk, height: 1.3),
                 ),
                 const SizedBox(height: 8),
               ],
