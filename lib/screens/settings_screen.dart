@@ -1886,7 +1886,7 @@ class _TeachersTabState extends State<_TeachersTab> {
                 width: 46,
                 height: 46,
                 decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.line)),
-                child: const Icon(Icons.upload_file_outlined, size: 20, color: AppColors.heading),
+                child: Icon(Icons.upload_file_outlined, size: 20, color: AppColors.heading),
               ),
             ),
           ),
