@@ -57,6 +57,8 @@ Future<void> main() async {
   // هوية المدرسة من ملفٍ داخل النسخة نفسها (ميلي ثوانٍ، بلا قرص ولا شبكة): شاشة
   // الإقلاع تُرسم من أول إطار بشعار المدرسة وألوانها بدل شعار النظام ثم التبدّل
   await SchoolBrand.instance.readBundled();
+  // آخر مدرسة على الجهاز: الإقلاع بشعارها في النسخة العامة
+  await SchoolBrand.instance.readLastSchool();
   // فُتح برابط المدرسة (/d/<الكود>) أو اختصارها: مدرستها من أول إطار
   await SchoolLinks.start(SchoolBrand.instance);
   AppStore.instance.applyBrandColors();
@@ -466,7 +468,9 @@ class SplashScreen extends StatelessWidget {
     // هوية كان سيومض بالافتراضي ثم يتبدّل حين تُحمَّل ألوان المنشأة.
     // نسخة المدرسة تحمل شعارها واسمها في داخلها، فتظهر هنا من أول فتح
     final brand = SchoolBrand.instance;
-    final schoolLogo = decodeLogo(brand.logo);
+    // نسخة المدرسة أو رابطها، وإلا آخر مدرسة دخل إليها الجهاز
+    final brandName = brand.name.isNotEmpty ? brand.name : brand.lastName;
+    final schoolLogo = decodeLogo(brand.logo.isNotEmpty ? brand.logo : brand.lastLogo);
     final dpr = MediaQuery.devicePixelRatioOf(context);
     return Scaffold(
       backgroundColor: Colors.white,
@@ -501,12 +505,12 @@ class SplashScreen extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    brand.name.isNotEmpty ? brand.name : appName,
+                    brandName.isNotEmpty ? brandName : appName,
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: AppColors.text, fontSize: 20, fontWeight: FontWeight.w800),
                   ),
                   // كسبلاش الويب: شارة الاعتماد تحت اسم المدرسة
-                  if (brand.name.isNotEmpty) ...[
+                  if (brandName.isNotEmpty) ...[
                     const SizedBox(height: 10),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

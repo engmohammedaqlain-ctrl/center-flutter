@@ -79,6 +79,33 @@ class SchoolBrand extends ChangeNotifier {
   /// فارغ = قُرئ رابط التنزيل ولم يحمل مدرسة.
   static const _kReferrer = 'school_referrer_code';
 
+  /// آخر مدرسة دخل إليها الجهاز: شاشة الإقلاع تعرضها في النسخة العامة.
+  static const _kLastName = 'last_school_name';
+  static const _kLastLogo = 'last_school_logo';
+  String lastName = '';
+  String lastLogo = '';
+
+  /// يُنتظر قبل أول إطار مع ملف النسخة: محلي وسريع.
+  Future<void> readLastSchool() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      lastName = prefs.getString(_kLastName) ?? '';
+      lastLogo = prefs.getString(_kLastLogo) ?? '';
+    } catch (_) {}
+  }
+
+  Future<void> rememberLastSchool(String name, String logo) async {
+    final n = name.trim();
+    if (n.isEmpty && logo.isEmpty) return;
+    if (n.isNotEmpty) lastName = n;
+    if (logo.isNotEmpty) lastLogo = logo;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (n.isNotEmpty) await prefs.setString(_kLastName, n);
+      if (logo.isNotEmpty) await prefs.setString(_kLastLogo, logo);
+    } catch (_) {}
+  }
+
   final Future<String> Function() _readAsset;
   final Future<SchoolIdentity?> Function(String code) _fetch;
 
