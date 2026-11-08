@@ -1850,14 +1850,30 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// الموافقة: سند قبض عادي بما في الطلب، فيُحسب للطالب كأي دفعة ويظهر في سجل
   /// المقبوضات، وأول صورة تصير إشعاره. للموظف أن يصحح المبلغ إن قرأه من الإشعار
   /// مختلفاً. يعيد السند الصادر.
-  Future<Payment> approvePaymentRequest(String id, {double? amount, String? method}) async {
+  ///
+  /// الدفعة العائلية تُصدر سنداً لكل ابن بمبلغ توزيعه ([amounts] تصحّحها)، في معاملة واحدة في
+  /// السحابة: تنجح السندات كلها أو لا شيء. يعيد أول السندات.
+  Future<Payment> approvePaymentRequest(
+    String id, {
+    double? amount,
+    String? method,
+    Map<String, double> amounts = const {},
+  }) async {
     requireFinanceAction('finance.collect');
     var request = _pendingPaymentRequest(id);
-    if (studentById(request.studentId) == null) {
+    final family = request.isFamily;
+    double round2(double n) => (n * 100).round() / 100;
+    final parts = <({String studentId, double amount})>[
+      if (family)
+        for (final a in request.allocations) (studentId: a.studentId, amount: round2(amounts[a.studentId] ?? a.amount))
+      else
+        (studentId: request.studentId, amount: round2(amount ?? request.amount)),
+    ];
+    if (parts.any((p) => studentById(p.studentId) == null)) {
       throw StoreException('الطالب غير موجود على هذا الجهاز، زامن ثم أعد المحاولة');
     }
-    final value = ((amount ?? request.amount) * 100).round() / 100;
-    if (!(value > 0)) throw StoreException('المبلغ غير صحيح');
+    if (parts.any((p) => !(p.amount > 0))) throw StoreException('المبلغ غير صحيح');
+    final value = round2(parts.fold<double>(0, (a, p) => a + p.amount));
     final payMethod = (method ?? '').isNotEmpty
         ? method!
         : (request.paymentMethod.isNotEmpty ? request.paymentMethod : 'bank_transfer');
@@ -1870,31 +1886,49 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     // السند يُكتب على الجهاز خارج الطابور، ثم يُرسل مع القبول في معاملة واحدة في السحابة:
     // الحسم والسند معاً أو لا شيء. كان القبول يُحسم أولاً والسند يُرفع بالطابور، فإن تعثّر
     // رفعه بقي الطلب مقبولاً في السحابة بلا سند
-    final payment = addPayment(
-      studentId: request.studentId,
-      amount: value,
+    final names = request.allocations.map((a) => a.studentName).join('، ');
+    final payments = <Payment>[];
+    void discardAll() {
+      for (final created in payments) {
+        _discardUnsyncedPayment(created);
+      }
+    }
+
+    try {
+      for (final part in parts) {
+        payments.add(addPayment(
+      studentId: part.studentId,
+      amount: part.amount,
       method: payMethod,
       date: DateTime.now(),
       purpose: 'دفعة عامة',
-      notes: ['طلب من بوابة ولي الأمر', if (request.notes.isNotEmpty) request.notes].join(' — '),
+      notes: ['طلب من بوابة ولي الأمر', if (family) 'دفعة عائلية: $names', if (request.notes.isNotEmpty) request.notes].join(' — '),
       reference: request.referenceNumber,
       senderName: request.senderName,
       channel: request.transferChannel.isNotEmpty ? request.transferChannel : paymentMethodLabel(payMethod),
       transferDate: request.transferDate,
       allowAdvance: true,
       deferSync: true,
-    );
+        ));
+      }
+    } catch (_) {
+      discardAll();
+      rethrow;
+    }
+    final payment = payments.first;
 
     bool inCloud;
     try {
-      inCloud = await approvePaymentRequestInCloud(id, payment);
+      inCloud = await approvePaymentRequestInCloud(id, payments);
     } catch (_) {
-      _discardUnsyncedPayment(payment);
+      discardAll();
       rethrow;
     }
 
     // للطابور الآن: إن قُبل في السحابة يعيد رفعه كما هو فيصير «متزامناً»، وإلا يرفعه أول مرة
-    queuePendingSync(pendingSyncs, tableName: 'payments', recordId: payment.id, action: 'INSERT', payload: payment.toCloud(), tenantId: tenantId ?? '');
+    for (final created in payments) {
+      queuePendingSync(pendingSyncs, tableName: 'payments', recordId: created.id, action: 'INSERT', payload: created.toCloud(), tenantId: tenantId ?? '');
+    }
     markDirty(_pendingTable);
     if (firstImage != null) unawaited(saveFinanceAttachment(payment.id, 'payment', firstImage));
 
@@ -1904,6 +1938,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       request
         ..status = 'approved'
         ..paymentId = payment.id
+        ..paymentIds = family ? [for (final p in payments) p.id] : const []
         ..decidedById = currentUserId
         ..decidedByName = deviceUser?.name ?? receiptReceiver
         ..decidedAt = now
@@ -1912,13 +1947,15 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
 
     final changed = (value - request.amount).abs() > cent ? ' (الطلب ${money(request.amount)})' : '';
-    _recordFinanceAudit(
-      action: 'payment_request_approved',
-      summary: 'سند ${payment.receiptNumber}$changed',
-      studentId: request.studentId,
-      entityId: request.id,
-      amount: value,
-    );
+    for (final created in payments) {
+      _recordFinanceAudit(
+        action: 'payment_request_approved',
+        summary: 'سند ${created.receiptNumber}${family ? ' (دفعة عائلية)' : ''}$changed',
+        studentId: created.studentId,
+        entityId: request.id,
+        amount: created.amount,
+      );
+    }
     notifyListeners();
     return payment;
   }
@@ -1930,9 +1967,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// قبول حوالة ولي الأمر: الحسم والسند في معاملة واحدة في السحابة — `approvePaymentRequestInCloud`.
   ///
   /// يعيد `true` إن قُبل في السحابة، و`false` إن لم يصل الطلب السحابة بعد فيُقبل محلياً.
-  Future<bool> approvePaymentRequestInCloud(String id, Payment payment) async {
+  Future<bool> approvePaymentRequestInCloud(String id, List<Payment> payments) async {
     final override = approveOverride;
-    if (override != null) return override(id, payment.toCloud());
+    if (override != null) return override(id, payments.first.toCloud());
     if (!networkEnabled) throw StoreException(claimOfflineMessage);
     final tid = tenantId;
     if (tid == null || tid.isEmpty) throw StoreException('لا توجد منشأة محددة');
@@ -1941,7 +1978,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     try {
       result = await supabaseRpcOrThrow('approve_payment_request', {
         'p_request_id': id,
-        'p_payment': sanitizePayload('payments', payment.toCloud(), tid),
+        'p_payment': payments.length == 1
+            ? sanitizePayload('payments', payments.first.toCloud(), tid)
+            : [for (final p in payments) sanitizePayload('payments', p.toCloud(), tid)],
         'p_decided_by_id': currentUserId,
         'p_decided_by_name': deviceUser?.name ?? receiptReceiver,
       });
@@ -2542,10 +2581,14 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     String method = 'cash',
     String notes = '',
     String kind = 'expense',
+    String toMethod = '',
   }) {
     requireSection('finance.expenses');
     final desc = description.trim();
     if (desc.isEmpty) throw StoreException('البيان مطلوب لتسجيل سند الصرف');
+    if (kind == 'transfer' && (toMethod.isEmpty || toMethod == method)) {
+      throw StoreException('اختر حساباً مستلِماً غير حساب التحويل');
+    }
     amount = validPayoutAmount(amount);
     assertOpenDate([expenseDate], 'سند الصرف');
 
@@ -2561,6 +2604,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       method: method,
       notes: notes.trim(),
       kind: kind,
+      toMethod: kind == 'transfer' ? toMethod : '',
       syncStatus: 'pending',
       createdAt: now,
       updatedAt: now,
@@ -8108,6 +8152,18 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return created;
   }
 
+  /// أجر الموظف من كشف الرواتب: لمن يملك الصرف — `payUpdate` و`updateTeacher`.
+  void saveTeacherPay(Teacher t, Map<String, dynamic> update) {
+    requireSection('finance.expenses');
+    final next = Teacher.fromCloud({...t.toCloud(), ...update, 'updated_at': _nowIso(), 'sync_status': 'pending'});
+    final i = teachers.indexWhere((e) => e.id == t.id);
+    if (i < 0) throw StoreException('المعلم غير موجود');
+    teachers[i] = next;
+    _queue('teachers', t.id, 'UPDATE', next.toCloud());
+    markDirty('teachers');
+    notifyListeners();
+  }
+
   /// ملف aSc: يملأ نصاب المعلم ويضيف مواده المطابقة — `AscImportModal`.
   void applyAscTeacher(Teacher t, {required int periods, required List<String> subjectIds}) {
     upsertTeacher(Teacher.fromCloud({
@@ -8118,7 +8174,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   /// حصص المادة في شعبتها الأسبوعية: تصل الرواتب ونسبة المعلم.
-  void setGroupWeeklyPeriods(String id, int periods) {
+  void setGroupWeeklyPeriods(String id, int? periods) {
     final i = groups.indexWhere((g) => g.id == id);
     if (i < 0 || groups[i].weeklyPeriods == periods) return;
     final next = Group.fromCloud({

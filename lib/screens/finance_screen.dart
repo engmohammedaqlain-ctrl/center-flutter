@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../data/arabic_search.dart';
+import '../data/method_owners.dart';
 import '../data/payroll_calc.dart';
 import '../data/profit_report.dart';
 import '../data/staff.dart';
@@ -14,16 +15,18 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/admin_tokens.dart' show AdminNoon;
 import '../widgets/admin_ui.dart' show NoonSegment, NoonText, noonPanel;
-import '../widgets/animated_count.dart';
 import '../widgets/empty_note.dart';
 import '../widgets/ledger_row.dart';
+import '../widgets/animated_count.dart';
 import '../widgets/form_layout.dart';
 import '../widgets/list_paging.dart';
 import '../widgets/table_gate.dart';
 import '../widgets/thumb_action.dart';
+import '../widgets/owner_fold.dart';
 import '../widgets/widgets.dart';
 import 'expense_form_sheet.dart';
 import 'payment_form_screen.dart';
+import 'payroll_screen.dart';
 import 'payment_requests_panel.dart';
 import 'profit_report_panel.dart';
 import 'expense_voucher_screen.dart';
@@ -386,8 +389,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                       label: 'صرف رواتب',
                       color: AppColors.heading,
                       onTap: () async {
-                        final count = await showPayrollSheet(context, store, month: monthKeyOf(DateTime.now()));
-                        if (count > 0 && context.mounted) showAppSnack(context, 'صُرفت رواتب $count معلماً');
+                        await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PayrollScreen()));
                       },
                     ),
                   ]),
@@ -1064,9 +1066,13 @@ class _FinanceScreenState extends State<FinanceScreen> {
           category: expenseKindOf(e) == 'expense'
               ? expenseCategoryLabel(e.category)
               : '${expenseKindNames[expenseKindOf(e)]} · ${expenseCategoryLabel(e.category)}',
-          description: e.description,
+          // التحويل يظهر في مصروفات الحسابين: «من ← إلى»
+          description: e.isTransferIn
+              ? '${store.paymentMethodLabel(e.method)} ← ${store.paymentMethodLabel(e.toMethod)}'
+              : e.description,
           amount: e.amount,
           method: e.method,
+          toMethod: e.isTransferIn ? e.toMethod : '',
           voucher: ExpenseVoucher.fromExpense(e),
         ),
       for (final p in payouts)
@@ -1088,7 +1094,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
       spentBy[r.method] = (amount: prev.amount + r.amount, count: prev.count + 1);
     }
     final methodRows = spentBy.entries.toList()..sort((a, b) => b.value.amount.compareTo(a.value.amount));
-    final byAccount = spendMethod.isEmpty ? all : all.where((r) => r.method == spendMethod).toList();
+    final byAccount = spendMethod.isEmpty
+        ? all
+        : all.where((r) => r.method == spendMethod || r.toMethod == spendMethod).toList();
     final rows = q.isEmpty
         ? byAccount
         : byAccount.where((r) => r.description.toLowerCase().contains(q) || r.category.toLowerCase().contains(q)).toList();
@@ -1096,9 +1104,36 @@ class _FinanceScreenState extends State<FinanceScreen> {
     return (
       toolbar: _toolbar(hint: 'ابحث في البيان', shown: rows.length, total: all.length, store: store),
       slivers: _listSlivers(
-        header: methodRows.isEmpty
-            ? null
-            : _MethodTotals(
+        header: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // الرواتب قسم من المصروفات: بابها ظاهر هنا لا مخفياً خلف «+»
+            if (store.can('finance.expenses')) ...[
+              Material(
+          color: Colors.transparent,
+          child: Ink(
+            decoration: noonPanel(),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(AdminNoon.rPanel),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PayrollScreen())),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Row(
+                  children: [
+                    Icon(Icons.payments_outlined, size: 20, color: AdminNoon.ink),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text('كشف الرواتب وصرفها', style: NoonText.style(13.5, weight: FontWeight.w700))),
+                    Icon(Icons.chevron_right_rounded, size: 20, color: AdminNoon.faint),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+              const SizedBox(height: 8),
+            ],
+            if (methodRows.isNotEmpty)
+              _MethodTotals(
                 rows: [
                   for (final m in methodRows)
                     (
@@ -1111,6 +1146,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 selected: spendMethod,
                 onTap: (id) => setState(() => spendMethod = spendMethod == id ? '' : id),
               ),
+          ],
+        ),
         items: rows,
         emptyMessage: 'لا مصروفات',
         groupOf: (r) {
@@ -1984,8 +2021,10 @@ class _MethodTotals extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final total = rows.fold<double>(0, (a, r) => a + r.amount);
-    final groups = <({String owner, List<({String id, String label, double amount, int count})> items})>[];
-    final ungrouped = rows;
+    final ownerOf = {for (final m in StoreScope.of(context).paymentMethods) m.id: m.owner};
+    final grouping = groupMethodsByOwner<({String id, String label, double amount, int count})>(rows, (r) => ownerOf[r.id]);
+    final groups = grouping.groups;
+    final ungrouped = grouping.ungrouped;
 
     Widget methodRow(({String id, String label, double amount, int count}) r) {
       final active = selected == r.id;
@@ -2563,8 +2602,11 @@ class _SpendRow {
     required this.amount,
     required this.method,
     required this.voucher,
+    this.toMethod = '',
   });
 
+  /// المستلِم في التحويل بين حسابين.
+  final String toMethod;
   final String date;
   final bool isPayout;
   final String category;
@@ -2601,473 +2643,3 @@ class _SpendCard extends StatelessWidget {
   }
 }
 
-/// صرف رواتب الشهر دفعةً واحدة — المقابل لـ `PayrollModal.tsx`.
-///
-/// العملية الشهرية المتكررة في أجور المعلمين: المدير يعطي عشرة معلمين رواتبهم في
-/// يوم، وكتابة عشرة سندات يدوياً غير عملية. الراتب المسجّل يُملأ مقترحاً ويُعدَّل في
-/// مكانه، ومن لا يأخذ هذا الشهر يُترك بلا تأشير. يعيد عدد من صُرف لهم.
-Future<int> showPayrollSheet(
-  BuildContext context,
-  AppStore store, {
-  required String month,
-}) async {
-  final amounts = <String, TextEditingController>{
-    for (final t in store.teachersInViewedYear)
-      t.id: TextEditingController(text: t.rate > 0 ? trimNum(t.rate) : ''),
-  };
-  final chosen = <String>{};
-  var payrollMonth = month;
-  var date = DateTime.now();
-  var method = store.activePaymentMethods
-          .where((m) => m.isDefault)
-          .firstOrNull
-          ?.id ??
-      store.activePaymentMethods.firstOrNull?.id ??
-      'cash';
-  var payoutType = 'salary';
-
-  double amountOf(String id) =>
-      double.tryParse(amounts[id]?.text.trim() ?? '') ?? 0;
-
-  /// سطور الرواتب من السحابة: لرصيد السلف ولمنع صرف الشهر مرتين.
-  var entries = const <PayrollEntryRow>[];
-
-  /// صُرف راتب الشهر من قبل (بسند أو بتسوية بلا سند) — يمنع سنداً ثانياً، كالويب.
-  bool paidBefore(String id) {
-    final ids = store.linkedTeacherIds(id);
-    return alreadyPaid(
-      store.teacherPayouts.where((p) => ids.contains(p.teacherId)).toList(),
-      entries.where((e) => ids.contains(e.teacherId)).toList(),
-      payrollMonth,
-    );
-  }
-
-  String shiftMonth(String key, int delta) {
-    final parts = key.split('-');
-    final y = int.tryParse(parts.first) ?? DateTime.now().year;
-    final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 1 : 1;
-    final d = DateTime(y, m + delta, 1);
-    return monthKeyOf(d);
-  }
-
-  // الراتب المقترح بقواعد المدرسة: دوام الشهر وإجازاته وسطور الرواتب من السحابة — `usePayroll`
-  final payroll = PayrollSettings.fromMap(store.settings.extra['payroll'], weekend: store.settings.extra['weekend']);
-  final calendar = [
-    if (store.settings.extra['calendar'] is List)
-      for (final e in store.settings.extra['calendar'] as List)
-        if (e is Map) Map<String, dynamic>.from(e),
-  ];
-  final calcs = <String, PayrollCalc>{};
-  final subjectNames = {for (final s in store.subjects) s.id: s.name};
-  Future<void> loadMonth(String m) async {
-    final days = await StaffService.days('$m-01', monthEnd(m)) ?? const <StaffDay>[];
-    final leaves = await StaffService.leaves() ?? const <LeaveRequest>[];
-    entries = await PayrollEntries.all() ?? const <PayrollEntryRow>[];
-    calcs.clear();
-    for (final t in store.teachersInViewedYear) {
-      final ids = store.linkedTeacherIds(t.id);
-      final payouts = store.teacherPayouts.where((p) => ids.contains(p.teacherId)).toList();
-      final mine = entries.where((e) => ids.contains(e.teacherId)).toList();
-      final terms = termsFor(t, m);
-      calcs[t.id] = computePayroll(
-        teacher: t,
-        month: m,
-        settings: payroll,
-        calendar: calendar,
-        attendance: [
-          for (final d in days)
-            if (ids.contains(d.teacherId)) StaffDay(teacherId: t.id, date: d.date, status: d.status, periods: d.periods),
-        ],
-        leaves: [
-          for (final l in leaves)
-            if (ids.contains(l.teacherId))
-              LeaveRequest(id: l.id, teacherId: t.id, fromDate: l.fromDate, toDate: l.toDate, status: l.status, paid: l.paid),
-        ],
-        entry: mine.where((e) => e.month == m).firstOrNull,
-        percentRooms: terms.percent > 0
-            ? percentRooms(
-                teacherIds: ids,
-                groups: store.groupsInViewedYear,
-                rooms: store.roomsInViewedYear,
-                students: store.students,
-                installments: store.installments,
-                payments: store.payments,
-                month: m,
-                percent: terms.percent,
-                basis: terms.percentBasis,
-                subjectNames: subjectNames,
-              )
-            : const [],
-        advanceBalance: advanceBalance(payouts, mine, m),
-      );
-    }
-  }
-
-  void refillAmounts() {
-    for (final t in store.teachersInViewedYear) {
-      final ctl = amounts[t.id];
-      if (ctl == null) continue;
-      final payable = calcs[t.id]?.payable ?? 0;
-      ctl.text = payoutType == 'salary' && payable > 0 ? trimNum(payable) : '';
-    }
-  }
-
-  await loadMonth(payrollMonth);
-  refillAmounts();
-  if (!context.mounted) return 0;
-
-  final saved = await showModalBottomSheet<int>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.white,
-    builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setSt) {
-        final selected = chosen.where((id) => amountOf(id) > 0).toList();
-        // السلفة أكلت راتبه كله: يُسوّى الشهر بلا سند ويُقتطع من رصيدها
-        final settle = payoutType == 'salary'
-            ? chosen.where((id) => amountOf(id) <= 0 && (calcs[id]?.settlesWithoutPayout ?? false) && !paidBefore(id)).toList()
-            : const <String>[];
-        final total = selected.fold<double>(0, (sum, id) => sum + amountOf(id));
-        final title = payoutType == 'advance'
-            ? 'صرف سلف'
-            : payoutType == 'bonus'
-                ? 'صرف مكافآت'
-                : 'صرف رواتب';
-
-        void toggleAll() {
-          setSt(() {
-            if (selected.isNotEmpty) {
-              chosen.clear();
-              return;
-            }
-            for (final t in store.teachersInViewedYear) {
-              final paid = paidInMonth(
-                store.teacherPayouts,
-                store.linkedTeacherIds(t.id),
-                payrollMonth,
-              );
-              // الراتب لا يُصرف مرتين في الشهر؛ السلفة والمكافأة بلا قيد
-              if (payoutType == 'salary' && (paid.salary > 0 || paidBefore(t.id))) continue;
-              chosen.add(t.id);
-            }
-          });
-        }
-
-        return Padding(
-          padding: EdgeInsets.fromLTRB(
-            16,
-            14,
-            16,
-            12 + MediaQuery.viewInsetsOf(ctx).bottom,
-          ),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  '$title ${monthLabel(payrollMonth)}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: AppColors.heading,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: AppDropdown<String>(
-                        value: payoutType,
-                        items: [
-                          for (final e in payoutTypeNames.entries)
-                            DropdownMenuItem(value: e.key, child: Text('صرف ${e.value}')),
-                        ],
-                        onChanged: (v) => setSt(() {
-                          payoutType = v ?? payoutType;
-                          chosen.clear();
-                          refillAmounts();
-                        }),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: AppColors.bg,
-                        borderRadius: BorderRadius.circular(Corner.box),
-                        border: Border.all(color: AppColors.line),
-                      ),
-                      child: Directionality(
-                        textDirection: TextDirection.ltr,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              tooltip: 'الشهر السابق',
-                              visualDensity: VisualDensity.compact,
-                              icon: const Icon(Icons.chevron_left, size: 18),
-                              onPressed: () async {
-                                payrollMonth = shiftMonth(payrollMonth, -1);
-                                await loadMonth(payrollMonth);
-                                refillAmounts();
-                                setSt(() {});
-                              },
-                            ),
-                            Text(
-                              monthLabel(payrollMonth),
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 12,
-                                color: AppColors.heading,
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'الشهر التالي',
-                              visualDensity: VisualDensity.compact,
-                              icon: const Icon(Icons.chevron_right, size: 18),
-                              onPressed: () async {
-                                payrollMonth = shiftMonth(payrollMonth, 1);
-                                await loadMonth(payrollMonth);
-                                refillAmounts();
-                                setSt(() {});
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: SelectField(
-                        text: isoDate(date),
-                        icon: Icons.calendar_today_outlined,
-                        onTap: () async {
-                          final picked = await showDatePicker(
-                            context: ctx,
-                            initialDate: date,
-                            firstDate: DateTime(2020),
-                            lastDate: DateTime.now().add(
-                              const Duration(days: 1),
-                            ),
-                          );
-                          if (picked != null) setSt(() => date = picked);
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: AppDropdown<String>(
-                        value: method,
-                        items: [
-                          for (final m in store.activePaymentMethods)
-                            DropdownMenuItem(
-                              value: m.id,
-                              child: Text(
-                                m.name,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                        ],
-                        onChanged: (v) => setSt(() => method = v ?? method),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: TextButton(
-                    onPressed: toggleAll,
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppColors.navy,
-                      padding: EdgeInsets.zero,
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      textStyle: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 11.5,
-                      ),
-                    ),
-                    child: Text(selected.isEmpty ? 'تحديد الكل' : 'إلغاء الكل'),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.sizeOf(ctx).height * 0.38,
-                  ),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: store.teachersInViewedYear.length,
-                    itemBuilder: (_, i) {
-                      final t = store.teachersInViewedYear[i];
-                      final paid = paidInMonth(
-                        store.teacherPayouts,
-                        store.linkedTeacherIds(t.id),
-                        payrollMonth,
-                      );
-                      return Row(
-                        children: [
-                          Checkbox(
-                            value: chosen.contains(t.id),
-                            activeColor: AppColors.amber,
-                            onChanged: (_) => setSt(
-                              () => chosen.contains(t.id)
-                                  ? chosen.remove(t.id)
-                                  : chosen.add(t.id),
-                            ),
-                          ),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  t.name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                if (payoutType == 'salary' && paid.salary <= 0 && (calcs[t.id]?.warnings.isNotEmpty ?? false))
-                                  Text(
-                                    calcs[t.id]!.warnings.first,
-                                    style: const TextStyle(color: Color(0xFF92400E), fontSize: 10, fontWeight: FontWeight.w700),
-                                  ),
-                                if (paid.total > 0)
-                                  Text(
-                                    [
-                                      if (paid.salary > 0)
-                                        'صُرف ${money(paid.salary)}',
-                                      if (paid.advance > 0)
-                                        'سلفة ${money(paid.advance)}',
-                                      if (paid.bonus > 0)
-                                        'مكافأة ${money(paid.bonus)}',
-                                    ].join('  ·  '),
-                                    style: const TextStyle(
-                                      color: AppColors.success,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          SizedBox(
-                            width: 92,
-                            child: TextField(
-                              controller: amounts[t.id],
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              style: const TextStyle(
-                                fontFamily: 'monospace',
-                                fontSize: 12,
-                              ),
-                              onChanged: (_) => setSt(() => chosen.add(t.id)),
-                              decoration: const InputDecoration(
-                                isDense: true,
-                                hintText: '0',
-                              ),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '${selected.length} معلماً  ·  ${money(total)}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                    color: AppColors.heading,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                ActionButtons(
-                  primary: PrimaryButton(
-                    label: 'صرف',
-                    color: AppColors.navy,
-                    onPressed: selected.isEmpty && settle.isEmpty
-                        ? null
-                        : () async {
-                            try {
-                              // سطور الشهر من السحابة قبل الصرف: شاشة قديمة أو جهاز آخر صرف للتو
-                              entries = await PayrollEntries.all() ?? entries;
-                              var done = 0;
-                              for (final id in settle) {
-                                final calc = calcs[id]!;
-                                await PayrollEntries.markPaid(
-                                  tenantId: store.tenantId ?? '',
-                                  teacherId: id,
-                                  month: payrollMonth,
-                                  payoutId: '',
-                                  snapshot: calc.snapshot(0),
-                                  advanceRecovered: calc.advance,
-                                );
-                                done++;
-                              }
-                              for (final id in selected) {
-                                if (payoutType == 'salary' && paidBefore(id)) continue;
-                                done++;
-                                final payout = store.addTeacherPayout(
-                                  teacherId: id,
-                                  amount: amountOf(id),
-                                  paymentDate: isoDate(date),
-                                  payoutType: payoutType,
-                                  periodStart: '$payrollMonth-01',
-                                  periodEnd: monthEnd(payrollMonth),
-                                  method: method,
-                                );
-                                // الحساب كما صُرف ومقتطع السلفة في سطر الشهر، كالويب
-                                final calc = calcs[id];
-                                if (payoutType == 'salary' && calc != null) {
-                                  try {
-                                    await PayrollEntries.markPaid(
-                                      tenantId: store.tenantId ?? '',
-                                      teacherId: id,
-                                      month: payrollMonth,
-                                      payoutId: payout.id,
-                                      snapshot: calc.snapshot(amountOf(id)),
-                                      advanceRecovered: calc.advance,
-                                    );
-                                  } catch (_) {
-                                    // بلا إنترنت: السند صُرف، وتفصيله يُحسب من جديد عند الحاجة
-                                  }
-                                }
-                              }
-                              if (ctx.mounted) Navigator.pop(ctx, done);
-                            } on StoreException catch (e) {
-                              if (ctx.mounted) showAppSnack(ctx, e.message, error: true);
-                            }
-                          },
-                  ),
-                  secondary: GhostButton(
-                    label: 'إلغاء',
-                    onPressed: () => Navigator.pop(ctx, 0),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    ),
-  );
-
-  for (final c in amounts.values) {
-    c.dispose();
-  }
-  return saved ?? 0;
-}

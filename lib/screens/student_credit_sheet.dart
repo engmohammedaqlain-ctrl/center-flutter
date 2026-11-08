@@ -5,6 +5,7 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/owner_fold.dart';
 import '../widgets/widgets.dart';
 
 const _creditReasonChips = ['دفع مكرر بالخطأ', 'انسحاب الطالب', 'تخرج وله رصيد'];
@@ -203,10 +204,7 @@ Future<Payment?> showStudentCreditSheet(
                       decoration: const InputDecoration(
                         labelText: 'طريقة الرد',
                       ),
-                      items: [
-                        for (final m in methods)
-                          DropdownMenuItem(value: m.id, child: Text(m.name)),
-                      ],
+                      items: methodDropdownItems(methods),
                       onChanged: (v) =>
                           setSheetState(() => method = v ?? method),
                     ),

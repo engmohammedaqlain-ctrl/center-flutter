@@ -69,7 +69,11 @@ class _SchoolSettingsTabState extends State<SchoolSettingsTab> {
     if (!ok || !mounted) return;
     setState(() => saving = true);
     try {
-      await store.saveSchoolFeatures({for (final k in featureKeys) k: draft![k] ?? false});
+      // مفاتيح الاشتراك يفعّلها المطور وحده، ولا تقبلها `school_set_features`
+      await store.saveSchoolFeatures({
+        for (final k in featureKeys)
+          if (!developerOnlyFeatures.contains(k)) k: draft![k] ?? false,
+      });
       if (!mounted) return;
       setState(() => draft = null);
       showAppSnack(context, 'حُفظ');

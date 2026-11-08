@@ -6,6 +6,7 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/owner_fold.dart';
 import '../widgets/widgets.dart';
 import 'receipt_screen.dart';
 
@@ -271,6 +272,17 @@ class _ApproveSheet extends StatefulWidget {
 
 class _ApproveSheetState extends State<_ApproveSheet> {
   late final amount = TextEditingController(text: trimNum(widget.request.amount));
+
+  /// الدفعة العائلية: مبلغ كل ابن، والمجموع منها.
+  late final Map<String, TextEditingController> shares = {
+    for (final a in widget.request.allocations) a.studentId: TextEditingController(text: trimNum(a.amount)),
+  };
+  double get _total => widget.request.isFamily
+      ? (shares.values.fold<double>(0, (s, c) => s + (double.tryParse(c.text.trim()) ?? 0)) * 100).round() / 100
+      : double.tryParse(amount.text.trim()) ?? 0;
+  bool get _valid => widget.request.isFamily
+      ? shares.values.every((c) => (double.tryParse(c.text.trim()) ?? 0) > 0)
+      : _total > 0;
   late final methods = [for (final m in widget.store.activePaymentMethods) if (m.type != 'cash') m];
   late String method = widget.request.paymentMethod.isNotEmpty
       ? widget.request.paymentMethod
@@ -294,6 +306,7 @@ class _ApproveSheetState extends State<_ApproveSheet> {
         widget.request.id,
         amount: double.tryParse(amount.text.trim()) ?? 0,
         method: method,
+        amounts: {for (final e in shares.entries) e.key: double.tryParse(e.value.text.trim()) ?? 0},
       );
       if (mounted) Navigator.pop(context, payment);
     } on StoreException catch (e) {
@@ -308,7 +321,7 @@ class _ApproveSheetState extends State<_ApproveSheet> {
   @override
   Widget build(BuildContext context) {
     final r = widget.request;
-    final value = double.tryParse(amount.text.trim()) ?? 0;
+    final value = _total;
     final changed = (value - r.amount).abs() > 0.004;
     return Padding(
       padding: EdgeInsets.fromLTRB(16, 14, 16, 16 + MediaQuery.viewInsetsOf(context).bottom + MediaQuery.paddingOf(context).bottom),
@@ -316,14 +329,34 @@ class _ApproveSheetState extends State<_ApproveSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('قبول الدفعة — ${r.studentName}', style: AppText.title),
+          Text(r.isFamily ? 'قبول دفعة عائلية' : 'قبول الدفعة — ${r.studentName}', style: AppText.title),
           const SizedBox(height: 12),
-          const FieldLabel('المبلغ المقبوض (كما في الإشعار)'),
-          TextField(
-            controller: amount,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            onChanged: (_) => setState(() {}),
-          ),
+          FieldLabel(r.isFamily ? 'المقبوض عن كل ابن (كما في الإشعار)' : 'المبلغ المقبوض (كما في الإشعار)'),
+          if (r.isFamily) ...[
+            for (final a in r.allocations)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(a.studentName, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700))),
+                    SizedBox(
+                      width: 110,
+                      child: TextField(
+                        controller: shares[a.studentId],
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            Text('المجموع ${money(value)}', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+          ] else
+            TextField(
+              controller: amount,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              onChanged: (_) => setState(() {}),
+            ),
           if (changed) ...[
             const SizedBox(height: 4),
             Text('يختلف عن مبلغ الطلب ${money(r.amount)}', style: TextStyle(color: AppColors.amberDark, fontSize: 11)),
@@ -333,7 +366,7 @@ class _ApproveSheetState extends State<_ApproveSheet> {
           AppDropdown<String>(
             value: method,
             items: [
-              for (final m in methods) DropdownMenuItem(value: m.id, child: Text(m.name)),
+              ...methodDropdownItems(methods),
               if (!methods.any((m) => m.id == method))
                 DropdownMenuItem(value: method, child: Text(r.transferChannel.isNotEmpty ? r.transferChannel : widget.store.paymentMethodLabel(method))),
             ],
@@ -346,9 +379,9 @@ class _ApproveSheetState extends State<_ApproveSheet> {
           const SizedBox(height: 14),
           ActionButtons(
             primary: PrimaryButton(
-              label: busy ? 'جارِ الحفظ...' : 'قبول وإصدار السند',
+              label: busy ? 'جارِ الحفظ...' : (r.isFamily ? 'قبول وإصدار السندات' : 'قبول وإصدار السند'),
               color: AppColors.success,
-              onPressed: busy || !(value > 0) ? null : _submit,
+              onPressed: busy || !_valid ? null : _submit,
             ),
             secondary: GhostButton(label: 'تراجع', onPressed: () => Navigator.pop(context)),
           ),

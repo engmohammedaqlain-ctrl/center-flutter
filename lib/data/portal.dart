@@ -17,6 +17,7 @@ import 'material_cache.dart';
 import 'material_limits.dart';
 import 'payment_methods.dart';
 import 'school_calendar.dart';
+import 'timetable_model.dart';
 import 'supabase.dart';
 
 /// بوابة الطالب والمعلم — المقابل لـ `features/portal/portal.service.ts`
@@ -228,10 +229,14 @@ class PortalBranding {
     this.gradeDeadlines = const [],
     this.calendar = const [],
     this.weekend = const [5],
+    this.timetable,
   });
 
   /// أيام العطلة الأسبوعية (`settings.weekend`).
   final List<int> weekend;
+
+  /// أوقات الحصص (`settings.timetable`).
+  final TimetableSettings? timetable;
 
   /// العطل والامتحانات (`settings.calendar`): شريط القريب للأسرة، ولا رصد في العطلة.
   final List<CalendarEvent> calendar;
@@ -1358,6 +1363,7 @@ class PortalService {
       gradeDeadlines: app.followup.gradeDeadlines,
       calendar: app.calendar,
       weekend: app.weekend,
+      timetable: TimetableSettings.fromMap(app.extra['timetable']),
     );
   }
 
@@ -2141,6 +2147,7 @@ class PortalService {
     required double amount,
     required String senderName,
     required List<String> images,
+    List<({String studentId, String studentName, double amount})> allocations = const [],
     String paymentMethod = '',
     String transferChannel = '',
     String transferDate = '',
@@ -2185,6 +2192,7 @@ class PortalService {
       imagePaths: paths,
       createdAt: now,
       updatedAt: now,
+      allocations: allocations,
     );
     try {
       await supabaseInsert('payment_requests', [
@@ -2204,7 +2212,17 @@ class PortalService {
       filters: {'student_id': 'eq.$studentId'},
       order: 'created_at.desc',
     );
-    return rows?.map(PaymentRequest.fromCloud).toList();
+    if (rows == null) return null;
+    // وما كان ابنه طرفاً في توزيعه من دفعات العائلة
+    final family = await supabaseSelect(
+      'payment_requests',
+      filters: {'allocations': 'cs.[{"student_id":"$studentId"}]'},
+      order: 'created_at.desc',
+    );
+    final byId = <String, PaymentRequest>{
+      for (final r in [...rows, ...?family]) '${r['id']}': PaymentRequest.fromCloud(r),
+    };
+    return byId.values.toList()..sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
   }
 
   /// وسائل الدفع الإلكترونية للمدرسة: إليها يُحوَّل، والنقد لا يمرّ بالبوابة.

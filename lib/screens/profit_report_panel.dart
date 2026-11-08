@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../data/doc_export.dart';
+import '../data/method_owners.dart';
 import '../data/printing.dart';
 import '../data/profit_report.dart';
 import '../data/store.dart';
@@ -11,7 +12,9 @@ import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../widgets/finance_documents.dart';
 import '../widgets/ledger_row.dart';
+import '../widgets/owner_fold.dart';
 import '../widgets/widgets.dart';
+import 'accounts_statement_sheet.dart';
 import 'year_close_sheet.dart';
 
 /// تبويب الأرباح في المالية — `ProfitReportPanel.tsx`: ربح الفترة شهراً شهراً،
@@ -222,6 +225,8 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
       onSelected: (v) async {
         if (v == 'pdf') {
           await _print(r);
+        } else if (v == 'statement' && year != null) {
+          await showAccountsStatementSheet(context, store, year);
         } else if (v == 'close' && canClose) {
           await showYearCloseSheet(context, store, year: year, wallets: wallets);
           if (mounted) setState(() {});
@@ -229,6 +234,7 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
       },
       itemBuilder: (_) => [
         const PopupMenuItem(value: 'pdf', child: Text('تنزيل التقرير PDF')),
+        if (year != null) const PopupMenuItem(value: 'statement', child: Text('كشف الحسابات')),
         if (canClose) PopupMenuItem(value: 'close', child: Text(closeLabel)),
       ],
     );
@@ -250,8 +256,12 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
           ),
     );
     final opening = wallets?.opening.values.fold<double>(0, (a, v) => a + v) ?? 0;
-    final groups = <({String owner, List<({String method, double amount})> items})>[];
-    final ungrouped = rows;
+    final grouping = groupMethodsByOwner<({String method, double amount})>(
+      rows,
+      (r) => store.paymentMethods.where((m) => m.id == r.method).firstOrNull?.owner,
+    );
+    final groups = grouping.groups;
+    final ungrouped = grouping.ungrouped;
     final total = rows.fold<double>(0, (a, r) => a + r.amount);
 
     Widget accountRow(({String method, double amount}) row) {

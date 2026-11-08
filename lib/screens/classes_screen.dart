@@ -20,6 +20,7 @@ import 'attendance_screen.dart';
 import 'passwords_print.dart';
 import 'report_cards_sheet.dart';
 import 'room_form_screen.dart';
+import 'schedule_file_box.dart';
 import 'student_detail_screen.dart';
 import 'section_students_sheet.dart';
 
@@ -225,7 +226,7 @@ Future<void> _assignTeacher(BuildContext context, Classroom room) async {
 ///
 /// كل مادة في سطرها ومعلمها أمامها. المادة بلا معلم تُرفع عن الشعبة عند الحفظ،
 /// والمسندة تُنشئ مجموعتها تلقائياً ويُربط بها طلاب الشعبة بلا رسوم.
-Future<void> _assignSubjectTeachers(BuildContext context, Classroom room) async {
+Future<void> assignSubjectTeachers(BuildContext context, Classroom room) async {
   final store = StoreScope.of(context);
   await showModalBottomSheet<void>(
     context: context,
@@ -597,6 +598,7 @@ List<PopupMenuEntry<String>> _manageItems(Teacher? teacher) => [
       _menuItem('edit', Icons.edit_outlined, 'تعديل الصف'),
       _menuItem('assign', Icons.school_outlined, teacher == null ? 'تعيين مربي' : 'تغيير المربي'),
       _menuItem('subjects', Icons.menu_book_outlined, 'معلمو المواد'),
+      _menuItem('schedule', Icons.calendar_view_week_outlined, 'الجدول'),
       const PopupMenuDivider(height: 8),
       _menuItem('delete', Icons.delete_outline, 'حذف الصف', danger: true),
     ];
@@ -840,6 +842,13 @@ Future<void> _showRoomActionsSheet(
               onTap: () => Navigator.pop(ctx, 'subjects'),
             ),
             ListTile(
+              leading: const Icon(Icons.calendar_view_week_outlined, color: AppColors.muted),
+              title: const Text('الجدول'),
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              onTap: () => Navigator.pop(ctx, 'schedule'),
+            ),
+            ListTile(
               leading: const Icon(Icons.delete_outline, color: AppColors.danger),
               title: const Text('حذف الصف'),
               dense: true,
@@ -871,7 +880,9 @@ Future<void> _showRoomActionsSheet(
     case 'assign':
       await _assignTeacher(context, room);
     case 'subjects':
-      await _assignSubjectTeachers(context, room);
+      await assignSubjectTeachers(context, room);
+    case 'schedule':
+      await showScheduleFileSheet(context, kind: 'room', ownerId: room.id, title: 'جدول ${room.gradeLevel} ${room.name}'.trim());
     case 'delete':
       await _confirmDeleteRoom(context, room);
   }
@@ -981,7 +992,10 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
                   onSelected: (v) {
                     if (v == 'edit') _openRoomForm(context, room);
                     if (v == 'assign') _assignTeacher(context, room);
-                    if (v == 'subjects') _assignSubjectTeachers(context, room);
+                    if (v == 'subjects') assignSubjectTeachers(context, room);
+                    if (v == 'schedule') {
+                      showScheduleFileSheet(context, kind: 'room', ownerId: room.id, title: 'جدول ${room.gradeLevel} ${room.name}'.trim());
+                    }
                     if (v == 'delete') {
                       _confirmDeleteRoom(context, room, onDeleted: () => Navigator.pop(context));
                     }
@@ -1254,7 +1268,7 @@ class _SubjectTeachersCardState extends State<_SubjectTeachersCard> {
                         color: AppColors.amberDark,
                         background: AppColors.amberSoft,
                         border: AppColors.amberBorder,
-                        onTap: () => _assignSubjectTeachers(context, widget.room),
+                        onTap: () => assignSubjectTeachers(context, widget.room),
                       ),
                     ],
                     if (canExpand)

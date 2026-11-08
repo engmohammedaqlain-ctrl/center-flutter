@@ -9,6 +9,7 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../widgets/form_layout.dart';
+import '../widgets/owner_fold.dart';
 import '../widgets/widgets.dart';
 
 /// أنواع الإيراد المقترحة — مطابق لـ `GeneralIncomeForm.tsx`.
@@ -188,13 +189,7 @@ Future<bool> showGeneralIncomeSheet(
                   const FieldLabel('طريقة القبض'),
                   AppDropdown<String>(
                     value: method,
-                    items: [
-                      for (final m in store.activePaymentMethods)
-                        DropdownMenuItem(
-                          value: m.id,
-                          child: Text(store.paymentMethodLabel(m.id)),
-                        ),
-                    ],
+                    items: methodDropdownItems(store.activePaymentMethods),
                     onChanged: (v) => setSt(() {
                       method = v ?? method;
                       syncChannel(method);

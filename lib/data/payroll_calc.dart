@@ -16,6 +16,61 @@ import 'staff.dart';
 double _num(Object? v) => v is num ? v.toDouble() : double.tryParse('${v ?? ''}') ?? 0;
 double _r2(double n) => (n * 100).roundToDouble() / 100;
 
+/// مبالغ الراتب بشيكل كامل: كل بند مقرّب فيُجمع الصف كما يُرى — `whole`.
+double _whole(double n) => (n + 0.5).floorToDouble();
+
+/// معلم الحصة: أجره حصص وحدها، والمدرسة ترصد الحصص يومياً، بلا خصم دوام — `isPerLesson`.
+bool isPerLesson(PayTerms terms, bool featureOn) => featureOn && terms.perLesson;
+
+/// أعمدة الكشف بشيكل كامل: المستحق + الإضافات − الغياب − الخصومات (والسلفة منها) = الصافي.
+class PayrollColumns {
+  const PayrollColumns({required this.due, required this.extra, required this.absence, required this.cuts});
+
+  final double due;
+  final double extra;
+  final double absence;
+  final double cuts;
+
+  Map<String, dynamic> toMap() => {'due': due, 'extra': extra, 'absence': absence, 'cuts': cuts};
+}
+
+PayrollColumns payrollColumns(PayrollCalc c) => PayrollColumns(
+      due: _whole(c.fixed + c.sessionsPay + c.percentPay + c.allowances),
+      extra: _whole(c.additions),
+      absence: _whole(c.attendanceCut),
+      cuts: _whole(c.manualCut + c.advance),
+    );
+
+final _attendanceLinePattern = RegExp(r'^(غياب|إجازة بلا راتب|تأخير) ');
+
+/// أعمدة شهر مصروف — `snapshotColumns`: من اللقطة، والقديمة بلا أعمدة من سطورها.
+PayrollColumns snapshotColumns(Map<String, dynamic>? s, List<({String label, double amount})> adjustments) {
+  final saved = s?['columns'];
+  if (saved is Map) {
+    return PayrollColumns(
+      due: _whole(_num(saved['due'])),
+      extra: _whole(_num(saved['extra'])),
+      absence: _whole(_num(saved['absence'])),
+      cuts: _whole(_num(saved['cuts'])),
+    );
+  }
+  final extras = {for (final a in adjustments) if (a.amount > 0) a.label};
+  var due = 0.0, extra = 0.0, absence = 0.0, cuts = 0.0;
+  for (final l in (s?['lines'] is List ? s!['lines'] as List : const [])) {
+    if (l is! Map) continue;
+    final amount = _num(l['amount']);
+    final label = '${l['label'] ?? ''}';
+    if (amount > 0) {
+      extras.contains(label) ? extra += amount : due += amount;
+    } else if (_attendanceLinePattern.hasMatch(label)) {
+      absence -= amount;
+    } else {
+      cuts -= amount;
+    }
+  }
+  return PayrollColumns(due: _whole(due), extra: _whole(extra), absence: _whole(absence), cuts: _whole(cuts));
+}
+
 /// ما يُخصم عن كل تأخير من أجر اليوم — `LATE_FRACTIONS`.
 const lateFractions = [0.0, 0.2, 0.25, 1 / 3, 0.5];
 
@@ -73,7 +128,11 @@ class PayTerms {
     this.percentBasis = 'paid',
     this.absenceDeduct = true,
     this.advanceInstallment = 0,
+    this.perLesson = false,
   });
+
+  /// معلم حصة: يُختار من نموذج المعلم حين تفعّل المدرسة الميزة.
+  final bool perLesson;
 
   /// مشتق من الخانات: `fixed` أو `sessions` أو `percent` أو `mixed`، وفارغ بلا أجر
   final String contractType;
@@ -116,6 +175,7 @@ class PayTerms {
       percentBasis: p['percent_basis'] == 'due' ? 'due' : 'paid',
       absenceDeduct: p['absence_deduct'] != false,
       advanceInstallment: math.max(0.0, _num(p['advance_installment'])),
+      perLesson: p['per_lesson'] == true,
     );
   }
 }
@@ -320,7 +380,34 @@ class PayrollCalc {
     required this.advance,
     required this.lines,
     required this.warnings,
+    this.fixed = 0,
+    this.sessionsPay = 0,
+    this.percentPay = 0,
+    this.allowances = 0,
+    this.additions = 0,
+    this.attendanceCut = 0,
+    this.manualCut = 0,
+    this.advanceBalance = 0,
+    this.attendanceAbsent = 0,
+    this.sessionsFrom = '',
   });
+
+  final double fixed;
+  final double sessionsPay;
+  final double percentPay;
+  final double allowances;
+  final double additions;
+  final double attendanceCut;
+  final double manualCut;
+
+  /// رصيد السلف قبل هذا الشهر.
+  final double advanceBalance;
+
+  /// أيام الغياب كما في الدوام، قبل تعديل المدير.
+  final double attendanceAbsent;
+
+  /// من أين حصص الشهر: `entry` أو `daily` أو `monthly` أو `load`.
+  final String sessionsFrom;
 
   final PayTerms terms;
   final int workDays;
@@ -353,6 +440,7 @@ class PayrollCalc {
         'absent': absent,
         'late': late,
         'sessions': sessions == null ? null : (sessions! * 10).roundToDouble() / 10,
+        'columns': payrollColumns(this).toMap(),
       };
 }
 
@@ -372,11 +460,14 @@ PayrollCalc computePayroll({
   PayrollEntryRow? entry,
   List<PercentRoom> percentRooms = const [],
   double advanceBalance = 0,
+  bool perLessonOn = false,
 }) {
   final terms = termsFor(teacher, month);
-  final hasFixed = terms.fixed > 0;
-  final hasSessions = terms.sessionRate > 0;
-  final hasPercent = terms.percent > 0;
+  final perLesson = isPerLesson(terms, perLessonOn);
+  // كل خانة تُحسب إن كان فيها شيء. معلم الحصة أجره حصصه وحدها
+  final hasFixed = !perLesson && terms.fixed > 0;
+  final hasSessions = perLesson || terms.sessionRate > 0;
+  final hasPercent = !perLesson && terms.percent > 0;
   final sessionRate = terms.sessionRate;
   final fixedRate = terms.fixed;
   final weekDays = 7 - settings.weekend.length;
@@ -413,7 +504,7 @@ PayrollCalc computePayroll({
 
   // يوم الغياب = أجر يوم من أيام دوام الشهر الفعلية
   final dayBasis = math.max(1, days.length).toDouble();
-  final fixed = hasFixed && days.isNotEmpty ? _r2(fixedRate * employed.length / days.length) : 0.0;
+  final fixed = hasFixed && days.isNotEmpty ? _whole(fixedRate * employed.length / days.length) : 0.0;
   if (hasFixed) {
     lines.add((label: employed.length < days.length ? 'الراتب الثابت (${employed.length} من ${days.length} يوماً)' : 'الراتب الثابت', amount: fixed));
   }
@@ -424,7 +515,7 @@ PayrollCalc computePayroll({
     if (entry?.sessions != null) {
       sessions = entry!.sessions;
       from = 'entry';
-    } else if (settings.sessionsSource == 'daily') {
+    } else if (perLesson || settings.sessionsSource == 'daily') {
       sessions = daily;
       from = 'daily';
       if (unmarked > 0) warnings.add('أيام بلا عدد حصص: $unmarked');
@@ -438,11 +529,11 @@ PayrollCalc computePayroll({
     }
     if (terms.weeklyPeriods <= 0 && (from == 'load' || from == 'monthly')) warnings.add('النصاب غير محدد');
   }
-  final sessionsPay = sessions == null ? 0.0 : _r2(sessions * sessionRate);
+  final sessionsPay = sessions == null ? 0.0 : _whole(sessions * sessionRate);
   if (hasSessions) lines.add((label: 'الحصص: ${_count(sessions ?? 0)} × ${_count(sessionRate)}', amount: sessionsPay));
 
   final rooms = hasPercent ? percentRooms : const <PercentRoom>[];
-  final percentPay = _r2(rooms.fold<double>(0, (n, r) => n + r.amount));
+  final percentPay = _whole(rooms.fold<double>(0, (n, r) => n + r.amount));
   if (hasPercent) {
     lines.add((label: 'نسبة ${_count(terms.percent)}% من الرسوم', amount: percentPay));
     for (final r in rooms) {
@@ -451,14 +542,14 @@ PayrollCalc computePayroll({
     if (rooms.isEmpty) warnings.add('لا شعب مسندة');
   }
 
-  final allowances = _r2(terms.allowances.fold<double>(0, (n, a) => n + a.amount));
+  final allowances = _whole(terms.allowances.fold<double>(0, (n, a) => n + a.amount));
   for (final a in terms.allowances) {
     lines.add((label: a.name, amount: a.amount));
   }
 
   var additions = 0.0, manual = 0.0;
   for (final a in entry?.adjustments ?? const <({String label, double amount})>[]) {
-    final v = _r2(a.amount);
+    final v = _whole(a.amount);
     if (v == 0) continue;
     lines.add((label: a.label.isEmpty ? (v > 0 ? 'إضافة' : 'خصم') : a.label, amount: v));
     if (v > 0) {
@@ -474,7 +565,7 @@ PayrollCalc computePayroll({
   var room = fixed + (byDay ? sessionsPay : 0);
   double deduct(String label, double n) {
     if (n == 0 || dayValue == 0 || room <= 0) return 0;
-    final v = _r2(math.min(room, n * dayValue));
+    final v = _whole(math.min(room, n * dayValue));
     room -= v;
     lines.add((label: label, amount: -v));
     return v;
@@ -482,25 +573,26 @@ PayrollCalc computePayroll({
 
   // الغياب كما في الدوام إلا إن عدّله المدير، ولا يُخصم لمن لا يُخصم غيابه أو إن أُطفئ في المدرسة
   final absentCounted = entry?.absentDays != null ? math.max(0.0, entry!.absentDays!).round() : absent;
-  final absentDays = settings.absenceDeduct && terms.absenceDeduct ? absentCounted : 0;
-  final lateDays = (late * settings.lateFraction * 100).roundToDouble() / 100;
+  final absentDays = !perLesson && settings.absenceDeduct && terms.absenceDeduct ? absentCounted : 0;
+  final lateDays = perLesson ? 0.0 : (late * settings.lateFraction * 100).roundToDouble() / 100;
   var attendanceCut = deduct('غياب $absentDays يوم', absentDays.toDouble()) +
       deduct('إجازة بلا راتب $unpaidLeave يوم', unpaidLeave.toDouble()) +
       deduct('تأخير $late', lateDays);
-  attendanceCut = _r2(attendanceCut);
-  final deductions = _r2(attendanceCut + manual);
+  attendanceCut = _whole(attendanceCut);
+  final manualCut = _whole(manual);
+  final deductions = _whole(attendanceCut + manualCut);
 
-  final gross = _r2(fixed + sessionsPay + percentPay + allowances + additions);
+  final gross = _whole(fixed + sessionsPay + percentPay + allowances + additions);
   final balance = math.max(0.0, advanceBalance);
   final before = math.max(0.0, gross - deductions);
   // المقترح: قسط السلفة الشهري إن حُدد، وإلا الرصيد كله
   final suggested = terms.advanceInstallment > 0 ? math.min(balance, terms.advanceInstallment) : balance;
-  final advance = _r2(math.min(before, math.max(0.0, entry?.advanceRecovered ?? suggested)));
+  final advance = _whole(math.min(before, math.max(0.0, entry?.advanceRecovered ?? suggested)));
   if (advance > 0) lines.add((label: 'سلفة', amount: -advance));
 
   // الصافي كما هو بلا تقريب: ما يُصرف يُكتب ويُعدَّل في مكانه
-  final net = math.max(0.0, _r2(before - advance));
-  final payable = entry?.netOverride != null ? math.max(0.0, entry!.netOverride!) : net;
+  final net = math.max(0.0, _whole(before - advance));
+  final payable = entry?.netOverride != null ? math.max(0.0, _whole(entry!.netOverride!)) : net;
   return PayrollCalc(
     terms: terms,
     workDays: days.length,
@@ -514,5 +606,15 @@ PayrollCalc computePayroll({
     advance: advance,
     lines: lines,
     warnings: warnings,
+    fixed: fixed,
+    sessionsPay: sessionsPay,
+    percentPay: percentPay,
+    allowances: allowances,
+    additions: additions,
+    attendanceCut: attendanceCut,
+    manualCut: manualCut,
+    advanceBalance: balance,
+    attendanceAbsent: absent.toDouble(),
+    sessionsFrom: from,
   );
 }

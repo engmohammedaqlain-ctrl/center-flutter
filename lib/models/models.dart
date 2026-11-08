@@ -1729,7 +1729,23 @@ class PaymentRequest {
     this.createdAt,
     this.updatedAt,
     this.syncStatus = 'synced',
+    this.allocations = const [],
+    this.paymentIds = const [],
   });
+
+  /// دفعة عائلية: توزيع المبلغ على الأبناء. `studentId` هو الابن الذي دخل منه ولي الأمر،
+  /// و`amount` مجموع التوزيع، والقبول يُصدر سنداً لكل ابن.
+  List<({String studentId, String studentName, double amount})> allocations;
+
+  /// كل السندات الصادرة بقبول دفعة عائلية.
+  List<String> paymentIds;
+
+  /// الطلب لأكثر من ابن — `isFamilyRequest`.
+  bool get isFamily => allocations.length > 1;
+
+  /// نصيب الابن من الطلب: توزيعه في الدفعة العائلية، أو مبلغ الطلب كله — `requestShare`.
+  double shareOf(String id) =>
+      isFamily ? (allocations.where((a) => a.studentId == id).firstOrNull?.amount ?? 0) : amount;
 
   final String id;
   final String studentId;
@@ -1782,6 +1798,13 @@ class PaymentRequest {
     'decided_by_name': decidedByName.isEmpty ? null : decidedByName,
     'decided_at': decidedAt,
     'payment_id': paymentId.isEmpty ? null : paymentId,
+    'allocations': allocations.isEmpty
+        ? null
+        : [
+            for (final a in allocations)
+              {'student_id': a.studentId, 'student_name': a.studentName, 'amount': a.amount},
+          ],
+    'payment_ids': paymentIds.isEmpty ? null : paymentIds,
     'created_at': createdAt,
     'updated_at': updatedAt,
   };
@@ -1811,6 +1834,20 @@ class PaymentRequest {
     createdAt: m['created_at']?.toString(),
     updatedAt: m['updated_at']?.toString(),
     syncStatus: '${m['sync_status'] ?? 'synced'}',
+    allocations: [
+      if (m['allocations'] is List)
+        for (final a in m['allocations'] as List)
+          if (a is Map)
+            (
+              studentId: '${a['student_id'] ?? ''}',
+              studentName: '${a['student_name'] ?? ''}',
+              amount: a['amount'] is num ? (a['amount'] as num).toDouble() : double.tryParse('${a['amount']}') ?? 0,
+            ),
+    ],
+    paymentIds: [
+      if (m['payment_ids'] is List)
+        for (final p in m['payment_ids'] as List) '$p',
+    ],
   );
 }
 
@@ -2064,6 +2101,7 @@ class Expense {
     this.method = 'cash',
     this.notes = '',
     this.kind = 'expense',
+    this.toMethod = '',
     this.cancelled = false,
     this.cancelReason = '',
     this.syncStatus = 'synced',
@@ -2086,6 +2124,12 @@ class Expense {
   String method;
   String notes;
 
+  /// التحويل: الحساب المستلِم — `to_payment_method`. الغائب في تحويل قديم يخرج فقط.
+  String toMethod;
+
+  /// تحويل بين حسابين له مستلِم مختلف عن المصدر — `isTransferIn`.
+  bool get isTransferIn => kind == 'transfer' && toMethod.isNotEmpty && toMethod != method;
+
   /// سند أُلغي بسببه: يبقى في السجل ويخرج من كل مجموع — `is_cancelled`.
   bool cancelled;
   String cancelReason;
@@ -2104,6 +2148,7 @@ class Expense {
     'payment_method': method,
     'notes': notes.isEmpty ? null : notes,
     'kind': kind,
+    'to_payment_method': toMethod.isEmpty ? null : toMethod,
     'is_cancelled': cancelled,
     'cancelled_reason': cancelReason.isEmpty ? null : cancelReason,
     'created_at': createdAt,
@@ -2122,6 +2167,7 @@ class Expense {
     method: '${m['payment_method'] ?? 'cash'}',
     notes: '${m['notes'] ?? ''}',
     kind: '${m['kind'] ?? 'expense'}',
+    toMethod: '${m['to_payment_method'] ?? ''}',
     cancelled: m['is_cancelled'] == true,
     cancelReason: '${m['cancelled_reason'] ?? ''}',
     syncStatus: '${m['sync_status'] ?? 'synced'}',

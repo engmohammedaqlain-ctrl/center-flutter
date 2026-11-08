@@ -84,7 +84,10 @@ Balances walletFlows({
     if (!p.cancelled && inRange(isoDate(p.date))) _add(b, p.method, p.amount);
   }
   for (final e in expenses) {
-    if (!e.cancelled && inRange(e.expenseDate)) _add(b, e.method, -e.amount);
+    if (e.cancelled || !inRange(e.expenseDate)) continue;
+    _add(b, e.method, -e.amount);
+    // التحويل يخرج من حسابه ويدخل المستلِم؛ التحويل القديم بلا مستلِم يخرج فقط
+    if (e.isTransferIn) _add(b, e.toMethod, e.amount);
   }
   for (final p in payouts) {
     if (!p.cancelled && inRange(p.paymentDate)) _add(b, p.method, -p.amount);

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/method_owners.dart';
 import '../data/payment_methods.dart';
 import '../data/store.dart';
 import '../models/models.dart';
@@ -39,7 +40,21 @@ class PaymentMethodsTab extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        for (final m in methods)
+        // الصاحب أب حساباته: كل صاحب وتحته وسائله، و«بدون صاحب» آخراً
+        for (final g in [
+          ...groupMethodsByOwner<PaymentMethodItem>(methods, (m) => m.owner).groups,
+          if (groupMethodsByOwner<PaymentMethodItem>(methods, (m) => m.owner).ungrouped.isNotEmpty)
+            (owner: '', items: groupMethodsByOwner<PaymentMethodItem>(methods, (m) => m.owner).ungrouped),
+        ]) ...[
+          if (methods.any((m) => m.owner.trim().isNotEmpty))
+            Padding(
+              padding: const EdgeInsets.only(top: 6, bottom: 6),
+              child: Text(
+                g.owner.isEmpty ? noOwner : g.owner,
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.muted),
+              ),
+            ),
+          for (final m in g.items)
           _MethodCard(
             method: m,
             onToggle: () => _save(
@@ -59,6 +74,7 @@ class PaymentMethodsTab extends StatelessWidget {
             onRename: () => _edit(context, store, methods, m),
             onDelete: m.isDefault ? null : () => _delete(context, store, methods, m),
           ),
+        ],
         const SizedBox(height: 4),
         GhostButton(
           label: 'استعادة الوسائل الافتراضية',
@@ -95,6 +111,8 @@ class PaymentMethodsTab extends StatelessWidget {
       name: m.name,
       number: m.accountNumber,
       type: m.type,
+      owner: m.owner,
+      owners: {for (final x in methods) if (x.owner.trim().isNotEmpty) x.owner.trim()}.toList(),
     );
     if (result == null || !context.mounted) return;
     await _save(
@@ -103,7 +121,7 @@ class PaymentMethodsTab extends StatelessWidget {
       [
         for (final x in methods)
           // رقم فارغ يمسح القديم — يُرفع null فلا يبقى في السحابة
-          x.id == m.id ? x.copyWith(name: result.name, accountNumber: m.type == 'cash' ? '' : result.number) : x,
+          x.id == m.id ? x.copyWith(owner: result.owner, name: result.name, accountNumber: m.type == 'cash' ? '' : result.number) : x,
       ],
       'تم تحديث وسيلة الدفع',
     );
@@ -142,7 +160,7 @@ class PaymentMethodsTab extends StatelessWidget {
 Future<void> addPaymentMethod(BuildContext context) async {
   final store = StoreScope.of(context);
   final methods = store.paymentMethods;
-  final added = await _methodSheet(context, title: 'وسيلة دفع جديدة', withType: true);
+  final added = await _methodSheet(context, owners: {for (final x in methods) if (x.owner.trim().isNotEmpty) x.owner.trim()}.toList(), title: 'وسيلة دفع جديدة', withType: true);
   if (added == null || !context.mounted) return;
 
   // معرّف بالوقت كما في النسخة المكتبية: لا يتصادم مع معرّفات الوسائل الأساسية
@@ -158,6 +176,7 @@ Future<void> addPaymentMethod(BuildContext context) async {
         name: added.name,
         type: added.type,
         accountNumber: added.type == 'cash' ? '' : added.number,
+        owner: added.owner,
       ),
     ],
     'تمت إضافة وسيلة الدفع',
@@ -168,20 +187,23 @@ Future<void> addPaymentMethod(BuildContext context) async {
 ///
 /// كانت تُعيد «الاسم النوع» نصاً واحداً يُقسَم على المسافة، فاسمٌ من كلمتين
 /// («بنك القدس») يُقصّ إلى كلمته الأولى ويُقرأ الباقي نوعاً.
-Future<({String name, String type, String number})?> _methodSheet(
+Future<({String name, String type, String number, String owner})?> _methodSheet(
   BuildContext context, {
   required String title,
   String name = '',
   String number = '',
   String type = 'bank',
   bool withType = false,
+  String owner = '',
+  List<String> owners = const [],
 }) {
   final nameController = TextEditingController(text: name);
   final numberController = TextEditingController(text: number);
+  final ownerController = TextEditingController(text: owner);
   var selectedType = type;
   String? nameError;
 
-  return showModalBottomSheet<({String name, String type, String number})>(
+  return showModalBottomSheet<({String name, String type, String number, String owner})>(
     context: context,
     backgroundColor: Colors.white,
     isScrollControlled: true,
@@ -241,6 +263,25 @@ Future<({String name, String type, String number})?> _methodSheet(
                     decoration: const InputDecoration(hintText: 'رقم الحساب أو المحفظة'),
                   ),
                 ],
+                const SizedBox(height: 12),
+                const FieldLabel('صاحب الحساب'),
+                TextField(
+                  controller: ownerController,
+                  decoration: const InputDecoration(hintText: 'اسم الصاحب (اختياري)'),
+                ),
+                if (owners.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    children: [
+                      for (final o in owners)
+                        ActionChip(
+                          label: Text(o, style: const TextStyle(fontSize: 11)),
+                          onPressed: () => setSheet(() => ownerController.text = o),
+                        ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 16),
                 ActionButtons(
                   primary: PrimaryButton(
@@ -254,7 +295,7 @@ Future<({String name, String type, String number})?> _methodSheet(
                         showAppSnack(ctx, 'يرجى إدخال اسم وسيلة الدفع', error: true);
                         return;
                       }
-                      Navigator.pop(ctx, (name: value, type: selectedType, number: numberController.text.trim()));
+                      Navigator.pop(ctx, (owner: ownerController.text.trim(), name: value, type: selectedType, number: numberController.text.trim()));
                     },
                   ),
                   secondary: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx)),

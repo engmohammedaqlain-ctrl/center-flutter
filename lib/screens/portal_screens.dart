@@ -12,6 +12,8 @@ import '../data/grade_deadlines.dart';
 import 'grade_deadline_banner.dart';
 import 'sheet_export.dart';
 import 'teacher_payslips.dart';
+import 'schedule_file_box.dart';
+import 'teacher_timetable_view.dart';
 import 'teacher_self_sheet.dart';
 import '../data/portal.dart';
 import '../data/material_limits.dart';
@@ -27,6 +29,9 @@ import '../data/academic_matching.dart';
 import '../data/teacher_resources.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../data/schedule_files.dart';
+import '../data/timetable_model.dart';
+import '../data/timetable_service.dart';
 import '../data/school_calendar.dart';
 import '../models/models.dart';
 import '../widgets/attendance_view.dart';
@@ -568,10 +573,45 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
   String homeroomError = '';
 
   /// التبويبات المفعّلة لمدرسته بترتيبها، و«صفي» لمربي الصف.
-  List<String> _tabIds([Map<String, dynamic>? features]) => [
-        ...teacherPortalTabs(resolveFeatures(features ?? data?.features)),
-        if ((homeroom?.rooms.length ?? 0) > 0) 'homeroom',
-      ];
+  List<String> _tabIds([Map<String, dynamic>? features]) {
+    final state = resolveFeatures(features ?? data?.features);
+    final mine = {for (final c in data?.classes ?? const <TeacherClass>[]) c.group.id};
+    final hasTimetable = state['timetable'] == true &&
+        ((timetable?.covers.isNotEmpty ?? false) || (timetable?.entries.any((e) => mine.contains(e.groupId)) ?? false));
+    return [
+      ...teacherPortalTabs(state),
+      if ((homeroom?.rooms.length ?? 0) > 0) 'homeroom',
+      // الجدول المعتمد لمن له فيه حصة أو احتياط، وإلا فالملف الذي رفعته الإدارة له
+      if (hasTimetable) 'timetable' else if (scheduleFile != null) 'schedule',
+    ];
+  }
+
+  /// الجدول المعتمد واحتياط المعلم: يُجلب مرة عند الدخول.
+  ({List<TimetableEntry> entries, List<TimetableCover> covers})? timetable;
+
+  Future<void> _loadTimetable() async {
+    final found = await TimetableService.teacherView();
+    if (!mounted || found == null) return;
+    setState(() {
+      timetable = found;
+      final tabs = _tabIds();
+      if (tabs.isNotEmpty && !tabs.contains(tab)) tab = tabs.first;
+    });
+  }
+
+  /// ملف جدوله إن رفعته الإدارة: تبويب «جدولي» بلا مفتاح ميزة.
+  ScheduleFile? scheduleFile;
+
+  Future<void> _loadScheduleFile() async {
+    final found = await ScheduleFiles.mine();
+    if (!mounted) return;
+    if (found?.id == scheduleFile?.id && found?.updatedAt == scheduleFile?.updatedAt) return;
+    setState(() {
+      scheduleFile = found;
+      final tabs = _tabIds();
+      if (tabs.isNotEmpty && !tabs.contains(tab)) tab = tabs.first;
+    });
+  }
 
   Future<void> _loadHomeroom() async {
     setState(() {
@@ -752,6 +792,8 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
     }
     _load();
     unawaited(_loadHomeroom());
+    unawaited(_loadScheduleFile());
+    unawaited(_loadTimetable());
     unawaited(_loadPayslips());
     _startPortalRealtime();
     ShareInbox.instance.addListener(_onShared);
@@ -2126,6 +2168,22 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
                               'evaluations' => _evaluationsTab(brand),
                               'moodle' => _moodleTab(brand),
                               'notes' => _notesTab(brand),
+                              'schedule' => [
+                                  if (scheduleFile case final file?) ScheduleFileView(file: file, title: 'جدولي'),
+                                ],
+                              'timetable' => [
+                                  TeacherTimetableView(
+                                    entries: [
+                                      for (final e in timetable?.entries ?? const <TimetableEntry>[])
+                                        if (data?.classes.any((c) => c.group.id == e.groupId) ?? false) e,
+                                    ],
+                                    covers: timetable?.covers ?? const [],
+                                    classes: data?.classes ?? const [],
+                                    settings: data?.branding.timetable ?? TimetableSettings.fromMap(null),
+                                    weekend: data?.branding.weekend ?? const [5],
+                                    onRefresh: () => unawaited(_loadTimetable()),
+                                  ),
+                                ],
                               _ => _attendanceTab(brand),
                                   },
                                 ],
@@ -2138,7 +2196,11 @@ class _TeacherPortalScreenState extends State<TeacherPortalScreen> {
           PortalBottomNav(
             items: [
               for (final id in _tabIds())
-                if (id == 'homeroom')
+                if (id == 'timetable')
+                  const PortalNavItem(id: 'timetable', label: 'جدولي', icon: Icons.calendar_view_week_outlined, activeIcon: Icons.calendar_view_week)
+                else if (id == 'schedule')
+                  const PortalNavItem(id: 'schedule', label: 'جدولي', icon: Icons.calendar_view_week_outlined, activeIcon: Icons.calendar_view_week)
+                else if (id == 'homeroom')
                   const PortalNavItem(id: 'homeroom', label: 'صفي', icon: Icons.groups_outlined)
                 else if (id == 'attendance')
                   const PortalNavItem(id: 'attendance', label: 'الحضور', icon: Icons.how_to_reg_outlined)

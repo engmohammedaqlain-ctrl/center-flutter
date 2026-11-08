@@ -654,6 +654,42 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
         ),
         const SizedBox(height: 8),
         _toolTile(
+          icon: Icons.auto_awesome_outlined,
+          title: 'توليد بيانات تجريبية شاملة (محمد)',
+          subtitle: 'نحو 80 طالباً مع الرواتب والجدول والمالية والعلامات والموديل ودوام المعلمين',
+          onTap: () async {
+            final ok = await confirmSheet(
+              context,
+              title: 'توليد بيانات تجريبية شاملة (محمد)',
+              message: 'حذف كل البيانات من الجهاز والسحابة وتوليد مدرسة تجريبية كاملة: طلاب ومالية وعلامات وموديل، '
+                  'ورواتب المعلمين (ثابت وبالحصة ومختلط)، وجدول حصص معتمد، ودوام وإجازات.'
+                  '\nلا يمكن التراجع.',
+              confirmLabel: 'تنفيذ',
+              confirmColor: AppColors.danger,
+            );
+            if (!ok || !context.mounted) return;
+            final token = SupabaseAuth.developerAccess;
+            if (token == null || token.isEmpty) {
+              setState(() {
+                unlocked = false;
+                gateError = 'انتهت جلسة المطور، سجّل الدخول مجدداً';
+              });
+              return;
+            }
+            try {
+              final stats = await runBusyOp(
+                context,
+                () => injectDemoDataCloud(store, developerToken: token, full: true),
+                message: 'جارٍ توليد المدرسة الشاملة...',
+              );
+              if (context.mounted) showDemoDataResult(context, stats);
+            } catch (e) {
+              if (context.mounted) showAppSnack(context, userMessage(e, 'تعذّر توليد البيانات'), error: true);
+            }
+          },
+        ),
+        const SizedBox(height: 8),
+        _toolTile(
           icon: Icons.delete_forever_outlined,
           title: 'مسح وتصفير البيانات',
           subtitle: 'حذف كل البيانات من الجهاز والسحابة',

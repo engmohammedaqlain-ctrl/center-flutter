@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../data/phone.dart';
 import '../data/staff.dart';
+import '../data/pay_terms.dart';
+import '../data/payroll_calc.dart';
 import '../data/school_calendar.dart';
 import '../data/school_options.dart';
 import '../data/store.dart';
@@ -117,10 +119,62 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
     }
   }
 
+  bool _perLesson(AppStore store, Teacher t, String day) =>
+      isPerLesson(termsFor(t, day.substring(0, 7)), store.isFeatureOn('payroll.per_lesson'));
+
+  bool _countsDaily(AppStore store, Teacher t, String day) {
+    final settings = PayrollSettings.fromMap(store.settings.extra['payroll'], weekend: store.settings.extra['weekend']);
+    return settings.sessionsSource == 'daily' && termsFor(t, day.substring(0, 7)).sessionRate > 0;
+  }
+
+  /// عدد حصص يوم من الكشف: الخانة ضيقة، فيُكتب في نافذة.
+  Future<void> _askPeriods(AppStore store, Teacher t, String day) async {
+    final current = records?.where((d) => d.teacherId == t.id && d.date == day).firstOrNull?.periods;
+    final ctl = TextEditingController(text: current == null ? '' : trimNum(current));
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text('حصص ${t.name} يوم $day', style: const TextStyle(fontSize: 14)),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(hintText: 'عدد الحصص'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('حفظ')),
+        ],
+      ),
+    );
+    if (ok == true && mounted) await _savePeriods(store, t, day, ctl.text);
+  }
+
+  /// حصص اليوم: معلم الحصة لا حالة لدوامه، فأول عدد يحفظ يومه ومسحه يمسحه.
+  Future<void> _savePeriods(AppStore store, Teacher t, String day, String text) async {
+    try {
+      store.assertOpenDate([day], 'دوام الموظفين', kind: 'school');
+      await StaffService.setPeriods(
+        store.tenantId ?? '',
+        t.id,
+        day,
+        numOrNull(text),
+        lessonsOnly: _perLesson(store, t, day),
+        exists: statusOf(t.id, day) != null,
+      );
+      await _load();
+    } on StoreException catch (e) {
+      if (mounted) showAppSnack(context, e.message, error: true);
+    } catch (_) {
+      if (mounted) showAppSnack(context, 'تعذّر الحفظ', error: true);
+    }
+  }
+
   Future<void> _allPresent(AppStore store, List<Teacher> teachers, String day) async {
     try {
       store.assertOpenDate([day], 'دوام الموظفين', kind: 'school');
       for (final t in teachers) {
+        if (_perLesson(store, t, day)) continue;
         if (statusOf(t.id, day) == null && approvedLeaveOn(leaves, t.id, day) == null) {
           await StaffService.setDay(store.tenantId ?? '', t.id, day, 'present');
         }
@@ -304,7 +358,8 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
               final t = teachers[i];
               final leave = approvedLeaveOn(leaves, t.id, date);
               final status = statusOf(t.id, date);
-              final absent = countIn(t.id, 'absent', monthRecords);
+              final lessons = _perLesson(store, t, date);
+              final absent = lessons ? 0 : countIn(t.id, 'absent', monthRecords);
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(border: i == 0 ? null : const Border(top: BorderSide(color: AppColors.line))),
@@ -325,15 +380,36 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
                         ],
                       ),
                     ),
-                    if (leave != null)
+                    // معلم الحصة: عدد حصص اليوم بدل الحضور والغياب
+                    if (lessons && leave == null)
+                      SizedBox(
+                        width: 78,
+                        child: _PeriodsBox(
+                          key: ValueKey('periods_${t.id}_$date'),
+                          value: records?.where((d) => d.teacherId == t.id && d.date == date).firstOrNull?.periods,
+                          onSave: (text) => _savePeriods(store, t, date, text),
+                        ),
+                      )
+                    else if (leave != null)
                       NoonBadge('إجازة ${leave.paid == true ? 'مدفوعة' : 'غير مدفوعة'}')
-                    else
+                    else ...[
+                      // موظف الحصص حين تُرصد يومياً (إعدادات الرواتب)
+                      if ((status == 'present' || status == 'late') && _countsDaily(store, t, date))
+                        SizedBox(
+                          width: 52,
+                          child: _PeriodsBox(
+                            key: ValueKey('periods_${t.id}_$date'),
+                            value: records?.where((d) => d.teacherId == t.id && d.date == date).firstOrNull?.periods,
+                            onSave: (text) => _savePeriods(store, t, date, text),
+                          ),
+                        ),
                       AttendanceMarkToggle(
                         status: status,
                         expand: false,
                         options: staffMarkOptions,
                         onSet: (s) => _save(store, t.id, date, status == s ? null : s),
                       ),
+                    ],
                   ],
                 ),
               );
@@ -384,8 +460,9 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
                 ]),
                 for (final t in teachers)
                   () {
-                    final absent = countIn(t.id, 'absent', records ?? const []);
-                    final late = countIn(t.id, 'late', records ?? const []);
+                    final lessons = _perLesson(store, t, (list.firstOrNull?.dateStr ?? date));
+                    final absent = lessons ? 0 : countIn(t.id, 'absent', records ?? const []);
+                    final late = lessons ? 0 : countIn(t.id, 'late', records ?? const []);
                     return Row(children: [
                       cell(
                         Padding(
@@ -413,6 +490,16 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
                           }
                           final status = statusOf(t.id, d.dateStr);
                           final future = d.dateStr.compareTo(today) > 0;
+                          if (lessons) {
+                            final n = records?.where((x) => x.teacherId == t.id && x.date == d.dateStr).firstOrNull?.periods;
+                            return InkWell(
+                              onTap: future ? null : () => _askPeriods(store, t, d.dateStr),
+                              child: cell(
+                                Text(n == null ? '—' : trimNum(n), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: n == null ? const Color(0xFFD1D5DB) : AdminNoon.text)),
+                                bg: d.isToday ? const Color(0x140284C7) : null,
+                              ),
+                            );
+                          }
                           final (Color? bg, Widget mark) = switch (status) {
                             'present' => (const Color(0xFFDCFCE7), const Icon(Icons.check, size: 15, color: Color(0xFF166534))),
                             'absent' => (const Color(0xFFFEE2E2), const Icon(Icons.close, size: 15, color: Color(0xFF991B1B))),
@@ -487,4 +574,57 @@ class _AttendanceHubState extends State<AttendanceHub> {
       ],
     );
   }
+}
+
+/// عدد حصص اليوم لمعلم الحصة: يُحفظ عند الانتهاء من الكتابة أو مغادرة الخانة.
+class _PeriodsBox extends StatefulWidget {
+  const _PeriodsBox({super.key, required this.value, required this.onSave});
+
+  final double? value;
+  final ValueChanged<String> onSave;
+
+  @override
+  State<_PeriodsBox> createState() => _PeriodsBoxState();
+}
+
+class _PeriodsBoxState extends State<_PeriodsBox> {
+  late final controller = TextEditingController(text: _text(widget.value));
+  final focus = FocusNode();
+
+  String _text(double? v) => v == null ? '' : trimNum(v);
+
+  void _commit() {
+    if (controller.text.trim() != _text(widget.value)) widget.onSave(controller.text);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    focus.addListener(() {
+      if (!focus.hasFocus) _commit();
+    });
+  }
+
+  @override
+  void didUpdateWidget(_PeriodsBox old) {
+    super.didUpdateWidget(old);
+    if (!focus.hasFocus && old.value != widget.value) controller.text = _text(widget.value);
+  }
+
+  @override
+  void dispose() {
+    focus.dispose();
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => TextField(
+        controller: controller,
+        focusNode: focus,
+        textAlign: TextAlign.center,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: const InputDecoration(isDense: true, hintText: 'حصص'),
+        onSubmitted: (_) => focus.unfocus(),
+      );
 }

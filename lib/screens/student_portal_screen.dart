@@ -12,6 +12,7 @@ import '../data/push.dart';
 import '../data/realtime.dart';
 import '../data/share_inbox.dart';
 import '../data/store.dart';
+import '../data/schedule_files.dart';
 import '../data/school_calendar.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
@@ -23,6 +24,7 @@ import '../widgets/brand_loading.dart';
 import '../widgets/ledger_row.dart';
 import '../widgets/subject_style.dart';
 import '../widgets/widgets.dart';
+import 'schedule_file_box.dart';
 import 'notes_parts.dart';
 import 'parent_payments.dart';
 import 'portal_chrome.dart';
@@ -213,6 +215,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
       loading = true;
       sections = const [];
       noteThreads = const [];
+      scheduleFile = null;
     });
     // الجلسة على الخادم لم تتبدّل بعد: تُجدَّد أول ما يتوفر الاتصال
     _setStale(fromDevice);
@@ -267,9 +270,23 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     }
   }
 
+  /// ملف جدول شعبة الطالب إن رفعته الإدارة — `useMyScheduleFile`.
+  ScheduleFile? scheduleFile;
+
+  Future<void> _loadScheduleFile() async {
+    final id = user.id;
+    final found = await ScheduleFiles.mine();
+    // ولي الأمر يبدّل الابن: لا يُكتب جدول ابن سابق على ابن فُتح بعده
+    if (!mounted || user.id != id) return;
+    setState(() {
+      scheduleFile = found;
+      if (found == null && tab == 'schedule') tab = 'subjects';
+    });
+  }
+
   List<PortalNavItem> get _navItems {
     final state = resolveFeatures(data?.features);
-    final ids = familyPortalTabs(state, isParent: isParent);
+    final ids = [...familyPortalTabs(state, isParent: isParent), if (scheduleFile != null) 'schedule'];
     PortalNavItem? item(String id) => switch (id) {
           'moodle' => const PortalNavItem(
               id: 'moodle',
@@ -294,6 +311,12 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
               label: 'علامات',
               icon: Icons.workspace_premium_outlined,
               activeIcon: Icons.workspace_premium,
+            ),
+          'schedule' => const PortalNavItem(
+              id: 'schedule',
+              label: 'الجدول',
+              icon: Icons.calendar_view_week_outlined,
+              activeIcon: Icons.calendar_view_week,
             ),
           'financial' => const PortalNavItem(
               id: 'financial',
@@ -396,6 +419,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
     _rememberAccount(user, code: user.portalCode);
     if (widget.offlineStart) _setStale(true);
     _load();
+    unawaited(_loadScheduleFile());
     _startPortalRealtime();
     // ولي الأمر والطالب: الخادم يقرر ما يصل كلاً منهما
     _pushSubs = [
@@ -500,6 +524,8 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
           if (!ids.contains(tab) && ids.isNotEmpty) tab = ids.first;
         }
       });
+      // جدول الشعبة يُعاد جلبه مع كل تحميل: عند تبديل الابن والتحديث وبعد أن تجهز الجلسة (ولي الأمر خاصة)
+      if (result != null) unawaited(_loadScheduleFile());
       // مشاركة وصلت قبل أن تجهز البيانات
       if (result != null && ShareInbox.instance.hasFiles) unawaited(_onShared());
       if (result != null) {
@@ -615,6 +641,9 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
                                     'attendance' => _attendanceTab(),
                                     'evaluations' => _evaluationsTab(),
                                     'financial' => _financialTab(),
+                                    'schedule' => [
+                                      if (scheduleFile case final file?) ScheduleFileView(file: file, title: 'الجدول'),
+                                    ],
                                     _ => _moodleTab(),
                                   },
                                 ],
@@ -912,6 +941,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
             user: user,
             suggestedAmount: data!.finance.currentDue,
             accent: Noon.action,
+            siblings: [for (final c in user.children) if (c.id != user.id) c],
           );
           if (!mounted) return;
           if (done == true) {
@@ -978,6 +1008,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
         ParentPaymentsSection(
           user: user,
           suggestedAmount: f.currentDue,
+          siblings: [for (final c in user.children) if (c.id != user.id) c],
           accent: Noon.action,
           refreshTick: _realtimeTick,
           sharedReceipts: sharedReceipts,

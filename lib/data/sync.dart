@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import 'supabase.dart';
 import 'error_report.dart';
-import 'user_message.dart';
+import 'user_message.dart';
 import 'off_thread.dart';
 
 /// مطابق لـ TABLE_ALLOWED_COLUMNS في sync.ts
@@ -232,6 +232,7 @@ const tableAllowedColumns = <String, List<String>>{
   'payment_methods': [
     'id',
     'name',
+    'owner',
     'type',
     'account_number',
     'show_in_portal',
@@ -254,6 +255,8 @@ const tableAllowedColumns = <String, List<String>>{
     'reference_number',
     'notes',
     'image_paths',
+    'allocations',
+    'payment_ids',
     'status',
     'rejection_reason',
     'decided_by_id',
@@ -443,6 +446,7 @@ const tableAllowedColumns = <String, List<String>>{
     'payment_method',
     'notes',
     'kind',
+    'to_payment_method',
     'is_cancelled',
     'cancelled_reason',
     'tenant_id',
@@ -529,6 +533,8 @@ const nonTextColumns = <String, List<String>>{
     'created_at',
     'decided_at',
     'image_paths',
+    'allocations',
+    'payment_ids',
     'tenant_id',
     'transfer_date',
     'updated_at',
