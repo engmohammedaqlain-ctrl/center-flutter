@@ -306,8 +306,10 @@ abstract final class AppTheme {
         ),
       ),
       chipTheme: ChipThemeData(
-        labelStyle: WidgetStateTextStyle.resolveWith(
-          (s) => AppText.label.copyWith(color: s.contains(WidgetState.selected) ? Colors.white : AppColors.text),
+        // اللون حسب الحالة داخل نمط عادي: الشريحة تحلّ لون النمط وحده، و`WidgetStateTextStyle`
+        // كاملاً لم يكن يُحلّ فاختفى نص كل الشرائح (الأسباب الجاهزة، فئات النتائج...)
+        labelStyle: AppText.label.copyWith(
+          color: WidgetStateColor.resolveWith((s) => s.contains(WidgetState.selected) ? Colors.white : AppColors.text),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Corner.chip)),

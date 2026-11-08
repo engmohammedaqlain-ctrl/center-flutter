@@ -3879,6 +3879,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       await db.setSetting(institutionNameKey, name);
     }
     if (logo.isNotEmpty) await db.setSetting(institutionLogoKey, logo);
+    // شاشة الإقلاع في الفتح التالي بشعار المدرسة واسمها
+    unawaited(SchoolBrand.instance.rememberLastSchool(institutionName, logo));
 
     // إعدادات المدرسة من عمودها. سجلٌّ لم يكتبه العمود بعد يُترك للمفاتيح
     // القديمة داخل `colors` أدناه، فلا يُصفَّر رسمٌ مضبوط بإعدادات فارغة
@@ -4280,6 +4282,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
     // الاستماع أولاً: لا يتوقف على نجاح خطوات الشبكة التي تليه
     await startRealtime();
+    unawaited(refreshCurrentTenant().catchError((_) {}));
     // اسحب هوية المنشأة قبل أي كتابة محلية — وإلا رُفعت الألوان الافتراضية فوق السحابة
     await _pullInstitutionIdentity();
     await hydrateInstitution();
@@ -4860,6 +4863,28 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     await _clearStaffSession();
     await _enterTenant(tenant);
     return null;
+  }
+
+  /// صف المنشأة يُجلب عند الدخول، وما يغيّره المطور بعدها (تمديد، إيقاف، اسم) لا يصل
+  /// إلا بهذا — `refreshCurrentTenant`. كان الجوال يُبقي نسخة الدخول فيُنذر بانتهاء
+  /// اشتراكٍ مُدِّد وباسمٍ قديم للمدرسة.
+  Future<void> refreshCurrentTenant() async {
+    final cur = currentTenant;
+    if (cur == null || isMasterAdmin || !networkEnabled) return;
+    final fresh = await tenantApi.findById(cur.id);
+    if (fresh == null || fresh.id != cur.id || currentTenant?.id != cur.id) return;
+    // كلمة الدخول لا تأتي من السحابة: تبقى المحفوظة
+    if (fresh.username.isEmpty) fresh.username = cur.username;
+    fresh.password = cur.password;
+    currentTenant = fresh;
+    final i = tenants.indexWhere((t) => t.id == fresh.id);
+    if (i >= 0) {
+      tenants[i] = fresh;
+    } else {
+      tenants.add(fresh);
+    }
+    markDirty('tenants');
+    notifyListeners();
   }
 
   /// جلب المنشآت من السحابة مع الإبقاء على المحلية عند انقطاع الاتصال.

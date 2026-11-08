@@ -372,7 +372,8 @@ class PdfKit {
 
   /// اسم الملف الناتج بلا فراغات، وبلاحقة `.pdf`.
   static String fileName(String raw) {
-    final base = raw.trim().replaceAll(RegExp(r'\s+'), '_');
+    // رقم السند «2026/1097»: الشرطة المائلة مسار مجلد غير موجود، ففشل واتساب والحفظ
+    final base = raw.trim().replaceAll(RegExp(r'[\\/:*?"<>|]+'), '-').replaceAll(RegExp(r'\s+'), '_');
     // صورة الوصل تبقى بامتدادها
     if (RegExp(r'\.(pdf|png|csv|xlsx|json)$', caseSensitive: false).hasMatch(base)) return base;
     return '$base.pdf';

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../data/app_update.dart';
 import '../data/push.dart';
@@ -54,6 +55,48 @@ class Section {
 
 class _AppShellState extends State<AppShell> {
   String current = 'home';
+
+  /// الأقسام التي مرّ بها المستخدم: زر الرجوع يعيده إليها بدل أن يُخرجه من التطبيق.
+  final _history = <String>[];
+  DateTime? _lastBack;
+
+  void _go(String id) {
+    if (id == current) return;
+    setState(() {
+      _history
+        ..remove(current)
+        ..add(current);
+      current = id;
+    });
+  }
+
+  /// الرجوع: القائمة الجانبية تُغلق، ثم القسم السابق، ثم الرئيسية، ثم ضغطة ثانية خلال
+  /// ثانيتين تُخرج. كان يُخرج من التطبيق من أي قسم.
+  void _back(AppStore store) {
+    final scaffold = _scaffoldKey.currentState;
+    if (scaffold?.isDrawerOpen ?? false) {
+      scaffold!.closeDrawer();
+      return;
+    }
+    while (_history.isNotEmpty) {
+      final prev = _history.removeLast();
+      if (prev != current && store.canOpenSection(prev)) {
+        setState(() => current = prev);
+        return;
+      }
+    }
+    if (current != 'home') {
+      setState(() => current = 'home');
+      return;
+    }
+    final now = DateTime.now();
+    if (_lastBack != null && now.difference(_lastBack!) < const Duration(seconds: 2)) {
+      SystemNavigator.pop();
+      return;
+    }
+    _lastBack = now;
+    showAppSnack(context, 'اضغط رجوع مرة أخرى للخروج');
+  }
   final _homeActive = ValueNotifier<bool>(true);
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _wasOffline = false;
@@ -106,7 +149,7 @@ class _AppShellState extends State<AppShell> {
       return;
     }
     if (notice.kind != 'approval') return;
-    if (StoreScope.of(context).canOpenSection('finance')) setState(() => current = 'finance');
+    if (StoreScope.of(context).canOpenSection('finance')) _go('finance');
   }
 
   /// وصل والتطبيق مفتوح: أندرويد لا يعرضه، فيظهر هنا.
@@ -151,7 +194,7 @@ class _AppShellState extends State<AppShell> {
         Icons.space_dashboard_rounded,
         HomeScreen(
           onSection: (id) {
-            if (store.canOpenSection(id)) setState(() => current = id);
+            if (store.canOpenSection(id)) _go(id);
           },
           onReport: (id) => openReport(context, id),
           active: _homeActive,
@@ -248,7 +291,12 @@ class _AppShellState extends State<AppShell> {
           WidgetsBinding.instance.addPostFrameCallback((_) => _homeActive.value = homeShown);
         }
 
-        return Scaffold(
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) _back(store);
+          },
+          child: Scaffold(
           key: _scaffoldKey,
           backgroundColor: AppColors.bg,
           drawer: !hasMenu
@@ -322,10 +370,11 @@ class _AppShellState extends State<AppShell> {
               _BottomNav(
                 sections: sections,
                 index: index,
-                onSelect: (i) => setState(() => current = sections[i].id),
+                onSelect: (i) => _go(sections[i].id),
                 dueCount: store.can('finance') ? store.dueItemsBadgeCount : 0,
               ),
             ],
+          ),
           ),
         );
       },
