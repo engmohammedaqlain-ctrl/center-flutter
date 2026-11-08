@@ -88,53 +88,20 @@ class _Bar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, c) {
-                final half = (c.maxWidth - 8) / 2;
-                return Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    for (var i = 0; i < children.length; i++)
-                      if (children[i] is _Search && i + 1 < children.length && children[i + 1] is _AdvToggle)
-                        // البحث وزر التصفية المتقدمة في سطر واحد: الزر مربع بجانب الحقل
-                        SizedBox(
-                          width: c.maxWidth,
-                          child: Row(children: [
-                            Expanded(child: children[i]),
-                            const SizedBox(width: 8),
-                            _AdvToggle(
-                              open: (children[i + 1] as _AdvToggle).open,
-                              active: (children[i + 1] as _AdvToggle).active,
-                              onTap: (children[i + 1] as _AdvToggle).onTap,
-                              compact: true,
-                            ),
-                          ]),
-                        )
-                      else if (i > 0 && children[i] is _AdvToggle && children[i - 1] is _Search)
-                        const SizedBox.shrink()
-                      else if (children[i] is _Search || children[i] is _NumLine)
-                        SizedBox(width: c.maxWidth, child: children[i])
-                      else if (children[i] is _Pick || children[i] is _MonthNav || children[i] is _AdvToggle || children[i] is PopupMenuButton || children[i] is _ToggleBtn)
-                        SizedBox(width: half, child: children[i])
-                      else
-                        children[i],
-                  ],
-                );
-              },
+    // التصدير مربع في آخر السطر الأول، لا عمودٌ بجانب الشريط كله يضيّق كل أسطره
+    final export = sheet == null
+        ? null
+        : Container(
+            width: 44,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AdminNoon.line),
             ),
-          ),
-          if (sheet != null)
-            PopupMenuButton<String>(
+            child: PopupMenuButton<String>(
               tooltip: 'تصدير',
-              icon: Icon(Icons.file_download_outlined, color: AdminNoon.ink),
+              icon: Icon(Icons.file_download_outlined, size: 20, color: AdminNoon.ink),
               padding: EdgeInsets.zero,
               onSelected: (v) {
                 final data = _toSheet(store, sheet!());
@@ -149,7 +116,47 @@ class _Bar extends StatelessWidget {
                 PopupMenuItem(value: 'xlsx', child: Text('تنزيل Excel')),
               ],
             ),
-        ],
+          );
+    // أزرار التبديل («الأوائل» والتصفية المتقدمة) بجانب البحث في سطره، لا سطراً لكلٍّ منها
+    final hasSearch = children.any((w) => w is _Search);
+    bool toggle(Widget w) => w is _ToggleBtn || w is _AdvToggle;
+    bool half(Widget w) => w is _Pick || w is _MonthNav || w is PopupMenuButton || (!hasSearch && toggle(w));
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: LayoutBuilder(
+        builder: (context, c) {
+          final w = c.maxWidth;
+          final items = <Widget>[];
+          var halves = 0;
+          var exportAt = -1;
+          for (final x in children) {
+            if (hasSearch && toggle(x)) continue;
+            if (x is _Search) {
+              items.add(SizedBox(
+                width: w,
+                child: Row(children: [
+                  Expanded(child: x),
+                  for (final t in children.where(toggle)) ...[
+                    const SizedBox(width: 8),
+                    t is _AdvToggle ? _AdvToggle(open: t.open, active: t.active, onTap: t.onTap, compact: true) : t,
+                  ],
+                ]),
+              ));
+            } else if (x is _NumLine) {
+              items.add(SizedBox(width: w, child: x));
+            } else if (half(x)) {
+              final first = export != null && halves < 2;
+              items.add(SizedBox(width: first ? (w - 16 - 44) / 2 : (w - 8) / 2, child: x));
+              halves++;
+              if (first) exportAt = items.length;
+            } else {
+              items.add(x);
+            }
+          }
+          if (export != null) items.insert(exportAt < 0 ? 0 : exportAt, export);
+          return Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: items);
+        },
       ),
     );
   }

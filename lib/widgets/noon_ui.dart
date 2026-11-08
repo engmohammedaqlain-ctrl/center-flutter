@@ -190,29 +190,11 @@ class _NHeroCardState extends State<NHeroCard> with SingleTickerProviderStateMix
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: NoonRadius.hero,
-        gradient: LinearGradient(
-          // `to bottom left`
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-          stops: const [0, 0.58, 1],
-          colors: stops,
-        ),
-        boxShadow: [BoxShadow(color: stops.first.withValues(alpha: 0.28), blurRadius: 14.7, offset: const Offset(0, 8))],
+        // لون صافٍ بلا تدرّج ولا دوائر ولا لمعة ولا ظل ملوّن: الزخرفة كانت تبدو «مصنوعة»
+        color: stops.first,
       ),
       child: Stack(
         children: [
-          Positioned(
-            left: -40,
-            top: -60,
-            child: _circle(170, 0.07),
-          ),
-          Positioned(
-            left: 70,
-            bottom: -70,
-            child: _circle(120, 0.05),
-          ),
-          // لمعة داخلية رفيعة في الأعلى
-          Positioned(left: 0, right: 0, top: 0, child: Container(height: 1, color: white.withValues(alpha: 0.12))),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
             child: Column(
@@ -308,12 +290,6 @@ class _NHeroCardState extends State<NHeroCard> with SingleTickerProviderStateMix
       child: card,
     );
   }
-
-  Widget _circle(double size, double alpha) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: alpha)),
-      );
 }
 
 /// شريط نسبة داخل بطاقة الملخص (الحضور): أبيض 90% على أبيض 20%.
