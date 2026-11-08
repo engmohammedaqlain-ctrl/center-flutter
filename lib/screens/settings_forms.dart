@@ -873,7 +873,7 @@ class _AccessRow extends StatelessWidget {
                     style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.text),
                   ),
                   if (section.hint != null)
-                    Text(section.hint!, style: const TextStyle(fontSize: 10.5, color: Color(0xFFB45309))),
+                    Text(section.hint!, style: const TextStyle(fontSize: 10.5, color: Color(0xFF475569))),
                   if (blocked)
                     Text(
                       'يحتاج إتاحة «${sectionLabel(section.parent!)}»',

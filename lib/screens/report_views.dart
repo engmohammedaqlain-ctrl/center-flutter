@@ -28,7 +28,7 @@ const _bandCells = [
   (bg: Color(0xFFDCFCE7), fg: Color(0xFF166534)),
   (bg: Color(0xFFECFCCB), fg: Color(0xFF3F6212)),
   (bg: Color(0xFFE0F2FE), fg: Color(0xFF075985)),
-  (bg: Color(0xFFFEF3C7), fg: Color(0xFF92400E)),
+  (bg: Color(0xFFF1F5F9), fg: Color(0xFF475569)),
   (bg: Color(0xFFFEE2E2), fg: Color(0xFF991B1B)),
 ];
 const _monthNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
@@ -2182,7 +2182,7 @@ class _UsageReportState extends State<_UsageReport> {
                 landscape: false,
               );
 
-        Color pctColor(int p) => p >= 70 ? _green : (p >= 40 ? const Color(0xFFD97706) : _red);
+        Color pctColor(int p) => p >= 70 ? _green : (p >= 40 ? const Color(0xFF475569) : _red);
         Widget bar(int pct, Color color) => Row(children: [
               Expanded(
                 child: ClipRRect(

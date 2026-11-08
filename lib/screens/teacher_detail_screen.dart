@@ -31,7 +31,7 @@ String _dmy(String d) => d.length < 10 ? '—' : d.substring(0, 10).split('-').r
 String _roomLabel(Classroom r) => [r.gradeLevel, r.name].where((s) => s.trim().isNotEmpty).join(' - ');
 
 const _green = Color(0xFF16A34A);
-const _amber = Color(0xFF92400E);
+const _amber = Color(0xFF475569);
 const _red = Color(0xFFBA1A1A);
 
 Color _rateColor(int? n) => n == null

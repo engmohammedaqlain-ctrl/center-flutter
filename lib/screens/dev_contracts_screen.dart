@@ -124,7 +124,7 @@ class _DevContractsScreenState extends State<DevContractsScreen> {
                             ),
                             trailing: Text(
                               signed ? 'موقّع' : 'بانتظار التوقيع',
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: signed ? AppColors.success : const Color(0xFFB45309)),
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: signed ? AppColors.success : const Color(0xFF475569)),
                             ),
                           ),
                         );

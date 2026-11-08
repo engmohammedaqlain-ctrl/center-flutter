@@ -59,8 +59,8 @@ abstract final class AppColors {
   static const dangerBorder = Color(0xFFFFD2CC);
   static const info = Color(0xFF0055CC);
   static const infoSoft = Color(0xFFE9F2FF);
-  static const warn = Color(0xFF7F5F01);
-  static const warnSoft = Color(0xFFFFF7D6);
+  static const warn = Color(0xFF475569);
+  static const warnSoft = Color(0xFFF1F5F9);
 
   /// طبع ألوان المنشأة على الواجهة. الدرجات المشتقة تُحسب من اللون الأساس
   /// فيبقى التدرّج متناسقاً مهما اختار المدير.
@@ -206,10 +206,10 @@ abstract final class Noon {
 
   // ── ثابتة الدلالة ────────────────────────────────────────────────────────
   /// التنبيه الكهرماني (معلّق، مأذون، مقفل).
-  static const sunL = Color(0xFFFEF1D2);
-  static const warn = Color(0xFF8A5B00);
-  static const warnD = Color(0xFF6B4A00);
-  static const warnLine = Color(0xFFEDD39A);
+  static const sunL = Color(0xFFF1F5F9);
+  static const warn = Color(0xFF475569);
+  static const warnD = Color(0xFF334155);
+  static const warnLine = Color(0xFFCBD5E1);
 
   /// أخضر المسدد والحاضر (emerald في Tailwind).
   static const green50 = Color(0xFFECFDF5);

@@ -11,8 +11,8 @@ import '../widgets/auth_frame.dart';
 import '../widgets/widgets.dart';
 
 /// لون الانقطاع والتوقف — ثابت المعنى كالنجاح والخطر، لا يتبع ألوان المنشأة.
-const _warning = Color(0xFFB45309);
-const _warningSoft = Color(0xFFFEF3C7);
+const _warning = Color(0xFF475569);
+const _warningSoft = Color(0xFFF1F5F9);
 
 /// ورقة التحديث — تُفتح من القائمة السريعة، أو وحدها حين يصل إصدار جديد.
 ///

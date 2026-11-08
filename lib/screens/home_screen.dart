@@ -27,7 +27,7 @@ import 'teacher_detail_screen.dart';
 
 /// ألوان الحالات نفسها في البطاقات والرسوم: حاضر أخضر، مأذون عنبري، غائب أحمر — `C`.
 const _present = Color(0xFF16A34A);
-const _excused = Color(0xFFD97706);
+const _excused = Color(0xFF475569);
 const _absent = Color(0xFFBA1A1A);
 const _empty = Color(0xFFE2E8F0);
 const _spent = Color(0xFF475569);

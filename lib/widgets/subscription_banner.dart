@@ -23,7 +23,7 @@ class SubscriptionStatusBanner extends StatelessWidget {
 
     final label = 'تنبيه الاشتراك (${tenant.name}): $problem';
     return Material(
-      color: const Color(0xFFB45309),
+      color: const Color(0xFF475569),
       child: SafeArea(
         bottom: false,
         child: Padding(

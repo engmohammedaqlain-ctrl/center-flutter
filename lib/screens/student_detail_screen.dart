@@ -692,16 +692,16 @@ class _FinanceStrip extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFFBEB),
+                        color: const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFFDE68A)),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Padding(
                             padding: EdgeInsets.only(top: 1),
-                            child: Icon(Icons.sticky_note_2_outlined, size: 20, color: Color(0xFFB45309)),
+                            child: Icon(Icons.sticky_note_2_outlined, size: 20, color: Color(0xFF475569)),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -709,7 +709,7 @@ class _FinanceStrip extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text('ملاحظة', style: NoonText.style(11, weight: FontWeight.w700, color: const Color(0xFF92400E))),
+                                Text('ملاحظة', style: NoonText.style(11, weight: FontWeight.w700, color: const Color(0xFF475569))),
                                 const SizedBox(height: 2),
                                 Text(notes, style: NoonText.style(13, weight: FontWeight.w600, height: 1.4)),
                               ],
@@ -741,7 +741,7 @@ class _PendingRequestsBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFFFEFCE8),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: const Color(0xFFFDE68A)),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1259,7 +1259,7 @@ List<(String, Widget)> _extraIdentityRows(Student student, DateTime? birth, Stri
               Icon(
                 i <= student.initialRating ? Icons.star_rounded : Icons.star_outline_rounded,
                 size: 16,
-                color: i <= student.initialRating ? const Color(0xFFF59E0B) : AppColors.lineStrong,
+                color: i <= student.initialRating ? const Color(0xFF64748B) : AppColors.lineStrong,
               ),
           ],
         ),
@@ -2337,7 +2337,7 @@ class _EvaluationsCard extends StatelessWidget {
       final pct = t.isComplete ? (t.termScore / t.fullMark * 100).round() : t.currentAverage!.round();
       return TextSpan(
         text: '$label $pct%  ',
-        style: TextStyle(color: t.isComplete ? AppColors.text : const Color(0xFFD97706)),
+        style: TextStyle(color: t.isComplete ? AppColors.text : const Color(0xFF475569)),
       );
     }
 
