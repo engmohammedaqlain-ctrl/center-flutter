@@ -1026,29 +1026,60 @@ class _CompareReportState extends State<_CompareReport> with _GradesState {
       return n.length > 1 ? n.reduce((a, b) => a > b ? a : b) : null;
     }
 
-    Widget cell(double? v, bool best) {
-      if (v == null) return Text('—', textAlign: TextAlign.center, style: NoonText.style(12, color: AdminNoon.faint));
-      final c = _bandCells[bandOf(v, pass)];
-      return Tooltip(
-        message: best ? 'الأعلى في المادة' : '',
-        child: Container(
-          margin: const EdgeInsets.all(3),
-          padding: const EdgeInsets.symmetric(vertical: 3),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(color: c.bg, borderRadius: BorderRadius.circular(4), border: best ? Border.all(color: _green, width: 2) : null),
-          child: Text('${_num(v)}%', style: NoonText.style(12, weight: FontWeight.w700, color: c.fg)),
-        ),
-      );
-    }
-
-    Widget line(String name, List<double?> values, {bool total = false}) {
+    // مادة (أو المعدل العام): شعبها صفوف بشريط نسبة لكل شعبة، فلا مصفوفة أفقية تحتاج تمريراً
+    Widget subjectCard(String name, List<double?> values, {bool total = false}) {
       final best = bestOf(values);
       return Container(
-        color: total ? const Color(0xFFF1F5F9) : null,
-        child: Row(children: [
-          SizedBox(width: 120, child: Padding(padding: const EdgeInsets.all(6), child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: NoonText.style(12, weight: FontWeight.w700)))),
-          for (final v in values) SizedBox(width: 76, child: cell(v, v != null && v == best)),
-        ]),
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+        decoration: BoxDecoration(
+          color: total ? const Color(0xFFF1F5F9) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AdminNoon.line),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(name, style: NoonText.style(14, weight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            for (var i = 0; i < cols.length; i++)
+              Builder(builder: (_) {
+                final v = values[i];
+                final isBest = v != null && v == best;
+                final c = v == null ? null : _bandCells[bandOf(v, pass)];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  child: Row(children: [
+                    SizedBox(
+                      width: 104,
+                      child: Text(cols[i].label, maxLines: 1, overflow: TextOverflow.ellipsis, style: NoonText.style(12.5, color: AdminNoon.muted)),
+                    ),
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: Stack(children: [
+                          Container(height: 8, color: AdminNoon.band),
+                          if (v != null)
+                            FractionallySizedBox(
+                              widthFactor: (v / 100).clamp(0.0, 1.0),
+                              child: Container(height: 8, color: c!.fg),
+                            ),
+                        ]),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    SizedBox(
+                      width: 62,
+                      child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                        if (isBest) ...[Icon(Icons.star_rounded, size: 14, color: _green), const SizedBox(width: 2)],
+                        Text(v == null ? '—' : '${_num(v)}%', style: NoonText.style(12.5, weight: FontWeight.w700, color: v == null ? AdminNoon.faint : c!.fg)),
+                      ]),
+                    ),
+                  ]),
+                );
+              }),
+          ],
+        ),
       );
     }
 
@@ -1059,25 +1090,10 @@ class _CompareReportState extends State<_CompareReport> with _GradesState {
       ]),
       if (cols.isEmpty || m.rows.isEmpty)
         const NoonEmpty('لا علامات')
-      else
-        AppCard(
-          padding: EdgeInsets.zero,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Container(
-                color: const Color(0xFFF1F5F9),
-                child: Row(children: [
-                  SizedBox(width: 120, child: Padding(padding: const EdgeInsets.all(6), child: Text('المادة', style: NoonText.style(11.5, weight: FontWeight.w700)))),
-                  for (final s in cols)
-                    SizedBox(width: 76, child: Text(s.label, textAlign: TextAlign.center, maxLines: 2, style: NoonText.style(10.5, weight: FontWeight.w700))),
-                ]),
-              ),
-              for (final r in m.rows) line(r.name, r.values),
-              line('المعدل العام', m.overall, total: true),
-            ]),
-          ),
-        ),
+      else ...[
+        for (final r in m.rows) subjectCard(r.name, r.values),
+        subjectCard('المعدل العام', m.overall, total: true),
+      ],
     ], onRefresh: () async => setState(_cards.clear));
   }
 }
