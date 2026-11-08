@@ -67,8 +67,13 @@ void main() {
   });
 
   group('صلاحيات الحساب', () {
-    test('القائمة الخاصة تتقدّم على قالب الدور — ولو كان مديراً', () {
-      expect(effectiveSections(['students'], 'admin'), ['students']);
+    test('المدير يرى كل التبويبات ولو حُفظت له قائمة ناقصة، كما في السحابة', () {
+      expect(effectiveSections(['students', 'access:v2'], 'admin'), allSections);
+      expect(effectiveSections(const [], 'admin'), allSections);
+    });
+
+    test('القائمة الخاصة تتقدّم على قالب الدور لغير المدير', () {
+      expect(effectiveSections(['students'], 'accountant'), ['students']);
     });
 
     test('حساب بلا قائمة يرجع إلى قالب دوره', () {
@@ -76,11 +81,11 @@ void main() {
     });
 
     test('قائمة فارغة صريحة تعني لا شيء، لا رجوعاً إلى القالب', () {
-      expect(effectiveSections(const [], 'admin'), isEmpty);
+      expect(effectiveSections(const [], 'receptionist'), isEmpty);
     });
 
     test('القيم المجهولة في القائمة تُتجاهل ولا تُسقط الباقي', () {
-      expect(effectiveSections(['students', 'not_a_section'], 'admin'), ['students']);
+      expect(effectiveSections(['students', 'not_a_section'], 'receptionist'), ['students']);
     });
   });
 
