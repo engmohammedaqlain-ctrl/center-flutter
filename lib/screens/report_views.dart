@@ -1958,6 +1958,33 @@ class _DataReportState extends State<_DataReport> {
           ].where((x) => x.problems.isNotEmpty).toList();
     final rows = [for (final r in all) if ((issue.isEmpty || r.problems.any((p) => p.$1 == issue)) && _matches(r.student.fullName, q)) r];
     int countOf(String k) => all.where((r) => r.problems.any((p) => p.$1 == k)).length;
+    Widget issueRow(String name, String sub, List<String> items, VoidCallback onTap) => InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Expanded(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: NoonText.style(13.5, weight: FontWeight.w700))),
+                  Text(sub, style: NoonText.style(11.5, color: AdminNoon.muted)),
+                  const SizedBox(width: 4),
+                  Icon(Icons.chevron_right_rounded, size: 18, color: AdminNoon.faint),
+                ]),
+                const SizedBox(height: 6),
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  for (final t in items)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                      decoration: BoxDecoration(color: _red.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(20)),
+                      child: Text(t, style: NoonText.style(11, weight: FontWeight.w600, color: _red)),
+                    ),
+                ]),
+              ],
+            ),
+          ),
+        );
+
     String problems(List<(String, String)> list) => [for (final p in list) if (issue.isEmpty || p.$1 == issue) '${_issues[p.$1]}: ${p.$2}'].join('، ');
 
     _Sheet sheet() => (
@@ -1989,18 +2016,17 @@ class _DataReportState extends State<_DataReport> {
         if (rows.isNotEmpty)
           _list([
             for (final r in rows)
-              _row(r.student.fullName, r.section, [
-                Flexible(
-                  child: Text(problems(r.problems), textAlign: TextAlign.end, style: NoonText.style(11, weight: FontWeight.w700, color: _red)),
-                ),
-              ], onTap: () => _openStudent(context, r.student.id)),
+              issueRow(
+                r.student.fullName,
+                r.section,
+                [for (final p in r.problems) if (issue.isEmpty || p.$1 == issue) '${_issues[p.$1]}: ${p.$2}'],
+                () => _openStudent(context, r.student.id),
+              ),
           ]),
         if (issue.isEmpty && staff.isNotEmpty) ...[
           const SizedBox(height: 10),
           _list([
-            for (final s in staff)
-              _row(s.t.name, 'معلم', [Text(s.problems.join('، '), style: NoonText.style(11, weight: FontWeight.w700, color: _red))],
-                  onTap: () => _openTeacher(context, s.t.id)),
+            for (final s in staff) issueRow(s.t.name, 'معلم', s.problems, () => _openTeacher(context, s.t.id)),
           ]),
         ],
       ],
