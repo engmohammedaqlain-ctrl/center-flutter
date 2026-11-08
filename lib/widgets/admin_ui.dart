@@ -309,6 +309,56 @@ class _NoonFoldCardState extends State<NoonFoldCard> {
 // ── اللوح ───────────────────────────────────────────────────────────────────
 
 /// `nPanel`: لوح أبيض بزاوية 10 وحدّ `line` وظل ناعم جداً.
+/// سطر يفتح شاشة: أيقونة بخلفية خفيفة، وعنوان وتحته وصف، وسهم — «الرسائل» في ملف الطالب
+/// و«مراسلة الصف».
+class MessagesRow extends StatelessWidget {
+  const MessagesRow({super.key, required this.title, required this.subtitle, required this.onTap, this.icon = Icons.forum_outlined});
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AdminNoon.rPanel),
+        child: Ink(
+          decoration: noonPanel(),
+          padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: AdminNoon.ink.withValues(alpha: 0.08), shape: BoxShape.circle),
+                child: Icon(icon, size: 19, color: AdminNoon.ink),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(title, style: NoonText.style(14, weight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: NoonText.style(12, color: AdminNoon.muted)),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, size: 22, color: AdminNoon.faint),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 BoxDecoration noonPanel({Color? border, Color color = Colors.white, double radius = AdminNoon.rPanel}) => BoxDecoration(
       color: color,
       borderRadius: BorderRadius.circular(radius),

@@ -93,6 +93,12 @@ class _FinanceScreenState extends State<FinanceScreen> {
   String financeYearFilter = 'current';
   String termFilter = 'all';
 
+  /// فترة مخصصة «من – إلى» (yyyy-mm-dd): تتقدّم على العام والفصل في كل تبويبات المالية.
+  /// طرفٌ فارغ مفتوح.
+  String customFrom = '';
+  String customTo = '';
+  bool get _customPeriod => customFrom.isNotEmpty || customTo.isNotEmpty;
+
   static const _statusOptions = {
     '': 'كل الحالات',
     'active': 'مقبوضة',
@@ -118,6 +124,13 @@ class _FinanceScreenState extends State<FinanceScreen> {
     String? dueDate,
     String? paymentDate,
   }) {
+    if (_customPeriod) {
+      final d = (dueDate ?? paymentDate ?? '').split('T').first;
+      if (d.isEmpty) return true;
+      if (customFrom.isNotEmpty && d.compareTo(customFrom) < 0) return false;
+      if (customTo.isNotEmpty && d.compareTo(customTo) > 0) return false;
+      return true;
+    }
     final resolved = _resolvedFinanceYearId(store);
     final year = _filterYear(store);
     if (financeYearFilter != 'all' && resolved.isNotEmpty) {
@@ -187,6 +200,14 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   /// مدى الفترة المختارة؛ «كل الأعوام» من أول عام إلى آخره — `periodRange`.
   ({String from, String to}) _periodRange(AppStore store) {
+    if (_customPeriod) {
+      final today = isoDate(DateTime.now());
+      final starts = [for (final y in store.academicYears) if (y.startsOn.isNotEmpty) y.startsOn]..sort();
+      return (
+        from: customFrom.isNotEmpty ? customFrom : (starts.isEmpty ? today : starts.first),
+        to: customTo.isNotEmpty ? customTo : today,
+      );
+    }
     final year = financeYearFilter == 'all' ? null : _filterYear(store);
     if (year != null) return academicRange(year, termFilter);
     final starts = [for (final y in store.academicYears) if (y.startsOn.isNotEmpty) y.startsOn]..sort();
@@ -198,7 +219,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
   /// ربح الفترة بتاريخ القبض: المقبوض ناقص المصروفات والرواتب (المسحوبات والتحويل خارجه).
   ({double received, double spent, double net, double draws}) _periodNet(AppStore store) {
     // يُحسب مرة لكل تغيّر في السندات أو المصروفات أو الرواتب أو الفلتر، لا مع كل رسم
-    final stamp = Object.hash(store.netInputStamp, financeYearFilter, termFilter, paymentsBasis);
+    final stamp = Object.hash(store.netInputStamp, financeYearFilter, termFilter, paymentsBasis, customFrom, customTo);
     final cached = _netCache;
     if (cached != null && stamp == _netStamp) return cached;
     _netStamp = stamp;
@@ -288,7 +309,11 @@ class _FinanceScreenState extends State<FinanceScreen> {
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
               sliver: SliverToBoxAdapter(
-                child: ProfitReportPanel(store: store, year: _filterYear(store) ?? store.viewedAcademicYear),
+                child: ProfitReportPanel(
+                  store: store,
+                  year: _filterYear(store) ?? store.viewedAcademicYear,
+                  customRange: _customPeriod ? _periodRange(store) : null,
+                ),
               ),
             ),
           ]),
@@ -305,7 +330,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
   void _scheduleDues(AppStore store) {
     // ختم القوائم نفسها لا عدّاد التعديل وحده: التحميل من القرص يستبدل القائمة بلا
     // عدّاد، فكانت المستحقات تبقى على نسخة قديمة
-    final stamp = Object.hash(store.duesInputStamp, financeYearFilter, termFilter);
+    final stamp = Object.hash(store.duesInputStamp, financeYearFilter, termFilter, customFrom, customTo);
     if (stamp == _duesStamp || _duesBusy) return;
     _duesBusy = true;
     unawaited(() async {
@@ -563,6 +588,10 @@ class _FinanceScreenState extends State<FinanceScreen> {
   }
 
   String _periodLabel(AppStore store) {
+    if (_customPeriod) {
+      String d(String iso) => iso.isEmpty ? '…' : iso.split('-').reversed.join('/');
+      return '${d(customFrom)} – ${d(customTo)}';
+    }
     final year = financeYearFilter == 'all' ? 'كل الأعوام' : (store.viewedAcademicYear?.label ?? 'عام');
     final term = switch (termFilter) {
       'term_1' => 'الفصل الأول',
@@ -577,8 +606,12 @@ class _FinanceScreenState extends State<FinanceScreen> {
   /// عدد الفلاتر المختلفة عن الافتراضي في التبويب الحالي.
   int get _activeFilters {
     var n = 0;
-    if (financeYearFilter != 'current') n++;
-    if (termFilter != 'all') n++;
+    if (_customPeriod) {
+      n++;
+    } else {
+      if (financeYearFilter != 'current') n++;
+      if (termFilter != 'all') n++;
+    }
     switch (tab) {
       case _Tab.dues:
         break;
@@ -628,7 +661,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
             setSheet(() {});
           }
 
-          // ثلاثة خيارات فأقل: مفتاح مقسّم بسطر واحد؛ وأكثر: شرائح تتمرّر أفقياً
+          // ثلاثة خيارات فأقل: مفتاح مقسّم بسطر واحد؛ وأكثر: شرائح تلتف بلا تمرير أفقي
           Widget group(String title, Map<String, String> options, String value, ValueChanged<String> onPick) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 18),
@@ -643,22 +676,17 @@ class _FinanceScreenState extends State<FinanceScreen> {
                   if (options.length <= 3)
                     _FilterSegment(options: options, value: value, onPick: (v) => pick(() => onPick(v)))
                   else
-                    SizedBox(
-                      height: 34,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: [
-                          for (final e in options.entries)
-                            Padding(
-                              padding: const EdgeInsetsDirectional.only(end: 6),
-                              child: _Pill(
-                                label: e.value,
-                                selected: e.key == value,
-                                onTap: () => pick(() => onPick(e.key)),
-                              ),
-                            ),
-                        ],
-                      ),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final e in options.entries)
+                          _Pill(
+                            label: e.value,
+                            selected: e.key == value,
+                            onTap: () => pick(() => onPick(e.key)),
+                          ),
+                      ],
                     ),
                 ],
               ),
@@ -700,6 +728,17 @@ class _FinanceScreenState extends State<FinanceScreen> {
                       shrinkWrap: true,
                       padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
                       children: [
+                        _CustomRange(
+                          from: customFrom,
+                          to: customTo,
+                          onFrom: (v) => pick(() => customFrom = v),
+                          onTo: (v) => pick(() => customTo = v),
+                          onClear: () => pick(() {
+                            customFrom = '';
+                            customTo = '';
+                          }),
+                        ),
+                        if (!_customPeriod) ...[
                         group(
                           'العام الدراسي',
                           {
@@ -723,6 +762,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                           termFilter,
                           (v) => termFilter = v,
                         ),
+                        ],
                         if (tab == _Tab.payments) ...[
                           group('الحالة', _statusOptions, status, (v) => status = v),
                           group(
@@ -770,6 +810,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
   void _clearFilters() {
     financeYearFilter = 'current';
     termFilter = 'all';
+    customFrom = '';
+    customTo = '';
     method = '';
     status = '';
     sourceFilter = '';
@@ -2642,4 +2684,89 @@ class _SpendCard extends StatelessWidget {
     );
   }
 }
+/// «فترة مخصصة» في ورقة تصفية المالية: من تاريخ وإلى تاريخ، تتقدّم على العام والفصل.
+class _CustomRange extends StatelessWidget {
+  const _CustomRange({required this.from, required this.to, required this.onFrom, required this.onTo, required this.onClear});
 
+  final String from;
+  final String to;
+  final ValueChanged<String> onFrom;
+  final ValueChanged<String> onTo;
+  final VoidCallback onClear;
+
+  Future<void> _pick(BuildContext context, String current, ValueChanged<String> done) async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.tryParse(current) ?? now,
+      firstDate: DateTime(now.year - 10),
+      lastDate: DateTime(now.year + 2, 12, 31),
+      locale: const Locale('ar'),
+    );
+    if (picked != null) done(isoDate(picked));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget box(String label, String value, ValueChanged<String> done) => Expanded(
+          child: InkWell(
+            onTap: () => _pick(context, value, done),
+            borderRadius: BorderRadius.circular(Corner.box),
+            child: Container(
+              height: 44,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(Corner.box),
+                border: Border.all(color: value.isEmpty ? AppColors.line : AppColors.navy),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.event_outlined, size: 17, color: value.isEmpty ? AppColors.muted : AppColors.navy),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      value.isEmpty ? label : '$label ${value.split('-').reversed.join('/')}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: value.isEmpty ? FontWeight.w500 : FontWeight.w700,
+                        color: value.isEmpty ? AppColors.muted : AppColors.heading,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text('فترة مخصصة', style: TextStyle(color: AppColors.faint, fontSize: 11.5, fontWeight: FontWeight.w700)),
+              ),
+              if (from.isNotEmpty || to.isNotEmpty)
+                GestureDetector(
+                  onTap: onClear,
+                  child: const Text('مسح', style: TextStyle(color: AppColors.danger, fontSize: 12, fontWeight: FontWeight.w700)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(children: [box('من', from, onFrom), const SizedBox(width: 8), box('إلى', to, onTo)]),
+          if (from.isNotEmpty || to.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            const Text('تتقدّم على العام والفصل في كل تبويبات المالية', style: TextStyle(color: AppColors.muted, fontSize: 11.5)),
+          ],
+        ],
+      ),
+    );
+  }
+}

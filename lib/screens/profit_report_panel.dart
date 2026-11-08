@@ -20,9 +20,12 @@ import 'year_close_sheet.dart';
 /// تبويب الأرباح في المالية — `ProfitReportPanel.tsx`: ربح الفترة شهراً شهراً،
 /// بتاريخ الدفع أو بموعد القسط، والمسحوب منه والباقي.
 class ProfitReportPanel extends StatefulWidget {
-  const ProfitReportPanel({super.key, required this.store, this.year});
+  const ProfitReportPanel({super.key, required this.store, this.year, this.customRange});
 
   final AppStore store;
+
+  /// فترة المالية المخصصة «من – إلى»: تُفتح بها الأرباح بدل السنة.
+  final ({String from, String to})? customRange;
 
   /// عام شاشة المالية المختار.
   final AcademicYear? year;
@@ -51,10 +54,23 @@ final _columns = <(String, double Function(ProfitRow))>[
 
 class _ProfitReportPanelState extends State<ProfitReportPanel> {
   final today = isoDate(DateTime.now());
-  String period = 'year';
+  late String period = widget.customRange == null ? 'year' : 'custom';
   late String month = today.substring(0, 7);
-  late String from = widget.year?.startsOn ?? today;
-  late String to = today;
+  late String from = widget.customRange?.from ?? widget.year?.startsOn ?? today;
+  late String to = widget.customRange?.to ?? today;
+
+  @override
+  void didUpdateWidget(covariant ProfitReportPanel old) {
+    super.didUpdateWidget(old);
+    final r = widget.customRange;
+    if (r != null && (r.from != old.customRange?.from || r.to != old.customRange?.to)) {
+      period = 'custom';
+      from = r.from;
+      to = r.to;
+    } else if (r == null && old.customRange != null && period == 'custom') {
+      period = 'year';
+    }
+  }
   ProfitBasis basis = ProfitBasis.paid;
 
   /// حساب مختار من مربعات الباقي: التقرير يعرض حركته وحده.

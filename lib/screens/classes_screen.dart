@@ -16,7 +16,9 @@ import '../widgets/thumb_action.dart';
 import '../widgets/table_gate.dart';
 import '../widgets/widgets.dart';
 import 'attendance_print.dart';
+import 'announcement_sheet.dart';
 import 'attendance_screen.dart';
+import 'notes_parts.dart';
 import 'passwords_print.dart';
 import 'report_cards_sheet.dart';
 import 'room_form_screen.dart';
@@ -983,6 +985,12 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
                 icon: const Icon(Icons.vpn_key_outlined, size: 20),
                 onPressed: () => showClassPortalCodes(context, room: room, students: roster),
               ),
+              if (store.isFeatureOn('portal.notes') && store.can('students') && roster.isNotEmpty)
+                IconButton(
+                  tooltip: 'مراسلة الصف',
+                  icon: const Icon(Icons.forum_outlined, size: 20),
+                  onPressed: () => _messageClass(context, store, room, roster),
+                ),
               if (canEdit)
                 PopupMenuButton<String>(
                   tooltip: 'إدارة الصف',
@@ -1862,5 +1870,50 @@ class _ClassHero extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+/// «مراسلة الصف» — رسالة لأهالي الشعبة تصل كل أسرة نسخةً خاصة وردّها في محادثة ابنها،
+/// أو إعلان للشعبة يظهر في بوابة أسرها.
+Future<void> _messageClass(BuildContext context, AppStore store, Classroom room, List<Student> roster) async {
+  final title = '${room.gradeLevel} ${room.name}'.trim();
+  final announce = store.settings.toolOn('announcements');
+  final choice = await showModalBottomSheet<String>(
+    context: context,
+    backgroundColor: Colors.white,
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('مراسلة $title', style: NoonText.style(15, weight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            MessagesRow(
+              title: 'رسالة لأهالي الصف',
+              subtitle: 'تصل كل أسرة من ${roster.length} نسخة خاصة، وردّها في محادثة ابنها',
+              onTap: () => Navigator.pop(ctx, 'message'),
+            ),
+            if (announce) ...[
+              const SizedBox(height: 8),
+              MessagesRow(
+                icon: Icons.campaign_outlined,
+                title: 'إعلان للشعبة',
+                subtitle: 'يظهر في بوابة أسر الشعبة',
+                onTap: () => Navigator.pop(ctx, 'announce'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
+  if (!context.mounted || choice == null) return;
+  if (choice == 'message') {
+    await Navigator.of(context).push(
+      MaterialPageRoute<int>(builder: (_) => ClassMessagePage(studentIds: [for (final s in roster) s.id])),
+    );
+  } else {
+    await showAnnouncementSheet(context, grade: room.gradeLevel, section: room.name);
   }
 }

@@ -28,6 +28,7 @@ import '../widgets/form_layout.dart';
 import '../widgets/panels.dart';
 import '../widgets/table_gate.dart';
 import '../widgets/widgets.dart';
+import 'notes_parts.dart';
 import 'official_doc_sheet.dart';
 import 'payment_form_screen.dart';
 import 'receipt_screen.dart';
@@ -355,6 +356,20 @@ class StudentDetailScreen extends StatelessWidget {
                         ),
                       ],
                     ],
+                  ),
+                ),
+
+              // الرسائل مع الأسرة: ما كتبته الإدارة والمعلمون وردود الأهل — «الرسائل» في ملف الطالب على الويب
+              if (store.isFeatureOn('portal.notes') && store.can('students'))
+                sec(
+                  MessagesRow(
+                    title: 'الرسائل',
+                    subtitle: 'مراسلة ولي الأمر أو الطالب، وردودهم',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => SchoolChatPage(studentId: student.id, title: student.fullName, subtitle: headerMeta, showAuthor: true),
+                      ),
+                    ),
                   ),
                 ),
 
