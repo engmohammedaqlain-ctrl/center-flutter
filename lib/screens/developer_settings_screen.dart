@@ -107,7 +107,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text('تخصيص المنشأة وأدوات المطور'),
-        titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+        titleTextStyle: const TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
       ),
       bottomNavigationBar: unlocked
           ? FormActionBar(

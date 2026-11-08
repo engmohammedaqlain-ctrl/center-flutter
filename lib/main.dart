@@ -1017,7 +1017,7 @@ class _LoginScreenState extends State<LoginScreen> {
             // arrow_back يُعكس مع الاتجاه: في العربية يشير يميناً، اتجاه الرجوع
             icon: Icon(portalTab ? Icons.lock_outline : Icons.arrow_back, size: 15),
             label: Text(portalTab ? 'دخول الإدارة' : 'رجوع'),
-            style: TextButton.styleFrom(foregroundColor: AppColors.navy, textStyle: const TextStyle(fontSize: 14)),
+            style: TextButton.styleFrom(foregroundColor: AppColors.navy, textStyle: const TextStyle(fontFamily: AppText.family, fontSize: 14)),
           ),
         ),
         // نسخة المتجر وحدها: صغير وباهت حتى لا يراسلنا الطلاب
@@ -1027,7 +1027,7 @@ class _LoginScreenState extends State<LoginScreen> {
               onPressed: () => launchWaWithText(salesWhatsApp, 'مرحبا، بدنا النظام المدرسي لمدرستنا'),
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.faint,
-                textStyle: const TextStyle(fontSize: 11),
+                textStyle: const TextStyle(fontFamily: AppText.family, fontSize: 11),
                 visualDensity: VisualDensity.compact,
               ),
               child: const Text('لإدارات المدارس: اطلب النظام لمدرستك'),
@@ -1173,7 +1173,7 @@ class _LoginScreenState extends State<LoginScreen> {
               onPressed: busy ? null : () => setState(() => _otherAccount = true),
               icon: const Icon(Icons.add_rounded, size: 18),
               label: const Text('حساب آخر'),
-              style: TextButton.styleFrom(foregroundColor: AppColors.navy, textStyle: const TextStyle(fontSize: 14)),
+              style: TextButton.styleFrom(foregroundColor: AppColors.navy, textStyle: const TextStyle(fontFamily: AppText.family, fontSize: 14)),
             ),
           ),
         if (saved.isNotEmpty && _showFields) const SizedBox(height: 4),

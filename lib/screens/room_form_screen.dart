@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/class_tiers.dart';
 import '../data/store.dart';
 import '../models/models.dart';
+import '../theme/app_theme.dart';
 import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
 
@@ -110,7 +111,7 @@ class _RoomFormScreenState extends State<RoomFormScreen> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(title),
-        titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+        titleTextStyle: const TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
       ),
       bottomNavigationBar: FormActionBar(label: editing ? 'حفظ التعديلات' : 'إضافة الصف', onSave: _save),
       body: GestureDetector(

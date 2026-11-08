@@ -740,7 +740,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(editing ? 'تعديل بيانات الطالب' : 'تسجيل طالب جديد'),
-        titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+        titleTextStyle: const TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
       ),
       bottomNavigationBar: _actionBar(editing: editing, canSave: true),
       body: GestureDetector(

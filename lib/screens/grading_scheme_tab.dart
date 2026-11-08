@@ -526,7 +526,7 @@ class _SchemeEditorState extends State<_SchemeEditor> {
                 style: TextButton.styleFrom(
                   foregroundColor: AppColors.muted,
                   visualDensity: VisualDensity.compact,
-                  textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                  textStyle: const TextStyle(fontFamily: AppText.family, fontWeight: FontWeight.w700, fontSize: 12),
                 ),
               ),
             ),
@@ -660,7 +660,7 @@ class _TermEditor extends StatelessWidget {
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.amberDark,
                       visualDensity: VisualDensity.compact,
-                      textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
+                      textStyle: const TextStyle(fontFamily: AppText.family, fontWeight: FontWeight.w600, fontSize: 12.5),
                     ),
                   ),
                 ),
@@ -989,7 +989,7 @@ class _MonthlyRulesEditor extends StatelessWidget {
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.amberDark,
                 visualDensity: VisualDensity.compact,
-                textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
+                textStyle: const TextStyle(fontFamily: AppText.family, fontWeight: FontWeight.w600, fontSize: 12.5),
               ),
             ),
           ),

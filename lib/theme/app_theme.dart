@@ -231,7 +231,7 @@ abstract final class AppTheme {
         systemOverlayStyle: SystemUiOverlayStyle.light,
         iconTheme: const IconThemeData(color: Colors.white, size: 20),
         actionsIconTheme: const IconThemeData(color: Colors.white, size: 20),
-        titleTextStyle: TextStyle(
+        titleTextStyle: TextStyle(fontFamily: AppText.family, 
           fontFamily: AppText.family,
           color: Colors.white,
           fontWeight: FontWeight.w600,
@@ -261,7 +261,7 @@ abstract final class AppTheme {
         focusedBorder: border(AppColors.accent, 1.5),
         errorBorder: border(AppColors.danger),
         focusedErrorBorder: border(AppColors.danger, 1.5),
-        errorStyle: TextStyle(
+        errorStyle: TextStyle(fontFamily: AppText.family, 
           fontFamily: AppText.family,
           color: AppColors.danger,
           fontSize: 10.5,
@@ -316,6 +316,12 @@ abstract final class AppTheme {
         showCheckmark: false,
         color: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? AppColors.navy : Colors.white),
         side: BorderSide(color: AppColors.line),
+      ),
+      // المفتاح المطفأ: مسار رمادي فاتح بلا إطار أسود، والإبهام أبيض في الحالتين
+      switchTheme: SwitchThemeData(
+        thumbColor: const WidgetStatePropertyAll(Colors.white),
+        trackColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? AppColors.amber : AppColors.lineStrong),
+        trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
       ),
       segmentedButtonTheme: SegmentedButtonThemeData(
         selectedIcon: const SizedBox.shrink(),

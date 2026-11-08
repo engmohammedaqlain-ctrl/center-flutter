@@ -190,7 +190,7 @@ Widget authLabel(String text) => Text(
 /// مع أيقونة بادئة هادئة.
 InputDecoration authFieldDecoration(String hint, IconData icon, {Widget? suffix}) => InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 14, letterSpacing: 0),
+      hintStyle: const TextStyle(fontFamily: AppText.family, color: Color(0xFF94A3B8), fontSize: 14, letterSpacing: 0),
       prefixIcon: Icon(icon, size: 18, color: const Color(0xFF94A3B8)),
       suffixIcon: suffix,
       filled: true,

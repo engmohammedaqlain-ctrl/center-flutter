@@ -707,8 +707,8 @@ class AppDropdown<T> extends StatelessWidget {
           contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           errorText: errorText,
         ),
-        hint: hint == null ? null : Text(hint!, style: const TextStyle(fontSize: 12, color: AppColors.faint)),
-        style: const TextStyle(fontSize: 12, color: AppColors.text, fontWeight: FontWeight.w600),
+        hint: hint == null ? null : Text(hint!, style: const TextStyle(fontFamily: AppText.family, fontSize: 12, color: AppColors.faint)),
+        style: const TextStyle(fontFamily: AppText.family, fontSize: 12, color: AppColors.text, fontWeight: FontWeight.w600),
       ),
     );
   }
