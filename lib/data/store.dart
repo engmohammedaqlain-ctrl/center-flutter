@@ -1535,6 +1535,10 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return result;
   }
   List<Teacher> get teachersInViewedYear => filterByYear(teachers);
+
+  /// المعلمون وحدهم، بلا ملفات رواتب الإدارة — `teachingStaff` في الويب. لشاشات التدريس:
+  /// المعلمين والشعب والمربين والجدول والتقارير. الرواتب والدوام تأخذ [teachersInViewedYear].
+  List<Teacher> get teachingStaffInViewedYear => [for (final t in teachersInViewedYear) if (!t.isAdminStaff) t];
   List<SubjectItem> get subjectsInViewedYear => filterByYear(subjects);
   List<GradeFee> get gradeFeesInViewedYear => filterByYear(gradeFees);
   List<Group> get groupsInViewedYear => filterByYear(groups);
@@ -1547,10 +1551,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final t = teacherById(teacherId);
     if (t == null) return {teacherId};
     final nid = t.nationalId.trim();
+    // موظف الإدارة بحسابه، والمعلم برقم هويته، وإلا بالاسم والجوال
     return {
       for (final x in teachers)
         if (x.id == t.id ||
-            (nid.isNotEmpty ? x.nationalId.trim() == nid : x.name == t.name && x.phone == t.phone))
+            (t.isAdminStaff
+                ? x.userId == t.userId
+                : !x.isAdminStaff && (nid.isNotEmpty ? x.nationalId.trim() == nid : x.name == t.name && x.phone == t.phone)))
           x.id,
     };
   }
@@ -8217,6 +8224,52 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// المجموعات والشعب تشير إليه بمفتاح أجنبي: حذفه قبل فكّها ترفضه السحابة
   /// (`violates foreign key constraint`)، فتبقى العملية عالقة في الطابور
   /// والمعلم محذوفاً على الجهاز وحده.
+  /// ملف راتب موظف الإدارة في العام المعروض — `StaffPayrollService.records`.
+  Teacher? staffPayRecord(String userId) =>
+      teachersInViewedYear.where((t) => t.userId == userId).firstOrNull;
+
+  /// إضافة موظف إدارة للرواتب من المستخدمين، لا كمعلم — `StaffPayrollService.add`.
+  Teacher addStaffToPayroll(AppUser u, {required String jobTitle, required double salary}) {
+    requireSection('finance.expenses');
+    final existing = staffPayRecord(u.id);
+    if (existing != null) return existing;
+    final now = _nowIso();
+    final t = Teacher(
+      id: newId(),
+      name: u.name,
+      phone: '',
+      subject: '',
+      rate: salary < 0 ? 0 : salary,
+      jobTitle: jobTitle.trim().isEmpty ? roleLabel(u.role) : jobTitle.trim(),
+      contractType: salary > 0 ? 'fixed' : '',
+      academicYearId: viewedAcademicYearId,
+      syncStatus: 'pending',
+      createdAt: now,
+      updatedAt: now,
+      userId: u.id,
+    );
+    teachers.add(t);
+    _queue('teachers', t.id, 'INSERT', t.toCloud());
+    markDirty('teachers');
+    notifyListeners();
+    return t;
+  }
+
+  /// إزالة ملف الراتب. موظف صُرف له سند يبقى (سجلات الصرف لا تُحذف) — `StaffPayrollService.remove`.
+  void removeStaffFromPayroll(String userId) {
+    requireSection('finance.expenses');
+    final t = staffPayRecord(userId);
+    if (t == null) return;
+    final payouts = teacherPayouts.where((p) => p.teacherId == t.id).length;
+    if (payouts > 0) {
+      throw StoreException('له $payouts سند صرف مسجَّل، فيبقى في الرواتب. سجلات الصرف المالية لا تُحذف.');
+    }
+    teachers.removeWhere((x) => x.id == t.id);
+    _queue('teachers', t.id, 'DELETE', null);
+    markDirty('teachers');
+    notifyListeners();
+  }
+
   void deleteTeacher(String id) {
     requireSection('settings');
     // سندات صرف المعلم تمنع حذفه في السحابة (ON DELETE RESTRICT): كان يُحذف محلياً ويعلق حذفه في الطابور
@@ -8646,6 +8699,17 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     u.createdAt = before.createdAt;
     users[i] = u;
     _queue('users', u.id, 'UPDATE', u.toCloud());
+    // اسم موظف الإدارة في الرواتب والسندات من اسمه هنا
+    final name = u.name.trim();
+    if (name.isNotEmpty) {
+      for (final t in teachers.where((t) => t.userId == u.id && t.name != name)) {
+        t.name = name;
+        t.updatedAt = _nowIso();
+        t.syncStatus = 'pending';
+        _queue('teachers', t.id, 'UPDATE', t.toCloud());
+        markDirty('teachers');
+      }
+    }
     notifyListeners();
   }
 

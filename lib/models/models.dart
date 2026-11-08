@@ -987,12 +987,18 @@ class Teacher {
     this.weeklyPeriods,
     this.payProfile,
     this.salaryHistory = const [],
+    this.userId = '',
   });
 
   final String id;
   String name;
   String phone;
   String subject;
+
+  /// موظف إدارة — `user_id`: ملف راتبه مربوط بحسابه في المستخدمين، فيظهر في الرواتب
+  /// والدوام ويغيب عن شاشات التدريس (`lib/academic/staffKind.ts` في الويب).
+  final String userId;
+  bool get isAdminStaff => userId.isNotEmpty;
 
   /// النصاب الأسبوعي (حصص).
   final double? weeklyPeriods;
@@ -1061,6 +1067,8 @@ class Teacher {
     'weekly_periods': weeklyPeriods,
     'pay_profile': payProfile,
     'salary_history': salaryHistory,
+    // يُرسل لموظف الإدارة وحده: المعلم لا يحمل العمود، فلا يمسّه الرفع
+    if (userId.isNotEmpty) 'user_id': userId,
     'academic_year_id': academicYearId.isEmpty ? null : academicYearId,
     'created_at': createdAt,
     'updated_at': updatedAt,
@@ -1107,6 +1115,7 @@ class Teacher {
           for (final h in m['salary_history'] as List)
             if (h is Map) Map<String, dynamic>.from(h),
       ],
+      userId: '${m['user_id'] ?? ''}',
     );
   }
 }

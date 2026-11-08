@@ -91,6 +91,7 @@ Future<YearStructureCloneResult> cloneYearStructure(
       weeklyPeriods: old.weeklyPeriods,
       payProfile: old.payProfile,
       salaryHistory: old.salaryHistory,
+      userId: old.userId,
     );
     teacherMap[old.id] = row.id;
     store.teachers.add(row);

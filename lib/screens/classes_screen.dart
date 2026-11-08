@@ -178,7 +178,7 @@ Future<void> _assignTeacher(BuildContext context, Classroom room) async {
                 value: teacherId,
                 items: [
                   const DropdownMenuItem(value: '', child: Text('بدون مربي صف')),
-                  for (final t in store.teachersInViewedYear)
+                  for (final t in store.teachingStaffInViewedYear)
                     DropdownMenuItem(value: t.id, child: Text(t.name, overflow: TextOverflow.ellipsis)),
                 ],
                 onChanged: (v) => setSheet(() => teacherId = v ?? ''),
@@ -388,7 +388,7 @@ class _SubjectTeachersSheetState extends State<_SubjectTeachersSheet> {
                       () {
                         final sub = store.subjectById(entry.key);
                         final offGrade = sub != null && !subjectCoversGrade(sub, grade);
-                        final teachers = [...store.teachersInViewedYear]..sort((a, b) {
+                        final teachers = [...store.teachingStaffInViewedYear]..sort((a, b) {
                           final aHas = a.subjectIds.contains(entry.key);
                           final bHas = b.subjectIds.contains(entry.key);
                           if (aHas != bHas) return aHas ? -1 : 1;

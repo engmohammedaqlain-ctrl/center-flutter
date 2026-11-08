@@ -104,7 +104,7 @@ class _RoomFormScreenState extends State<RoomFormScreen> {
     ];
     // مرحلة محفوظة لم تعد في جدول الرسوم تبقى ظاهرة ولا تُمحى بصمت عند الحفظ
     if (grade.isNotEmpty && !grades.contains(grade)) grades.add(grade);
-    final teachers = store.teachersInViewedYear;
+    final teachers = store.teachingStaffInViewedYear;
 
     return Scaffold(
       backgroundColor: Colors.white,
