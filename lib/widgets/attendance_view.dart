@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import 'admin_tokens.dart' show AdminNoon;
 import 'admin_ui.dart';
 import 'animated_count.dart';
 
@@ -103,7 +104,8 @@ class AttendanceDayChip extends StatelessWidget {
   }
 }
 
-/// ملخّص اليوم: التاريخ ونسبة الحضور المختصرة «5 من 30».
+/// ملخّص اليوم: شريط مضغوط بأربع خانات (حاضر، غائب، مأذون، لم يُرصد) وشريط تقدّم الرصد تحتها.
+/// التاريخ لا يتكرر هنا: شريط الأيام فوقه يبيّنه.
 class AttendanceDaySummary extends StatelessWidget {
   const AttendanceDaySummary({
     super.key,
@@ -121,16 +123,48 @@ class AttendanceDaySummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final marked = total - unmarked;
+    final ratio = total == 0 ? 0.0 : (marked / total).clamp(0.0, 1.0);
     final done = total > 0 && unmarked == 0;
 
-    return AdminHero(
-      tone: HeroTone.paid,
-      icon: Icons.fact_check_outlined,
-      label: '${day.dayName} ${day.date.day} ${gregorianMonths[day.date.month - 1]}',
-      value: '$present',
-      unit: 'حاضر من $total',
-      end: done ? 'اكتمل الرصد' : '$marked من $total مرصود',
-      chips: ['غائب $absent', 'مأذون $excused'],
+    Widget cell(String label, int value, Color color) => Expanded(
+          child: Column(
+            children: [
+              Text('$value', style: TextStyle(fontFamily: AppText.family, fontSize: 20, fontWeight: FontWeight.w700, color: color, height: 1.1)),
+              const SizedBox(height: 3),
+              Text(label, style: TextStyle(fontFamily: AppText.family, fontSize: 11.5, color: AdminNoon.muted)),
+            ],
+          ),
+        );
+    final divider = Container(width: 1, height: 30, color: AdminNoon.line);
+
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: noonPanel(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 12, 8, 10),
+            child: Row(
+              children: [
+                cell('حاضر', present, AdminNoon.green700),
+                divider,
+                cell('غائب', absent, AdminNoon.red600),
+                divider,
+                cell('مأذون', excused, AdminNoon.warn),
+                divider,
+                cell(done ? 'اكتمل' : 'لم يُرصد', done ? marked : unmarked, done ? AdminNoon.green700 : AdminNoon.muted),
+              ],
+            ),
+          ),
+          LinearProgressIndicator(
+            value: ratio,
+            minHeight: 3,
+            backgroundColor: AdminNoon.line,
+            valueColor: AlwaysStoppedAnimation(done ? AdminNoon.green700 : AdminNoon.ink),
+          ),
+        ],
+      ),
     );
   }
 }
