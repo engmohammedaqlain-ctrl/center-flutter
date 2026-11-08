@@ -4185,9 +4185,12 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// لكل موظف حسابه، وحساب المنشأة صلاحيته كاملة في السحابة مهما كان المستخدم المختار
   /// عليه، فتعيين «سكرتير» على جهازه كان حماية زائفة. المدير المختار سابقاً يبقى،
   /// وإلا `owner_<منشأة>`، وإلا أول مدير فعّال، وإلا يُنشأ.
+  ///
+  /// لا تُعتمد أبداً هوية موظف له دخوله ولو كان مديراً: 7 نوفمبر 2026 صار حساب مدرسة
+  /// بهوية موظفة أُضيفت بدور مدير وبتبويب الطلاب وحده.
   Future<bool> adoptOwnerIdentity({bool create = true}) async {
     if (isStaffSession) return true;
-    bool activeAdmin(AppUser? u) => u != null && u.isActive && normalizeRole(u.role) == 'admin';
+    bool activeAdmin(AppUser? u) => u != null && u.isActive && normalizeRole(u.role) == 'admin' && !u.hasLogin;
     AppUser? admin;
     if (deviceUserId != null && !identityFromLogin) {
       final chosen = users.where((u) => u.id == deviceUserId).firstOrNull;
@@ -4250,7 +4253,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   Future<void> afterEnter() async {
     if (!loggedIn || isMasterAdmin) return;
     cleanupBogusDemoUserSyncs(pendingSyncs);
-    dedupeOwnerAdmins();
+    // جهاز علقت هويته على غير مدير المنشأة (موظف له دخوله) يعود إليه
+    if (!isStaffSession && users.isNotEmpty) await adoptOwnerIdentity(create: false);
     await migrateReceiptNumbers();
     await migrateAttendanceIds();
     await migratePaymentSnapshots();
@@ -8762,7 +8766,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   ///
   /// المعرّف حتمي (`owner_<tenantId>`) فلا ينتج عن تهيئة جهازين حسابان
   /// متكرران — يتفقان على نفس السجل ويدمجه upsert.
-  /// إن وُجد أي مدير فعّال مسبقاً لا نُنشئ `owner_` مكرراً بنفس الاسم.
+  /// إن وُجد مدير منشأة فعّال مسبقاً بمعرّف آخر لا نُنشئ `owner_` مكرراً. موظف بدور
+  /// مدير له دخوله لا يُحسب: ليس مدير المنشأة.
   AppUser ensureOwnerAdmin() {
     final tid = tenantId;
     final id = 'owner_${tid ?? 'local'}';
@@ -8770,7 +8775,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (existing != null) return existing;
 
     final existingAdmin =
-        users.where((u) => normalizeRole(u.role) == 'admin' && u.isActive).firstOrNull;
+        users.where((u) => normalizeRole(u.role) == 'admin' && u.isActive && !u.hasLogin).firstOrNull;
     if (existingAdmin != null) return existingAdmin;
 
     final name = (currentTenant?.ownerName.trim().isNotEmpty ?? false)
@@ -8790,43 +8795,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return owner;
   }
 
-  /// إزالة `owner_<tenant>` إن وُجد مدير آخر فعّال — إصلاح تكرار التهيئة القديمة.
-  ///
-  /// كانت `setupCandidates` تستدعي [ensureOwnerAdmin] دائماً فتنشئ مديراً ثانياً
-  /// بنفس الاسم وترفعه للسحابة حتى يظهر على الويب والجوال.
-  int dedupeOwnerAdmins() {
-    final tid = tenantId;
-    if (tid == null) return 0;
-    final ownerId = 'owner_$tid';
-    final owner = users.where((u) => u.id == ownerId).firstOrNull;
-    if (owner == null) return 0;
-    final others = users
-        .where((u) => u.id != ownerId && normalizeRole(u.role) == 'admin' && u.isActive)
-        .toList();
-    if (others.isEmpty) return 0;
-
-    if (deviceUserId == ownerId) {
-      deviceUserId = others.first.id;
-      unawaited(db.setSetting(_kDeviceUser, others.first.id));
-    }
-
-    // INSERT معلّق لنفس السجل: أسقِطه بدل رفع مدير مكرر ثم حذفه
-    final hadPendingInsert = pendingSyncs.any(
-      (a) => a.tableName == 'users' && a.recordId == ownerId && a.action == 'INSERT',
-    );
-    pendingSyncs.removeWhere(
-      (a) => a.tableName == 'users' && a.recordId == ownerId,
-    );
-    users.removeWhere((u) => u.id == ownerId);
-    // رُفع سابقاً للسحابة: احذفه هناك أيضاً
-    if (!hadPendingInsert) {
-      _queue('users', ownerId, 'DELETE', {'name': owner.name});
-    }
-    markDirty('users');
-    markDirty(_pendingTable);
-    notifyListeners();
-    return 1;
-  }
+  // لا «تنظيف تكرار» لمدير المنشأة: dedupeOwnerAdmins كان يحذف owner_ متى وُجد مدير آخر
+  // فعّال، فحُذف حين أُضيفت موظفة بدور مدير وصار حساب المدرسة باسمها (7 نوفمبر 2026).
+  // السحابة تمنع حذفه (20261129_owner_guard).
 
   /// إزالة حسابات العرض التجريبية المتسربة محلياً بلا رفع حذف للسحابة.
   void cleanLocalDemoUsers() {
@@ -8933,7 +8904,6 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   List<AppUser> get setupCandidates {
-    dedupeOwnerAdmins();
     final active = users.where((u) => u.isActive).toList();
     // كـ الويب: لا يُنشأ مدير تلقائي إن وُجد مدير مسبقاً من السحابة
     if (!active.any((u) => normalizeRole(u.role) == 'admin')) {

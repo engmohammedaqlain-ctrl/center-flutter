@@ -998,7 +998,8 @@ class _UserFormScreenState extends State<UserFormScreen> {
     });
     if (errors.report(context)) return;
     try {
-      store.addUser(AppUser(id: store.newId(), name: name.text.trim(), role: role, capabilities: serializeSections(sections)));
+      final caps = normalizeRole(role) == 'admin' ? [...allSections] : sections;
+      store.addUser(AppUser(id: store.newId(), name: name.text.trim(), role: role, capabilities: serializeSections(caps)));
       showAppSnack(context, 'تمت إضافة المستخدم');
       Navigator.pop(context);
     } on StoreException catch (e) {
@@ -1053,9 +1054,15 @@ class _UserFormScreenState extends State<UserFormScreen> {
             FormSection(
               icon: Icons.tab_outlined,
               title: 'التبويبات الظاهرة له',
-              note: '${sections.length} من ${allSections.length}',
+              note: normalizeRole(role) == 'admin'
+                  ? 'المدير يرى كل التبويبات. لتقييد حساب اختر له دوراً آخر'
+                  : '${sections.length} من ${allSections.length}',
             ),
-            AccessEditor(value: sections, onChanged: (v) => setState(() => sections = v)),
+            AccessEditor(
+              value: normalizeRole(role) == 'admin' ? [...allSections] : sections,
+              enabled: normalizeRole(role) != 'admin',
+              onChanged: (v) => setState(() => sections = v),
+            ),
           ],
         ),
       ),
@@ -1096,7 +1103,8 @@ class _UserAccessScreenState extends State<UserAccessScreen> {
     if (!store.can('settings.users')) return _denied(store, 'تبويبات ${u.name}');
     // الحساب المستخدم على هذا الجهاز الآن لا تُعدَّل تبويباته منه — كما في
     // AccessEditor.tsx — كي لا يُغلق المدير الباب على نفسه
-    final locked = u.id == store.deviceUserId;
+    final isAdmin = normalizeRole(u.role) == 'admin';
+    final locked = u.id == store.deviceUserId || isAdmin;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -1139,7 +1147,7 @@ class _UserAccessScreenState extends State<UserAccessScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'تبويبات حسابك تُعدَّل من جهاز آخر',
+                      isAdmin ? 'المدير يرى كل التبويبات. لتقييد حساب اختر له دوراً آخر' : 'تبويبات حسابك تُعدَّل من جهاز آخر',
                       style: TextStyle(color: AppColors.heading, fontSize: 11.5),
                     ),
                   ),

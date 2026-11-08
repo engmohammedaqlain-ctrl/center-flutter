@@ -162,7 +162,11 @@ List<String> serializeSections(Iterable<String> sections) => [...normalizeSectio
 
 /// التبويبات الفعلية: قائمته الخاصة، أو قالب دوره.
 /// قائمة بلا `access:v2` مع تبويب المالية ترث أفعال قالب الدور.
+///
+/// المدير يرى كل التبويبات دائماً وقائمته المحفوظة لا تُقرأ: «مدير» بقائمة ناقصة كان
+/// مديراً في السحابة سكرتيراً على الشاشة. من تُقيَّد تبويباته يأخذ دوراً آخر.
 List<String> effectiveSections(List<String>? stored, String? role) {
+  if (normalizeRole(role) == 'admin') return [...allSections];
   if (stored == null) return [...roleDefinition(role).sections];
   final sections = normalizeSections(stored);
   final template = roleDefinition(role).sections;
