@@ -1259,14 +1259,41 @@ class _CompletionReportState extends State<_CompletionReport> {
             child: NoonButton(small: true, icon: Icons.tune_rounded, label: 'حدّد مواعيد الرصد', onPressed: () => _openSettings(context, 'followup')),
           ),
       ]),
-      Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Text.rich(TextSpan(children: [
-          const TextSpan(text: 'رُصد '),
-          TextSpan(text: '$pct%', style: const TextStyle(fontWeight: FontWeight.w700)),
-          TextSpan(text: ' ($done من $total · $term)', style: TextStyle(color: AdminNoon.muted, fontSize: 11.5)),
-          if (late > 0) TextSpan(text: '   متأخر عن موعده $late', style: const TextStyle(color: _red, fontWeight: FontWeight.w700)),
-        ]), style: NoonText.style(13)),
+      Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+        decoration: noonPanel(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('$pct%', style: NoonText.style(28, weight: FontWeight.w700, height: 1.1)),
+                const SizedBox(width: 8),
+                Expanded(child: Text('من الرصد مكتمل', style: NoonText.style(13, color: AdminNoon.muted))),
+                if (late > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                    decoration: BoxDecoration(color: _red.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(20)),
+                    child: Text('متأخر $late', style: NoonText.style(11.5, weight: FontWeight.w700, color: _red)),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: total == 0 ? 0 : done / total,
+                minHeight: 7,
+                backgroundColor: AdminNoon.band,
+                valueColor: AlwaysStoppedAnimation(pct >= 100 ? AdminNoon.green700 : AdminNoon.ink),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text('$done من $total · $term', style: NoonText.style(11.5, color: AdminNoon.muted)),
+          ],
+        ),
       ),
       if (teachers.isEmpty)
         const NoonEmpty('كل الرصد مكتمل')
@@ -1281,12 +1308,26 @@ class _CompletionReportState extends State<_CompletionReport> {
                   Expanded(
                     child: InkWell(
                       onTap: () => _openTeacher(context, t.id),
-                      child: Text(t.name, style: NoonText.style(13.5, weight: FontWeight.w700)),
+                      child: Text(t.name, style: NoonText.style(14, weight: FontWeight.w700)),
                     ),
                   ),
-                  if (t.missing.isNotEmpty && (store.teacherById(t.id)?.phone.trim() ?? '').isNotEmpty)
-                    TextButton(onPressed: () => remind(t.id, t.name, t.missing), child: const Text('تذكير بالواتساب')),
+                  if (t.missing.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(color: AdminNoon.band, borderRadius: BorderRadius.circular(20)),
+                      child: Text('${t.missing.length} ناقص', style: NoonText.style(11, weight: FontWeight.w700, color: AdminNoon.muted)),
+                    ),
                 ]),
+                if (t.missing.isNotEmpty && (store.teacherById(t.id)?.phone.trim() ?? '').isNotEmpty)
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: TextButton.icon(
+                      onPressed: () => remind(t.id, t.name, t.missing),
+                      icon: const Icon(Icons.chat_outlined, size: 16),
+                      label: const Text('تذكير بالواتساب'),
+                      style: TextButton.styleFrom(foregroundColor: AdminNoon.ink, visualDensity: VisualDensity.compact, padding: EdgeInsets.zero),
+                    ),
+                  ),
                 for (final r in t.rows)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
