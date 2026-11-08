@@ -23,7 +23,7 @@ import 'teacher_detail_screen.dart';
 const _red = Color(0xFFBA1A1A);
 const _green = Color(0xFF16A34A);
 const _amber = Color(0xFF475569);
-const _bandColors = [Color(0xFF15803D), Color(0xFF22C55E), Color(0xFF0EA5E9), Color(0xFFD97706), Color(0xFFBA1A1A)];
+const _bandColors = [Color(0xFF15803D), Color(0xFF22C55E), Color(0xFF0EA5E9), Color(0xFF64748B), Color(0xFFBA1A1A)];
 const _bandCells = [
   (bg: Color(0xFFDCFCE7), fg: Color(0xFF166534)),
   (bg: Color(0xFFECFCCB), fg: Color(0xFF3F6212)),
@@ -950,7 +950,20 @@ class _AnalysisReportState extends State<_AnalysisReport> with _GradesState {
                   Expanded(child: Text(r.name, style: NoonText.style(13.5, weight: FontWeight.w700))),
                   Text('${r.count} طالب', style: NoonText.style(11.5, color: AdminNoon.muted)),
                 ]),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
+                // توزيع التقديرات بنظرة: شريط بحصة كل تقدير بلونه
+                if (r.count > 0)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: SizedBox(
+                      height: 8,
+                      child: Row(children: [
+                        for (var i = 0; i < bands.length; i++)
+                          if (r.bandCounts[i] > 0) Expanded(flex: r.bandCounts[i], child: ColoredBox(color: _bandColors[i % _bandColors.length])),
+                      ]),
+                    ),
+                  ),
+                const SizedBox(height: 10),
                 Row(children: [
                   for (var i = 0; i < bands.length; i++)
                     Expanded(
