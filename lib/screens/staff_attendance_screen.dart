@@ -455,7 +455,7 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
                       bg: d.isToday ? const Color(0xFFE0F2FE) : const Color(0xFFF1F5F9),
                     ),
                   cell(Text('الغياب', style: head.copyWith(color: const Color(0xFFDC2626))), w: 48, bg: const Color(0xFFF1F5F9)),
-                  cell(Text('التأخر', style: head.copyWith(color: const Color(0xFF92400E))), w: 48, bg: const Color(0xFFF1F5F9)),
+                  cell(Text('التأخر', style: head.copyWith(color: const Color(0xFF475569))), w: 48, bg: const Color(0xFFF1F5F9)),
                   if (!month) cell(Text('الجوال', style: head), w: 110, bg: const Color(0xFFF1F5F9)),
                 ]),
                 for (final t in teachers)
@@ -503,7 +503,7 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
                           final (Color? bg, Widget mark) = switch (status) {
                             'present' => (const Color(0xFFDCFCE7), const Icon(Icons.check, size: 15, color: Color(0xFF166534))),
                             'absent' => (const Color(0xFFFEE2E2), const Icon(Icons.close, size: 15, color: Color(0xFF991B1B))),
-                            'late' => (const Color(0xFFFEF3C7), const Text('ت', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF92400E)))),
+                            'late' => (const Color(0xFFF1F5F9), const Text('ت', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF475569)))),
                             _ => (null, const Text('—', style: TextStyle(color: Color(0xFFD1D5DB)))),
                           };
                           return InkWell(
@@ -512,7 +512,7 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
                           );
                         }(),
                       cell(Text('$absent', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: absent > 0 ? const Color(0xFFDC2626) : const Color(0xFF9CA3AF))), w: 48),
-                      cell(Text('$late', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: late > 0 ? const Color(0xFF92400E) : const Color(0xFF9CA3AF))), w: 48),
+                      cell(Text('$late', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: late > 0 ? const Color(0xFF475569) : const Color(0xFF9CA3AF))), w: 48),
                       if (!month)
                         cell(
                           t.phone.trim().isEmpty

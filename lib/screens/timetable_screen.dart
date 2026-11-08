@@ -445,7 +445,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
                                     style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w700,
-                                      color: f.live != null && !f.unpublished ? AppColors.success : const Color(0xFFB45309),
+                                      color: f.live != null && !f.unpublished ? AppColors.success : const Color(0xFF475569),
                                     ),
                                   ),
                                 const Spacer(),
@@ -596,7 +596,7 @@ class _GenerateSheetState extends State<_GenerateSheet> {
             children: [
           if (total == 0) const Text('أدخل حصص المواد أولاً', style: TextStyle(fontSize: 13)),
           if (issues.isNotEmpty) ...[
-            const Text('لن يكتمل الجدول', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFFB45309))),
+            const Text('لن يكتمل الجدول', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF475569))),
             const SizedBox(height: 4),
             for (final i in issues.take(12))
               Padding(

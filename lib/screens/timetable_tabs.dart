@@ -467,7 +467,7 @@ class _LoadTabState extends State<LoadTab> {
           Container(
             margin: const EdgeInsets.only(bottom: 8),
             padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(8)),
+            decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8)),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -517,7 +517,7 @@ class _LoadTabState extends State<LoadTab> {
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 12.5,
-                              color: t.weeklyPeriods != null && t.weeklyPeriods != (byTeacher[t.id] ?? 0) ? const Color(0xFFB45309) : AppColors.muted,
+                              color: t.weeklyPeriods != null && t.weeklyPeriods != (byTeacher[t.id] ?? 0) ? const Color(0xFF475569) : AppColors.muted,
                             ),
                           ),
                         ),

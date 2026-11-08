@@ -168,7 +168,7 @@ class _LeavesState extends State<_Leaves> {
   @override
   Widget build(BuildContext context) {
     const statuses = {
-      'pending': ('بانتظار المدير', Color(0xFFB45309)),
+      'pending': ('بانتظار المدير', Color(0xFF475569)),
       'approved': ('موافق عليها', Color(0xFF15803D)),
       'rejected': ('مرفوضة', Color(0xFFBE123C)),
     };

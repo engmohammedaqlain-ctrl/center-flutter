@@ -148,12 +148,12 @@ class _StudentPortalScreenState extends State<StudentPortalScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: e.kind == 'exam' ? const Color(0xFFFFFBEB) : const Color(0xFFF1F5F9),
+                  color: e.kind == 'exam' ? const Color(0xFFF8FAFC) : const Color(0xFFF1F5F9),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
                   '${calendarKindLabels[e.kind]} ${e.title} ${eventRange(e)}',
-                  style: nText(11.5, weight: FontWeight.w700, color: e.kind == 'exam' ? const Color(0xFF92400E) : const Color(0xFF334155)),
+                  style: nText(11.5, weight: FontWeight.w700, color: e.kind == 'exam' ? const Color(0xFF475569) : const Color(0xFF334155)),
                 ),
               ),
           ],

@@ -1640,7 +1640,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                 padding: const EdgeInsets.all(2),
                 child: Icon(
                   initialRating >= star ? Icons.star_rounded : Icons.star_outline_rounded,
-                  color: initialRating >= star ? const Color(0xFFF59E0B) : const Color(0xFFCBD5E1),
+                  color: initialRating >= star ? const Color(0xFF64748B) : const Color(0xFFCBD5E1),
                   size: 26,
                 ),
               ),
@@ -1857,7 +1857,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
   /// سطر الحالة تحت الجوال يظهر فقط حين يقول شيئاً: خطأ، أو رقم ناقص، أو رقم صالح.
   Widget _phoneHint({required bool complete, required String? error, required int length, required int target, required String okText}) {
     if (error != null) return _message(error, AppColors.danger);
-    if (length > 0 && !complete) return _message('يجب إدخال $target أرقام بعد المقدمة', const Color(0xFFB45309));
+    if (length > 0 && !complete) return _message('يجب إدخال $target أرقام بعد المقدمة', const Color(0xFF475569));
     if (complete) return _message(okText, const Color(0xFF166534));
     return const SizedBox.shrink();
   }

@@ -755,7 +755,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
                               Tooltip(
                                 message: r.calc.warnings.join('\n'),
                                 triggerMode: TooltipTriggerMode.tap,
-                                child: const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFB45309)),
+                                child: const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFF475569)),
                               ),
                             ],
                           ],
