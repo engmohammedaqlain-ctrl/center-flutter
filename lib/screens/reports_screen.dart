@@ -62,8 +62,21 @@ Future<void> openReport(BuildContext context, String id) {
   return Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ReportPage(item: item, view: id)));
 }
 
-/// التقارير فهرس بأسئلة لا تبويبات متداخلة — `Reports.tsx`. كل سؤال سطر باسمه، ومجموع
-/// بعناوين صغيرة باهتة فلا يُخلط العنوان بسطر يُنقر.
+const _reportIcons = <String, IconData>{
+  'absence': Icons.event_busy_outlined,
+  'results': Icons.workspace_premium_outlined,
+  'analysis': Icons.insights_outlined,
+  'completion': Icons.fact_check_outlined,
+  'students': Icons.person_search_outlined,
+  'data': Icons.rule_folder_outlined,
+  'arrears': Icons.account_balance_wallet_outlined,
+  'staff': Icons.badge_outlined,
+  'usage': Icons.devices_outlined,
+  'edits': Icons.history_rounded,
+};
+
+/// التقارير فهرس بأسئلة لا تبويبات متداخلة — `Reports.tsx`. كل مجموعة لوحة بعنوانها، وكل تقرير سطر
+/// بأيقونته واسمه وتحته سؤاله الذي يجيب عنه، فيُعرف التقرير من أول نظرة.
 class ReportsScreen extends StatelessWidget {
   const ReportsScreen({super.key});
 
@@ -73,32 +86,50 @@ class ReportsScreen extends StatelessWidget {
     final groups = reportGroups(store);
     if (groups.isEmpty) return const NoonEmpty('لا تقارير متاحة لحسابك');
     return ListView(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
       children: [
         for (final g in groups) ...[
-          if (g.items.length > 1)
-            Padding(
-              padding: const EdgeInsetsDirectional.fromSTEB(6, 12, 6, 6),
-              child: Text(g.title, style: NoonText.style(11, weight: FontWeight.w600, color: AdminNoon.faint)),
-            )
-          else
-            const SizedBox(height: 12),
-          AppCard(
-            padding: EdgeInsets.zero,
+          Padding(
+            padding: const EdgeInsetsDirectional.fromSTEB(4, 16, 4, 8),
+            child: Text(g.title, style: NoonText.style(12.5, weight: FontWeight.w700, color: AdminNoon.muted)),
+          ),
+          Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: noonPanel(),
             child: Column(
               children: [
-                for (var i = 0; i < g.items.length; i++)
+                for (var i = 0; i < g.items.length; i++) ...[
+                  if (i > 0) Divider(height: 1, thickness: 1, color: AdminNoon.line),
                   InkWell(
                     onTap: () => openReport(context, g.items[i].id),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      decoration: BoxDecoration(border: i == 0 ? null : Border(top: BorderSide(color: AdminNoon.line))),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
                       child: Row(children: [
-                        Expanded(child: Text(g.items[i].label, style: NoonText.style(13.5, weight: FontWeight.w700))),
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(color: AdminNoon.mist, borderRadius: BorderRadius.circular(12)),
+                          child: Icon(_reportIcons[g.items[i].id] ?? Icons.description_outlined, size: 21, color: AdminNoon.ink),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(g.items[i].label, style: NoonText.style(14.5, weight: FontWeight.w700)),
+                              if (g.items[i].hint.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(g.items[i].hint, maxLines: 2, overflow: TextOverflow.ellipsis, style: NoonText.style(11.5, color: AdminNoon.muted, height: 1.35)),
+                              ],
+                            ],
+                          ),
+                        ),
                         Icon(Icons.chevron_right_rounded, color: AdminNoon.faint),
                       ]),
                     ),
                   ),
+                ],
               ],
             ),
           ),

@@ -77,7 +77,7 @@ SheetData _toSheet(AppStore store, _Sheet s) => SheetData(
       signatures: const [],
     );
 
-/// شريط التقرير: الفلاتر، ثم تنزيل PDF وExcel بما يُعرض.
+/// شريط التقرير: الفلاتر، وقائمة «تصدير» واحدة (PDF أو Excel) بدل زرين يزدحمان معها.
 class _Bar extends StatelessWidget {
   const _Bar({required this.children, this.sheet});
 
@@ -88,17 +88,36 @@ class _Bar extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ...children,
-          if (sheet != null) ...[
-            NoonButton(small: true, icon: Icons.download_outlined, label: 'PDF', onPressed: () => printSheet(context, _toSheet(store, sheet!()))),
-            NoonButton(small: true, icon: Icons.table_view_outlined, label: 'Excel', onPressed: () => downloadSheetXlsx(context, _toSheet(store, sheet!()))),
-          ],
+          Expanded(
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: children,
+            ),
+          ),
+          if (sheet != null)
+            PopupMenuButton<String>(
+              tooltip: 'تصدير',
+              icon: Icon(Icons.file_download_outlined, color: AdminNoon.ink),
+              padding: EdgeInsets.zero,
+              onSelected: (v) {
+                final data = _toSheet(store, sheet!());
+                if (v == 'pdf') {
+                  printSheet(context, data);
+                } else {
+                  downloadSheetXlsx(context, data);
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'pdf', child: Text('تنزيل PDF')),
+                PopupMenuItem(value: 'xlsx', child: Text('تنزيل Excel')),
+              ],
+            ),
         ],
       ),
     );
@@ -114,9 +133,9 @@ class _Pick<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        height: 36,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.lineStrong)),
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: AdminNoon.line)),
         child: DropdownButtonHideUnderline(
           child: DropdownButton<T>(
             value: options.containsKey(value) ? value : options.keys.first,
@@ -232,10 +251,11 @@ Widget _kpis(List<_Kpi> items) => Padding(
                 width: (c.maxWidth - 8) / 2,
                 child: AppCard(
                   onTap: k.onTap,
-                  padding: const EdgeInsets.all(10),
+                  padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(k.label, style: NoonText.style(11, color: AdminNoon.muted)),
-                    FittedBox(child: Text(k.value, style: NoonText.style(16, weight: FontWeight.w700, color: k.color))),
+                    Text(k.label, style: NoonText.style(11.5, color: AdminNoon.muted)),
+                    const SizedBox(height: 2),
+                    FittedBox(child: Text(k.value, style: NoonText.style(19, weight: FontWeight.w700, color: k.color))),
                     if (k.sub.isNotEmpty) Text(k.sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: NoonText.style(10.5, color: AdminNoon.muted)),
                   ]),
                 ),
@@ -259,13 +279,14 @@ Widget _row(String title, String sub, List<Widget> trailing, {VoidCallback? onTa
             ]),
           ),
           for (final t in trailing) Padding(padding: const EdgeInsetsDirectional.only(start: 10), child: t),
-          if (onTap != null) Padding(padding: const EdgeInsetsDirectional.only(start: 6), child: Icon(Icons.chevron_left_rounded, size: 18, color: AdminNoon.faint)),
+          if (onTap != null) Padding(padding: const EdgeInsetsDirectional.only(start: 6), child: Icon(Icons.chevron_right_rounded, size: 18, color: AdminNoon.faint)),
         ]),
       ),
     );
 
-Widget _list(List<Widget> rows) => AppCard(
-      padding: EdgeInsets.zero,
+Widget _list(List<Widget> rows) => Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: noonPanel(),
       child: Column(children: [
         for (var i = 0; i < rows.length; i++)
           DecoratedBox(
