@@ -1569,7 +1569,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 foregroundColor: AppColors.navy,
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 alignment: AlignmentDirectional.centerStart,
-                textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                textStyle: const TextStyle(fontFamily: AppText.family, fontWeight: FontWeight.w600, fontSize: 12),
               ),
               child: Text(showProcessedRequests ? 'إخفاء السابقة (${done.length})' : 'عرض السابقة (${done.length})'),
             ),

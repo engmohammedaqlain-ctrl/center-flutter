@@ -586,7 +586,7 @@ class _FeesTab extends StatelessWidget {
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.amberDark,
                 visualDensity: VisualDensity.compact,
-                textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                textStyle: const TextStyle(fontFamily: AppText.family, fontWeight: FontWeight.w600, fontSize: 12),
               ),
             ),
           ],
@@ -916,7 +916,7 @@ class _FeeItemsCardState extends State<_FeeItemsCard> {
                 onPressed: () => setState(() => adding = !adding),
                 style: TextButton.styleFrom(
                   foregroundColor: AppColors.amber,
-                  textStyle: const TextStyle(
+                  textStyle: const TextStyle(fontFamily: AppText.family, 
                     fontWeight: FontWeight.w600,
                     fontSize: 12,
                   ),
@@ -1045,7 +1045,7 @@ class _FeeItemsCardState extends State<_FeeItemsCard> {
                         item.studentIds == null ? _apply(item) : _pick(item),
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.amber,
-                      textStyle: const TextStyle(
+                      textStyle: const TextStyle(fontFamily: AppText.family, 
                         fontWeight: FontWeight.w600,
                         fontSize: 11.5,
                       ),

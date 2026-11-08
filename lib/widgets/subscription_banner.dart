@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/store.dart';
 import '../screens/settings_screen.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 
 /// شريط تنبيه الاشتراك — المقابل لـ `SubscriptionStatusBanner`.
 ///
@@ -62,7 +63,7 @@ class SubscriptionStatusBanner extends StatelessWidget {
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   visualDensity: VisualDensity.compact,
-                  textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                  textStyle: const TextStyle(fontFamily: AppText.family, fontSize: 11, fontWeight: FontWeight.w700),
                 ),
                 child: const Text('الإعدادات'),
               ),

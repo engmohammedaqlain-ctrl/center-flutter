@@ -20,7 +20,7 @@ const _gap = SizedBox(height: 12);
 
 AppBar _formBar(String title) => AppBar(
       title: Text(title),
-      titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+      titleTextStyle: const TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
     );
 
 Widget _denied(AppStore store, String title) => Scaffold(

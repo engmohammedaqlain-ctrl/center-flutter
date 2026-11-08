@@ -57,7 +57,7 @@ class _AppInstallsScreenState extends State<AppInstallsScreen> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text('الأجهزة'),
-        titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+        titleTextStyle: const TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
         actions: [
           IconButton(
             tooltip: 'تحديث',

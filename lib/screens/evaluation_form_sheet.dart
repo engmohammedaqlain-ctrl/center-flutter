@@ -580,7 +580,7 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
                                   errorText: errors['score:${s.id}'],
                                   hintText: scoreStatusLabels[statuses[s.id]] ??
                                       'من ${trimNum(double.tryParse(maxScore.text.trim()) ?? 100)}',
-                                  hintStyle: const TextStyle(fontSize: 11, color: AppColors.faint),
+                                  hintStyle: const TextStyle(fontFamily: AppText.family, fontSize: 11, color: AppColors.faint),
                                 ),
                               ),
                             ),
@@ -593,7 +593,7 @@ class _EvaluationFormScreenState extends State<EvaluationFormScreen> {
                                 decoration: const InputDecoration(
                                   isDense: true,
                                   hintText: 'ملاحظات (اختياري)',
-                                  hintStyle: TextStyle(fontSize: 11, color: AppColors.faint),
+                                  hintStyle: TextStyle(fontFamily: AppText.family, fontSize: 11, color: AppColors.faint),
                                 ),
                               ),
                             ),

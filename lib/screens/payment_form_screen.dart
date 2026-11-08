@@ -477,7 +477,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                   ? 'تسديد دفعة جديدة'
                   : 'تسديد دفعة للطالب: ${selected.fullName}',
             ),
-            titleTextStyle: const TextStyle(
+            titleTextStyle: const TextStyle(fontFamily: AppText.family, 
               color: Colors.white,
               fontWeight: FontWeight.w600,
               fontSize: 14,
@@ -913,7 +913,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
               }),
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.amber,
-                textStyle: const TextStyle(
+                textStyle: const TextStyle(fontFamily: AppText.family, 
                   fontWeight: FontWeight.w600,
                   fontSize: 12,
                 ),

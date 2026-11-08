@@ -5,6 +5,7 @@ import '../data/grade_plan_sync.dart';
 import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/form_layout.dart';
 import '../widgets/widgets.dart';
 
@@ -331,7 +332,7 @@ class _GradePlanScreenState extends State<GradePlanScreen> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(title),
-        titleTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+        titleTextStyle: const TextStyle(fontFamily: AppText.family, color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
       ),
       bottomNavigationBar: readOnly
           ? FormActionBar(
