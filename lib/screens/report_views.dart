@@ -124,6 +124,39 @@ class _Bar extends StatelessWidget {
   }
 }
 
+/// منتقي الشهر: السابق يميناً والتالي يساراً (معطّل بعد الحالي)، بإطار المنتقيات نفسه.
+class _MonthNav extends StatelessWidget {
+  const _MonthNav({required this.label, required this.onPrev, required this.onNext});
+
+  final String label;
+  final VoidCallback onPrev;
+  final VoidCallback? onNext;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        height: 40,
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: AdminNoon.line)),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: 'الشهر السابق',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.chevron_left, size: 22),
+              onPressed: onPrev,
+            ),
+            Text(label, style: NoonText.style(13, weight: FontWeight.w700)),
+            IconButton(
+              tooltip: 'الشهر التالي',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.chevron_right, size: 22),
+              onPressed: onNext,
+            ),
+          ],
+        ),
+      );
+}
+
 class _Pick<T> extends StatelessWidget {
   const _Pick({required this.value, required this.options, required this.onChanged});
 
@@ -227,11 +260,11 @@ class _Search extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        width: 170,
-        height: 36,
+        width: 180,
+        height: 40,
         child: TextField(
           onChanged: onChanged,
-          decoration: const InputDecoration(isDense: true, hintText: 'بحث بالاسم', prefixIcon: Icon(Icons.search, size: 18)),
+          decoration: const InputDecoration(isDense: true, hintText: 'بحث بالاسم', prefixIcon: Icon(Icons.search, size: 18), filled: true, fillColor: Colors.white),
         ),
       );
 }
@@ -375,11 +408,11 @@ class _AbsenceReportState extends State<_AbsenceReport> {
 
     return _body([
       _Bar(sheet: sheet, children: [
-        Row(mainAxisSize: MainAxisSize.min, children: [
-          IconButton(tooltip: 'الشهر السابق', icon: const Icon(Icons.chevron_left), onPressed: () => setState(() => monthOffset--)),
-          Text(periodLabel, style: NoonText.style(12.5, weight: FontWeight.w700)),
-          IconButton(tooltip: 'الشهر التالي', icon: const Icon(Icons.chevron_right), onPressed: monthOffset >= 0 ? null : () => setState(() => monthOffset++)),
-        ]),
+        _MonthNav(
+          label: periodLabel,
+          onPrev: () => setState(() => monthOffset--),
+          onNext: monthOffset >= 0 ? null : () => setState(() => monthOffset++),
+        ),
         _scopePick(store, grade: grade, sectionId: sectionId, view: view, onChanged: (g, s, v) => setState(() {
               grade = g;
               sectionId = s;
@@ -455,15 +488,10 @@ class _ViewsState extends State<_Views> {
   Widget build(BuildContext context) => Column(children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-          child: SizedBox(
-            width: double.infinity,
-            child: SegmentedButton<String>(
-              showSelectedIcon: false,
-              style: const ButtonStyle(visualDensity: VisualDensity.compact),
-              segments: [for (final e in widget.views.entries) ButtonSegment(value: e.key, label: Text(e.value.label))],
-              selected: {current},
-              onSelectionChanged: (v) => setState(() => current = v.first),
-            ),
+          child: NoonSegment<String>(
+            value: current,
+            options: [for (final e in widget.views.entries) (e.key, e.value.label)],
+            onChanged: (v) => setState(() => current = v),
           ),
         ),
         Expanded(child: KeyedSubtree(key: ValueKey(current), child: widget.views[current]!.view)),
@@ -1621,11 +1649,11 @@ class _StaffReportState extends State<_StaffReport> {
 
     return _body([
       _Bar(sheet: sheet, children: [
-        Row(mainAxisSize: MainAxisSize.min, children: [
-          IconButton(tooltip: 'الشهر السابق', icon: const Icon(Icons.chevron_left), onPressed: () => setState(() => monthOffset--)),
-          Text(label, style: NoonText.style(12.5, weight: FontWeight.w700)),
-          IconButton(tooltip: 'الشهر التالي', icon: const Icon(Icons.chevron_right), onPressed: monthOffset >= 0 ? null : () => setState(() => monthOffset++)),
-        ]),
+        _MonthNav(
+          label: label,
+          onPrev: () => setState(() => monthOffset--),
+          onNext: monthOffset >= 0 ? null : () => setState(() => monthOffset++),
+        ),
         _Search(onChanged: (v) => setState(() => q = v)),
       ]),
       if (failed)
