@@ -66,36 +66,11 @@ class AdminHero extends StatelessWidget {
           bottomRight: Radius.circular(20),
           bottomLeft: Radius.circular(12),
         ),
-        gradient: LinearGradient(
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-          stops: const [0, 0.58, 1],
-          colors: colors,
-        ),
-        boxShadow: [BoxShadow(color: colors.first.withValues(alpha: 0.28), blurRadius: 18, offset: const Offset(0, 8))],
+        // لون صافٍ بلا تدرّج ولا دوائر ولا لمعة ولا ظل ملوّن: الزخرفة كانت تبدو «مصنوعة»
+        color: colors.first,
       ),
       child: Stack(
         children: [
-          // لمعة داخلية رفيعة في الأعلى
-          Positioned(left: 0, right: 0, top: 0, child: Container(height: 1, color: Colors.white.withValues(alpha: 0.12))),
-          Positioned(
-            left: -40,
-            top: -60,
-            child: Container(
-              width: 170,
-              height: 170,
-              decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.07)),
-            ),
-          ),
-          Positioned(
-            left: 70,
-            bottom: -70,
-            child: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.05)),
-            ),
-          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
             child: Column(

@@ -13,7 +13,7 @@ import 'animated_count.dart';
 /// ألوان حالات الرصد — دلالية ثابتة لا تتبع هوية المنشأة.
 const attendancePresentColor = Color(0xFF2E7D57);
 const attendanceAbsentColor = Color(0xFFA5484A);
-const attendanceExcusedColor = Color(0xFF9A6700);
+const attendanceExcusedColor = Color(0xFF475569);
 const attendanceUnmarkedColor = Color(0xFFD5DAE2);
 
 /// خانات رصد الطالب.
