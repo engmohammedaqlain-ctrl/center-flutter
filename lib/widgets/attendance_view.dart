@@ -297,31 +297,14 @@ class AttendanceStudentRowState extends State<AttendanceStudentRow> {
       decoration: BoxDecoration(
         border: widget.last ? null : const Border(bottom: BorderSide(color: AppColors.hover)),
       ),
-      child: LayoutBuilder(
-        builder: (context, box) {
-          // المفتاح بجوار الاسم لا تفي به الشاشات الضيقة: دون 320 ينزل تحته
-          // بعرض كامل، فتبقى أهداف اللمس كبيرة ويُقرأ الاسم كاملاً.
-          if (box.maxWidth < 320) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(children: [seat, const SizedBox(width: 10), Expanded(child: info)]),
-                const SizedBox(height: 8),
-                toggle(expand: true),
-              ],
-            );
-          }
-          return Row(
-            children: [
-              seat,
-              const SizedBox(width: 10),
-              Expanded(child: info),
-              const SizedBox(width: 8),
-              toggle(expand: false),
-            ],
-          );
-        },
+      child: Row(
+        children: [
+          seat,
+          const SizedBox(width: 10),
+          Expanded(child: info),
+          const SizedBox(width: 8),
+          toggle(expand: false),
+        ],
       ),
     );
   }

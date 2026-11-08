@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../data/notes.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/admin_ui.dart' show NoonOffline;
 import '../widgets/noon_ui.dart';
 import '../widgets/widgets.dart';
 
@@ -972,7 +973,18 @@ class _SchoolChatPageState extends State<SchoolChatPage> {
           : error.isNotEmpty
               ? ListView(
                   padding: const EdgeInsets.all(NoonSize.page),
-                  children: [NNotice(text: error, sun: true)],
+                  children: [
+                    NoonOffline(
+                      text: error,
+                      onRetry: () {
+                        setState(() {
+                          loading = true;
+                          error = '';
+                        });
+                        _reload();
+                      },
+                    ),
+                  ],
                 )
               : _ChatList(
                   messages: chatMessages(threads),

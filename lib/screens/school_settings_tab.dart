@@ -43,6 +43,21 @@ const _groups = <({String title, IconData icon, List<String> keys})>[
   ),
 ];
 
+/// أسماء مفاتيح البوابة بعبارة تفرّقها عن أقسام التطبيق المسمّاة بالاسم نفسه.
+const _portalLabels = {
+  'portal.attendance': 'الحضور بالبوابة',
+  'portal.grades': 'العلامات بالبوابة',
+  'portal.finance': 'الرسوم بالبوابة',
+  'portal.notes': 'الرسائل بالبوابة',
+};
+
+/// مفتاح فرعي يتبع بوابة: يتعطل ما دامت بوابته مطفأة.
+bool _parentOff(String key, Map<String, bool> c) {
+  if (key == 'portal.parent' || key == 'portal.student' || !key.startsWith('portal.')) return false;
+  if (key.startsWith('portal.teacher')) return key != 'portal.teacher' && !(c['portal.teacher'] ?? false);
+  return !(c['portal.parent'] ?? false) && !(c['portal.student'] ?? false);
+}
+
 /// تبويب «المدرسة» في الإعدادات — `SchoolFeatures` و`SchoolOptions`: الأقسام الظاهرة،
 /// وما يُطبع على الأوراق، والأدوات، وبطاقات الرئيسية. الإيقاف يخفي ولا يحذف.
 class SchoolSettingsTab extends StatefulWidget {
@@ -145,11 +160,13 @@ class _SchoolSettingsTabState extends State<SchoolSettingsTab> {
             for (final key in group.keys)
               _check(
                 value: current[key] ?? false,
-                label: features[key]!.label,
-                hint: (current[key] ?? false) && !(effective[key] ?? false)
+                label: _portalLabels[key] ?? features[key]!.label,
+                hint: _parentOff(key, current)
+                    ? 'يتعطل لأن البوابة مطفأة'
+                    : (current[key] ?? false) && !(effective[key] ?? false)
                     ? 'لا يعمل: ${featureBlockers(key, current).map((b) => features[b]!.label).join(features[key]!.requiresAny.isNotEmpty ? ' أو ' : ' و')}'
                     : features[key]!.description,
-                onChanged: !isAdmin || saving
+                onChanged: !isAdmin || saving || _parentOff(key, current)
                     ? null
                     : (v) => setState(() => draft = {...current, key: v}),
               ),

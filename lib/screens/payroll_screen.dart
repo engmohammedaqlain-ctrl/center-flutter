@@ -11,7 +11,7 @@ import '../data/teacher_salary.dart';
 import '../data/user_message.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
-import '../widgets/admin_ui.dart' show AdminHero, HeroTone;
+import '../widgets/admin_ui.dart' show AdminHero, HeroTone, NoonOffline;
 import '../widgets/empty_note.dart';
 import '../widgets/noon_ui.dart' show NLoading;
 import '../widgets/owner_fold.dart';
@@ -1006,14 +1006,9 @@ class _PayrollScreenState extends State<PayrollScreen> {
               ),
             ),
       body: failed
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('الرواتب تحتاج اتصالاً بالإنترنت', style: TextStyle(color: AppColors.muted)),
-                  TextButton(onPressed: _load, child: const Text('إعادة المحاولة')),
-                ],
-              ),
+          ? Padding(
+              padding: const EdgeInsets.all(24),
+              child: Center(child: NoonOffline(what: 'الرواتب', onRetry: _load)),
             )
           : list == null
               ? const NLoading(text: 'جارٍ تحميل الرواتب')

@@ -105,6 +105,9 @@ class _RoomFormScreenState extends State<RoomFormScreen> {
     ];
     // مرحلة محفوظة لم تعد في جدول الرسوم تبقى ظاهرة ولا تُمحى بصمت عند الحفظ
     if (grade.isNotEmpty && !grades.contains(grade)) grades.add(grade);
+    // المراحل الدراسية تتبع المرحلة الكبرى المختارة؛ إن لم تطابق شيئاً تظهر كلها
+    final inTier = [for (final g in grades) if (g == grade || gradeTier(store, g) == tier || gradeTier(store, g) == 'other') g];
+    final gradeChoices = inTier.isEmpty ? grades : inTier;
     final teachers = store.teachingStaffInViewedYear;
 
     return Scaffold(
@@ -133,23 +136,6 @@ class _RoomFormScreenState extends State<RoomFormScreen> {
             _gap,
             FieldPair(
               start: [
-                FieldLabel('المرحلة الدراسية', key: errors.key('grade'), requiredField: true),
-                AppDropdown<String>(
-                  value: grade.isEmpty ? null : grade,
-                  hint: 'اختر المرحلة',
-                  errorText: errors['grade'],
-                  items: [
-                    for (final g in grades) DropdownMenuItem(value: g, child: Text(g, overflow: TextOverflow.ellipsis)),
-                  ],
-                  onChanged: (v) => setState(() {
-                    grade = v ?? grade;
-                    errors.clear('grade');
-                    final detected = gradeTier(store, grade);
-                    if (detected != 'other') tier = detected;
-                  }),
-                ),
-              ],
-              end: [
                 const FieldLabel('المرحلة الكبرى', requiredField: true),
                 AppDropdown<String>(
                   value: tier,
@@ -158,6 +144,23 @@ class _RoomFormScreenState extends State<RoomFormScreen> {
                       DropdownMenuItem(value: e.key, child: Text(e.value, overflow: TextOverflow.ellipsis)),
                   ],
                   onChanged: (v) => setState(() => tier = v ?? tier),
+                ),
+              ],
+              end: [
+                FieldLabel('المرحلة الدراسية', key: errors.key('grade'), requiredField: true),
+                AppDropdown<String>(
+                  value: grade.isEmpty ? null : grade,
+                  hint: 'اختر المرحلة',
+                  errorText: errors['grade'],
+                  items: [
+                    for (final g in gradeChoices) DropdownMenuItem(value: g, child: Text(g, overflow: TextOverflow.ellipsis)),
+                  ],
+                  onChanged: (v) => setState(() {
+                    grade = v ?? grade;
+                    errors.clear('grade');
+                    final detected = gradeTier(store, grade);
+                    if (detected != 'other') tier = detected;
+                  }),
                 ),
               ],
             ),

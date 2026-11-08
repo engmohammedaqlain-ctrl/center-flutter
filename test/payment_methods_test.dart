@@ -65,7 +65,7 @@ void main() {
     test('وسيلة حُذفت لا تترك معرّفاً خاماً في الوصل', () async {
       final s = await _store();
       await s.savePaymentMethods(defaultPaymentMethods.where((m) => m.id != 'jawwal_pay').toList());
-      expect(s.paymentMethodLabel('jawwal_pay'), 'محفظة جوال بي');
+      expect(s.paymentMethodLabel('jawwal_pay'), 'محفظة جوال باي');
       expect(s.paymentMethodLabel(''), '-');
     });
 

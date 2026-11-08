@@ -68,7 +68,7 @@ class _ClassesScreenState extends State<ClassesScreen> {
           final tiers = {for (final r in store.roomsInViewedYear) r.id: classTier(store, r)};
           int countOf(String id) => id == 'all' ? store.roomsInViewedYear.length : tiers.values.where((t) => t == id).length;
           // رياض الأطفال تظهر حين يوجد لها صف فقط، كما في Center
-          final tabs = _tierLabels.keys.where((id) => id != 'kindergarten' || countOf(id) > 0).toList();
+          final tabs = _tierLabels.keys.where((id) => id == 'all' || countOf(id) > 0).toList();
           if (!tabs.contains(tier)) tier = 'all';
 
           final rooms = store.roomsInViewedYear.where((r) => tier == 'all' || tiers[r.id] == tier).toList();
@@ -606,7 +606,7 @@ List<PopupMenuEntry<String>> _manageItems(Teacher? teacher) => [
       _menuItem('delete', Icons.delete_outline, 'حذف الصف', danger: true),
     ];
 
-/// مرحلة: عنوان القسم بعدد شعبها، وجدول «الشعبة | الطلاب» — `NSectionTitle` و`NTable` في الويب.
+/// مرحلة: عنوان القسم بعدد شعبها، وتحته صف لكل شعبة.
 class _GradeTable extends StatelessWidget {
   const _GradeTable({required this.grade, required this.rooms, required this.canEdit});
 
@@ -617,7 +617,6 @@ class _GradeTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    final head = NoonText.style(11, weight: FontWeight.w700);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -629,20 +628,6 @@ class _GradeTable extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: AdminNoon.head,
-                  border: Border(bottom: BorderSide(color: AdminNoon.headLine)),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(child: Text('الشعبة', style: head)),
-                    SizedBox(width: 72, child: Text('الطلاب', style: head)),
-                    const SizedBox(width: 32),
-                  ],
-                ),
-              ),
               for (var j = 0; j < rooms.length; j++)
                 Container(
                   decoration: j > 0 ? BoxDecoration(border: Border(top: BorderSide(color: AdminNoon.line))) : null,
@@ -708,11 +693,10 @@ class _RoomRow extends StatelessWidget {
                 ),
               ),
               SizedBox(
-                width: 72,
+                width: 84,
                 child: Text(
-                  '${students.length} / $capacity',
-                  textDirection: TextDirection.ltr,
-                  textAlign: TextAlign.right,
+                  '${students.length} / $capacity طالب',
+                  textAlign: TextAlign.end,
                   style: NoonText.style(12, weight: FontWeight.w700, color: students.length > capacity ? AdminNoon.red700 : AdminNoon.text)
                       .copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
                 ),

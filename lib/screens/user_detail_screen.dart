@@ -59,6 +59,33 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
         ]),
       );
 
+  /// الجوال يُحفظ في ملف راتبه، فلا يُضاف قبل الإضافة للرواتب.
+  Widget _phoneRow(AppStore store, Teacher? record, bool canPay) {
+    final phone = (record?.phone ?? '').trim();
+    if (phone.isNotEmpty) return _row('الجوال', formatPhoneDisplay(record!.phone), ltr: true);
+    if (record == null) return _row('الجوال', canPay ? 'يُسجَّل بعد الإضافة للرواتب' : null);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(children: [
+        Expanded(child: Text('الجوال', style: NoonText.style(12.5, color: AdminNoon.muted))),
+        TextButton.icon(
+          onPressed: () async {
+            final v = await _ask('جوال ${record.name}', '', number: true);
+            if (v == null || v.isEmpty) return;
+            final full = combinePhoneAndPrefix(digitsOnly(v));
+            if (!RegExp(r'^05[69]\d{7}$').hasMatch(full)) {
+              if (mounted) showAppSnack(context, 'رقم الجوال غير صحيح', error: true);
+              return;
+            }
+            _run(() => store.saveTeacherPay(record, {'phone': full, 'phone_prefix': parsePhoneAndPrefix(full).prefix}));
+          },
+          icon: const Icon(Icons.add, size: 16),
+          label: const Text('إضافة جوال'),
+        ),
+      ]),
+    );
+  }
+
   Future<String?> _ask(String title, String initial, {bool number = false}) {
     final c = TextEditingController(text: initial);
     return showDialog<String>(
@@ -150,7 +177,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
               itemBuilder: (_) => [
                 const PopupMenuItem(value: 'rename', child: Text('تعديل الاسم')),
                 if (canPay && record != null) const PopupMenuItem(value: 'unpay', child: Text('إزالة من الرواتب')),
-                const PopupMenuItem(value: 'delete', child: Text('حذف المستخدم')),
+                if (u.id != store.deviceUserId) const PopupMenuItem(value: 'delete', child: Text('حذف المستخدم')),
               ],
             ),
         ],
@@ -158,45 +185,33 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
         children: [
-          if (canManage)
-            sec(Row(children: [
-              Expanded(
-                child: NoonButton(
-                  label: login.isEmpty ? 'إنشاء دخول' : 'الدخول',
-                  icon: Icons.key_outlined,
-                  expand: true,
-                  onPressed: () => showStaffLoginSheet(context, u),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: NoonButton(
-                  label: 'الصلاحيات',
-                  icon: Icons.tune,
-                  expand: true,
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => UserAccessScreen(user: u))),
-                ),
-              ),
-            ])),
-
           sec(NoonFoldCard(
             title: 'الحساب',
             initiallyOpen: true,
             children: [
               _row('الدور', roleLabel(u.role)),
               _row('الدخول للنظام', login.isEmpty ? 'بلا دخول' : login, ltr: login.isNotEmpty),
-              _row('الجوال', (record?.phone ?? '').isEmpty ? null : formatPhoneDisplay(record!.phone), ltr: true),
+              _phoneRow(store, record, canPay),
               if (!u.isActive) _row('الحالة', 'موقوف'),
+              if (canManage) ...[
+                const SizedBox(height: 6),
+                NoonButton(
+                  label: login.isEmpty ? 'إنشاء دخول' : 'الدخول وكلمة المرور',
+                  icon: Icons.key_outlined,
+                  expand: true,
+                  onPressed: () => showStaffLoginSheet(context, u),
+                ),
+              ],
             ],
           )),
 
           sec(NoonFoldCard(
             title: 'الصلاحيات',
-            headerExtra: Text('${sections.length} تبويب', style: NoonText.style(11, color: AdminNoon.muted)),
+            headerExtra: Text('${sections.length} صلاحية', style: NoonText.style(11, color: AdminNoon.muted)),
             children: [
               if (isAdmin)
-                Text('المدير يرى كل التبويبات', style: NoonText.style(12, color: AdminNoon.muted))
-              else
+                Text('المدير يرى كل شيء ولا تُقيَّد صلاحياته. لتقييد حساب اختر له دوراً آخر.', style: NoonText.style(12, color: AdminNoon.muted))
+              else ...[
                 Wrap(spacing: 6, runSpacing: 6, children: [
                   for (final s in sections.where((s) => !s.contains('.')))
                     Container(
@@ -205,6 +220,16 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                       child: Text(sectionLabel(s), style: NoonText.style(11.5, weight: FontWeight.w600)),
                     ),
                 ]),
+                if (canManage) ...[
+                  const SizedBox(height: 10),
+                  NoonButton(
+                    label: 'تعديل الصلاحيات',
+                    icon: Icons.tune,
+                    expand: true,
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => UserAccessScreen(user: u))),
+                  ),
+                ],
+              ],
             ],
           )),
 

@@ -10,9 +10,7 @@ import '../data/teacher_salary.dart';
 import '../data/year_closing.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
-import '../widgets/finance_documents.dart';
 import '../widgets/ledger_row.dart';
-import '../widgets/owner_fold.dart';
 import '../widgets/widgets.dart';
 import 'accounts_statement_sheet.dart';
 import 'year_close_sheet.dart';
@@ -210,20 +208,6 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
         ..._wallets(),
         const SizedBox(height: 10),
         _monthsList(r),
-        const SizedBox(height: 8),
-        Text.rich(
-          TextSpan(
-            style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
-            children: [
-              const TextSpan(text: 'الخصومات: '),
-              TextSpan(text: money(r.total.discounts), style: const TextStyle(fontWeight: FontWeight.w700)),
-              if (r.total.refunds != 0) ...[
-                const TextSpan(text: '  ·  المردود: '),
-                TextSpan(text: money(-r.total.refunds), style: const TextStyle(fontWeight: FontWeight.w700)),
-              ],
-            ],
-          ),
-        ),
       ],
     );
   }
@@ -297,7 +281,7 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
                 ),
               ),
               Text(
-                webMoney(row.amount),
+                _m(row.amount),
                 textDirection: TextDirection.ltr,
                 style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: row.amount < 0 ? AppColors.danger : AppColors.success),
               ),
@@ -314,7 +298,7 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
           child: Row(children: [
             Expanded(child: Text(g.owner, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.muted))),
-            Text(webMoney(g.items.fold<double>(0, (a, i) => a + i.amount)),
+            Text(_m(g.items.fold<double>(0, (a, i) => a + i.amount)),
                 textDirection: TextDirection.ltr, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.muted)),
           ]),
         ),
@@ -328,7 +312,7 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
       if (opening.abs() >= 0.01)
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
-          child: Text('افتتاحي من السنة السابقة ${webMoney(opening)}', style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
+          child: Text('افتتاحي من السنة السابقة ${_m(opening)}', style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
         ),
       if (rows.isNotEmpty)
         Container(
@@ -347,7 +331,7 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
                   children: [
                     Expanded(child: Text('أرصدة الحسابات', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: AppColors.heading))),
                     if (rows.length > 1)
-                      Text(webMoney(total), textDirection: TextDirection.ltr, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: total < 0 ? AppColors.danger : AppColors.success)),
+                      Text(_m(total), textDirection: TextDirection.ltr, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: total < 0 ? AppColors.danger : AppColors.success)),
                   ],
                 ),
               ),
@@ -363,12 +347,24 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
 
   String _num(double v) => '${v < 0 ? '-' : ''}${trimNum(v.abs())}';
 
+  /// مبلغ بصيغة التطبيق الموحدة: «5410 شيكل» بلا فواصل آلاف، وسالبه بإشارة.
+  String _m(double v) => '${v < 0 ? '-' : ''}${money(v)}';
+
+  /// «سبتمبر 2026» بدل «09/2026».
+  String _monthName(String month) {
+    final y = int.tryParse(month.substring(0, 4));
+    final m = int.tryParse(month.substring(5, 7));
+    return y == null || m == null || m < 1 || m > 12 ? month : '${gregorianMonths[m - 1]} $y';
+  }
+
   Color _signed(double v) => v < 0 ? AppColors.danger : AppColors.success;
 
   /// شهر: ربحه عند الطرف، وتحت اسمه ما دخل وخرج بسطر واحد (الأصفار تُحذف).
   Widget _monthRow(ProfitRow row) {
+    // مقبوض وحده يساوي الربح: لا يُكرَّر تحته
+    final onlyReceived = row.expenses.abs() < 0.005 && row.salaries.abs() < 0.005 && row.draws.abs() < 0.005;
     final parts = [
-      if (row.received.abs() >= 0.005) 'مقبوض ${_num(row.received)}',
+      if (row.received.abs() >= 0.005 && !onlyReceived) 'مقبوض ${_num(row.received)}',
       if (row.expenses.abs() >= 0.005) 'مصاريف ${_num(row.expenses)}',
       if (row.salaries.abs() >= 0.005) 'رواتب ${_num(row.salaries)}',
       if (row.draws.abs() >= 0.005) 'مسحوب ${_num(row.draws)}',
@@ -377,17 +373,18 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
     return LedgerRow(
       icon: up ? Icons.trending_up_rounded : Icons.trending_down_rounded,
       tone: up ? LedgerTone.paid : LedgerTone.due,
-      title: Text(monthLabel(row.month)),
-      subtitle: Text(parts.isEmpty ? 'لا حركة' : parts.join('  ·  ')),
-      amount: Text(_num(row.net), textDirection: TextDirection.ltr, style: TextStyle(color: _signed(row.net))),
+      title: Text(_monthName(row.month)),
+      subtitle: Text(parts.isEmpty ? (onlyReceived && row.received.abs() >= 0.005 ? 'مقبوض بلا مصاريف' : 'لا حركة') : parts.join('  ·  ')),
+      amount: Text(_m(row.net), textDirection: TextDirection.ltr, style: TextStyle(color: _signed(row.net))),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
     );
   }
 
   Widget _monthsList(ProfitReport r) {
     bool idle(ProfitRow x) => _columns.every((c) => c.$2(x).abs() < 0.005);
-    final busy = [for (final row in r.rows) if (!idle(row)) row];
-    final quiet = [for (final row in r.rows) if (idle(row)) row];
+    final newestFirst = r.rows.reversed.toList();
+    final busy = [for (final row in newestFirst) if (!idle(row)) row];
+    final quiet = [for (final row in newestFirst) if (idle(row)) row];
     final rows = <Widget>[
       for (final row in busy) _monthRow(row),
       if (quiet.isNotEmpty)
@@ -412,13 +409,23 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
             child: Row(children: [
-              Text(monthLabel(row.month), style: const TextStyle(color: AppColors.muted, fontSize: 12.5)),
+              Text(_monthName(row.month), style: const TextStyle(color: AppColors.muted, fontSize: 12.5)),
               const Spacer(),
               const Text('لا حركة', style: TextStyle(color: AppColors.faint, fontSize: 12)),
             ]),
           ),
     ];
     final t = r.total;
+    // مقبوض وحده يساوي الربح فلا يُكرَّر تحته
+    final totalParts = [
+      if (t.expenses.abs() >= 0.005 || t.salaries.abs() >= 0.005 || t.draws.abs() >= 0.005) ...[
+        'مقبوض ${_m(t.received)}',
+        if (t.expenses.abs() >= 0.005) 'مصاريف ${_m(t.expenses)}',
+        if (t.salaries.abs() >= 0.005) 'رواتب ${_m(t.salaries)}',
+        if (t.draws.abs() >= 0.005) 'مسحوب ${_m(t.draws)}',
+      ],
+    ];
+    final discounts = 'الخصومات: ${_m(t.discounts)}${t.refunds != 0 ? '  ·  المردود: ${_m(-t.refunds)}' : ''}';
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -443,14 +450,15 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
                 Row(
                   children: [
                     Expanded(child: Text('المجموع', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.heading))),
-                    Text(_num(t.net), textDirection: TextDirection.ltr, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: _signed(t.net))),
+                    Text(_m(t.net), textDirection: TextDirection.ltr, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: _signed(t.net))),
                   ],
                 ),
+                if (totalParts.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(totalParts.join('  ·  '), style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
+                ],
                 const SizedBox(height: 4),
-                Text(
-                  'مقبوض ${_num(t.received)}  ·  مصاريف ${_num(t.expenses)}  ·  رواتب ${_num(t.salaries)}',
-                  style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
-                ),
+                Text(discounts, style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
               ],
             ),
           ),

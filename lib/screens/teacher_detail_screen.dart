@@ -399,7 +399,18 @@ class _TeacherPageState extends State<_TeacherPage> {
       backgroundColor: AdminNoon.paper,
       appBar: AppBar(
         titleSpacing: 0,
-        title: const Text('المعلمون'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(t.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+            if ([t.jobTitle.trim(), ?contract].where((x) => x.isNotEmpty).isNotEmpty)
+              Text(
+                [t.jobTitle.trim(), ?contract].where((x) => x.isNotEmpty).join(' · '),
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12, fontWeight: FontWeight.w500),
+              ),
+          ],
+        ),
         actions: [
           IconButton(
             tooltip: 'ملف PDF',
@@ -450,18 +461,6 @@ class _TeacherPageState extends State<_TeacherPage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 28),
         children: [
-          // الرأس كصفحة الطالب: الاسم وشاراته
-          sec(Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(t.name, style: NoonText.style(16, weight: FontWeight.w700, height: 1.2)),
-              if (t.jobTitle.trim().isNotEmpty) NoonBadge(t.jobTitle.trim(), tone: NoonBadgeTone.mist),
-              if (contract != null) NoonBadge(contract),
-            ],
-          )),
-
           // شريط عمله
           sec(Container(
             padding: const EdgeInsets.all(12),
@@ -522,27 +521,24 @@ class _TeacherPageState extends State<_TeacherPage> {
                                       ],
                                     ),
                                   ),
-                                  Tooltip(
-                                    message: 'المعدل',
-                                    child: Text(
-                                      lines[i].average == null ? '—' : '${lines[i].average}%',
-                                      style: NoonText.style(12, weight: FontWeight.w700),
-                                    ),
-                                  ),
-                                  if (hasAttendance) ...[
-                                    const SizedBox(width: 12),
-                                    Tooltip(
-                                      message: 'الحضور',
-                                      child: SizedBox(
-                                        width: 40,
-                                        child: Text(
-                                          lines[i].attendance == null ? '—' : '${lines[i].attendance}%',
-                                          textAlign: TextAlign.end,
-                                          style: NoonText.style(12, weight: FontWeight.w700, color: _rateColor(lines[i].attendance)),
-                                        ),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        lines[i].average == null ? 'بلا علامات' : 'معدل ${lines[i].average}%',
+                                        style: NoonText.style(12, weight: FontWeight.w700, color: lines[i].average == null ? AdminNoon.faint : null),
                                       ),
-                                    ),
-                                  ],
+                                      if (hasAttendance)
+                                        Text(
+                                          lines[i].attendance == null ? 'بلا حضور' : 'حضور ${lines[i].attendance}%',
+                                          style: NoonText.style(
+                                            11,
+                                            weight: FontWeight.w700,
+                                            color: lines[i].attendance == null ? AdminNoon.faint : _rateColor(lines[i].attendance),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
                                 ],
                               ),
                               if (lines[i].completion != null) ...[
@@ -614,7 +610,10 @@ class _TeacherPageState extends State<_TeacherPage> {
 
           sec(NoonFoldCard(
             title: 'الدوام هذا الشهر',
-            headerExtra: dutyLabel.isEmpty ? null : Text(dutyLabel, style: NoonText.style(11, weight: FontWeight.w700, color: dutyColor)),
+            headerExtra: Text(
+              dutyLabel.isEmpty ? 'لم يُرصد' : dutyLabel,
+              style: NoonText.style(11, weight: FontWeight.w700, color: dutyLabel.isEmpty ? AdminNoon.muted : dutyColor),
+            ),
             children: [
               if (offDays.isEmpty)
                 Text(count('present') > 0 ? 'حاضر ${count('present')} يوماً بلا غياب' : 'لم يُرصد بعد', style: NoonText.style(12, color: AdminNoon.muted))
@@ -635,7 +634,7 @@ class _TeacherPageState extends State<_TeacherPage> {
             sec(NoonFoldCard(
               title: 'المالية',
               headerExtra: Text(
-                paidMonth > 0 ? money(paidMonth) : 'لم يُصرف',
+                paidMonth > 0 ? 'صُرف ${money(paidMonth)}' : 'لم يُصرف هذا الشهر',
                 style: NoonText.style(11, weight: FontWeight.w700, color: paidMonth > 0 ? _green : AdminNoon.muted),
               ),
               children: [
@@ -665,7 +664,7 @@ class _TeacherPageState extends State<_TeacherPage> {
 
           sec(NoonFoldCard(
             title: 'الإجازات',
-            headerExtra: leaves.isEmpty ? null : Text('${leaves.length}', style: NoonText.style(11, color: AdminNoon.muted)),
+            headerExtra: Text(leaves.isEmpty ? 'لا إجازات' : '${leaves.length} إجازة', style: NoonText.style(11, color: AdminNoon.muted)),
             children: [
               if (leaves.isEmpty)
                 EmptyNote('لا إجازات')
@@ -682,6 +681,7 @@ class _TeacherPageState extends State<_TeacherPage> {
 
           sec(NoonFoldCard(
             title: 'البيانات الوظيفية',
+            headerExtra: contract == null ? null : Text(contract, style: NoonText.style(11, color: AdminNoon.muted)),
             children: [
               _rows([
                 ('رقم الهوية', value(t.nationalId, ltr: true)),
@@ -691,10 +691,11 @@ class _TeacherPageState extends State<_TeacherPage> {
             ],
           )),
 
-          sec(NoonFoldCard(title: 'التحضير', children: [_LessonPlans(teacherId: t.id)])),
+          sec(NoonFoldCard(title: 'التحضير', headerExtra: Text('ملفات المعلم', style: NoonText.style(11, color: AdminNoon.muted)), children: [_LessonPlans(teacherId: t.id)])),
           if (store.isAdminUser)
             sec(NoonFoldCard(
               title: 'الجدول',
+              headerExtra: Text('ملف الجدول', style: NoonText.style(11, color: AdminNoon.muted)),
               children: [ScheduleFileBox(kind: 'teacher', ownerId: t.id, title: 'جدول ${t.name}')],
             )),
         ],

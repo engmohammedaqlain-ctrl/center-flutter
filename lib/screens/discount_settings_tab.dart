@@ -106,8 +106,13 @@ class _DiscountSettingsTabState extends State<DiscountSettingsTab> {
     required List<_TierCtl> tiers,
     required String minHint,
     required DiscountTier newTier,
+    required String description,
+    required String minLabel,
   }) {
-    return Column(
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(12, 4, 8, 10),
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
@@ -117,6 +122,7 @@ class _DiscountSettingsTabState extends State<DiscountSettingsTab> {
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 title: Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                subtitle: Text(description, style: const TextStyle(fontSize: 11, color: AppColors.muted, height: 1.4)),
                 value: on,
                 onChanged: onToggle,
               ),
@@ -138,8 +144,10 @@ class _DiscountSettingsTabState extends State<DiscountSettingsTab> {
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(
                 children: [
+                  Text(minLabel, style: const TextStyle(fontSize: 11.5, color: AppColors.muted)),
+                  const SizedBox(width: 6),
                   _numField(t.min, minHint),
-                  const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('←')),
+                  const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('خصم', style: TextStyle(fontSize: 11.5, color: AppColors.muted))),
                   _numField(t.percent, '%', width: 60),
                   const SizedBox(width: 4),
                   const Text('%'),
@@ -155,8 +163,8 @@ class _DiscountSettingsTabState extends State<DiscountSettingsTab> {
                 ],
               ),
             ),
-        const Divider(height: 14),
       ],
+    ),
     );
   }
 
@@ -167,6 +175,13 @@ class _DiscountSettingsTabState extends State<DiscountSettingsTab> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
       children: [
+        const Padding(
+          padding: EdgeInsets.only(bottom: 10),
+          child: Text(
+            'تُقترح هذه الخصومات في نموذج تسجيل الطالب الجديد، ولا تُطبَّق على من سُجّل من قبل.',
+            style: TextStyle(fontSize: 11.5, color: AppColors.muted, height: 1.5),
+          ),
+        ),
         _rule(
           label: 'خصم الإخوة',
           on: d.siblingOn,
@@ -176,6 +191,8 @@ class _DiscountSettingsTabState extends State<DiscountSettingsTab> {
           },
           tiers: d.sibling,
           minHint: 'الترتيب',
+          description: 'يُقترح للطالب الذي له إخوة مسجلون: نسبة على قسطه بحسب ترتيبه بين إخوته.',
+          minLabel: 'من الأخ رقم',
           newTier: DiscountTier(
             min: (d.sibling.isEmpty ? 1 : (double.tryParse(d.sibling.last.min.text) ?? 1)) + 1,
             percent: 10,
@@ -190,73 +207,98 @@ class _DiscountSettingsTabState extends State<DiscountSettingsTab> {
           },
           tiers: d.merit,
           minHint: 'المعدل',
+          description: 'يُقترح للطالب المتفوق بحسب معدله في السنة الماضية.',
+          minLabel: 'معدل',
           newTier: const DiscountTier(min: 95, percent: 15),
         ),
-        Row(
-          children: [
-            const Expanded(child: Text('خصم الفئات', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
-            IconButton(
-              tooltip: 'فئة',
-              icon: const Icon(Icons.add, size: 18),
-              onPressed: () {
-                d.categories.add(_CategoryCtl(DiscountCategory(
-                  id: 'dc_${DateTime.now().millisecondsSinceEpoch}',
-                  name: '',
-                  when: 'orphan_father',
-                  percent: 25,
-                )));
-                _touch();
-              },
-            ),
-          ],
-        ),
-        for (final c in d.categories)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TextField(
-                  controller: c.name,
-                  maxLength: 40,
-                  onChanged: (_) => _touch(),
-                  decoration: const InputDecoration(isDense: true, hintText: 'اسم الفئة', counterText: ''),
+        AppCard(
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('خصم الفئات', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                        SizedBox(height: 2),
+                        Text('نسبة ثابتة لفئة خاصة، مثل الأيتام أو أبناء المعلمين.',
+                            style: TextStyle(fontSize: 11, color: AppColors.muted, height: 1.4)),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'فئة',
+                    icon: const Icon(Icons.add, size: 18),
+                    onPressed: () {
+                      d.categories.add(_CategoryCtl(DiscountCategory(
+                        id: 'dc_${DateTime.now().millisecondsSinceEpoch}',
+                        name: '',
+                        when: 'orphan_father',
+                        percent: 25,
+                      )));
+                      _touch();
+                    },
+                  ),
+                ],
+              ),
+              if (d.categories.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text('لا فئات بعد. أضف فئة بزر +', style: TextStyle(fontSize: 11.5, color: AppColors.faint)),
                 ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButton<String>(
-                        isExpanded: true,
-                        value: c.when,
-                        underline: const SizedBox.shrink(),
-                        items: [
-                          for (final e in discountCriterionLabels.entries)
-                            DropdownMenuItem(value: e.key, child: Text(e.value, style: const TextStyle(fontSize: 12.5))),
-                        ],
-                        onChanged: (v) {
-                          c.when = v ?? c.when;
-                          _touch();
-                        },
+              for (final c in d.categories)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextField(
+                        controller: c.name,
+                        maxLength: 40,
+                        onChanged: (_) => _touch(),
+                        decoration: const InputDecoration(isDense: true, hintText: 'اسم الفئة', counterText: ''),
                       ),
-                    ),
-                    const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('←')),
-                    _numField(c.percent, '%', width: 60),
-                    const SizedBox(width: 4),
-                    const Text('%'),
-                    IconButton(
-                      tooltip: 'حذف',
-                      icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppColors.danger),
-                      onPressed: () {
-                        d.categories.remove(c);
-                        _touch();
-                      },
-                    ),
-                  ],
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButton<String>(
+                              isExpanded: true,
+                              value: c.when,
+                              underline: const SizedBox.shrink(),
+                              items: [
+                                for (final e in discountCriterionLabels.entries)
+                                  DropdownMenuItem(value: e.key, child: Text(e.value, style: const TextStyle(fontSize: 12.5))),
+                              ],
+                              onChanged: (v) {
+                                c.when = v ?? c.when;
+                                _touch();
+                              },
+                            ),
+                          ),
+                          const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('خصم', style: TextStyle(fontSize: 11.5, color: AppColors.muted))),
+                          _numField(c.percent, '%', width: 60),
+                          const SizedBox(width: 4),
+                          const Text('%'),
+                          IconButton(
+                            tooltip: 'حذف',
+                            icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppColors.danger),
+                            onPressed: () {
+                              d.categories.remove(c);
+                              _touch();
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ],
-            ),
+            ],
           ),
+        ),
         if (dirty) ...[
           const SizedBox(height: 8),
           PrimaryButton(label: 'حفظ', expand: true, onPressed: () => _save(store)),

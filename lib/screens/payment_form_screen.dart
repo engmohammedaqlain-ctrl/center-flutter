@@ -1014,13 +1014,24 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            Text(
-              money(s.balance),
-              style: TextStyle(
-                color: balColor,
-                fontWeight: FontWeight.w600,
-                fontSize: 12.5,
-              ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  money(s.balance),
+                  style: TextStyle(
+                    color: balColor,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12.5,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  s.balance < 0 ? 'عليه' : (s.balance > 0 ? 'له' : 'مسدد'),
+                  style: TextStyle(color: balColor, fontSize: 10.5, fontWeight: FontWeight.w600),
+                ),
+              ],
             ),
             const SizedBox(width: 2),
             const AppChevron(size: 18),

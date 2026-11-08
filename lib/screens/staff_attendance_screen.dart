@@ -250,7 +250,7 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
           ],
           NoonSegment<String>(
             value: period,
-            options: const [('day', 'يوم'), ('week', 'أسبوعي'), ('month', 'شهري')],
+            options: const [('day', 'اليوم'), ('week', 'الأسبوع'), ('month', 'الشهر')],
             onChanged: (v) {
               setState(() => period = v);
               _load();
@@ -262,7 +262,7 @@ class _StaffAttendanceViewState extends State<StaffAttendanceView> {
           if (loading && records == null)
             const Padding(padding: EdgeInsets.all(32), child: Center(child: CircularProgressIndicator()))
           else if (offline && records == null)
-            const NoonEmpty('تعذّر الاتصال، اسحب للتحديث')
+            NoonOffline(text: 'تعذّر الاتصال بالسحابة', onRetry: () => _load(force: true))
           else if (teachers.isEmpty)
             const NoonEmpty('لا موظفين')
           else if (period == 'day')
@@ -559,15 +559,10 @@ class _AttendanceHubState extends State<AttendanceHub> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-          child: SegmentedButton<String>(
-            showSelectedIcon: false,
-            style: const ButtonStyle(visualDensity: VisualDensity.compact),
-            segments: const [
-              ButtonSegment(value: 'students', label: Text('الطلاب')),
-              ButtonSegment(value: 'staff', label: Text('الموظفون')),
-            ],
-            selected: {who},
-            onSelectionChanged: (v) => setState(() => who = v.first),
+          child: NoonSegment<String>(
+            value: who,
+            options: const [('students', 'الطلاب'), ('staff', 'الموظفون')],
+            onChanged: (v) => setState(() => who = v),
           ),
         ),
         Expanded(child: who == 'students' ? const AttendanceScreen() : const StaffAttendanceView()),

@@ -9,6 +9,7 @@ import '../data/store.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/admin_ui.dart' show NoonSegment;
 import '../widgets/form_layout.dart';
 import '../widgets/owner_fold.dart';
 import '../widgets/widgets.dart';
@@ -224,23 +225,23 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
             ),
             const SizedBox(height: 12),
 
-            _TypeTabs(active: entryType, onSelect: _switchType),
+            NoonSegment<String>(
+              value: entryType,
+              onChanged: _switchType,
+              options: const [('expense', 'مصروف عام'), ('payout', 'صرف أجر معلم')],
+            ),
             const SizedBox(height: 12),
 
             if (!isPayout) ...[
-              _TypeTabs(
-                active: kind,
-                onSelect: (v) => setState(() {
+              NoonSegment<String>(
+                value: kind,
+                onChanged: (v) => setState(() {
                   kind = v;
                   if (v == 'transfer' && toMethod.isEmpty) {
                     toMethod = methods.where((m) => m.id != method).firstOrNull?.id ?? '';
                   }
                 }),
-                items: [
-                  ('expense', 'مصروف', AppColors.heading),
-                  ('draw', 'مسحوبات', AppColors.amberDark),
-                  ('transfer', 'تحويل', AppColors.muted),
-                ],
+                options: const [('expense', 'مصروف'), ('draw', 'مسحوبات'), ('transfer', 'تحويل')],
               ),
               const SizedBox(height: 12),
             ],
@@ -411,61 +412,3 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
   }
 }
 
-/// تبويبا نوع السند: مصروف عام أو أجر معلم.
-class _TypeTabs extends StatelessWidget {
-  const _TypeTabs({required this.active, required this.onSelect, this.items});
-
-  final String active;
-  final ValueChanged<String> onSelect;
-
-  /// (المعرّف، التسمية، لون المختار)؛ الافتراضي نوع السند: مصروف عام أو أجر معلم.
-  final List<(String, String, Color)>? items;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        color: AppColors.bg,
-        borderRadius: BorderRadius.circular(Corner.box),
-        border: Border.all(color: AppColors.line),
-      ),
-      child: Row(
-        children: [
-          for (final (id, label, color) in items ??
-              [
-                ('expense', 'مصروف عام', AppColors.heading),
-                ('payout', 'صرف أجر معلم', AppColors.amberDark),
-              ])
-            _tab(id, label, color),
-        ],
-      ),
-    );
-  }
-
-  Widget _tab(String id, String label, Color activeColor) {
-    final selected = active == id;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => onSelect(id),
-        child: Container(
-          height: 32,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: selected ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(Corner.input),
-            border: selected ? Border.all(color: AppColors.line) : null,
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: selected ? activeColor : AppColors.muted,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}

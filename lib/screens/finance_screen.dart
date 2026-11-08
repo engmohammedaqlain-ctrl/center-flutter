@@ -5,24 +5,19 @@ import 'package:flutter/material.dart';
 
 import '../data/arabic_search.dart';
 import '../data/method_owners.dart';
-import '../data/payroll_calc.dart';
 import '../data/profit_report.dart';
-import '../data/staff.dart';
 import '../data/store.dart';
 import '../data/teacher_salary.dart';
 import '../models/models.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/admin_tokens.dart' show AdminNoon;
-import '../widgets/admin_ui.dart' show NoonSegment, NoonText, noonPanel;
-import '../widgets/empty_note.dart';
+import '../widgets/admin_ui.dart' show NoonEmpty, NoonSegment, NoonText, noonPanel;
 import '../widgets/ledger_row.dart';
 import '../widgets/animated_count.dart';
-import '../widgets/form_layout.dart';
 import '../widgets/list_paging.dart';
 import '../widgets/table_gate.dart';
 import '../widgets/thumb_action.dart';
-import '../widgets/owner_fold.dart';
 import '../widgets/widgets.dart';
 import 'expense_form_sheet.dart';
 import 'payment_form_screen.dart';
@@ -516,17 +511,18 @@ class _FinanceScreenState extends State<FinanceScreen> {
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      child: _Segmented(
-        selected: tab,
-        onSelect: _openTab,
-        items: [
-          (_Tab.dues, 'المستحقات', 0),
-          (_Tab.payments, 'المقبوضات', 0),
-          if (showExpenses) (_Tab.expenses, 'المصروفات', 0),
-          if (showExpenses) (_Tab.profits, 'الأرباح', 0),
-          // طلبات الموظفين ودفعات أولياء الأمور معاً: كلاهما ينتظر قراراً
-          (_Tab.controls, 'الرقابة', store.pendingFinanceRequests.length + store.pendingPaymentRequests.length),
+      child: NoonSegment<_Tab>(
+        value: tab,
+        onChanged: _openTab,
+        options: [
+          (_Tab.dues, 'المستحقات'),
+          (_Tab.payments, 'المقبوضات'),
+          if (showExpenses) (_Tab.expenses, 'المصروفات'),
+          if (showExpenses) (_Tab.profits, 'الأرباح'),
+          (_Tab.controls, 'الرقابة'),
         ],
+        // طلبات الموظفين ودفعات أولياء الأمور معاً: كلاهما ينتظر قراراً
+        badges: {_Tab.controls: store.pendingFinanceRequests.length + store.pendingPaymentRequests.length},
       ),
     );
   }
@@ -550,7 +546,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
           value: money(owed.fold<double>(0, (a, d) => a + d.amount)),
           period: period,
           onPeriod: () => _openFilters(store),
-          chips: ['$debtors طالب', 'قادم ${money(store.projectRemainingYear())}'],
+          chips: ['$debtors طالب', 'القسط الجاي ${money(store.projectRemainingYear())}'],
         );
       case _Tab.payments:
         return _Hero(
@@ -627,7 +623,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
     return n;
   }
 
-  Widget _toolbar({required String hint, required int shown, required int total, required AppStore store}) {
+  Widget _toolbar({required String hint, required int shown, required int total, required AppStore store, String? unit}) {
     return Row(
       children: [
         Expanded(
@@ -635,9 +631,13 @@ class _FinanceScreenState extends State<FinanceScreen> {
             controller: search,
             hint: hint,
             onChanged: (_) => setState(() => visibleCount = kListPageSize),
-            trailing: Text(
-              shown == total ? '$total' : '$shown/$total',
-              style: const TextStyle(color: AppColors.muted, fontSize: 11, fontWeight: FontWeight.w700),
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(color: AdminNoon.mist, borderRadius: BorderRadius.circular(10)),
+              child: Text(
+                '${shown == total ? '$total' : '$shown/$total'}${unit == null ? '' : ' $unit'}',
+                style: const TextStyle(color: AppColors.muted, fontSize: 11, fontWeight: FontWeight.w700),
+              ),
             ),
           ),
         ),
@@ -674,7 +674,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                   ),
                   const SizedBox(height: 8),
                   if (options.length <= 3)
-                    _FilterSegment(options: options, value: value, onPick: (v) => pick(() => onPick(v)))
+                    NoonSegment<String>(value: value, options: [for (final e in options.entries) (e.key, e.value)], onChanged: (v) => pick(() => onPick(v)))
                   else
                     Wrap(
                       spacing: 6,
@@ -856,7 +856,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
           sliver: SliverToBoxAdapter(child: header),
         ),
       if (items.isEmpty)
-        SliverToBoxAdapter(child: SizedBox(height: 200, child: EmptyState(message: emptyMessage)))
+        SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, thumbActionClearance), child: NoonEmpty(emptyMessage)))
       else ...[
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
@@ -916,9 +916,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
       return matchQ && (agingFilter == 'all' || _daysLate(d.dueDate) > int.parse(agingFilter));
     }).toList();
 
-    // بتاريخ الاستحقاق كما في الويب، فتتجاور بنود الشهر الواحد، وطلابه أبجدياً
+    // الأحدث أولاً كبقية السجلات، فتتجاور بنود الشهر الواحد، وطلابه أبجدياً
     dues.sort((a, b) {
-      final byDate = a.dueDate.compareTo(b.dueDate);
+      final byDate = b.dueDate.compareTo(a.dueDate);
       return byDate != 0 ? byDate : compareArabicNames(a.student.fullName, b.student.fullName);
     });
 
@@ -926,21 +926,15 @@ class _FinanceScreenState extends State<FinanceScreen> {
     final canOpenStudent = store.can('students');
 
     return (
-      toolbar: _toolbar(hint: 'اسم الطالب أو الجوال', shown: dues.length, total: all.length, store: store),
+      toolbar: _toolbar(hint: 'اسم الطالب أو الجوال', shown: dues.length, total: all.length, store: store, unit: 'قسط'),
       slivers: [
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-            child: SegmentedButton<String>(
-              showSelectedIcon: false,
-              style: const ButtonStyle(visualDensity: VisualDensity.compact),
-              segments: const [
-                ButtonSegment(value: 'all', label: Text('الكل')),
-                ButtonSegment(value: '30', label: Text('+30 يوم')),
-                ButtonSegment(value: '60', label: Text('+60 يوم')),
-              ],
-              selected: {agingFilter},
-              onSelectionChanged: (v) => setState(() => agingFilter = v.first),
+            child: NoonSegment<String>(
+              value: agingFilter,
+              options: const [('all', 'الكل'), ('30', '+30 يوم'), ('60', '+60 يوم')],
+              onChanged: (v) => setState(() => agingFilter = v),
             ),
           ),
         ),
@@ -1052,7 +1046,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
           );
 
     return (
-      toolbar: _toolbar(hint: 'اسم أو رقم وصل', shown: pays.length, total: periodPays.length, store: store),
+      toolbar: _toolbar(hint: 'اسم أو رقم وصل', shown: pays.length, total: periodPays.length, store: store, unit: 'سند'),
       slivers: _listSlivers(
         // بطاقات طرق الدفع، وسطر «رسوم الفترة» حين يُحتسب المقبوض بسنة الرسوم
         header: header,
@@ -1144,7 +1138,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
         : byAccount.where((r) => r.description.toLowerCase().contains(q) || r.category.toLowerCase().contains(q)).toList();
 
     return (
-      toolbar: _toolbar(hint: 'ابحث في البيان', shown: rows.length, total: all.length, store: store),
+      toolbar: _toolbar(hint: 'ابحث في البيان', shown: rows.length, total: all.length, store: store, unit: 'حركة'),
       slivers: _listSlivers(
         header: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1551,7 +1545,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
         ],
         if (!showAudit) ...[
           if (pending.isEmpty && done.isEmpty)
-            const EmptyNote('لا طلبات بانتظار الموافقة', icon: Icons.task_alt_outlined)
+            const NoonEmpty('لا طلبات بانتظار الموافقة', icon: Icons.task_alt_outlined)
           else ...[
             if (pending.isNotEmpty) ...[
               Padding(
@@ -1560,7 +1554,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
               ),
               panel(pending),
             ] else if (store.isFinanceAdmin)
-              const EmptyNote('لا طلبات بانتظار الموافقة', icon: Icons.task_alt_outlined),
+              const NoonEmpty('لا طلبات بانتظار الموافقة', icon: Icons.task_alt_outlined),
           ],
           if (done.isNotEmpty) ...[
             TextButton(
@@ -1616,7 +1610,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
           ),
           const SizedBox(height: 8),
           if (audit.isEmpty)
-            const EmptyNote('لا حركات', icon: Icons.history_outlined)
+            const NoonEmpty('لا حركات', icon: Icons.history_outlined)
           else ...[
             Container(
               clipBehavior: Clip.antiAlias,
@@ -1670,113 +1664,6 @@ class _FinanceScreenState extends State<FinanceScreen> {
 }
 
 // ═══ عناصر الشاشة ═══════════════════════════════════════════════════════════
-
-/// بطاقة ملخص هي تبويب في الوقت نفسه: اسم القسم ورقمه وسطر تحته. المختارة
-/// بيضاء بإطار داكن، والبقية على خلفية هادئة — كبطاقات الويب.
-/// مفتاح الأقسام المقسّم: مسار هادئ والقسم المفتوح بطاقة بيضاء تنزلق إليه.
-class _Segmented extends StatelessWidget {
-  const _Segmented({required this.items, required this.selected, required this.onSelect});
-
-  final List<(_Tab, String, int)> items;
-  final _Tab selected;
-  final ValueChanged<_Tab> onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    final index = items.indexWhere((e) => e.$1 == selected).clamp(0, items.length - 1);
-    return Container(
-      height: 42,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: AppColors.hover,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: LayoutBuilder(
-        builder: (context, box) {
-          final w = box.maxWidth / items.length;
-          final rtl = Directionality.of(context) == TextDirection.rtl;
-          return Stack(
-            children: [
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 240),
-                curve: Curves.easeOutCubic,
-                top: 0,
-                bottom: 0,
-                width: w,
-                left: rtl ? box.maxWidth - w * (index + 1) : w * index,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(9),
-                    boxShadow: const [
-                      BoxShadow(color: Color(0x14000000), blurRadius: 6, offset: Offset(0, 2)),
-                    ],
-                  ),
-                ),
-              ),
-              Row(
-                children: [
-                  for (final (value, label, badge) in items)
-                    Expanded(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => onSelect(value),
-                        child: Center(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  AnimatedDefaultTextStyle(
-                                    duration: const Duration(milliseconds: 180),
-                                    style: TextStyle(
-                                      fontFamily: AppText.family,
-                                      fontSize: 12.5,
-                                      fontWeight: value == selected ? FontWeight.w600 : FontWeight.w600,
-                                      color: value == selected ? AppColors.heading : AppColors.muted,
-                                    ),
-                                    child: Text(label, maxLines: 1),
-                                  ),
-                                  if (badge > 0) ...[
-                                    const SizedBox(width: 4),
-                                    Container(
-                                      constraints: const BoxConstraints(minWidth: 16),
-                                      height: 16,
-                                      alignment: Alignment.center,
-                                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.warn,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        '$badge',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 9.5,
-                                          fontWeight: FontWeight.w600,
-                                          height: 1,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
 
 /// لون كل قسم في بطاقة الملخص — درجات عميقة هادئة لا فاقعة، ليُعرف القسم
 /// من لونه قبل قراءة عنوانه.
@@ -2336,62 +2223,6 @@ class _GroupHeader extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-/// مفتاح مقسّم لمجموعة تصفية قصيرة: الخيارات متجاورة بعرض متساوٍ.
-class _FilterSegment extends StatelessWidget {
-  const _FilterSegment({required this.options, required this.value, required this.onPick});
-
-  final Map<String, String> options;
-  final String value;
-  final ValueChanged<String> onPick;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 40,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(color: AppColors.hover, borderRadius: BorderRadius.circular(11)),
-      child: Row(
-        children: [
-          for (final e in options.entries)
-            Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => onPick(e.key),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: e.key == value ? Colors.white : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: e.key == value
-                        ? const [BoxShadow(color: Color(0x14000000), blurRadius: 5, offset: Offset(0, 1))]
-                        : null,
-                  ),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      child: Text(
-                        e.value,
-                        maxLines: 1,
-                        style: TextStyle(
-                          fontFamily: AppText.family,
-                          color: e.key == value ? AppColors.heading : AppColors.muted,
-                          fontSize: 12.5,
-                          fontWeight: e.key == value ? FontWeight.w600 : FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );

@@ -161,7 +161,7 @@ DemoDataStats injectDemoData(AppStore store) {
               studentId: id,
               amount: paid,
               method: p.isEven ? 'cash' : 'jawwal_pay',
-              date: due.subtract(const Duration(days: 2)),
+              date: _notAfter(due.subtract(const Duration(days: 2)), today),
               purpose: 'installment',
               notes: 'سداد القسط الدراسي ($p)',
               reference: p.isOdd ? 'TRX-${9000 + i * 10 + p}' : '',
@@ -200,13 +200,33 @@ DemoDataStats injectDemoData(AppStore store) {
 
       final d0 = isoDate(today);
       final d1 = isoDate(today.subtract(const Duration(days: 1)));
+      // علامات الحضور بلا جلسة لا تراها الرئيسية ولا تقارير الغياب، فلكل شعبة وتاريخ جلسة
+      final room = store.rooms.where((r) => r.name == row[2]).firstOrNull;
+      String sessionOf(String date) {
+        if (room == null) return '';
+        final sid = AppStore.roomSessionIdFor(room.id, date);
+        if (!store.sessions.any((x) => x.id == sid)) {
+          store.sessions.add(ClassSession(
+            id: sid,
+            groupId: '',
+            sessionDate: date,
+            startTime: '00:00',
+            endTime: '23:59',
+            teacherId: '',
+            roomId: room.id,
+            status: 'scheduled',
+          ));
+        }
+        return sid;
+      }
+
       if (i % 5 == 0) {
-        store.attendance.add(AttendanceMark(id: store.newId(), studentId: id, date: d0, status: 'absent'));
+        store.attendance.add(AttendanceMark(id: store.newId(), studentId: id, date: d0, status: 'absent', sessionId: sessionOf(d0)));
       } else if (i % 2 == 0) {
-        store.attendance.add(AttendanceMark(id: store.newId(), studentId: id, date: d0, status: 'present'));
+        store.attendance.add(AttendanceMark(id: store.newId(), studentId: id, date: d0, status: 'present', sessionId: sessionOf(d0)));
       }
       if (i % 3 != 0) {
-        store.attendance.add(AttendanceMark(id: store.newId(), studentId: id, date: d1, status: 'present'));
+        store.attendance.add(AttendanceMark(id: store.newId(), studentId: id, date: d1, status: 'present', sessionId: sessionOf(d1)));
       }
     }
 
@@ -259,6 +279,8 @@ DemoDataStats injectDemoData(AppStore store) {
             subjectId: group.subjectId,
             teacherId: group.teacherId,
             title: 'اختبار الشهر الأول',
+            term: 'term_1',
+            componentId: 'default_monthly',
             score: (60 + (i * 9) % 40).toDouble(),
             maxScore: 100,
             evaluationDate: isoDate(today.subtract(Duration(days: 7 + i))),
@@ -299,3 +321,6 @@ DemoDataStats injectDemoData(AppStore store) {
     ),
   );
 }
+
+/// تاريخ سند لا يتجاوز اليوم: دفعة مقدّمة لقسط قادم لا تُسجَّل بتاريخ مستقبلي.
+DateTime _notAfter(DateTime d, DateTime limit) => d.isAfter(limit) ? limit : d;

@@ -66,7 +66,7 @@ const housingTypes = [
 
 const paymentMethodNames = {
   'cash': 'نقداً',
-  'jawwal_pay': 'محفظة جوال بي',
+  'jawwal_pay': 'محفظة جوال باي',
   'palpay': 'محفظة بال بي',
   'bop': 'بنك فلسطين',
   'bank_transfer': 'تحويل بنكي',

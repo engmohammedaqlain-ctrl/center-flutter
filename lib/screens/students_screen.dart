@@ -267,6 +267,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                             hint: 'بحث بالاسم أو الجوال أو الهوية',
                             onChanged: (_) => setState(() => visibleCount = kListPageSize),
                             count: list.length == countDenom ? '$countDenom' : '${list.length}/$countDenom',
+                            unit: 'طالب',
                           ),
                         ),
                         const SizedBox(width: 6),
@@ -288,7 +289,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           const SizedBox(width: 6),
                           NoonButton(
                             icon: Icons.campaign_outlined,
-                            tooltip: 'إعلان',
+                            tooltip: 'إعلان للأسر',
                             size: 44,
                             onPressed: () => showAnnouncementSheet(context, grade: grade, section: section),
                           ),
@@ -788,7 +789,7 @@ class _FinanceChip extends StatelessWidget {
   Widget build(BuildContext context) {
     if (shownBalance.abs() <= cent) {
       return NoonBadge(
-        hasPlan ? (scheduled > 0 ? 'مسدد حتى الآن' : 'مسدد') : 'خالص',
+        hasPlan ? (scheduled > 0 ? 'لا متأخرات' : 'مسدد بالكامل') : 'خالص',
         tone: NoonBadgeTone.green,
       );
     }
@@ -805,7 +806,7 @@ class _FinanceChip extends StatelessWidget {
         if (scheduled > 0) ...[
           const SizedBox(height: 4),
           Text(
-            'قادم ${money(scheduled)}',
+            'القسط الجاي ${money(scheduled)}',
             style: NoonText.style(10.5, weight: FontWeight.w600, color: AdminNoon.muted),
           ),
         ],

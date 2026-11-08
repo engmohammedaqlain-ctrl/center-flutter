@@ -974,7 +974,7 @@ class _CoversTabState extends State<CoversTab> {
     final att = attendance;
     final month = monthCovers;
     if (failed) {
-      return Center(child: TextButton(onPressed: _load, child: const Text('تعذّر الجلب، إعادة المحاولة')));
+      return Padding(padding: const EdgeInsets.all(24), child: Center(child: NoonOffline(text: 'تعذّر جلب البيانات', onRetry: _load)));
     }
     if (att == null || month == null) return const Center(child: AppLoader(compact: true));
 

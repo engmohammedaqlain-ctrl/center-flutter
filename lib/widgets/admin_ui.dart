@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/models.dart';
+import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import 'admin_tokens.dart';
 import 'animated_count.dart';
@@ -633,6 +634,29 @@ class NoonEmpty extends StatelessWidget {
   }
 }
 
+/// حالة «تحتاج اتصالاً»: أيقونة الشبكة المقطوعة وزر إعادة المحاولة — شكل واحد لكل الشاشات السحابية.
+class NoonOffline extends StatelessWidget {
+  const NoonOffline({super.key, this.what, this.onRetry, this.text});
+
+  /// اسم الشاشة: «الرواتب» تصير «الرواتب تحتاج اتصالاً بالإنترنت».
+  final String? what;
+  final VoidCallback? onRetry;
+
+  /// نص كامل بدل الصيغة الافتراضية.
+  final String? text;
+
+  @override
+  Widget build(BuildContext context) {
+    return NoonEmpty(
+      text ?? (what == null ? 'يحتاج اتصالاً بالإنترنت' : '$what تحتاج اتصالاً بالإنترنت'),
+      icon: Icons.wifi_off_rounded,
+      action: onRetry == null ? null : 'إعادة المحاولة',
+      actionIcon: Icons.refresh_rounded,
+      onAction: onRetry,
+    );
+  }
+}
+
 class _DashedBorder extends CustomPainter {
   _DashedBorder(this.color, this.radius);
 
@@ -717,12 +741,15 @@ class NoonLoading extends StatelessWidget {
 /// حقل البحث على الجوال: 44px بزاوية 8، أيقونة البحث في طرفه والعدد بجانبها،
 /// وزر المسح في أوله — كحقل `nInput` في قائمة الطلاب على الويب.
 class NoonSearchField extends StatefulWidget {
-  const NoonSearchField({super.key, required this.controller, required this.hint, this.onChanged, this.count});
+  const NoonSearchField({super.key, required this.controller, required this.hint, this.onChanged, this.count, this.unit});
 
   final TextEditingController controller;
   final String hint;
   final ValueChanged<String>? onChanged;
   final String? count;
+
+  /// وحدة العدد («طالب»): تجعله شارة مقروءة لا رقماً معلقاً في الحقل.
+  final String? unit;
 
   @override
   State<NoonSearchField> createState() => _NoonSearchFieldState();
@@ -797,7 +824,14 @@ class _NoonSearchFieldState extends State<NoonSearchField> {
           ),
           if (widget.count != null) ...[
             const SizedBox(width: 6),
-            Text(widget.count!, style: _t(11, FontWeight.w700, AdminNoon.muted)),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(color: AdminNoon.mist, borderRadius: BorderRadius.circular(10)),
+              child: Text(
+                widget.unit == null ? widget.count! : '${widget.count} ${widget.unit}',
+                style: _t(11, FontWeight.w700, AdminNoon.muted),
+              ),
+            ),
           ],
           const SizedBox(width: 6),
           Icon(Icons.search_rounded, size: 16, color: AdminNoon.muted),
@@ -871,34 +905,61 @@ class NoonActiveChip extends StatelessWidget {
   }
 }
 
-/// مفتاح خيارات — `NSegment`: خانات متجاورة متساوية بحد واحد، والمختار ممتلئ بلون الثيم ونصه أبيض.
+/// مفتاح الخيارات الموحّد في كل شاشات الإدارة: مسار هادئ والخيار المحدد بطاقة بيضاء.
+/// [badges] عدّاد صغير بجانب الخيار (طلبات بانتظار قرار).
 class NoonSegment<T> extends StatelessWidget {
-  const NoonSegment({super.key, required this.value, required this.options, required this.onChanged, this.scroll = false});
+  const NoonSegment({
+    super.key,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+    this.scroll = false,
+    this.badges = const {},
+  });
 
   final T value;
   final List<(T, String)> options;
   final ValueChanged<T> onChanged;
 
-  /// خانات بعرض نصها تتمرر أفقياً (`min-w-max`) بدل تقسيم العرض.
+  /// خانات بعرض نصها تتمرر أفقياً بدل تقسيم العرض.
   final bool scroll;
+  final Map<T, int> badges;
 
   @override
   Widget build(BuildContext context) {
     Widget cell(int i) {
       final (id, label) = options[i];
       final on = id == value;
-      final text = Text(label, maxLines: 1, style: _t(12, FontWeight.w700, on ? Colors.white : AdminNoon.text));
-      final c = InkWell(
+      final badge = badges[id] ?? 0;
+      final text = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, maxLines: 1, style: _t(12.5, FontWeight.w600, on ? AdminNoon.text : AdminNoon.muted)),
+          if (badge > 0) ...[
+            const SizedBox(width: 4),
+            Container(
+              constraints: const BoxConstraints(minWidth: 16),
+              height: 16,
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: BoxDecoration(color: AdminNoon.warn, borderRadius: BorderRadius.circular(8)),
+              child: Text('$badge', style: _t(9.5, FontWeight.w700, Colors.white, height: 1)),
+            ),
+          ],
+        ],
+      );
+      final c = GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: () => onChanged(id),
-        child: Container(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
           height: 36,
-          padding: EdgeInsets.symmetric(horizontal: scroll ? 12 : 5),
+          padding: EdgeInsets.symmetric(horizontal: scroll ? 14 : 4),
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: on ? AdminNoon.ink : null,
-            border: Border(
-              right: i > 0 ? BorderSide(color: AdminNoon.line) : BorderSide.none,
-            ),
+            color: on ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(9),
+            boxShadow: on ? const [BoxShadow(color: Color(0x14000000), blurRadius: 5, offset: Offset(0, 1))] : null,
           ),
           child: scroll ? text : FittedBox(fit: BoxFit.scaleDown, child: text),
         ),
@@ -907,17 +968,11 @@ class NoonSegment<T> extends StatelessWidget {
     }
 
     final row = Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(AdminNoon.rTile),
-        border: Border.all(color: AdminNoon.line),
-      ),
-      child: IntrinsicHeight(
-        child: Row(
-          mainAxisSize: scroll ? MainAxisSize.min : MainAxisSize.max,
-          children: [for (var i = 0; i < options.length; i++) cell(i)],
-        ),
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(color: AppColors.hover, borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        mainAxisSize: scroll ? MainAxisSize.min : MainAxisSize.max,
+        children: [for (var i = 0; i < options.length; i++) cell(i)],
       ),
     );
     return scroll ? SingleChildScrollView(scrollDirection: Axis.horizontal, child: row) : row;
