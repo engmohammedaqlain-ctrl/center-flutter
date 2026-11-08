@@ -542,7 +542,7 @@ class _AlertsReportState extends State<_AlertsReport> {
   int reload = 0;
   final _memo = _Memo<List<AbsenceAlert>>();
 
-  static const _levelColors = [Color(0xFFD97706), Color(0xFFDC2626), Color(0xFFB91C1C), Color(0xFF7F1D1D)];
+  static final _levelColors = [AdminNoon.ink, const Color(0xFFDC2626), const Color(0xFFB91C1C), const Color(0xFF7F1D1D)];
 
   @override
   Widget build(BuildContext context) {
@@ -596,11 +596,21 @@ class _AlertsReportState extends State<_AlertsReport> {
       if (shown.isEmpty)
         const NoonEmpty('لا إنذارات مستحقة')
       else ...[
+        NoonButton(tone: NoonTone.ink, expand: true, busy: busy, label: 'إرسال للأهل (${target.length})', onPressed: send),
+        const SizedBox(height: 6),
         Row(children: [
-          Expanded(child: Text(selected.isNotEmpty ? '${selected.length} مختار' : '${shown.length} مستحق', style: NoonText.style(12, color: AdminNoon.muted))),
-          NoonButton(small: true, tone: NoonTone.sun, icon: Icons.send_outlined, busy: busy, label: 'إرسال للأهل (${target.length})', onPressed: send),
+          Expanded(child: Text(selected.isNotEmpty ? '${selected.length} مختار من ${shown.length}' : '${shown.length} مستحق', style: NoonText.style(12, color: AdminNoon.muted))),
+          TextButton(
+            onPressed: () => setState(() {
+              if (selected.length == shown.length) {
+                picked.clear();
+              } else {
+                picked.addAll([for (final a in shown) a.student.id]);
+              }
+            }),
+            child: Text(selected.length == shown.length ? 'إلغاء التحديد' : 'تحديد الكل', style: NoonText.style(12, weight: FontWeight.w700, color: AdminNoon.ink)),
+          ),
         ]),
-        const SizedBox(height: 8),
         _list([
           for (final a in shown)
             _row(
