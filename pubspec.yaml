@@ -136,3 +136,11 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# مكتبة sqlite3 (تبعية الويب عبر sqflite_common_ffi_web) لا تُحمَّل على الجوال: التطبيق يستعمل sqflite
+# الأصلي، والويب يستعمل WASM. فلا يُنزَّل ملفها الجاهز أثناء البناء؛ تنزيله كان يفشل بفحص
+# البصمة على خوادم GitHub Actions فيُفشل البناء كله.
+hooks:
+  user_defines:
+    sqlite3:
+      source: system
