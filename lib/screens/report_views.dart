@@ -102,13 +102,30 @@ class _Bar extends StatelessWidget {
                   runSpacing: 8,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    for (final w in children)
-                      if (w is _Search || w is _NumLine)
-                        SizedBox(width: c.maxWidth, child: w)
-                      else if (w is _Pick || w is _MonthNav || w is _AdvToggle || w is PopupMenuButton)
-                        SizedBox(width: half, child: w)
+                    for (var i = 0; i < children.length; i++)
+                      if (children[i] is _Search && i + 1 < children.length && children[i + 1] is _AdvToggle)
+                        // البحث وزر التصفية المتقدمة في سطر واحد: الزر مربع بجانب الحقل
+                        SizedBox(
+                          width: c.maxWidth,
+                          child: Row(children: [
+                            Expanded(child: children[i]),
+                            const SizedBox(width: 8),
+                            _AdvToggle(
+                              open: (children[i + 1] as _AdvToggle).open,
+                              active: (children[i + 1] as _AdvToggle).active,
+                              onTap: (children[i + 1] as _AdvToggle).onTap,
+                              compact: true,
+                            ),
+                          ]),
+                        )
+                      else if (i > 0 && children[i] is _AdvToggle && children[i - 1] is _Search)
+                        const SizedBox.shrink()
+                      else if (children[i] is _Search || children[i] is _NumLine)
+                        SizedBox(width: c.maxWidth, child: children[i])
+                      else if (children[i] is _Pick || children[i] is _MonthNav || children[i] is _AdvToggle || children[i] is PopupMenuButton)
+                        SizedBox(width: half, child: children[i])
                       else
-                        w,
+                        children[i],
                   ],
                 );
               },
@@ -172,11 +189,14 @@ class _MonthNav extends StatelessWidget {
 
 /// زر يفتح الفلاتر المتقدمة أو يطويها؛ نقطة صغيرة تدل أن فيها شرطاً مفعّلاً وهي مطوية.
 class _AdvToggle extends StatelessWidget {
-  const _AdvToggle({required this.open, required this.active, required this.onTap});
+  const _AdvToggle({required this.open, required this.active, required this.onTap, this.compact = false});
 
   final bool open;
   final bool active;
   final VoidCallback onTap;
+
+  /// مربع أيقونة بجانب حقل البحث بدل زر بعنوان.
+  final bool compact;
 
   @override
   Widget build(BuildContext context) => InkWell(
@@ -184,7 +204,8 @@ class _AdvToggle extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         child: Container(
           height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          width: compact ? 44 : null,
+          padding: EdgeInsets.symmetric(horizontal: compact ? 0 : 12),
           decoration: BoxDecoration(
             color: open ? AdminNoon.mist : Colors.white,
             borderRadius: BorderRadius.circular(10),
@@ -192,15 +213,18 @@ class _AdvToggle extends StatelessWidget {
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.tune_rounded, size: 17, color: AdminNoon.ink),
-              const SizedBox(width: 6),
-              Text('تصفية متقدمة', style: NoonText.style(12.5, weight: FontWeight.w700)),
+              Icon(Icons.tune_rounded, size: 18, color: AdminNoon.ink),
+              if (!compact) ...[
+                const SizedBox(width: 6),
+                Text('تصفية متقدمة', style: NoonText.style(12.5, weight: FontWeight.w700)),
+              ],
               if (active && !open) ...[
                 const SizedBox(width: 6),
                 Container(width: 7, height: 7, decoration: BoxDecoration(color: AdminNoon.ink, shape: BoxShape.circle)),
               ],
-              Icon(open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 18, color: AdminNoon.muted),
+              if (!compact) Icon(open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 18, color: AdminNoon.muted),
             ],
           ),
         ),
