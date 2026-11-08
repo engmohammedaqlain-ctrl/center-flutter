@@ -105,7 +105,7 @@ class _Bar extends StatelessWidget {
                     for (final w in children)
                       if (w is _Search || w is _NumLine)
                         SizedBox(width: c.maxWidth, child: w)
-                      else if (w is _Pick || w is _MonthNav || w is _AdvToggle)
+                      else if (w is _Pick || w is _MonthNav || w is _AdvToggle || w is PopupMenuButton)
                         SizedBox(width: half, child: w)
                       else
                         w,
@@ -1387,6 +1387,13 @@ const _quick = {
   'app_parent_never': 'لم يدخل ولي الأمر',
   'withdrawn': 'منسحبون',
 };
+const _quickIcons = <String, IconData>{
+  'sick': Icons.medical_services_outlined,
+  'num:absent': Icons.event_busy_outlined,
+  'num:due': Icons.account_balance_wallet_outlined,
+  'app_parent_never': Icons.phone_android_outlined,
+  'withdrawn': Icons.person_off_outlined,
+};
 const _numSuffix = {'absent': 'أيام فأكثر', 'due': 'فأكثر', 'prev': '% فأكثر'};
 const _numDefault = {'absent': 5, 'due': 100, 'prev': 90};
 
@@ -1523,11 +1530,15 @@ class _StudentsReportState extends State<_StudentsReport> {
               if (!nums.containsKey(e.key)) PopupMenuItem(value: 'num:${e.key}', child: Text('${e.value}…')),
           ],
           child: Container(
-            height: 36,
+            height: 40,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             alignment: Alignment.center,
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.lineStrong)),
-            child: Text('+ صفة', style: NoonText.style(12.5, weight: FontWeight.w700)),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: AdminNoon.line)),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.add_rounded, size: 18, color: AdminNoon.ink),
+              const SizedBox(width: 4),
+              Text('إضافة صفة', style: NoonText.style(12.5, weight: FontWeight.w700)),
+            ]),
           ),
         ),
         for (final e in nums.entries)
@@ -1544,10 +1555,30 @@ class _StudentsReportState extends State<_StudentsReport> {
         _Search(onChanged: (v) => setState(() => q = v)),
         if (asked) Text('$total', style: NoonText.style(12, weight: FontWeight.w700, color: AdminNoon.muted)),
       ]),
-      if (!asked)
-        Wrap(spacing: 6, runSpacing: 6, children: [
-          for (final e in _quick.entries) ActionChip(label: Text(e.value), onPressed: () => add(e.key)),
+      if (!asked) ...[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+          child: Text('اسأل بسؤال جاهز أو أضف صفة وابحث', style: NoonText.style(12.5, weight: FontWeight.w600, color: AdminNoon.muted)),
+        ),
+        _list([
+          for (final e in _quick.entries)
+            _row(
+              e.value,
+              '',
+              const [],
+              onTap: () => add(e.key),
+              leading: Padding(
+                padding: const EdgeInsetsDirectional.only(end: 12),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(color: AdminNoon.mist, borderRadius: BorderRadius.circular(10)),
+                  child: Icon(_quickIcons[e.key] ?? Icons.person_search_outlined, size: 19, color: AdminNoon.ink),
+                ),
+              ),
+            ),
         ]),
+      ],
       if (related.isNotEmpty)
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
