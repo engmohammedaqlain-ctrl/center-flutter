@@ -248,6 +248,8 @@ abstract final class AppTheme {
         ),
       ),
       dividerColor: AppColors.line,
+      // فواصل ماتيريال 3 لا تقرأ dividerColor بل outlineVariant، فكانت سوداء
+      dividerTheme: DividerThemeData(color: AppColors.line, thickness: 1),
       splashFactory: NoSplash.splashFactory,
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
