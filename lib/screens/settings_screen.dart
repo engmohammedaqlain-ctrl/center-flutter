@@ -1917,9 +1917,24 @@ class _TeacherCard extends StatelessWidget {
 
     return AppCard(
       onTap: () => _open(context, TeacherDetailScreen(teacherId: t.id)),
-      padding: const EdgeInsetsDirectional.fromSTEB(14, 12, 8, 12),
+      padding: const EdgeInsetsDirectional.fromSTEB(12, 12, 8, 12),
       child: Row(
         children: [
+          // حرف الاسم: يُعرف المعلم في القائمة بنظرة
+          Container(
+            width: 40,
+            height: 40,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: AppColors.navy.withValues(alpha: 0.08), shape: BoxShape.circle),
+            child: Text(
+              () {
+                final n = t.name.replaceFirst(RegExp(r'^أ\.\s*'), '').trim();
+                return n.isEmpty ? '؟' : n.substring(0, 1);
+              }(),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.navy),
+            ),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
