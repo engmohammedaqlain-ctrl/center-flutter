@@ -157,6 +157,43 @@ class _MonthNav extends StatelessWidget {
       );
 }
 
+/// زر يفتح الفلاتر المتقدمة أو يطويها؛ نقطة صغيرة تدل أن فيها شرطاً مفعّلاً وهي مطوية.
+class _AdvToggle extends StatelessWidget {
+  const _AdvToggle({required this.open, required this.active, required this.onTap});
+
+  final bool open;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: open ? AdminNoon.mist : Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: open ? AdminNoon.ink : AdminNoon.line),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.tune_rounded, size: 17, color: AdminNoon.ink),
+              const SizedBox(width: 6),
+              Text('تصفية متقدمة', style: NoonText.style(12.5, weight: FontWeight.w700)),
+              if (active && !open) ...[
+                const SizedBox(width: 6),
+                Container(width: 7, height: 7, decoration: BoxDecoration(color: AdminNoon.ink, shape: BoxShape.circle)),
+              ],
+              Icon(open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 18, color: AdminNoon.muted),
+            ],
+          ),
+        ),
+      );
+}
+
 class _Pick<T> extends StatelessWidget {
   const _Pick({required this.value, required this.options, required this.onChanged});
 
@@ -670,6 +707,7 @@ class _ResultsReportState extends State<_ResultsReport> with _GradesState {
   String q = '';
   String sectionId = '';
   final picked = <int>[];
+  bool showAdv = false;
 
   static const _orders = {'top': 'الأعلى أولاً', 'bottom': 'الأدنى أولاً', 'fail': 'دون النجاح'};
 
@@ -772,7 +810,13 @@ class _ResultsReportState extends State<_ResultsReport> with _GradesState {
               q = v;
               if (v.isNotEmpty) view = 'students';
             })),
-        if (view == 'students') ...[
+        if (view == 'students')
+          _AdvToggle(
+            open: showAdv,
+            active: metric.isNotEmpty || order != 'top' || min > 0 || max > 0 || limit > 0,
+            onTap: () => setState(() => showAdv = !showAdv),
+          ),
+        if (view == 'students' && showAdv) ...[
           _Pick<String>(
             value: metric,
             options: {'': 'المعدل العام', for (final n in subjects) 'sub:$n': n, if (prev.isNotEmpty) 'prev': 'معدل السنة الماضية'},
