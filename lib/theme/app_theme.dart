@@ -231,7 +231,7 @@ abstract final class AppTheme {
         systemOverlayStyle: SystemUiOverlayStyle.light,
         iconTheme: const IconThemeData(color: Colors.white, size: 20),
         actionsIconTheme: const IconThemeData(color: Colors.white, size: 20),
-        titleTextStyle: TextStyle(fontFamily: AppText.family, 
+        titleTextStyle: TextStyle(
           fontFamily: AppText.family,
           color: Colors.white,
           fontWeight: FontWeight.w600,
@@ -261,7 +261,7 @@ abstract final class AppTheme {
         focusedBorder: border(AppColors.accent, 1.5),
         errorBorder: border(AppColors.danger),
         focusedErrorBorder: border(AppColors.danger, 1.5),
-        errorStyle: TextStyle(fontFamily: AppText.family, 
+        errorStyle: TextStyle(
           fontFamily: AppText.family,
           color: AppColors.danger,
           fontSize: 10.5,

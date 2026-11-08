@@ -391,31 +391,43 @@ class _Search extends StatelessWidget {
 
 typedef _Kpi = ({String label, String value, String sub, Color? color, VoidCallback? onTap});
 
-Widget _kpis(List<_Kpi> items) => Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: LayoutBuilder(
-        builder: (context, c) => Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final k in items)
-              SizedBox(
-                width: (c.maxWidth - 8) / 2,
-                child: AppCard(
-                  onTap: k.onTap,
-                  padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(k.label, style: NoonText.style(11.5, color: AdminNoon.muted)),
-                    const SizedBox(height: 2),
-                    FittedBox(child: Text(k.value, style: NoonText.style(19, weight: FontWeight.w700, color: k.color))),
-                    if (k.sub.isNotEmpty) Text(k.sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: NoonText.style(10.5, color: AdminNoon.muted)),
-                  ]),
-                ),
-              ),
-          ],
+/// بطاقات الأرقام: ثلاث في سطر واحد، وإلا أزواجاً والفردة الأخيرة بعرض السطر؛ وبطاقات
+/// السطر بارتفاع واحد (كانت الأخيرة وحدها في نصف سطر، وبطاقة بلا سطر فرعي أقصر من جارتها).
+Widget _kpis(List<_Kpi> items) {
+  Widget tile(_Kpi k) => AppCard(
+        onTap: k.onTap,
+        padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(k.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: NoonText.style(11.5, color: AdminNoon.muted)),
+          const SizedBox(height: 2),
+          FittedBox(child: Text(k.value, style: NoonText.style(19, weight: FontWeight.w700, color: k.color))),
+          if (k.sub.isNotEmpty) Text(k.sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: NoonText.style(10.5, color: AdminNoon.muted)),
+        ]),
+      );
+  final rows = <List<_Kpi>>[
+    if (items.length == 3)
+      items
+    else
+      for (var i = 0; i < items.length; i += 2) items.sublist(i, i + 2 > items.length ? items.length : i + 2),
+  ];
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Column(children: [
+      for (var r = 0; r < rows.length; r++)
+        Padding(
+          padding: EdgeInsets.only(top: r == 0 ? 0 : 8),
+          child: IntrinsicHeight(
+            child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              for (var j = 0; j < rows[r].length; j++) ...[
+                if (j > 0) const SizedBox(width: 8),
+                Expanded(child: tile(rows[r][j])),
+              ],
+            ]),
+          ),
         ),
-      ),
-    );
+    ]),
+  );
+}
 
 /// سطر قائمة: الاسم وتحته التفصيل، والقيم في طرفه.
 Widget _row(String title, String sub, List<Widget> trailing, {VoidCallback? onTap, Widget? leading}) => InkWell(

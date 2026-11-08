@@ -56,12 +56,13 @@ void main() {
 
   test('الإزالة تحذف ملف الراتب، إلا إن صُرف له سند', () {
     final store = school();
-    final t = store.addStaffToPayroll(store.users.last, jobTitle: '', salary: 1000);
-    store.teacherPayouts.add(TeacherPayout(id: 'p1', teacherId: t.id, amount: 1000, paymentDate: '2026-11-01'));
-    expect(() => store.removeStaffFromPayroll('u-sec'), throwsA(isA<StoreException>()));
-
-    store.teacherPayouts.removeWhere((p) => p.id == 'p1');
+    store.addStaffToPayroll(store.users.last, jobTitle: '', salary: 1000);
     store.removeStaffFromPayroll('u-sec');
     expect(store.staffPayRecord('u-sec'), isNull);
+
+    final t = store.addStaffToPayroll(store.users.last, jobTitle: '', salary: 1000);
+    store.addTeacherPayout(teacherId: t.id, amount: 1000, paymentDate: '2026-11-01');
+    expect(() => store.removeStaffFromPayroll('u-sec'), throwsA(isA<StoreException>()));
+    expect(store.staffPayRecord('u-sec'), isNotNull);
   });
 }

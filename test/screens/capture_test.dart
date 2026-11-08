@@ -26,7 +26,6 @@ import 'package:center_mobile/screens/students_screen.dart';
 import 'package:center_mobile/screens/teacher_detail_screen.dart';
 import 'package:center_mobile/screens/timetable_screen.dart';
 import 'package:center_mobile/theme/app_theme.dart';
-import 'package:center_mobile/widgets/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
