@@ -222,8 +222,6 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
       onSelected: (v) async {
         if (v == 'pdf') {
           await _print(r);
-        } else if (v == 'statement' && year != null) {
-          await showAccountsStatementSheet(context, store, year);
         } else if (v == 'close' && canClose) {
           await showYearCloseSheet(context, store, year: year, wallets: wallets);
           if (mounted) setState(() {});
@@ -231,7 +229,6 @@ class _ProfitReportPanelState extends State<ProfitReportPanel> {
       },
       itemBuilder: (_) => [
         const PopupMenuItem(value: 'pdf', child: Text('تنزيل التقرير PDF')),
-        if (year != null) const PopupMenuItem(value: 'statement', child: Text('كشف الحسابات')),
         if (canClose) PopupMenuItem(value: 'close', child: Text(closeLabel)),
       ],
     );
