@@ -454,7 +454,11 @@ class _PayrollScreenState extends State<PayrollScreen> {
               AppDropdown<String>(
                 value: teacherId.isEmpty ? null : teacherId,
                 hint: 'الموظف',
-                items: [for (final t in teachers) DropdownMenuItem(value: t.id, child: Text(t.name))],
+                // المعلمون ثم الإدارة، والإداري معلَّم باسم قسمه
+                items: [
+                  for (final t in [...teachers.where((t) => !t.isAdminStaff), ...teachers.where((t) => t.isAdminStaff)])
+                    DropdownMenuItem(value: t.id, child: Text(t.isAdminStaff ? '${t.name} · إدارة' : t.name)),
+                ],
                 onChanged: (v) => setSheet(() => teacherId = v ?? ''),
               ),
               const SizedBox(height: 8),

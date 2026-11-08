@@ -38,6 +38,7 @@ import 'followup_settings_tab.dart';
 import 'student_import_sheet.dart';
 import 'student_promotion_sheet.dart';
 import 'teacher_detail_screen.dart';
+import 'user_detail_screen.dart';
 import 'year_close_sheet.dart';
 
 /// الإعدادات — المقابل لـ `pages/Settings.tsx`.
@@ -2244,6 +2245,8 @@ class _UserCard extends StatelessWidget {
     final payRecord = store.staffPayRecord(u.id);
 
     return AppCard(
+      // البطاقة تفتح صفحة المستخدم: حسابه وصلاحياته وراتبه ودوامه
+      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => UserDetailScreen(userId: u.id))),
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2298,7 +2301,7 @@ class _UserCard extends StatelessWidget {
                   color: AppColors.amber,
                   background: AppColors.amberSoft,
                   border: AppColors.amberBorder,
-                  onTap: () => _staffLogin(context, u),
+                  onTap: () => showStaffLoginSheet(context, u),
                 ),
                 TileButton(
                   label: 'الصلاحيات',
@@ -2315,7 +2318,7 @@ class _UserCard extends StatelessWidget {
                     color: AppColors.heading,
                     background: Colors.white,
                     border: AppColors.lineStrong,
-                    onTap: () => payRecord == null ? _addToPayroll(context, u) : _removeFromPayroll(context, u),
+                    onTap: () => payRecord == null ? showAddToPayrollSheet(context, u) : confirmRemoveFromPayroll(context, u),
                   ),
                 if (canDelete && !isThisDevice)
                   TileButton(
@@ -2324,7 +2327,7 @@ class _UserCard extends StatelessWidget {
                     color: AppColors.danger,
                     background: Colors.white,
                     border: AppColors.dangerBorder,
-                    onTap: () => _deleteUser(context, u),
+                    onTap: () => confirmDeleteUser(context, u),
                   ),
               ],
             ),
@@ -2337,7 +2340,7 @@ class _UserCard extends StatelessWidget {
 
 /// دخول الموظف برقم هويته — `StaffLoginModal`: كلمة من 6 أرقام يولّدها الخادم
 /// وتظهر هنا مرة واحدة؛ من نسيها تُولَّد له كلمة جديدة.
-Future<void> _staffLogin(BuildContext context, AppUser u) async {
+Future<void> showStaffLoginSheet(BuildContext context, AppUser u) async {
   final store = StoreScope.of(context);
   final hasLogin = (u.nationalId ?? '').isNotEmpty || (u.username ?? '').isNotEmpty;
   final id = TextEditingController(text: u.nationalId ?? '');
@@ -2512,11 +2515,14 @@ Future<void> _staffLogin(BuildContext context, AppUser u) async {
 
 /// إضافة موظف إدارة للرواتب بوظيفته وراتبه الشهري — `StaffPayModal`. البدلات وخصم الغياب
 /// من الرواتب كأي موظف.
-Future<void> _addToPayroll(BuildContext context, AppUser u) async {
+Future<void> showAddToPayrollSheet(BuildContext context, AppUser u) async {
   final store = StoreScope.of(context);
   final job = TextEditingController(text: roleLabel(u.role));
   final salary = TextEditingController();
   String? error;
+  // سجلٌّ قائم في المعلمين (إداريٌّ سُجّل معلماً) أو ملف جديد
+  final candidates = store.staffPayCandidates(u);
+  var existing = '';
 
   await showModalBottomSheet<void>(
     context: context,
@@ -2526,9 +2532,13 @@ Future<void> _addToPayroll(BuildContext context, AppUser u) async {
       builder: (ctx, setSt) {
         void save() {
           try {
-            store.addStaffToPayroll(u, jobTitle: job.text, salary: double.tryParse(digitsOnly(salary.text)) ?? 0);
+            if (existing.isNotEmpty) {
+              store.linkStaffToPayroll(u, existing, jobTitle: job.text);
+            } else {
+              store.addStaffToPayroll(u, jobTitle: job.text, salary: double.tryParse(digitsOnly(salary.text)) ?? 0);
+            }
             Navigator.pop(ctx);
-            showAppSnack(context, 'أُضيف للرواتب');
+            showAppSnack(context, existing.isNotEmpty ? 'نُقل للإدارة' : 'أُضيف للرواتب');
           } catch (e) {
             setSt(() => error = e is StoreException ? e.message : userMessage(e, 'تعذّرت الإضافة'));
           }
@@ -2549,19 +2559,42 @@ Future<void> _addToPayroll(BuildContext context, AppUser u) async {
                   style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.heading),
                 ),
                 const SizedBox(height: 14),
+                if (candidates.isNotEmpty) ...[
+                  const FieldLabel('ملفه في المعلمين'),
+                  AppDropdown<String>(
+                    value: existing,
+                    items: [
+                      const DropdownMenuItem(value: '', child: Text('ملف جديد في الرواتب')),
+                      for (final t in candidates)
+                        DropdownMenuItem(
+                          value: t.id,
+                          child: Text([t.name, t.jobTitle].where((s) => s.trim().isNotEmpty).join(' · '), overflow: TextOverflow.ellipsis),
+                        ),
+                    ],
+                    onChanged: (v) => setSt(() => existing = v ?? ''),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('مسجّل معلماً؟ اختر سجله فيُنقل للإدارة بأجره وتاريخه', style: TextStyle(fontSize: 11.5, color: AppColors.muted)),
+                  const SizedBox(height: 12),
+                ],
                 const FieldLabel('الوظيفة'),
                 TextField(controller: job, decoration: const InputDecoration(hintText: 'سكرتيرة، محاسب...')),
-                const SizedBox(height: 12),
-                const FieldLabel('الراتب الشهري'),
-                TextField(
-                  controller: salary,
-                  autofocus: true,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩۰-۹]'))],
-                  textDirection: TextDirection.ltr,
-                  onSubmitted: (_) => save(),
-                  decoration: InputDecoration(hintText: '0', errorText: error),
-                ),
+                if (existing.isEmpty) ...[
+                  const SizedBox(height: 12),
+                  const FieldLabel('الراتب الشهري'),
+                  TextField(
+                    controller: salary,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩۰-۹]'))],
+                    textDirection: TextDirection.ltr,
+                    onSubmitted: (_) => save(),
+                    decoration: const InputDecoration(hintText: '0'),
+                  ),
+                ],
+                if (error != null) ...[
+                  const SizedBox(height: 6),
+                  Text(error!, style: const TextStyle(fontSize: 12, color: AppColors.danger)),
+                ],
                 const SizedBox(height: 8),
                 Text(
                   'يظهر في الرواتب والدوام والإجازات، ولا يظهر مع المعلمين.',
@@ -2569,7 +2602,12 @@ Future<void> _addToPayroll(BuildContext context, AppUser u) async {
                 ),
                 const SizedBox(height: 16),
                 ActionButtons(
-                  primary: PrimaryButton(label: 'إضافة للرواتب', icon: Icons.payments_outlined, height: 40, onPressed: save),
+                  primary: PrimaryButton(
+                    label: existing.isNotEmpty ? 'نقل للإدارة' : 'إضافة للرواتب',
+                    icon: Icons.payments_outlined,
+                    height: 40,
+                    onPressed: save,
+                  ),
                   secondary: GhostButton(label: 'إلغاء', onPressed: () => Navigator.pop(ctx)),
                 ),
               ],
@@ -2581,7 +2619,7 @@ Future<void> _addToPayroll(BuildContext context, AppUser u) async {
   );
 }
 
-Future<void> _removeFromPayroll(BuildContext context, AppUser u) async {
+Future<void> confirmRemoveFromPayroll(BuildContext context, AppUser u) async {
   final store = StoreScope.of(context);
   final ok = await confirmSheet(context, title: 'إزالة من الرواتب', message: 'إزالة ${u.name} من الرواتب؟', confirmLabel: 'إزالة');
   if (!ok || !context.mounted) return;
@@ -2592,7 +2630,8 @@ Future<void> _removeFromPayroll(BuildContext context, AppUser u) async {
   }
 }
 
-Future<void> _deleteUser(BuildContext context, AppUser u) async {
+/// حذف مستخدم بعد التأكيد — من بطاقته ومن صفحته. يعيد true إن حُذف.
+Future<bool> confirmDeleteUser(BuildContext context, AppUser u) async {
   final store = StoreScope.of(context);
   final ok = await confirmSheet(
     context,
@@ -2600,12 +2639,14 @@ Future<void> _deleteUser(BuildContext context, AppUser u) async {
     message: 'هل تريد حذف «${u.name}» نهائياً؟',
     confirmLabel: 'حذف',
   );
-  if (!ok || !context.mounted) return;
+  if (!ok || !context.mounted) return false;
   try {
     store.deleteUser(u.id);
     showAppSnack(context, 'تم حذف المستخدم');
+    return true;
   } on StoreException catch (e) {
     showAppSnack(context, e.message, error: true);
+    return false;
   }
 }
 
