@@ -157,9 +157,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     return TableGate(
       tables: const ['rooms', 'students', 'sessions', 'attendance'],
       message: 'جارٍ تحميل الحضور...',
-      child: ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
+      child: Builder(
+      builder: (context) {
         if (!store.canOpenSection('attendance')) {
           return NoAccess(section: 'attendance', roleName: store.roleName);
         }

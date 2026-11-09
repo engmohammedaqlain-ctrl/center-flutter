@@ -196,9 +196,8 @@ class _MoodleAdminScreenState extends State<MoodleAdminScreen> {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
+    return Builder(
+      builder: (context) {
         if (!store.can('moodle')) {
           return Scaffold(
             backgroundColor: Colors.white,

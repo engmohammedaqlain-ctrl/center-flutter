@@ -107,9 +107,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
+    return Builder(
+      builder: (context) {
         if (!store.canOpenSection('settings')) {
           return Scaffold(
             backgroundColor: AppColors.bg,

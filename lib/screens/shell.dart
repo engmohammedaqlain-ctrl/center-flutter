@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../data/app_update.dart';
+import '../data/perf_log.dart';
 import '../data/push.dart';
 import '../data/school_brand.dart';
 import '../data/school_link.dart';
@@ -101,13 +102,14 @@ class _AppShellState extends State<AppShell> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _wasOffline = false;
   var _financePrefetchStarted = false;
+  Timer? _prefetchFallback;
 
   @override
   void initState() {
     super.initState();
-    // حمّل جداول المالية في الخلفية بعد استقرار الشاشة — حتى لا يبدأ التحميل
-    // الثقيل لحظة الضغط على التبويب ويُجمَّد مؤشر التحميل.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _prefetchFinance());
+    // جداول المالية تُحمَّل في الخلفية بعد أن تنتهي الرئيسية من أرقامها (onFirstStats)،
+    // وإن لم تُبلغ (لا رئيسية لهذا المستخدم أو تعذّر حسابها) فبعد مهلة
+    _prefetchFallback = Timer(const Duration(seconds: 15), () => _prefetchFinance(delay: Duration.zero));
     // جهاز المدير تصله الحوالات وطلبات الموافقة؛ الخادم يرفض تسجيل بقية الأدوار
     _pushSubs = [
       ParentPush.instance.opened.listen(_openNotice),
@@ -120,6 +122,7 @@ class _AppShellState extends State<AppShell> {
 
   @override
   void dispose() {
+    _prefetchFallback?.cancel();
     for (final sub in _pushSubs) {
       unawaited(sub.cancel());
     }
@@ -158,14 +161,19 @@ class _AppShellState extends State<AppShell> {
     showAppSnack(context, notice.body);
   }
 
-  void _prefetchFinance() {
+  /// تحميل المالية مسبقاً بعد أن تستقر الرئيسية لا مع فتحها: كان يبدأ بعد 600ms
+  /// فيحسب المستحقات متصلةً في اللحظة نفسها التي تحسب فيها الرئيسية أرقامها،
+  /// فتتقطع الدوّارة ثوانيَ على جوال قديم. [delay] انتظار خمول بعد جاهزية الرئيسية.
+  void _prefetchFinance({Duration delay = const Duration(milliseconds: 1500)}) {
+    _prefetchFallback?.cancel();
     if (_financePrefetchStarted || !mounted) return;
     _financePrefetchStarted = true;
     unawaited(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await Future<void>.delayed(delay);
       if (!mounted) return;
       final store = StoreScope.of(context);
       if (!store.canOpenSection('finance')) return;
+      PerfLog.mark('بدء تحميل المالية مسبقاً');
       await store.ensureTables(const [
         'payments',
         'installments',
@@ -173,12 +181,14 @@ class _AppShellState extends State<AppShell> {
         'teacher_payouts',
       ]);
       if (!mounted) return;
-      // المستحقات تُحسب هنا بالخلفية، فتفتح المالية جاهزة بلا انتظار
+      // المستحقات تُحسب هنا بالخلفية مقطّعةً، فتفتح المالية جاهزة بلا انتظار
       await yieldUi(2);
       if (!mounted) return;
-      store.dueItems();
+      await store.dueItemsYielding();
+      if (!mounted) return;
       store.expenses;
       store.teacherPayouts;
+      PerfLog.mark('انتهى تحميل المالية مسبقاً');
     }());
   }
 
@@ -198,6 +208,7 @@ class _AppShellState extends State<AppShell> {
           },
           onReport: (id) => openReport(context, id),
           active: _homeActive,
+          onFirstStats: _prefetchFinance,
         ),
       ),
       const Section(

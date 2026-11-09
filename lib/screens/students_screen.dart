@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../data/arabic_search.dart';
@@ -24,8 +26,14 @@ class StudentsScreen extends StatefulWidget {
   State<StudentsScreen> createState() => _StudentsScreenState();
 }
 
+final _parens = RegExp(r'[()]');
+
 class _StudentsScreenState extends State<StudentsScreen> {
   final search = TextEditingController();
+
+  /// نص البحث المطبَّق: يتأخر 250ms عن آخر حرف، فلا يُعاد توحيد أسماء آلاف الطلاب مع كل حرف.
+  String _query = '';
+  Timer? _searchTimer;
   String grade = '';
   String section = '';
 
@@ -38,8 +46,27 @@ class _StudentsScreenState extends State<StudentsScreen> {
 
   @override
   void dispose() {
+    _searchTimer?.cancel();
     search.dispose();
     super.dispose();
+  }
+
+  void _onSearch(String value) {
+    _searchTimer?.cancel();
+    if (value.trim().isEmpty) {
+      setState(() {
+        _query = '';
+        visibleCount = kListPageSize;
+      });
+      return;
+    }
+    _searchTimer = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      setState(() {
+        _query = search.text;
+        visibleCount = kListPageSize;
+      });
+    });
   }
 
   void _setGrade(String v) {
@@ -157,13 +184,12 @@ class _StudentsScreenState extends State<StudentsScreen> {
     return TableGate(
       tables: const ['students', 'student_years', 'installments'],
       message: 'جارٍ تحميل الطلاب...',
-      child: ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
+      child: Builder(
+      builder: (context) {
         if (!store.canOpenSection('students')) {
           return NoAccess(section: 'students', roleName: store.roleName);
         }
-        final q = search.text.trim().toLowerCase();
+        final q = _query.trim().toLowerCase();
         final yearStudents = store.studentsInViewedYear;
         final buckets = store.installmentBuckets;
         final pendingCount = yearStudents.where((s) => s.status == 'pending').length;
@@ -188,15 +214,15 @@ class _StudentsScreenState extends State<StudentsScreen> {
                 }
                 if (grade.isNotEmpty && s.gradeLevel.trim() != grade) return false;
                 if (section.isNotEmpty) {
-                  final sec = s.section.trim().replaceAll(RegExp(r'[()]'), '');
-                  final want = section.replaceAll(RegExp(r'[()]'), '');
+                  final sec = s.section.trim().replaceAll(_parens, '');
+                  final want = section.replaceAll(_parens, '');
                   if (sec != want) return false;
                 }
                 if (customPlanOnly && !s.usesCustomPlan) return false;
                 if (q.isEmpty) return true;
                 return matchStudentSearch(
                   fullName: s.fullName,
-                  query: search.text,
+                  query: _query,
                   phone: s.phone,
                   parentPhone: s.parentPhone,
                   nationalId: s.nationalId,
@@ -265,7 +291,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           child: NoonSearchField(
                             controller: search,
                             hint: 'بحث بالاسم أو الجوال أو الهوية',
-                            onChanged: (_) => setState(() => visibleCount = kListPageSize),
+                            onChanged: _onSearch,
                             count: list.length == countDenom ? '$countDenom' : '${list.length}/$countDenom',
                             unit: 'طالب',
                           ),

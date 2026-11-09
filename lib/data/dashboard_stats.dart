@@ -7,6 +7,7 @@ import 'academic_matching.dart';
 import 'attendance_days.dart';
 import 'balance.dart';
 import 'school_calendar.dart';
+import 'sliced_work.dart';
 
 class DashCounts {
   int present = 0;
@@ -153,13 +154,89 @@ DashboardStats buildDashboard({
   String grade = '',
   double chronicPercent = 10,
 }) {
+  late DashboardStats out;
+  runAll(_dashboardSteps(
+    today: today,
+    students: students,
+    rooms: rooms,
+    sessions: sessions,
+    attendance: attendance,
+    installments: installments,
+    payments: payments,
+    expenses: expenses,
+    calendar: calendar,
+    days: days,
+    grade: grade,
+    chronicPercent: chronicPercent,
+    done: (r) => out = r,
+  ));
+  return out;
+}
+
+/// [buildDashboard] نفسها مقطّعةً: تُفسح للرسم كل بضع ملّي ثوانٍ فلا تتجمّد الرئيسية
+/// ولا تتقطع دوّارتها على جوال قديم. القوائم تُنسخ أولاً: المزامنة قد تضيف إليها
+/// صفوفاً أثناء الإفساح، والمرور على قائمة تتغير يُسقط الحساب.
+Future<DashboardStats> buildDashboardAsync({
+  required String today,
+  required List<Student> students,
+  required List<Classroom> rooms,
+  required List<ClassSession> sessions,
+  required List<AttendanceMark> attendance,
+  required List<Installment> installments,
+  required List<Payment> payments,
+  List<Expense> expenses = const [],
+  required List<CalendarEvent> calendar,
+  int days = 1,
+  String grade = '',
+  double chronicPercent = 10,
+}) async {
+  late DashboardStats out;
+  await runSliced(_dashboardSteps(
+    today: today,
+    students: List.of(students),
+    rooms: List.of(rooms),
+    sessions: List.of(sessions),
+    attendance: List.of(attendance),
+    installments: List.of(installments),
+    payments: List.of(payments),
+    expenses: List.of(expenses),
+    calendar: List.of(calendar),
+    days: days,
+    grade: grade,
+    chronicPercent: chronicPercent,
+    done: (r) => out = r,
+  ));
+  return out;
+}
+
+/// خطوات الحساب: كل `yield` نقطة آمنة للإفساح.
+Iterable<void> _dashboardSteps({
+  required String today,
+  required List<Student> students,
+  required List<Classroom> rooms,
+  required List<ClassSession> sessions,
+  required List<AttendanceMark> attendance,
+  required List<Installment> installments,
+  required List<Payment> payments,
+  required List<Expense> expenses,
+  required List<CalendarEvent> calendar,
+  required int days,
+  required String grade,
+  required double chronicPercent,
+  required void Function(DashboardStats) done,
+}) sync* {
   final month = today.substring(0, 7);
   final span = days < 1 ? 1 : days;
   final rangeStart = _addDays(today, -(span - 1));
   // اليوم يقارَن بآخر يوم رُصد قبله، والأسبوع والشهر بما قبلهما بالطول نفسه
   final prevStart = _addDays(rangeStart, -span);
   bool inGrade(String g) => grade.isEmpty || isSameGrade(g, grade);
-  final active = students.where((s) => s.status == 'active' && inGrade(s.gradeLevel)).toList();
+  final active = <Student>[];
+  var n = 0;
+  for (final s in students) {
+    if (s.status == 'active' && inGrade(s.gradeLevel)) active.add(s);
+    if (++n % 256 == 0) yield null;
+  }
   final activeIds = {for (final s in active) s.id};
 
   final since = _addDays(today, -30);
@@ -170,8 +247,11 @@ DashboardStats buildDashboard({
   ];
   final sessionIds = {for (final s in recentSessions) s.id};
   final recentById = sessionMap(recentSessions);
+  yield null;
   final recordsByStudent = <String, List<AttendanceMark>>{};
+  n = 0;
   for (final r in attendance) {
+    if (++n % 2048 == 0) yield null;
     if (!sessionIds.contains(r.sessionId) || !activeIds.contains(r.studentId)) continue;
     (recordsByStudent[r.studentId] ??= []).add(r);
   }
@@ -186,6 +266,7 @@ DashboardStats buildDashboard({
   final prevByDate = <String, DashCounts>{};
   final gradeRange = <String, DashCounts>{};
   for (final s in active) {
+    yield null;
     final daysList = dailyAttendance(recordsByStudent[s.id] ?? const [], recentSessions, calendar: calendar, sessionById: recentById);
     final t = daysList.where((d) => d.date == today).firstOrNull;
     if (t != null) todayStatus[s.id] = t.status;
@@ -223,6 +304,7 @@ DashboardStats buildDashboard({
       }
     }
   }
+  yield null;
   // يوم رُصدت فيه شعبة أو اثنتان لا يمثّل المدرسة: يدخل الرسم إن رُصد ثلث الطلاب فأكثر
   final minMarked = active.length * 0.3;
   final trendDates = byDate.keys.where((k) => byDate[k]!.marked >= minMarked).toList()..sort();
@@ -267,16 +349,28 @@ DashboardStats buildDashboard({
       counts.add(st);
     }
   }
+  yield null;
 
   final holiday = holidayEventOn(calendar, today);
-  final roomState = <({Classroom room, int students, bool marked})>[
-    for (final room in rooms)
-      if (inGrade(room.gradeLevel))
-        () {
-          final members = active.where((s) => studentBelongsToRoom(s, room)).toList();
-          return (room: room, students: members.length, marked: members.any((s) => todayStatus.containsKey(s.id)));
-        }(),
-  ].where((r) => r.students > 0).toList();
+  // طلاب كل مرحلة مرة واحدة: الشعبة ذات المرحلة لا يطابقها إلا طالب من مرحلتها
+  // (شرطٌ في كل فروع studentBelongsToRoom)، فتُفحص طلاب مرحلتها وحدهم لا المدرسة كلها
+  final byGradeKey = <String, List<Student>>{};
+  for (final s in active) {
+    final key = normalizeAcademicText(s.gradeLevel);
+    if (key.isNotEmpty) (byGradeKey[key] ??= []).add(s);
+  }
+  yield null;
+  final roomState = <({Classroom room, int students, bool marked})>[];
+  for (final room in rooms) {
+    if (!inGrade(room.gradeLevel)) continue;
+    final roomGrade = normalizeAcademicText(room.gradeLevel);
+    final candidates = roomGrade.isEmpty ? active : (byGradeKey[roomGrade] ?? const <Student>[]);
+    final members = candidates.where((s) => studentBelongsToRoom(s, room)).toList();
+    if (members.isNotEmpty) {
+      roomState.add((room: room, students: members.length, marked: members.any((s) => todayStatus.containsKey(s.id))));
+    }
+    yield null;
+  }
   final unmarkedRooms = holiday != null
       ? const <({Classroom room, int students})>[]
       : [
@@ -287,9 +381,11 @@ DashboardStats buildDashboard({
   // المالية: السندات غير الملغاة، والمتأخر من أقساط الطلاب النشطين. التحصيل للمدرسة كلها
   var collectedMonth = 0.0, collectedRange = 0.0, collectedPrev = 0.0;
   final byDay = <String, double>{};
+  n = 0;
   for (final p in payments) {
+    if (++n % 512 == 0) yield null;
     if (p.cancelled || p.amount <= 0) continue;
-    final date = isoDate(p.date);
+    final date = isoDateOf(p, p.date);
     if (date.startsWith(month)) collectedMonth += p.amount;
     if (date.compareTo(rangeStart) >= 0 && date.compareTo(today) <= 0) collectedRange += p.amount;
     if (date.compareTo(prevStart) >= 0 && date.compareTo(rangeStart) < 0) collectedPrev += p.amount;
@@ -299,25 +395,35 @@ DashboardStats buildDashboard({
         for (var i = 0; i < 30; i++) (date: _addDays(today, i - 29), amount: m[_addDays(today, i - 29)] ?? 0),
       ];
   final spentByDay = <String, double>{};
+  n = 0;
   for (final e in expenses) {
+    if (++n % 512 == 0) yield null;
     // المصروف وحده، بلا المسحوبات والتحويلات
     if (e.cancelled || e.kind != 'expense') continue;
     final date = e.expenseDate.padRight(10).substring(0, 10);
     if (date.compareTo(since) >= 0 && date.compareTo(today) <= 0) spentByDay[date] = (spentByDay[date] ?? 0) + e.amount;
   }
   final enrolledByDay = <String, double>{};
+  var newThisMonth = 0;
   for (final s in active) {
-    final date = isoDate(s.enrollmentDate);
+    final date = isoDateOf(s, s.enrollmentDate);
+    if (date.startsWith(month)) newThisMonth++;
     if (date.compareTo(since) >= 0 && date.compareTo(today) <= 0) enrolledByDay[date] = (enrolledByDay[date] ?? 0) + 1;
   }
-  final activeInstallments = installments.where((i) => activeIds.contains(i.studentId)).toList();
-  final due = overdueByStudent(activeInstallments, DateTime.parse(today));
+  yield null;
+  // المستحق الحالّ لكل طالب — `overdueByStudent` نفسها، مقطّعة
+  final dueDay = DateTime.parse(today);
+  final due = <String, double>{};
   final weekEnd = _addDays(today, 7);
   var dueSoon = 0.0;
   final longCut = _addDays(today, -60);
   final longOverdue = <String>{};
-  for (final i in activeInstallments) {
-    final d = isoDate(i.dueDate);
+  n = 0;
+  for (final i in installments) {
+    if (++n % 512 == 0) yield null;
+    if (!activeIds.contains(i.studentId)) continue;
+    due[i.studentId] = (due[i.studentId] ?? 0) + (isInstallmentDue(i, dueDay) ? unpaidOf(i) : 0.0);
+    final d = isoDateOf(i, i.dueDate);
     final unpaid = unpaidOf(i);
     if (unpaid <= 0) continue;
     if (d.compareTo(today) > 0 && d.compareTo(weekEnd) <= 0) dueSoon += unpaid;
@@ -337,9 +443,10 @@ DashboardStats buildDashboard({
     final r = b.rate - a.rate;
     return r != 0 ? r : b.recent - a.recent;
   });
-  return DashboardStats(
+  yield null;
+  done(DashboardStats(
     activeStudents: active.length,
-    newThisMonth: active.where((s) => isoDate(s.enrollmentDate).startsWith(month)).length,
+    newThisMonth: newThisMonth,
     holiday: holiday,
     today: counts,
     unmarkedToday: unmarked,
@@ -363,5 +470,5 @@ DashboardStats buildDashboard({
     expenseTrend: last30(spentByDay),
     enrollTrend: last30(enrolledByDay),
     byGrade: byGrade,
-  );
+  ));
 }

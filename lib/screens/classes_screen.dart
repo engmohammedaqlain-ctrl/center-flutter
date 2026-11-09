@@ -57,9 +57,8 @@ class _ClassesScreenState extends State<ClassesScreen> {
     return TableGate(
       tables: const ['rooms', 'students', 'student_years', 'teachers'],
       message: 'جارٍ تحميل الصفوف...',
-      child: ListenableBuilder(
-        listenable: store,
-        builder: (context, _) {
+      child: Builder(
+        builder: (context) {
           if (!store.canOpenSection('classes')) {
             return NoAccess(section: 'classes', roleName: store.roleName);
           }
@@ -900,9 +899,8 @@ class _ClassDetailScreenState extends State<_ClassDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
+    return Builder(
+      builder: (context) {
         final room = store.roomsInViewedYear.where((r) => r.id == widget.roomId).firstOrNull ?? store.roomById(widget.roomId);
         if (room == null) {
           return Scaffold(

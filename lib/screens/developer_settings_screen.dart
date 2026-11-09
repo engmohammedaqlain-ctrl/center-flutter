@@ -1,13 +1,14 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../data/demo_data.dart';
 import '../data/demo_inject.dart';
 import '../data/features.dart';
 import '../data/institution.dart';
+import '../data/perf_log.dart';
 import '../data/store.dart';
 import '../data/supabase.dart';
 import '../data/tenant_service.dart';
@@ -609,8 +610,50 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
     );
   }
 
+  void _showPerfLog(BuildContext context) {
+    final text = PerfLog.report();
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Flexible(
+              child: SingleChildScrollView(
+                child: Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: SelectableText(text, style: const TextStyle(fontSize: 12, height: 1.5)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              icon: const Icon(Icons.copy_rounded),
+              label: const Text('نسخ'),
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: text));
+                if (ctx.mounted) showAppSnack(ctx, 'نُسخ سجل الأداء');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   List<Widget> _tools(BuildContext context, AppStore store) => [
         const FormSection(icon: Icons.build_outlined, title: 'أدوات الاختبار والبيانات'),
+        _toolTile(
+          icon: Icons.speed_outlined,
+          title: 'سجل الأداء',
+          subtitle: 'مراحل الفتح وأبطأ الإطارات على هذا الجوال — للنسخ والإرسال',
+          onTap: () => _showPerfLog(context),
+        ),
+        const SizedBox(height: 8),
         _toolTile(
           icon: Icons.devices_outlined,
           title: 'الأجهزة',

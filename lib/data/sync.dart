@@ -1233,6 +1233,9 @@ abstract class SyncLocalStore {
   /// أختام جدول كامل — لمقارنة ما تغيّر في السحابة بما عندنا.
   Map<String, String> serverStampsOf(String table);
 
+  /// الأختام تُحمَّل من القرص عند أول حاجة لا مع الإقلاع: السحب والرفع ينتظرانها.
+  Future<void> ensureStampsLoaded() async {}
+
   void rememberServerStamps(String table, Map<String, String> stamps);
 
   void forgetServerStamps(String table, Iterable<String> ids);
@@ -1384,6 +1387,7 @@ class SyncService {
       var tableFailed = false;
       try {
         cursor = await _cursor(tenantId, cloud);
+        await local.ensureStampsLoaded();
         final localStamps = local.serverStampsOf(cloud);
         var from = 0;
         while (true) {
@@ -1555,6 +1559,7 @@ class SyncService {
   /// [refreshRemote] يفحص بعد الرفع ما تغيّر في السحابة لعدّاد الواجهة — جولة
   /// على كل الجداول. الرفع التلقائي يستغني عنها: السحب يليه عند أي إشارة.
   Future<SyncResult> push({bool refreshRemote = true}) async {
+    await local.ensureStampsLoaded();
     if (_syncing)
       return SyncResult(success: false, message: 'عملية مزامنة أخرى جارية');
     if (local.isMaster) {
@@ -1692,6 +1697,7 @@ class SyncService {
   }
 
   Future<({int pushed, int failed})> pushPendingChanges(String tenantId) async {
+    await local.ensureStampsLoaded();
     // عمليات منشأة أخرى لا تُرفع إلى سحابة هذه: بقايا جهاز انتقل بين منشأتين
     final all = [
       ...local.pendingSyncs.where(
@@ -1999,6 +2005,7 @@ class SyncService {
     String tenantId, {
     PullProgressCallback? onProgress,
   }) async {
+    await local.ensureStampsLoaded();
     var totalPulled = 0;
     var totalRemoved = 0;
     final failedTables = <String, String>{};
