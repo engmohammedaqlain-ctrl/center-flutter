@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
@@ -23,6 +24,8 @@ abstract final class PerfLog {
     _phase = name;
     if (marks.length >= _maxMarks) marks.removeAt(0);
     marks.add((at: _clock.elapsedMilliseconds, name: name));
+    // بناء القياس (profile) يطبعها في logcat لتُقرأ والجوال موصول
+    if (kProfileMode) debugPrint('PERF ${_clock.elapsedMilliseconds}ms mark: $name');
   }
 
   /// يبدأ رصد الإطارات بعد إنشاء الربط — مرة واحدة.
@@ -32,6 +35,11 @@ abstract final class PerfLog {
     SchedulerBinding.instance.addTimingsCallback((timings) {
       for (final t in timings) {
         final ms = t.totalSpan.inMilliseconds;
+        // في بناء القياس: كل إطار تجاوز الإطار الواحد، مقسوماً بين خيط البناء (UI) وخيط الرسم (raster)
+        if (kProfileMode && ms > 20) {
+          debugPrint('PERF ${_clock.elapsedMilliseconds}ms frame total=${ms} build=${t.buildDuration.inMilliseconds} '
+              'raster=${t.rasterDuration.inMilliseconds} vsyncWait=${t.vsyncOverhead.inMilliseconds} phase=$_phase');
+        }
         if (ms < slowFrameMs) continue;
         if (slowFrames.length >= _maxFrames) slowFrames.removeAt(0);
         slowFrames.add((at: _clock.elapsedMilliseconds, ms: ms, phase: _phase));
