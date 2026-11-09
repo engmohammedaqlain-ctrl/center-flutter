@@ -61,6 +61,7 @@ void main() {
           chronicPercent: s.settings.followup.chronicPercent,
         );
     _report('buildDashboard (الشهر): ${_ms(stats)}ms');
+    _report('buildDashboard مرة ثانية: ${_ms(stats)}ms');
     _report('loadAbsenceAlerts: ${_ms(() => loadAbsenceAlerts(s))}ms');
     _report('evaluations ×2: ${_ms(() {
       s.evaluations;

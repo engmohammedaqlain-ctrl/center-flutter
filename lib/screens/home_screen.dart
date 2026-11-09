@@ -599,7 +599,7 @@ class _HomeState extends State<_Home> {
       );
     }
     final snap = _snap;
-    if (snap == null) return const NoonLoading(text: 'جارٍ تحميل الرئيسية...');
+    if (snap == null) return const Center(child: NoonLoading(text: 'جارٍ تحميل الرئيسية...'));
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
       children: [
