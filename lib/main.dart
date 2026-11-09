@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'data/perf_log.dart';
+import 'data/perf_school.dart';
 import 'data/activity_ping.dart';
 import 'data/app_installs.dart';
 import 'data/app_update.dart';
@@ -81,6 +82,14 @@ Future<void> main() async {
 
 Future<void> _bootstrap() async {
   final store = AppStore.instance;
+  if (perfSchool) {
+    // بناء القياس وحده: قاعدة منفصلة بلا سحابة، ومدرسة بحجم المستر
+    store.networkEnabled = false;
+    await store.bootstrap(SqflitePersistence(fileName: perfSchoolDb));
+    await ensurePerfSchool(store);
+    unawaited(store.afterEnter());
+    return;
+  }
   try {
     await store.bootstrap(SqflitePersistence());
   } catch (_) {

@@ -3,7 +3,8 @@
 #
 # لا ينشر شيئاً لأحد. حزمة واحدة في صفحة التشغيل (Artifacts) تُثبَّت على جوال
 # موصول بالكمبيوتر، ثم `flutter attach --profile` و DevTools يقيسان كل إطار ويحددان
-# الدالة التي سببت التقطّع. موقّعة بمفتاح الإصدار نفسه ورقمها كالتجريبي، فتُثبَّت
+# الدالة التي سببت التقطّع. وفيها مدرسة القياس (PERF_SCHOOL، perf_school.dart):
+# مدرسة بحجم المستر في قاعدة منفصلة بلا سحابة، تُولَّد في أول فتح. موقّعة بمفتاح الإصدار نفسه ورقمها كالتجريبي، فتُثبَّت
 # فوق التطبيق دون مسح بياناته.
 name: Profile build
 
@@ -47,7 +48,7 @@ jobs:
           IFS='.+' read -r major minor _ build <<< "$v"
           name="$major.$((minor + 1)).0"
           echo "Profile version $name+$((build + 2))"
-          flutter build apk --profile --target-platform android-arm64 --build-name "$name" --build-number "$((build + 2))"
+          flutter build apk --profile --target-platform android-arm64 --dart-define=PERF_SCHOOL=true --build-name "$name" --build-number "$((build + 2))"
 
       - uses: actions/upload-artifact@v4
         with:
