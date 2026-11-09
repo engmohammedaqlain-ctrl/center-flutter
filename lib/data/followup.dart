@@ -166,13 +166,15 @@ Map<String, int> absentDaysThisYear(AppStore store) {
   final sessions = store.sessions
       .where((s) => s.sessionDate.compareTo(end) <= 0 && (year == null || year.startsOn.isEmpty || s.sessionDate.compareTo(year.startsOn) >= 0))
       .toList();
-  final ids = {for (final s in sessions) s.id};
+  final byId = sessionMap(sessions);
   final byStudent = <String, List<AttendanceMark>>{};
   for (final r in store.attendance) {
-    if (ids.contains(r.sessionId)) byStudent.putIfAbsent(r.studentId, () => []).add(r);
+    if (byId.containsKey(r.sessionId)) byStudent.putIfAbsent(r.studentId, () => []).add(r);
   }
+  final calendar = store.settings.calendar;
   return {
-    for (final e in byStudent.entries) e.key: dailyAttendance(e.value, sessions, calendar: store.settings.calendar).where((d) => d.status == 'absent').length,
+    for (final e in byStudent.entries)
+      e.key: dailyAttendance(e.value, sessions, calendar: calendar, sessionById: byId).where((d) => d.status == 'absent').length,
   };
 }
 

@@ -169,6 +169,7 @@ DashboardStats buildDashboard({
       if (s.sessionDate.compareTo(from) >= 0 && s.sessionDate.compareTo(today) <= 0) s,
   ];
   final sessionIds = {for (final s in recentSessions) s.id};
+  final recentById = sessionMap(recentSessions);
   final recordsByStudent = <String, List<AttendanceMark>>{};
   for (final r in attendance) {
     if (!sessionIds.contains(r.sessionId) || !activeIds.contains(r.studentId)) continue;
@@ -185,7 +186,7 @@ DashboardStats buildDashboard({
   final prevByDate = <String, DashCounts>{};
   final gradeRange = <String, DashCounts>{};
   for (final s in active) {
-    final daysList = dailyAttendance(recordsByStudent[s.id] ?? const [], recentSessions, calendar: calendar);
+    final daysList = dailyAttendance(recordsByStudent[s.id] ?? const [], recentSessions, calendar: calendar, sessionById: recentById);
     final t = daysList.where((d) => d.date == today).firstOrNull;
     if (t != null) todayStatus[s.id] = t.status;
     if (t?.status == 'absent') {

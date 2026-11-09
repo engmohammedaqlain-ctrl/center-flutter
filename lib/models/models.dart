@@ -189,8 +189,22 @@ String studentStatusLabel(String status) =>
 ///
 /// لا تُقصّ الأقواس من أطراف الاسم: قصّ `)` كان يحوّل «شعبة (3)» إلى «شعبة (3»
 /// فيفصل الطلاب عن صفوفهم بعد تعيين المربي.
+/// نتائج التنقية محفوظة: أسماء الشعب والمراحل المميزة عشرات، بينما مطابقة كل طالب
+/// بكل شعبة تستدعيها عشرات الآلاف من المرات، وكل نداء يبني تعابير نمطية جديدة.
+final _sanitizeCache = <String, String>{};
+
 String sanitizeSectionName(String rawName, [String gradeLevel = '']) {
   if (rawName.trim().isEmpty) return '';
+  final key = '$rawName$gradeLevel';
+  final cached = _sanitizeCache[key];
+  if (cached != null) return cached;
+  final result = _sanitizeSectionName(rawName, gradeLevel);
+  // حدٌّ أعلى يمنع نموّ الذاكرة إن وصلت قيم كثيرة غير متوقعة
+  if (_sanitizeCache.length < 8192) _sanitizeCache[key] = result;
+  return result;
+}
+
+String _sanitizeSectionName(String rawName, String gradeLevel) {
   var clean = rawName.trim().replaceAll(RegExp(r'^(فصل|صف)\s+', caseSensitive: false), '').trim();
 
   final grade = _gradeCore(gradeLevel);

@@ -110,8 +110,11 @@ bool reportHasTerm2(List<ReportCardStudent> cards) =>
   final rooms = store.roomsInViewedYear;
   final room = roomId == null ? null : rooms.where((r) => r.id == roomId).firstOrNull;
   final gradeLevel = (room?.gradeLevel ?? grade).trim();
-  Classroom? roomOf(Student s) =>
-      s.section.trim().isEmpty ? null : rooms.where((r) => studentBelongsToRoom(s, r)).firstOrNull;
+  final roomCache = <String, Classroom?>{};
+  Classroom? roomOf(Student s) => roomCache.putIfAbsent(
+        s.id,
+        () => s.section.trim().isEmpty ? null : rooms.where((r) => studentBelongsToRoom(s, r)).firstOrNull,
+      );
 
   final inScope = store.studentsInViewedYear.where((s) {
     if (s.status == 'withdrawn' || s.status == 'archived') return false;
@@ -119,7 +122,20 @@ bool reportHasTerm2(List<ReportCardStudent> cards) =>
     return gradeLevel.isNotEmpty && s.gradeLevel.trim().isNotEmpty && isSameGrade(s.gradeLevel, gradeLevel);
   }).toList();
 
-  final cards = [for (final s in inScope) studentReportCard(store, s, room: roomOf(s))];
+  // الحضور والعلامات مجمّعة بالطالب مرة واحدة: المرور على كل الحضور وتحويل كل العلامات
+  // لكل طالب كان يضاعف كلفة شهادات الصف بعدد طلابه
+  final ids = {for (final s in inScope) s.id};
+  final marksOf = <String, List<AttendanceMark>>{};
+  for (final a in store.attendance) {
+    if (ids.contains(a.studentId)) marksOf.putIfAbsent(a.studentId, () => []).add(a);
+  }
+  final evalsOf = <String, List<Evaluation>>{};
+  for (final e in store.evaluations) {
+    if (ids.contains(e.studentId)) evalsOf.putIfAbsent(e.studentId, () => []).add(e);
+  }
+  final prepared = (marks: marksOf, evaluations: evalsOf, sessionById: sessionMap(store.sessions));
+
+  final cards = [for (final s in inScope) studentReportCard(store, s, room: roomOf(s), prepared: prepared)];
   return (
     cards: [for (final c in cards) if (c.rows.isNotEmpty) c],
     skipped: [for (final c in cards) if (c.rows.isEmpty) c.studentName],
@@ -128,13 +144,24 @@ bool reportHasTerm2(List<ReportCardStudent> cards) =>
 }
 
 /// شهادة طالب واحد بمربي شعبته وغيابه في العام المعروض.
-ReportCardStudent studentReportCard(AppStore store, Student s, {Classroom? room}) {
+///
+/// [prepared] الحضور والعلامات مجمّعة بالطالب وخريطة الجلسات — يمرّرها من يطبع صفاً كاملاً.
+ReportCardStudent studentReportCard(
+  AppStore store,
+  Student s, {
+  Classroom? room,
+  ({
+    Map<String, List<AttendanceMark>> marks,
+    Map<String, List<Evaluation>> evaluations,
+    Map<String, ClassSession> sessionById,
+  })? prepared,
+}) {
   final year = store.viewedAcademicYear;
   final homeroom = room ??
       (s.section.trim().isEmpty ? null : store.roomsInViewedYear.where((r) => studentBelongsToRoom(s, r)).firstOrNull);
-  final marks = store.attendance.where((a) => a.studentId == s.id);
+  final marks = prepared?.marks[s.id] ?? (prepared != null ? const <AttendanceMark>[] : store.attendance.where((a) => a.studentId == s.id));
   final misses = [
-    for (final d in dailyAttendance(marks, store.sessions, calendar: store.settings.calendar))
+    for (final d in dailyAttendance(marks, store.sessions, calendar: store.settings.calendar, sessionById: prepared?.sessionById))
       if (d.status != 'present' &&
           (year == null || (d.date.compareTo(year.startsOn) >= 0 && d.date.compareTo(year.endsOn) <= 0)))
         d,
@@ -147,7 +174,7 @@ ReportCardStudent studentReportCard(AppStore store, Student s, {Classroom? room}
     homeroomName: homeroom == null || homeroom.teacherId.isEmpty ? '' : (store.teacherById(homeroom.teacherId)?.name ?? ''),
     misses: misses,
     rows: buildReportCardRows(
-      store.evaluations.where((e) => e.studentId == s.id),
+      prepared?.evaluations[s.id] ?? (prepared != null ? const <Evaluation>[] : store.evaluations.where((e) => e.studentId == s.id)),
       store.gradingForViewedYear,
       s.gradeLevel,
       (id) => store.subjectById(id)?.name ?? 'مادة',

@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data/dashboard_stats.dart';
@@ -15,11 +17,8 @@ import '../data/school_options.dart';
 import '../data/staff.dart';
 import '../data/store.dart';
 import '../models/models.dart';
-import '../theme/app_colors.dart';
 import '../widgets/admin_tokens.dart';
 import '../widgets/admin_ui.dart';
-import '../widgets/table_gate.dart';
-import '../widgets/widgets.dart';
 import 'announcement_sheet.dart';
 import 'finance_screen.dart' show financeAgingRequest;
 import 'student_detail_screen.dart';
@@ -96,6 +95,61 @@ class _Pending {
   final ({String label, VoidCallback onTap})? open;
 }
 
+/// بطاقة رقم بمعطياتها: تُرسم، وتُحفظ في اللقطة كما هي. [target] `section:<قسم>` أو `report:<تقرير>`.
+class _Tile {
+  const _Tile({required this.label, required this.value, required this.sub, required this.target, this.color, this.hint});
+
+  final String label;
+  final String value;
+  final String sub;
+  final String target;
+  final Color? color;
+  final String? hint;
+
+  Map<String, Object?> toJson() =>
+      {'l': label, 'v': value, 's': sub, 't': target, if (color != null) 'c': color!.toARGB32(), if (hint != null) 'h': hint};
+
+  static _Tile fromJson(Map<String, dynamic> m) => _Tile(
+        label: '${m['l']}',
+        value: '${m['v']}',
+        sub: '${m['s']}',
+        target: '${m['t']}',
+        color: m['c'] is int ? Color(m['c'] as int) : null,
+        hint: m['h'] as String?,
+      );
+}
+
+/// آخر أرقام ظهرت للعرض الافتراضي (اليوم، المدرسة كلها): تُرسم فور الفتح قبل الحساب.
+class _Snapshot {
+  const _Snapshot({required this.students, required this.chips, required this.tiles, required this.pending});
+
+  final int students;
+  final List<String> chips;
+  final List<_Tile> tiles;
+  final List<({String key, String label, String value})> pending;
+
+  String encode() => jsonEncode({
+        'n': students,
+        'c': chips,
+        't': [for (final t in tiles) t.toJson()],
+        'p': [for (final p in pending) {'k': p.key, 'l': p.label, 'v': p.value}],
+      });
+
+  static _Snapshot? decode(String raw) {
+    final m = jsonDecode(raw);
+    if (m is! Map<String, dynamic>) return null;
+    return _Snapshot(
+      students: (m['n'] as num?)?.toInt() ?? 0,
+      chips: [for (final c in (m['c'] as List? ?? const [])) '$c'],
+      tiles: [for (final t in (m['t'] as List? ?? const [])) _Tile.fromJson(Map<String, dynamic>.from(t as Map))],
+      pending: [
+        for (final p in (m['p'] as List? ?? const []))
+          if (p is Map) (key: '${p['k']}', label: '${p['l']}', value: '${p['v']}'),
+      ],
+    );
+  }
+}
+
 /// الرئيسية — `Dashboard.tsx` بتصميم الجوال: بطاقة اليوم، والفترة والمرحلة، وبطاقات الأرقام،
 /// و«يحتاج تدخلاً»، والرسم لآخر 30 يوماً وحلقة الحضور، ثم التفاصيل. الحساب عند الفتح ثم بتجميع ثانيتين.
 class HomeScreen extends StatelessWidget {
@@ -111,12 +165,25 @@ class HomeScreen extends StatelessWidget {
   final ValueChanged<String> onReport;
 
   @override
-  Widget build(BuildContext context) => TableGate(
-        tables: const ['sessions', 'attendance', 'payments', 'installments', 'student_evaluations', 'audit_log', 'finance_requests'],
-        message: 'جارٍ تحميل الرئيسية...',
-        child: _Home(onSection: onSection, onReport: onReport, active: active),
-      );
+  Widget build(BuildContext context) => _Home(onSection: onSection, onReport: onReport, active: active);
 }
+
+/// جداول الكروت الأربعة: الرئيسية تنتظرها وحدها، وما تحتاجه البنود الأخرى يُحمَّل بعد ظهورها.
+const _cardTables = ['sessions', 'attendance', 'payments', 'installments'];
+const _laterTables = ['student_evaluations', 'audit_log', 'finance_requests'];
+
+/// جداول أرقام الفترة: تغيّر غيرها (حالة المزامنة، المودل، الرسائل) لا يعيد حساب الرئيسية.
+const _statTables = [
+  'students', 'student_years', 'sessions', 'attendance', 'payments', 'installments', //
+  'expenses', 'rooms', 'academic_years', 'institution_settings',
+];
+
+/// جداول البنود الثقيلة (الإنذارات واكتمال الرصد والاعتماد): لا يمسّها تبديل الفترة.
+const _heavyTables = [
+  ..._statTables,
+  'student_evaluations', 'audit_log', 'finance_requests', 'payment_requests', //
+  'groups', 'subjects', 'teachers', 'users',
+];
 
 class _Home extends StatefulWidget {
   const _Home({required this.onSection, required this.onReport, required this.active});
@@ -134,6 +201,22 @@ class _HomeState extends State<_Home> {
   DashboardStats? stats;
   Timer? _debounce;
   bool _stale = false;
+
+  /// آخر أرقام ظهرت محفوظة على الجهاز: تُعرض فور الفتح إلى أن ينتهي الحساب.
+  _Snapshot? _snap;
+  String? _savedSnap;
+  String? _loadError;
+
+  /// أختام المدخلات: إخطار لم يغيّر جدولاً منها لا يعيد الحساب.
+  int? _statStamp;
+  int? _heavyStamp;
+
+  /// البنود الثقيلة محسوبة خارج الرسم: تبديل الفترة أو فتح سطر لا يعيدها.
+  List<AbsenceAlert> _alerts = const [];
+  List<CompletionRow> _completion = const [];
+  int _approvals = 0;
+  double _expectedMonth = 0;
+  List<_Birthday> _birthdayList = const [];
 
   // كل فتح يبدأ باليوم وبالمدرسة كلها: اللوحة للمتابعة اليومية
   String period = '1';
@@ -159,7 +242,7 @@ class _HomeState extends State<_Home> {
     if (!widget.active.value || !mounted) return;
     if (_stale) {
       _stale = false;
-      setState(_recompute);
+      if (stats != null) setState(_refresh);
     }
     unawaited(_loadStaff(_store!));
   }
@@ -171,13 +254,72 @@ class _HomeState extends State<_Home> {
     if (_store == store) return;
     _store?.removeListener(_onStore);
     _store = store..addListener(_onStore);
-    _recompute();
+    stats = null;
+    unawaited(_readSnapshot(store));
+    unawaited(_start(store));
     unawaited(_loadStaff(store));
     if (store.isAdminUser) {
       usageDaily(30).then((v) {
         if (mounted) setState(() => usage = v);
       }).catchError((Object _) {});
     }
+  }
+
+  /// الكروت تنتظر جداولها الأربعة وحدها، والحساب بعد أن يُرسم الإطار الأول (باللقطة
+  /// المحفوظة إن وُجدت) فلا تبقى الشاشة بيضاء أثناءه. بقية الجداول بعدها.
+  Future<void> _start(AppStore store) async {
+    if (mounted && _loadError != null) setState(() => _loadError = null);
+    try {
+      if (!store.tablesReady(_cardTables)) await store.ensureTables(_cardTables);
+    } catch (e, st) {
+      debugPrint('Home ensureTables: $e\n$st');
+      if (!store.tablesReady(_cardTables)) {
+        if (mounted) setState(() => _loadError = 'تعذّر تحميل البيانات');
+        return;
+      }
+    }
+    if (!mounted || _store != store) return;
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || _store != store) return;
+    setState(() {
+      _recompute();
+      _recomputeHeavy();
+    });
+    if (!store.tablesReady(_laterTables)) {
+      try {
+        await store.ensureTables(_laterTables);
+      } catch (e) {
+        debugPrint('Home later tables: $e');
+      }
+      if (mounted && _store == store) setState(_recomputeHeavy);
+    }
+  }
+
+  String get _snapKey {
+    final store = _store!;
+    return 'home_snapshot_v1_${store.tenantId ?? ''}_${store.deviceUser?.id ?? ''}';
+  }
+
+  Future<void> _readSnapshot(AppStore store) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_snapKey);
+      if (raw == null || !mounted || _store != store || stats != null) return;
+      final snap = _Snapshot.decode(raw);
+      if (snap != null) setState(() => _snap = snap);
+    } catch (_) {
+      // لقطة تالفة أو تخزين غير متاح: تُحسب الأرقام كالمعتاد
+    }
+  }
+
+  void _saveSnapshot(_Snapshot snap) {
+    final raw = snap.encode();
+    if (raw == _savedSnap) return;
+    _savedSnap = raw;
+    final key = _snapKey;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      SharedPreferences.getInstance().then((p) => p.setString(key, raw)).catchError((Object _) => false);
+    });
   }
 
   @override
@@ -189,18 +331,62 @@ class _HomeState extends State<_Home> {
   }
 
   void _onStore() {
+    if (stats == null) return;
     if (!widget.active.value) {
       _stale = true;
       return;
     }
     _debounce?.cancel();
     _debounce = Timer(const Duration(seconds: 2), () {
-      if (mounted) setState(_recompute);
+      if (mounted) setState(_refresh);
     });
+  }
+
+  int _tablesStamp(AppStore store, List<String> tables) => Object.hashAll([
+        for (final t in tables) store.tableRev(t),
+        // تحميل جدول من القرص يستبدل قائمته كلها
+        identityHashCode(store.attendance), store.attendance.length,
+        identityHashCode(store.sessions), store.sessions.length,
+        identityHashCode(store.students), store.students.length,
+        identityHashCode(store.installments), store.installments.length,
+        identityHashCode(store.payments), store.payments.length,
+        store.viewedAcademicYearId,
+        store.deviceUser?.id,
+        isoDate(DateTime.now()),
+      ]);
+
+  int _heavyStampOf(AppStore store) => Object.hash(
+        _tablesStamp(store, _heavyTables),
+        store.tablesReady(_laterTables),
+        store.isAdminUser,
+        Object.hashAll([for (final e in store.featureState.entries) '${e.key}:${e.value}']),
+      );
+
+  /// بعد إخطار: يُعاد ما تغيّرت مدخلاته فقط.
+  void _refresh() {
+    final store = _store!;
+    if (_tablesStamp(store, _statTables) != _statStamp) _recompute();
+    if (_heavyStampOf(store) != _heavyStamp) _recomputeHeavy();
+  }
+
+  void _recomputeHeavy() {
+    final store = _store!;
+    _heavyStamp = _heavyStampOf(store);
+    final now = DateTime.now();
+    final showAttendance = store.isFeatureOn('attendance') && store.can('attendance');
+    // الإنذارات تحتاج سجل ما أُرسل، والاكتمال والاعتماد تحتاج العلامات
+    _alerts = showAttendance && store.tablesReady(const ['audit_log']) ? loadAbsenceAlerts(store) : const [];
+    final evalsReady = store.tablesReady(const ['student_evaluations']);
+    _completion = evalsReady && store.isFeatureOn('evaluations') && store.isAdminUser ? loadCompletion(store).rows : const [];
+    _approvals = evalsReady && store.can('evaluations') ? store.pendingApprovals.length : 0;
+    final month = isoDate(now).substring(0, 7);
+    _expectedMonth = store.installments.where((i) => isoDate(i.dueDate).startsWith(month)).fold<double>(0, (n, i) => n + i.amount);
+    _birthdayList = _birthdays(store, now);
   }
 
   void _recompute() {
     final store = _store!;
+    _statStamp = _tablesStamp(store, _statTables);
     stats = buildDashboard(
       today: isoDate(DateTime.now()),
       students: store.students,
@@ -383,6 +569,61 @@ class _HomeState extends State<_Home> {
         ),
       );
 
+  void _open(String target) {
+    final i = target.indexOf(':');
+    final id = target.substring(i + 1);
+    target.startsWith('report:') ? widget.onReport(id) : widget.onSection(id);
+  }
+
+  /// بطاقات الأرقام: عمودان.
+  Widget _tiles(List<_Tile> data) => LayoutBuilder(builder: (context, c) {
+        final w = (c.maxWidth - 8) / 2;
+        return Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final t in data)
+            SizedBox(
+              width: w,
+              child: _kpi(t.label, t.value, t.sub, color: t.color, hint: t.hint, onTap: () => _open(t.target)),
+            ),
+        ]);
+      });
+
+  /// قبل انتهاء الحساب: آخر أرقام محفوظة مع شريط تحديث رفيع، وإلا مؤشر التحميل.
+  Widget _waiting() {
+    if (_loadError != null) {
+      return Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text(_loadError!, style: NoonText.style(13, color: AdminNoon.muted)),
+          const SizedBox(height: 8),
+          TextButton(onPressed: () => unawaited(_start(_store!)), child: const Text('إعادة المحاولة')),
+        ]),
+      );
+    }
+    final snap = _snap;
+    if (snap == null) return const NoonLoading(text: 'جارٍ تحميل الرئيسية...');
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+      children: [
+        AdminHero(
+          icon: Icons.space_dashboard_outlined,
+          label: _dayTitle(DateTime.now()),
+          value: '${snap.students}',
+          unit: 'طالب نشط',
+          chips: snap.chips,
+        ),
+        const SizedBox(height: 10),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(2),
+          child: LinearProgressIndicator(minHeight: 2, color: AdminNoon.teal, backgroundColor: AdminNoon.band),
+        ),
+        const SizedBox(height: 10),
+        _tiles(snap.tiles),
+        const SizedBox(height: 12),
+        if (snap.pending.isNotEmpty)
+          _attentionCard({for (final p in snap.pending) p.key: _Pending(label: p.label, value: p.value)}),
+      ],
+    );
+  }
+
   IconData _pendingIcon(String key) => switch (key) {
         'att' => Icons.event_busy_outlined,
         'alerts' => Icons.warning_amber_rounded,
@@ -503,7 +744,8 @@ class _HomeState extends State<_Home> {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    final s = stats!;
+    final s = stats;
+    if (s == null) return _waiting();
     final now = DateTime.now();
     final features = store.featureState;
     final showAttendance = store.isFeatureOn('attendance') && store.can('attendance');
@@ -515,8 +757,7 @@ class _HomeState extends State<_Home> {
     final counts = today1 ? s.today : s.range;
     final rate = rateOf(counts);
     final prevRate = rateOf(s.previous);
-    final month = isoDate(now).substring(0, 7);
-    final expectedMonth = store.installments.where((i) => isoDate(i.dueDate).startsWith(month)).fold<double>(0, (n, i) => n + i.amount);
+    final expectedMonth = _expectedMonth;
     final collectedDelta = s.collectedPrevious > 0 ? ((s.collectedRange - s.collectedPrevious) / s.collectedPrevious * 100).round() : null;
 
     final attendanceSub = rate == null
@@ -533,14 +774,14 @@ class _HomeState extends State<_Home> {
     final periodLabel = switch (period) { '1' => 'اليوم', '7' => 'آخر 7 أيام', _ => 'آخر 30 يوماً' };
 
     // ما ينتظر قراراً اليوم: سطر لكل نوع بعدده، ومن له تفاصيل ينفتح في مكانه
-    final alerts = showAttendance ? loadAbsenceAlerts(store) : const <AbsenceAlert>[];
-    final completion = store.isFeatureOn('evaluations') && store.isAdminUser ? loadCompletion(store).rows : const <CompletionRow>[];
+    final alerts = showAttendance ? _alerts : const <AbsenceAlert>[];
+    final completion = _completion;
     final lateByTeacher = <String, List<CompletionRow>>{};
     for (final r in completion) {
       if (r.late > 0) (lateByTeacher[r.teacherId] ??= []).add(r);
     }
     String roomLabel(Classroom r) => [r.gradeLevel, r.name].where((x) => x.trim().isNotEmpty).join(' · ');
-    final approvals = store.can('evaluations') ? store.pendingApprovals.length : 0;
+    final approvals = _approvals;
     final requests = (showFinance ? store.pendingPaymentRequests.length : 0) + (store.can('finance.discount') ? store.pendingFinanceRequests.length : 0);
     final unmarked = showAttendance && s.holiday == null ? s.unmarkedRooms : const <({Classroom room, int students})>[];
     final pending = <String, _Pending>{
@@ -635,10 +876,60 @@ class _HomeState extends State<_Home> {
     final seriesTotal = series.fold<double>(0, (n, p) => n + p.value);
     final isMoney = chartKind == 'collected' || chartKind == 'expenses';
 
-    final birthdays = _birthdays(store, now);
+    final birthdays = _birthdayList;
     final institution = store.institutionName.trim();
     final absentList = allAbsent ? s.absentToday : s.absentToday.take(6).toList();
     final chronicList = allChronic ? s.chronic : s.chronic.take(6).toList();
+
+    final tileData = <_Tile>[
+      if (showAttendance) ...[
+        _Tile(
+          label: 'الحضور · $periodLabel',
+          value: rate == null ? '—' : '$rate%',
+          sub: attendanceSub,
+          color: rate == null ? null : (rate < 85 ? _absent : _present),
+          target: 'section:attendance',
+        ),
+        _Tile(
+          label: 'الغياب · $periodLabel',
+          value: rate == null ? '—' : '${counts.absent}',
+          sub: '${counts.excused} مأذون${today1 && streaks > 0 ? ' · $streaks متتالٍ' : ''}',
+          color: counts.absent > 0 ? _absent : null,
+          target: 'report:alerts',
+        ),
+      ],
+      if (showFinance) ...[
+        _Tile(
+          label: 'التحصيل · $periodLabel',
+          value: money(s.collectedRange),
+          sub: expectedMonth > 0 ? 'هذا الشهر ${(s.collectedMonth / expectedMonth * 100).round()}% من المتوقع' : collectedSub,
+          color: _present,
+          hint: expectedMonth > 0 ? 'حُصّل هذا الشهر ${money(s.collectedMonth)} من ${money(expectedMonth)} مستحقة فيه · $collectedSub' : null,
+          target: 'section:finance',
+        ),
+        _Tile(
+          label: 'المتأخرات حتى اليوم',
+          value: money(s.overdueTotal),
+          sub: '${s.debtors} طالب${s.dueSoonAmount > 0 ? ' · قريباً ${money(s.dueSoonAmount)}' : ''}',
+          color: s.overdueTotal > 0 ? _absent : null,
+          target: 'section:finance',
+        ),
+      ],
+    ];
+    final heroChips = [
+      '${s.roomsTotal} شعبة',
+      if (s.newThisMonth > 0) '+${s.newThisMonth} هذا الشهر',
+      if (grade.isNotEmpty) grade,
+    ];
+    // اللقطة للعرض الافتراضي وحده (اليوم، المدرسة كلها) — به يُفتح كل مرة
+    if (today1 && grade.isEmpty) {
+      _saveSnapshot(_Snapshot(
+        students: s.activeStudents,
+        chips: heroChips,
+        tiles: tileData,
+        pending: [for (final e in pending.entries) (key: e.key, label: e.value.label, value: e.value.value)],
+      ));
+    }
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
@@ -648,11 +939,7 @@ class _HomeState extends State<_Home> {
           label: s.holiday == null ? _dayTitle(now) : '${_dayTitle(now)} · عطلة: ${s.holiday!.title}',
           value: '${s.activeStudents}',
           unit: 'طالب نشط',
-          chips: [
-            '${s.roomsTotal} شعبة',
-            if (s.newThisMonth > 0) '+${s.newThisMonth} هذا الشهر',
-            if (grade.isNotEmpty) grade,
-          ],
+          chips: heroChips,
         ),
         const SizedBox(height: 12),
         Row(children: [
@@ -682,45 +969,7 @@ class _HomeState extends State<_Home> {
         ]),
         const SizedBox(height: 12),
         // بطاقات الأرقام: عمودان
-        LayoutBuilder(builder: (context, c) {
-          final tiles = <Widget>[
-            if (showAttendance) ...[
-              _kpi(
-                'الحضور · $periodLabel',
-                rate == null ? '—' : '$rate%',
-                attendanceSub,
-                color: rate == null ? null : (rate < 85 ? _absent : _present),
-                onTap: () => widget.onSection('attendance'),
-              ),
-              _kpi(
-                'الغياب · $periodLabel',
-                rate == null ? '—' : '${counts.absent}',
-                '${counts.excused} مأذون${today1 && streaks > 0 ? ' · $streaks متتالٍ' : ''}',
-                color: counts.absent > 0 ? _absent : null,
-                onTap: () => widget.onReport('alerts'),
-              ),
-            ],
-            if (showFinance) ...[
-              _kpi(
-                'التحصيل · $periodLabel',
-                money(s.collectedRange),
-                expectedMonth > 0 ? 'هذا الشهر ${(s.collectedMonth / expectedMonth * 100).round()}% من المتوقع' : collectedSub,
-                color: _present,
-                hint: expectedMonth > 0 ? 'حُصّل هذا الشهر ${money(s.collectedMonth)} من ${money(expectedMonth)} مستحقة فيه · $collectedSub' : null,
-                onTap: () => widget.onSection('finance'),
-              ),
-              _kpi(
-                'المتأخرات حتى اليوم',
-                money(s.overdueTotal),
-                '${s.debtors} طالب${s.dueSoonAmount > 0 ? ' · قريباً ${money(s.dueSoonAmount)}' : ''}',
-                color: s.overdueTotal > 0 ? _absent : null,
-                onTap: () => widget.onSection('finance'),
-              ),
-            ],
-          ];
-          final w = (c.maxWidth - 8) / 2;
-          return Wrap(spacing: 8, runSpacing: 8, children: [for (final t in tiles) SizedBox(width: w, child: t)]);
-        }),
+        _tiles(tileData),
         const SizedBox(height: 12),
         if (pending.isEmpty)
           _card('يحتاج تدخلاً', [

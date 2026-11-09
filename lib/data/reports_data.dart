@@ -123,11 +123,12 @@ class SectionAttendance {
 /// حضور كل شعبة في فترة (من - إلى شاملة)، يوماً بيوم.
 List<SectionAttendance> attendanceBySection(AppStore store, List<SectionGroup> groups, String from, String to) {
   final sessions = store.sessions.where((s) => s.sessionDate.compareTo(from) >= 0 && s.sessionDate.compareTo(to) <= 0).toList();
-  final ids = {for (final s in sessions) s.id};
+  final byId = sessionMap(sessions);
   final recordsOf = <String, List<AttendanceMark>>{};
   for (final r in store.attendance) {
-    if (ids.contains(r.sessionId)) recordsOf.putIfAbsent(r.studentId, () => []).add(r);
+    if (byId.containsKey(r.sessionId)) recordsOf.putIfAbsent(r.studentId, () => []).add(r);
   }
+  final calendar = store.settings.calendar;
   return [
     for (final g in groups)
       SectionAttendance(
@@ -135,7 +136,7 @@ List<SectionAttendance> attendanceBySection(AppStore store, List<SectionGroup> g
         rows: [
           for (final s in g.students)
             () {
-              final days = dailyAttendance(recordsOf[s.id] ?? const [], sessions, calendar: store.settings.calendar);
+              final days = dailyAttendance(recordsOf[s.id] ?? const [], sessions, calendar: calendar, sessionById: byId);
               int count(String st) => days.where((d) => d.status == st).length;
               return StudentAttendance(
                 student: s,

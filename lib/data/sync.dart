@@ -1,12 +1,12 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
 import 'supabase.dart';
 import 'error_report.dart';
-import 'user_message.dart';
+import 'user_message.dart';
+
 import 'off_thread.dart';
 
 /// مطابق لـ TABLE_ALLOWED_COLUMNS في sync.ts
@@ -832,7 +832,10 @@ const maxSyncRetries = 5;
 const pushChunk = 50;
 /// حجم صفحة السحب من السحابة. تصغيره إلى 10 مع عشرات الآلاف من السجلات
 /// كان يضاعف الرحلات مئات المرات فيبدو التنزيل الأول نصف ساعة.
-const pullPageSize = 500;
+///
+/// 1000 هو سقف Supabase الافتراضي للصفوف في الطلب (`max_rows`): لا يُتجاوز،
+/// فصفحةٌ يقصّها السيرفر تبدو أخيرةً (أقصر من الحجم) فيتوقف الجلب ناقصاً.
+const pullPageSize = 1000;
 const stampToleranceMs = 1000;
 
 /// تقدّم سحب حقيقي — نسبة من جداول اكتملت، لا مؤشرٌ عامّ بلا قيمة.
@@ -1867,7 +1870,7 @@ class SyncService {
           'id': 'in.(${ids.join(',')})',
         },
       );
-      final res = await http.get(uri, headers: _headers);
+      final res = await cloudRequest('GET', uri, headers: _headers);
       if (res.statusCode >= 400) return const {};
       final decoded = jsonDecode(res.body);
       return {
@@ -1893,7 +1896,7 @@ class SyncService {
       final uri = Uri.parse('$supabaseUrl/rest/v1/$tableName').replace(
         queryParameters: {'id': 'eq.${action.recordId}', 'tenant_id': 'eq.$tenantId'},
       );
-      final res = await http.patch(uri, headers: _headers, body: jsonEncode(clean));
+      final res = await cloudRequest('PATCH', uri, headers: _headers, body: jsonEncode(clean));
       if (res.statusCode >= 400) throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
       _completeActions([action], markSynced: true);
       return true;
@@ -2010,6 +2013,11 @@ class SyncService {
         .where((t) => t != 'student_attachments' && t != 'finance_attachments')
         .toList();
 
+    // كل دفعة سجلات كانت تُبلغ الشاشة فتُرسم من جديد مئات المرات على جهاز ضعيف:
+    // إبلاغٌ كل 250ms على الأكثر، وتغيّر المرحلة والنهاية يُبلغان دائماً
+    var lastReportAt = 0;
+    PullProgressPhase? lastPhase;
+
     void report({
       required int percent,
       required String table,
@@ -2017,7 +2025,12 @@ class SyncService {
       required PullProgressPhase phase,
       int records = 0,
     }) {
-      onProgress?.call(
+      if (onProgress == null) return;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (phase == lastPhase && percent < 100 && now - lastReportAt < 250) return;
+      lastReportAt = now;
+      lastPhase = phase;
+      onProgress(
         PullProgress(
           percent: percent.clamp(0, 100),
           tableLabel: tableLabelsAr[table] ?? table,
@@ -2127,8 +2140,9 @@ class SyncService {
         return (48 + (applied / tables.length) * 47).floor().clamp(48, 95);
       }
 
-      if (f.error != null) {
-        failedTables[cloud] = f.error!;
+      // انقطاعٌ في منتصف الجدول: يُسجَّل عطلاً ويُطبَّق ما وصل (أقدم السجلات بالختم)
+      if (f.error != null) failedTables[cloud] = f.error!;
+      if (f.error != null && !f.partial) {
         rowsApplied += tableRows;
         report(
           percent: applyPercent(),
@@ -2241,7 +2255,8 @@ class SyncService {
 
         // الجلب الكامل يعرف السحابة كلها: سجلٌ مُزامَن غائب عنها حُذف هناك. وما
         // كُتب محلياً قُبيل بدء الجلب قد يكون رُفع للتوّ فلا يُحكم عليه.
-        if (f.since == null) {
+        // والجلب المنقطع لا يعرفها كلها، فلا يُحذف بغيابه شيء.
+        if (f.since == null && !f.partial) {
           final cloudIds = rows.map((r) => '${r['id']}').toSet();
           final toRemove = [
             for (final r in local.allOf(cloud))
@@ -2418,7 +2433,8 @@ class SyncService {
     );
     try {
       final res = await SupabaseAuth.withRetryOnExpiry(
-        () => http.get(
+        () => cloudRequest(
+          'GET',
           uri,
           headers: {
             ...SupabaseConfig.headers,
@@ -2458,6 +2474,7 @@ class SyncService {
       String? maxStamp,
       List<Map<String, dynamic>>? rows,
       String? error,
+      bool partial,
     })
   >
   _fetchTableChanges(
@@ -2472,8 +2489,25 @@ class SyncService {
       var maxStamp = since;
       List<Map<String, dynamic>>? rows;
 
+      var partial = false;
+
+      /// صفحات ناقصة: ما وصل يُطبَّق والمؤشر عند آخر ختم فيه لا عند أحدث ما في السحابة.
+      void takePages(({List<Map<String, dynamic>> rows, bool complete}) got) {
+        if (got.complete) {
+          rows = got.rows;
+          return;
+        }
+        if (got.rows.isEmpty) return;
+        rows = got.rows;
+        partial = true;
+        maxStamp = since;
+        for (final r in got.rows) {
+          maxStamp = laterStamp(maxStamp, '${r['server_updated_at'] ?? ''}');
+        }
+      }
+
       if (since == null) {
-        rows = await _fetchPages(cloud, tenantId, null, onRows: onRows);
+        takePages(await _fetchPages(cloud, tenantId, null, onRows: onRows));
         for (final r in rows ?? const <Map<String, dynamic>>[]) {
           maxStamp = laterStamp(maxStamp, '${r['server_updated_at'] ?? ''}');
         }
@@ -2490,18 +2524,24 @@ class SyncService {
             maxStamp: maxStamp,
             rows: null,
             error: error,
+            partial: false,
           );
         }
         maxStamp = changed.maxStamp;
-        rows = changed.ids.isEmpty
-            ? <Map<String, dynamic>>[]
-            : changed.ids.length > maxIdFetch
-            ? await _fetchPages(cloud, tenantId, since, onRows: onRows)
-            : await _fetchByIds(cloud, tenantId, changed.ids, onRows: onRows);
+        if (changed.ids.isEmpty) {
+          rows = <Map<String, dynamic>>[];
+        } else if (changed.ids.length > maxIdFetch) {
+          takePages(await _fetchPages(cloud, tenantId, since, onRows: onRows));
+        } else {
+          rows = await _fetchByIds(cloud, tenantId, changed.ids, onRows: onRows);
+        }
       }
 
-      final error = rows == null && !missingTables.contains(cloud)
-          ? 'تعذّر جلب بيانات ${tableLabelsAr[cloud] ?? cloud} من السحابة.'
+      final label = tableLabelsAr[cloud] ?? cloud;
+      final error = partial
+          ? 'انقطع جلب $label بعد ${rows!.length} سجل، ويُكمَل في المزامنة التالية.'
+          : rows == null && !missingTables.contains(cloud)
+          ? 'تعذّر جلب بيانات $label من السحابة.'
           : null;
       return (
         cloud: cloud,
@@ -2510,6 +2550,7 @@ class SyncService {
         maxStamp: maxStamp,
         rows: rows,
         error: error,
+        partial: partial,
       );
     } catch (err) {
       return (
@@ -2519,6 +2560,7 @@ class SyncService {
         maxStamp: since,
         rows: null,
         error: describeSupabaseError(err, cloud),
+        partial: false,
       );
     }
   }
@@ -2606,7 +2648,11 @@ class SyncService {
     }
   }
 
-  Future<List<Map<String, dynamic>>?> _fetchPages(
+  /// صفحات جدول بترتيب ختم السيرفر، فما جُلب قبل انقطاعٍ هو أقدم السجلات
+  /// كلها: يُطبَّق ويتقدّم المؤشر إلى آخر ختم فيه، ويُكمَل الباقي في المزامنة
+  /// التالية بدل إعادة الجدول من أوله على شبكة تنقطع. [complete] `false` يعني
+  /// انقطاعاً في منتصفه، و[rows] ما وصل قبله.
+  Future<({List<Map<String, dynamic>> rows, bool complete})> _fetchPages(
     String cloud,
     String tenantId,
     String? since, {
@@ -2621,12 +2667,13 @@ class SyncService {
         sinceColumn: 'server_updated_at',
         from: from,
         to: from + pullPageSize - 1,
-        order: 'id.asc',
+        // المعرّف يفصل الأختام المتساوية فلا يتبدّل ترتيبها بين صفحة وأخرى
+        order: 'server_updated_at.asc,id.asc',
       );
-      if (page == null) return null;
+      if (page == null) return (rows: all, complete: false);
       all.addAll(page);
       onRows?.call(page.length);
-      if (page.length < pullPageSize) return all;
+      if (page.length < pullPageSize) return (rows: all, complete: true);
     }
   }
 
@@ -2794,7 +2841,7 @@ class SyncService {
     for (var attempt = 0; attempt < pullPageRetries; attempt++) {
       try {
         final res = await SupabaseAuth.withRetryOnExpiry(
-          () => http.get(uri, headers: {..._headers, 'Range': '$from-$to'}),
+          () => cloudRequest('GET', uri, headers: {..._headers, 'Range': '$from-$to'}),
           expired: (r) => SupabaseAuth.isExpiredResponse(r.statusCode, r.body),
         );
         if (res.statusCode >= 400) {
@@ -2843,7 +2890,7 @@ class SyncService {
     for (var attempt = 0; attempt < pullPageRetries; attempt++) {
       try {
         final res = await SupabaseAuth.withRetryOnExpiry(
-          () => http.get(uri, headers: _headers),
+          () => cloudRequest('GET', uri, headers: _headers),
           expired: (r) => SupabaseAuth.isExpiredResponse(r.statusCode, r.body),
         );
         if (res.statusCode >= 400) {
@@ -2884,7 +2931,9 @@ class SyncService {
     );
     final body = await encodeRowsOffThread(rows);
     final res = await SupabaseAuth.withRetryOnExpiry(
-      () => http.post(
+      // دمجٌ بالمعرّف: إعادة الرفع بعد مهلةٍ وصل طلبها لا تكرّر سجلاً
+      () => cloudRequest(
+        'POST',
         uri,
         headers: {
           ..._headers,
@@ -2930,7 +2979,7 @@ class SyncService {
       },
     );
     final res = await SupabaseAuth.withRetryOnExpiry(
-      () => http.delete(uri, headers: _headers),
+      () => cloudRequest('DELETE', uri, headers: _headers),
       expired: (r) => SupabaseAuth.isExpiredResponse(r.statusCode, r.body),
     );
     if (res.statusCode >= 400) {

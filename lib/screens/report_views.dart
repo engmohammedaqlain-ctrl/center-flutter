@@ -465,17 +465,35 @@ Widget _row(String title, String sub, List<Widget> trailing, {VoidCallback? onTa
       ),
     );
 
-Widget _list(List<Widget> rows) => Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: noonPanel(),
-      child: Column(children: [
-        for (var i = 0; i < rows.length; i++)
-          DecoratedBox(
-            decoration: BoxDecoration(border: i == 0 ? null : Border(top: BorderSide(color: AdminNoon.line))),
-            child: rows[i],
-          ),
-      ]),
-    );
+/// لوح صفوف التقرير. مباشرةً تحت [_body] يُرسم كسولاً (الظاهر وحده)، فتقرير بآلاف
+/// الطلاب لا يبني ويخطّط كل صفوفه مع كل حرف بحث. في غير ذلك لوح عادي كما كان.
+Widget _list(List<Widget> rows) => _LazyPanel(rows);
+
+class _LazyPanel extends StatelessWidget {
+  const _LazyPanel(this.rows);
+
+  final List<Widget> rows;
+
+  Widget _item(int i) => DecoratedBox(
+        decoration: BoxDecoration(border: i == 0 ? null : Border(top: BorderSide(color: AdminNoon.line))),
+        child: rows[i],
+      );
+
+  Widget sliver() => DecoratedSliver(
+        decoration: noonPanel(),
+        sliver: SliverPadding(
+          padding: const EdgeInsets.all(1),
+          sliver: SliverList.builder(itemCount: rows.length, itemBuilder: (_, i) => _item(i)),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) => Container(
+        clipBehavior: Clip.antiAlias,
+        decoration: noonPanel(),
+        child: Column(children: [for (var i = 0; i < rows.length; i++) _item(i)]),
+      );
+}
 
 /// مفتاح الأرقام الملوّنة في أطراف الصفوف (نقطة بلونها واسمها) أول القائمة.
 Widget _legendRow(List<(String, Color)> items) => Container(
@@ -497,7 +515,14 @@ Widget _val(String v, {Color? color, String? hint}) {
 }
 
 Widget _body(List<Widget> children, {Future<void> Function()? onRefresh}) {
-  final list = ListView(padding: const EdgeInsets.fromLTRB(12, 10, 12, 24), children: children);
+  final list = CustomScrollView(slivers: [
+    SliverPadding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
+      sliver: SliverMainAxisGroup(slivers: [
+        for (final c in children) c is _LazyPanel ? c.sliver() : SliverToBoxAdapter(child: c),
+      ]),
+    ),
+  ]);
   return onRefresh == null ? list : RefreshIndicator(onRefresh: onRefresh, child: list);
 }
 
