@@ -5,19 +5,82 @@
 /// كلما تجاوزت القطعة ميزانيتها. الكود واحد، فالنتيجة واحدة في الحالتين.
 library;
 
+import 'dart:async';
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/scheduler.dart';
+
 import '../models/models.dart';
 
-/// ميزانية القطعة قبل الإفساح: دون نصف إطار الستين هرتز.
-const slicedBudgetMs = 6;
+/// ميزانية مشتركة لكل الأعمال الخلفية على خيط الواجهة في الإطار الواحد.
+///
+/// كل عمل مقطّع كان يأخذ 6ms ثم يُفسح، لكن خمسة أعمال معاً عند الفتح (تحميل
+/// الجداول، حساب الرئيسية، الأختام، الأرصدة، المزامنة) تتكدّس في الإطار نفسه
+/// فتصير 30ms وتتقطع الشاشة كلها حتى تنتهي. الآن الأعمال كلها تتقاسم ~6ms بعد
+/// كل إطار، ثم تنتظر الإطار التالي.
+abstract final class UiBudget {
+  static const workMs = 6;
+  static final _clock = Stopwatch()..start();
+
+  /// نهاية آخر إطار على خيط الواجهة، وآخر استئناف بعد إفساح (بلا إطارات).
+  static int _frameEndUs = 0;
+  static int _resumedUs = 0;
+  static bool _hooked = false;
+
+  /// الاختبارات بلا إطارات حقيقية: تقطيعٌ زمني كما كان، بلا انتظار رسم.
+  static final bool _inTests = !kIsWeb && Platform.environment.containsKey('FLUTTER_TEST');
+
+  static SchedulerBinding? get _framed {
+    if (_inTests) return null;
+    try {
+      final b = SchedulerBinding.instance;
+      return b.framesEnabled ? b : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static void _hook(SchedulerBinding b) {
+    if (_hooked) return;
+    _hooked = true;
+    // يُضاف بعد رسم الإطار نفسه (الربط سجّل رسمه أولاً)، فيعلّم نهاية عمل الإطار على الخيط
+    b.addPersistentFrameCallback((_) => _frameEndUs = _clock.elapsedMicroseconds);
+  }
+
+  /// استُهلكت ميزانية هذا الإطار (لكل الأعمال معاً)؟
+  static bool get exhausted {
+    final now = _clock.elapsedMicroseconds;
+    final b = _framed;
+    if (b == null) return now - _resumedUs > workMs * 1000;
+    _hook(b);
+    final since = _frameEndUs > _resumedUs ? _frameEndUs : _resumedUs;
+    return now - since > workMs * 1000;
+  }
+
+  /// انتظار رسم الإطار التالي أولاً. بلا إطارات (التطبيق في الخلفية أو
+  /// الاختبارات) يكفي دور في حلقة الأحداث، ولا يُنتظر إطار أكثر من 50ms.
+  static Future<void> pause() async {
+    final b = _framed;
+    if (b == null) {
+      await Future<void>.delayed(Duration.zero);
+    } else {
+      _hook(b);
+      await Future.any([b.endOfFrame, Future<void>.delayed(const Duration(milliseconds: 50))]);
+    }
+    _resumedUs = _clock.elapsedMicroseconds;
+  }
+
+  /// يُفسح فقط إن استُهلكت الميزانية — للحلقات وبين الجداول والصفحات.
+  static Future<void> yieldIfNeeded() async {
+    if (exhausted) await pause();
+  }
+}
 
 /// يمرّ على [steps] كلها، ويُفسح للرسم كلما مضت [budgetMs] ملّي ثانية متصلة.
-Future<void> runSliced(Iterable<void> steps, {int budgetMs = slicedBudgetMs}) async {
-  final slice = Stopwatch()..start();
+Future<void> runSliced(Iterable<void> steps) async {
   for (final _ in steps) {
-    if (slice.elapsedMilliseconds >= budgetMs) {
-      await Future<void>.delayed(Duration.zero);
-      slice.reset();
-    }
+    if (UiBudget.exhausted) await UiBudget.pause();
   }
 }
 

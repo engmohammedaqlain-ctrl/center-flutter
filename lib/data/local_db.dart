@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
 import 'off_thread.dart';
+import 'sliced_work.dart';
 
 /// التخزين المحلي الدائم — المقابل لـ `lib/db.ts` (Dexie/IndexedDB) في النسخة المكتبية.
 ///
@@ -149,7 +150,7 @@ class SqflitePersistence implements Persistence {
   /// استعلامٌ واحد لجداول الرئيسية (حضور وسندات وأقساط وجلسات) كان يعيد عشرات
   /// آلاف الصفوف في رسالة واحدة، وفكّ الرسالة على خيط الواجهة لا يُقطَّع: على
   /// جوال قديم تتجمّد الشاشة ثوانيَ. الصفحات تُفكّ واحدة واحدة ويُرسم بينها.
-  static const _readPage = 2000;
+  static const _readPage = 500;
 
   /// قراءة صفوف [tables] (أو كل الجداول إن كانت `null`) بالترتيب المخزَّن نفسه
   /// (`rowid`)، صفحةً صفحة، داخل معاملة واحدة فلا تنقل كتابةٌ متزامنة صفاً بين صفحتين.
@@ -183,7 +184,7 @@ class SqflitePersistence implements Persistence {
           }
           decoded.forEach((t, list) => out.putIfAbsent(t, () => []).addAll(list));
           if (rows.length < _readPage) break;
-          await Future<void>.delayed(Duration.zero);
+          await UiBudget.yieldIfNeeded();
         }
       }
     });
@@ -243,7 +244,7 @@ class SqflitePersistence implements Persistence {
         final batch = txn.batch();
         _insertChunk(batch, table, encoded.ids, encoded.data, i, end);
         await batch.commit(noResult: true);
-        await Future<void>.delayed(Duration.zero);
+        await UiBudget.yieldIfNeeded();
       }
     });
   }
@@ -257,7 +258,7 @@ class SqflitePersistence implements Persistence {
       final batch = _require.batch();
       _insertChunk(batch, table, encoded.ids, encoded.data, i, end);
       await batch.commit(noResult: true);
-      await Future<void>.delayed(Duration.zero);
+      await UiBudget.yieldIfNeeded();
     }
   }
 

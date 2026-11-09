@@ -8,6 +8,7 @@ import 'error_report.dart';
 import 'user_message.dart';
 
 import 'off_thread.dart';
+import 'sliced_work.dart';
 
 /// مطابق لـ TABLE_ALLOWED_COLUMNS في sync.ts
 const tableAllowedColumns = <String, List<String>>{
@@ -2158,7 +2159,7 @@ class SyncService {
           phase: PullProgressPhase.applying,
           records: totalPulled,
         );
-        await Future<void>.delayed(Duration.zero);
+        await UiBudget.yieldIfNeeded();
         continue;
       }
       final rows = f.rows;
@@ -2171,7 +2172,7 @@ class SyncService {
           phase: PullProgressPhase.applying,
           records: totalPulled,
         );
-        await Future<void>.delayed(Duration.zero);
+        await UiBudget.yieldIfNeeded();
         continue;
       }
 
@@ -2227,7 +2228,7 @@ class SyncService {
             records: totalPulled,
           );
           await _setCursor(tenantId, cloud, f.maxStamp);
-          await Future<void>.delayed(Duration.zero);
+          await UiBudget.yieldIfNeeded();
           continue;
         }
         if (toWrite.isNotEmpty) await local.prepareApply(cloud);
@@ -2254,7 +2255,7 @@ class SyncService {
               phase: PullProgressPhase.applying,
               records: totalPulled,
             );
-            await Future<void>.delayed(Duration.zero);
+            await UiBudget.yieldIfNeeded();
           }
           rowsApplied = baseRows + tableRows;
           local.rememberServerStamps(cloud, stamps);
@@ -2292,7 +2293,7 @@ class SyncService {
         );
       }
 
-      await Future<void>.delayed(Duration.zero);
+      await UiBudget.yieldIfNeeded();
     }
 
     report(
@@ -2303,7 +2304,7 @@ class SyncService {
       records: totalPulled,
     );
     totalRemoved += await _applyRemoteDeletes(tenantId);
-    await Future<void>.delayed(Duration.zero);
+    await UiBudget.yieldIfNeeded();
 
     // مطابقة العدد مع السحابة: أي جدول أقل من `count:exact` يُصفَّر مؤشّره ويُعدّ ناقصاً
     report(

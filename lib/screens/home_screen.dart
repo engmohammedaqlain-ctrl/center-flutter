@@ -411,7 +411,7 @@ class _HomeState extends State<_Home> {
             ? (await loadCompletionAsync(store)).rows
             : const <CompletionRow>[];
         if (!mounted || _store != store) return;
-        await Future<void>.delayed(Duration.zero);
+        await UiBudget.yieldIfNeeded();
         if (!mounted || _store != store) return;
         final approvals = evalsReady && store.can('evaluations') ? store.pendingApprovals.length : 0;
         final month = isoDate(now).substring(0, 7);
@@ -482,6 +482,7 @@ class _HomeState extends State<_Home> {
           if (!_reportedFirst) {
             _reportedFirst = true;
             widget.onFirstStats?.call();
+            _store?.markFirstScreenReady();
           }
         } else {
           _statAgain = true;

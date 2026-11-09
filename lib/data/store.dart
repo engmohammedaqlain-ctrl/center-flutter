@@ -39,6 +39,7 @@ import 'user_message.dart';
 import 'followup.dart';
 import 'year_closing.dart';
 import 'year_structure_clone.dart';
+import 'sliced_work.dart';
 
 class AppStore extends ChangeNotifier implements SyncLocalStore {
   AppStore._() {
@@ -53,6 +54,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// مخزن مستقل للاختبارات — لا يشارك الحالة مع [instance] ولا يلمس الشبكة.
   @visibleForTesting
   factory AppStore.forTesting({int? installedBuildCode}) => AppStore._()
+    ..holdFirstPullForScreen = false
     ..tenantApi = const OfflineTenantService()
     ..networkEnabled = false
     .._overrideBuildCode = installedBuildCode;
@@ -179,10 +181,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// صفوف تُدخل بين فحصَي وقت — صغيرة بما يكفي ألّا تتجاوز الدفعةُ الميزانية.
   static const _diskApplyStep = 100;
 
-  /// ميزانية الشريحة قبل الإفساح للرسم — دون إطار الستّين هرتز.
-  static const _diskApplySliceMs = 6;
-
-  /// صفوف جدول قُرئت من القرص إلى الذاكرة، مقطّعةً بإفساح للرسم كل [_diskApplySliceMs].
+  /// صفوف جدول قُرئت من القرص إلى الذاكرة، مقطّعةً بالميزانية المشتركة لكل إطار ([UiBudget]).
   ///
   /// الإفساح بحساب الوقت لا بعدد ثابت: دفعات الخمسة والعشرين كانت تُنتج آلاف
   /// الإفساحات لجدولٍ من مئة ألف صف، وكلفتها نفسها تُقعد المستخدم أمام المؤشر.
@@ -195,8 +194,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         if (cut > 0 && !_stampsForgotten.contains(key)) {
           serverStamps.putIfAbsent(key.substring(0, cut), () => {})[key.substring(cut + 1)] = '${rows[i]['stamp'] ?? ''}';
         }
-        if ((i & 255) == 0 && slice.elapsedMilliseconds >= _diskApplySliceMs) {
-          await Future<void>.delayed(Duration.zero);
+        if ((i & 255) == 0 && UiBudget.exhausted) {
+          await UiBudget.yieldIfNeeded();
           slice.reset();
         }
       }
@@ -215,8 +214,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       for (var i = 0; i < rows.length; i += _diskApplyStep) {
         final end = i + _diskApplyStep > rows.length ? rows.length : i + _diskApplyStep;
         putRows(table, end - i == rows.length ? rows : rows.sublist(i, end));
-        if (slice.elapsedMilliseconds >= _diskApplySliceMs) {
-          await Future<void>.delayed(Duration.zero);
+        if (UiBudget.exhausted) {
+          await UiBudget.yieldIfNeeded();
           slice.reset();
         }
       }
@@ -237,7 +236,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
           debugPrint('ensureTables($table): $e\n$st');
           loadedTables.add(table);
         }
-        await Future<void>.delayed(Duration.zero);
+        await UiBudget.yieldIfNeeded();
       }
     } finally {
       _loading = false;
@@ -701,8 +700,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
                   () => '${rows[i]['stamp'] ?? ''}',
                 );
           }
-          if ((i & 255) == 0 && slice.elapsedMilliseconds >= _diskApplySliceMs) {
-            await Future<void>.delayed(Duration.zero);
+          if ((i & 255) == 0 && UiBudget.exhausted) {
+            await UiBudget.yieldIfNeeded();
             slice.reset();
           }
         }
@@ -873,11 +872,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       // بناء الصفوف قد يطول على جداول كبيرة — إفساح قبل وبعد الكتابة
       final rows = await _rowsForPersistYielding(t);
       await db.saveTable(t, rows);
-      await Future<void>.delayed(Duration.zero);
+      await UiBudget.yieldIfNeeded();
     }
     for (final entry in deletes.entries) {
       await db.deleteRecords(entry.key, entry.value.toList());
-      await Future<void>.delayed(Duration.zero);
+      await UiBudget.yieldIfNeeded();
     }
     for (final entry in records.entries) {
       final rows = await _rowsForPersistYielding(entry.key, only: entry.value);
@@ -888,7 +887,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         final missing = [for (final id in entry.value) if (!kept.contains(id)) id];
         if (missing.isNotEmpty) await db.deleteRecords(entry.key, missing);
       }
-      await Future<void>.delayed(Duration.zero);
+      await UiBudget.yieldIfNeeded();
     }
   }
 
@@ -980,8 +979,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         final n = int.tryParse(key);
         if (n != null && n >= next) next = n + 1;
       }
-      if ((i & 63) == 0 && slice.elapsedMilliseconds >= _diskApplySliceMs) {
-        await Future<void>.delayed(Duration.zero);
+      if ((i & 63) == 0 && UiBudget.exhausted) {
+        await UiBudget.yieldIfNeeded();
         slice.reset();
       }
     }
@@ -1056,7 +1055,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       for (final id in only) {
         final row = recordOf(table, id);
         if (row != null) out.add(row);
-        if (++n % 200 == 0) await Future<void>.delayed(Duration.zero);
+        if (++n % 200 == 0) await UiBudget.yieldIfNeeded();
       }
       return out;
     }
@@ -1071,7 +1070,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       final out = <Map<String, dynamic>>[];
       for (var i = 0; i < all.length; i++) {
         out.add(all[i]);
-        if ((i + 1) % 200 == 0) await Future<void>.delayed(Duration.zero);
+        if ((i + 1) % 200 == 0) await UiBudget.yieldIfNeeded();
       }
       return out;
     }
@@ -1080,7 +1079,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     for (var i = 0; i < list.length; i++) {
       final row = recordOf(table, idOf(list[i]));
       if (row != null) out.add(row);
-      if ((i + 1) % 200 == 0) await Future<void>.delayed(Duration.zero);
+      if ((i + 1) % 200 == 0) await UiBudget.yieldIfNeeded();
     }
     return out;
   }
@@ -1437,7 +1436,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
           putRows(table, rows);
         }
         loadedTables.add(table);
-        await Future<void>.delayed(Duration.zero);
+        await UiBudget.yieldIfNeeded();
       }
       PerfLog.mark('انتهى تحميل النواة');
       // institution_settings قد تكون فارغة — تبقى مُعلَّمة محمّلة
@@ -4852,11 +4851,29 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return (delay: null, stalled: false);
   }
 
+  /// أول سحب بعد أن تظهر الرئيسية بأرقامها: كان يبدأ بعد 0.8 ثانية من الدخول،
+  /// فيحمّل الأختام (86 ألف صف) ويطبّق ما وصل وسط تحميل الرئيسية، فتتقطع الشاشة
+  /// كلها حتى ينتهيا. الرئيسية تُعلم بـ [markFirstScreenReady]، وإلا بعد 10 ثوانٍ.
+  bool holdFirstPullForScreen = true;
+  final _firstScreen = Completer<void>();
+
+  void markFirstScreenReady() {
+    if (!_firstScreen.isCompleted) _firstScreen.complete();
+  }
+
   void startAutoSync() {
     if (autoSync || !networkEnabled || !loggedIn || isMasterAdmin) return;
     autoSync = true;
-    // مهلة بعد الرسم الأول — سحب فوري كان يجمّد الواجهة فور الدخول
-    scheduleAutoPull(const Duration(milliseconds: 800));
+    if (holdFirstPullForScreen && !_firstScreen.isCompleted) {
+      PerfLog.mark('المزامنة الأولى تنتظر الرئيسية');
+      unawaited(_firstScreen.future.timeout(const Duration(seconds: 10), onTimeout: () {}).then((_) {
+        PerfLog.mark('بدء المزامنة الأولى');
+        if (autoSync) scheduleAutoPull(const Duration(milliseconds: 800));
+      }));
+    } else {
+      // مهلة بعد الرسم الأول — سحب فوري كان يجمّد الواجهة فور الدخول
+      scheduleAutoPull(const Duration(milliseconds: 800));
+    }
     scheduleAutoPush(const Duration(seconds: 2));
     _safetyPull?.cancel();
     _safetyPull = Timer.periodic(const Duration(minutes: 1), (_) => safetyPullTick());
@@ -7656,8 +7673,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     // الإفساح بالوقت: كل خمسة عشر طالباً أو مئتين وخمسين صفاً قد يتجاوز الإطار على جوال قديم
     final slice = Stopwatch()..start();
     Future<void> breathe() async {
-      if (slice.elapsedMilliseconds < _diskApplySliceMs) return;
-      await Future<void>.delayed(Duration.zero);
+      if (!UiBudget.exhausted) return;
+      await UiBudget.yieldIfNeeded();
       slice.reset();
     }
 
@@ -7853,7 +7870,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   /// كـ [dueItems] بالنتيجة والذاكرة نفسيهما، لكن الحساب يُفسح للرسم كل
-  /// [_diskApplySliceMs]: التحميل المسبق للمالية كان يجمّد الدوّارة ثوانيَ.
+  /// [UiBudget]: التحميل المسبق للمالية كان يجمّد الدوّارة ثوانيَ.
   Future<List<DueItem>> dueItemsYielding() async {
     final stamp = Object.hash(
       _listStamp('installments', installments),
@@ -7864,8 +7881,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     if (_dueRev == stamp) return _dueCache;
     final slice = Stopwatch()..start();
     Future<void> breathe() async {
-      if (slice.elapsedMilliseconds < _diskApplySliceMs) return;
-      await Future<void>.delayed(Duration.zero);
+      if (!UiBudget.exhausted) return;
+      await UiBudget.yieldIfNeeded();
       slice.reset();
     }
 
@@ -9902,7 +9919,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       for (var i = 0; i < list.length; i++) {
         map[idOf(list[i])] = i;
         if ((i + 1) % slice == 0) {
-          await Future<void>.delayed(Duration.zero);
+          await UiBudget.yieldIfNeeded();
           if (tableRev(table) != rev || !identical(list, _listFor(table)?.$1)) {
             aborted = true; // عُدّل الجدول أثناء البناء: من جديد
             break;

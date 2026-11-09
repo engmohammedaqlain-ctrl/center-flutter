@@ -37,7 +37,7 @@ void main() {
       const expected = {
         'grade_fees': 'مرحلة جديدة',
         'payment_methods': 'وسيلة دفع',
-        'teachers': 'إضافة مدرس',
+        'teachers': 'إضافة معلم',
         'subjects': 'إضافة مادة',
         'users': 'مستخدم جديد',
       };
