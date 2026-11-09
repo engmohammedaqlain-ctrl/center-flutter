@@ -95,6 +95,10 @@ android {
                 "proguard-rules.pro",
             )
         }
+        // بناء قياس الأداء بمفتاح الإصدار: يُثبَّت فوق التطبيق المنشور دون مسح بياناته
+        findByName("profile")?.apply {
+            if (hasReleaseKey) signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     sourceSets {

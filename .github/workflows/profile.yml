@@ -1,0 +1,53 @@
+# بناء قياس الأداء (profile): Actions ← Profile build ← Run workflow (أي فرع).
+#
+# لا ينشر شيئاً لأحد. حزمة واحدة في صفحة التشغيل (Artifacts) تُثبَّت على جوال
+# موصول بالكمبيوتر، ثم `flutter attach --profile` و DevTools يقيسان كل إطار ويحددان
+# الدالة التي سببت التقطّع. موقّعة بمفتاح الإصدار نفسه ورقمها كالتجريبي، فتُثبَّت
+# فوق التطبيق دون مسح بياناته.
+name: Profile build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.6'
+          channel: stable
+          cache: true
+
+      - name: Signing key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
+        run: |
+          printf '%s' "$KEYSTORE" | tr -d '\r\n ' | base64 --decode > android/center-release.jks
+          printf '%s\n' "$KEY_PROPERTIES" | tr -d '\r' | sed 's/^storeFile=.*/storeFile=center-release.jks/' > android/key.properties
+
+      - run: flutter pub get
+
+      - name: Profile build
+        run: |
+          v=$(grep -m1 '^version:' pubspec.yaml | sed 's/^version: *//' | tr -d '\r ')
+          IFS='.+' read -r major minor _ build <<< "$v"
+          name="$major.$((minor + 1)).0"
+          echo "Profile version $name+$((build + 2))"
+          flutter build apk --profile --target-platform android-arm64 --build-name "$name" --build-number "$((build + 2))"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: noon-profile-${{ github.run_number }}-${{ github.sha }}
+          path: build/app/outputs/flutter-apk/app-profile.apk
+          retention-days: 7
