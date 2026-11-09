@@ -264,9 +264,13 @@ class _TeacherPageState extends State<_TeacherPage> {
     final mine = store.sessions.where((s) => groupIds.contains(s.groupId) && s.sessionDate.compareTo(since) >= 0).toList();
     final mineIds = {for (final s in mine) s.id};
     final records = mineIds.isEmpty ? const <AttendanceMark>[] : store.attendance.where((a) => mineIds.contains(a.sessionId)).toList();
+    // قراءة واحدة للعلامات: كل قراءة تحوّل الجدول كله
+    final evaluations = store.evaluations;
     final evalsByStudent = <String, List<Evaluation>>{};
-    for (final e in store.evaluations) {
+    var graded = 0;
+    for (final e in evaluations) {
       evalsByStudent.putIfAbsent(e.studentId, () => []).add(e);
+      if (e.teacherId == widget.teacherId) graded++;
     }
     final grading = store.gradingForViewedYear;
 
@@ -319,7 +323,7 @@ class _TeacherPageState extends State<_TeacherPage> {
     return _PageData(
       lines: lines,
       sessions: mine.length,
-      graded: store.evaluations.where((e) => e.teacherId == widget.teacherId).length,
+      graded: graded,
     );
   }
 

@@ -179,9 +179,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
               serverStamps.putIfAbsent(parts[0], () => {})[parts[1]] = '${row['stamp'] ?? ''}';
             }
           } else if (table == _pendingTable) {
-            pendingSyncs
-              ..clear()
-              ..addAll(rows.map(PendingSync.fromJson));
+            _adoptPendingRows(rows);
           } else if (table == 'tenants') {
             tenants
               ..clear()
@@ -285,6 +283,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// أثناء تطبيق سحب السحابة: لا تُجدول كتابة قرص لكل دفعة، ولا تُعاد رسم الواجهة لكل صف.
   bool _applyingPull = false;
   final _pullTouched = <String>{};
+
+  /// صفوف لمسها السحب بعينها: تُكتب وحدها عند نهايته بدل الجدول كله.
+  final _pullIds = <String, Set<String>>{};
+  final _pullDeletedIds = <String, Set<String>>{};
+
+  /// فوق هذا العدد تُكتب الصفوف بكتابة الجدول كله: أرخص من آلاف الكتابات المفردة.
+  static const _recordWriteLimit = 2000;
 
   /// كل الجداول التي يملكها المخزن، بنفس أسماء السحابة.
   static const ownedTables = [
@@ -535,20 +540,58 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// تعليم سجل واحد للكتابة بدل الجدول كله.
   void markRecord(String table, String id, {bool deleted = false}) {
     _touchTable(table);
+    _markIds(table, [id], deleted: deleted);
+  }
+
+  /// تعليم صفوف بعينها للكتابة — بلا لمس ختم الجدول (يلمسه المستدعي مرة واحدة).
+  ///
+  /// كان كل تعديل يمرّ على `markDirty` فيُعاد ترميز الجدول كله وكتابته: رصدٌ واحد
+  /// يكتب خمسين ألف صف حضور، وختمُ سجلٍ مرفوع يكتب كل أختام المدرسة.
+  void _markIds(String table, Iterable<String> ids, {bool deleted = false}) {
     if (_loading) return;
     if (_applyingPull) {
-      _pullTouched.add(table);
+      if (_pullTouched.contains(table)) return;
+      final keep = (deleted ? _pullDeletedIds : _pullIds).putIfAbsent(table, () => {});
+      final other = (deleted ? _pullIds : _pullDeletedIds)[table];
+      for (final id in ids) {
+        if (id.isEmpty) continue;
+        other?.remove(id);
+        keep.add(id);
+      }
       return;
     }
     if (_dirty.contains(table)) return; // الجدول كله سيُكتب على أي حال
-    if (deleted) {
-      _dirtyRecords.putIfAbsent(table, () => {}).remove(id);
-      _deletedRecords.putIfAbsent(table, () => {}).add(id);
-    } else {
-      _deletedRecords[table]?.remove(id);
-      _dirtyRecords.putIfAbsent(table, () => {}).add(id);
+    final keep = (deleted ? _deletedRecords : _dirtyRecords).putIfAbsent(table, () => {});
+    final other = (deleted ? _dirtyRecords : _deletedRecords)[table];
+    for (final id in ids) {
+      if (id.isEmpty) continue;
+      other?.remove(id);
+      keep.add(id);
+    }
+    if (keep.length > _recordWriteLimit && keep.length > _tableSize(table) ~/ 3) {
+      // جلّ الجدول تغيّر: كتابته كاملةً أرخص من آلاف الكتابات المفردة
+      _dirtyRecords.remove(table);
+      _deletedRecords.remove(table);
+      _dirty.add(table);
     }
     _scheduleFlush();
+  }
+
+  /// عدد صفوف الجدول في الذاكرة — لقرار الكتابة الكاملة أو المفردة.
+  int _tableSize(String table) {
+    if (table == _stampsTable) return serverStamps.values.fold(0, (n, m) => n + m.length);
+    if (table == _pendingTable) return pendingSyncs.length;
+    final listed = _listFor(table);
+    if (listed != null) return listed.$1.length;
+    return extraCloud[table]?.length ?? 0;
+  }
+
+  /// ختم مدخلات جدول لذاكرة محسوبة في مسار آخر: يتغيّر بأي تعديل عليه أو استبدال قائمته.
+  int inputStamp(String table) {
+    final listed = _listFor(table);
+    if (listed != null) return _listStamp(table, listed.$1);
+    final extra = extraCloud[table];
+    return extra == null ? tableRev(table) : _listStamp(table, extra);
   }
 
   void markAllDirty() {
@@ -583,19 +626,41 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   @override
   void rememberServerStamps(String table, Map<String, String> stamps) {
     if (stamps.isEmpty) return;
-    serverStamps.putIfAbsent(table, () => {}).addAll(stamps);
-    markDirty(_stampsTable);
+    final bucket = serverStamps.putIfAbsent(table, () => {});
+    final changed = <String>[];
+    for (final e in stamps.entries) {
+      if (bucket[e.key] == e.value) continue;
+      bucket[e.key] = e.value;
+      changed.add(_stampKey(table, e.key));
+    }
+    if (changed.isEmpty) return;
+    // الأختام المتغيّرة وحدها: كان ختم سجلٍ مرفوع يعيد كتابة أختام المدرسة كلها
+    _touchTable(_stampsTable);
+    _markIds(_stampsTable, changed);
   }
 
   @override
   void forgetServerStamps(String table, Iterable<String> ids) {
     final bucket = serverStamps[table];
     if (bucket == null) return;
-    var changed = false;
+    final removed = <String>[];
     for (final id in ids) {
-      if (bucket.remove(id) != null) changed = true;
+      if (bucket.remove(id) != null) removed.add(_stampKey(table, id));
     }
-    if (changed) markDirty(_stampsTable);
+    if (removed.isEmpty) return;
+    _touchTable(_stampsTable);
+    _markIds(_stampsTable, removed, deleted: true);
+  }
+
+  /// مفتاح ختم السجل على القرص — نفس صيغة الجدول المحفوظ: `جدول|معرّف`.
+  static String _stampKey(String table, String id) => '$table|$id';
+
+  /// صف ختمٍ للكتابة، أو null إن نُسي بعد تعليمه.
+  Map<String, dynamic>? _stampRow(String key) {
+    final cut = key.indexOf('|');
+    if (cut < 0) return null;
+    final stamp = serverStamps[key.substring(0, cut)]?[key.substring(cut + 1)];
+    return stamp == null ? null : {'id': key, 'stamp': stamp};
   }
 
   /// بصمة آخر حالة عُرف أنها مطابقة للسحابة: 'جدول|معرّف' ← بصمة.
@@ -668,9 +733,19 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   /// كتابة كل الجداول المتغيّرة إلى القرص فوراً.
-  Future<void> flush() async {
+  ///
+  /// حفظٌ واحد في كل لحظة: حفظان متداخلان كانا قد يكتبان نسخة أقدم من صفٍّ فوق أحدث.
+  Future<void> flush() {
     _flushTimer?.cancel();
     _flushTimer = null;
+    final run = _flushTail.then((_) => _flushNow());
+    _flushTail = run.catchError((_) {});
+    return run;
+  }
+
+  Future<void> _flushTail = Future<void>.value();
+
+  Future<void> _flushNow() async {
     if (_dirty.isEmpty && _dirtyRecords.isEmpty && _deletedRecords.isEmpty) return;
 
     final tables = _dirty.toList();
@@ -681,11 +756,15 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _deletedRecords.clear();
 
     for (final t in tables) {
+      records.remove(t);
+      deletes.remove(t);
+      if (t == _pendingTable) {
+        await _flushPending();
+        continue;
+      }
       // بناء الصفوف قد يطول على جداول كبيرة — إفساح قبل وبعد الكتابة
       final rows = await _rowsForPersistYielding(t);
       await db.saveTable(t, rows);
-      records.remove(t);
-      deletes.remove(t);
       await Future<void>.delayed(Duration.zero);
     }
     for (final entry in deletes.entries) {
@@ -695,6 +774,12 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     for (final entry in records.entries) {
       final rows = await _rowsForPersistYielding(entry.key, only: entry.value);
       await db.saveRecords(entry.key, rows);
+      // صفٌّ عُلّم ثم خرج من الذاكرة: الذاكرة المحمّلة هي الحقيقة، فلا يبقى على القرص
+      if (rows.length < entry.value.length && (entry.key == _stampsTable || loadedTables.contains(entry.key))) {
+        final kept = {for (final r in rows) '${r['id']}'};
+        final missing = [for (final id in entry.value) if (!kept.contains(id)) id];
+        if (missing.isNotEmpty) await db.deleteRecords(entry.key, missing);
+      }
       await Future<void>.delayed(Duration.zero);
     }
   }
@@ -702,6 +787,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// صفوف جدول للكتابة على القرص. [only] يقصرها على معرّفات بعينها، فلا
   /// يُسلسَل الجدول كله — ثمانية آلاف سجل حضور — لأجل رصدٍ واحد.
   List<Map<String, dynamic>> _rowsForPersist(String table, {Set<String>? only}) {
+    if (table == _stampsTable && only != null && only.isNotEmpty) {
+      return [for (final key in only) ?_stampRow(key)];
+    }
     if (table == _stampsTable) {
       return [
         for (final entry in serverStamps.entries)
@@ -709,16 +797,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       ];
     }
     if (table == _pendingTable) {
-      final tid = tenantId ?? '';
-      return [
-        for (var i = 0; i < pendingSyncs.length; i++)
-          {
-            'id': '$i',
-            // ختم المنشأة يُوضع هنا: كل تغيير على الطابور يمر بالحفظ، فلا تبقى
-            // عملية بلا ختم تُرفع لاحقاً إلى سحابة منشأة أخرى
-            ...(pendingSyncs[i]..tenantId = pendingSyncs[i].tenantId.isEmpty ? tid : pendingSyncs[i].tenantId).toJson(),
-          },
-      ];
+      return [for (final p in pendingSyncs) _pendingRow(p)];
     }
     if (only != null && only.isNotEmpty) {
       final out = <Map<String, dynamic>>[];
@@ -732,8 +811,93 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return allOf(table);
   }
 
+  // ── طابور الرفع على القرص: صف بمفتاح ثابت لكل عملية ─────────────────────────
+  //
+  // كانت مفاتيح الصفوف مواضعها في القائمة ('0'، '1'...) فكل تغيير — عملية جديدة
+  // أو مرفوعة — يعيد كتابة الطابور كله. في انقطاع الإنترنت يكبر الطابور آلافاً،
+  // ولمسةُ حضورٍ واحدة كانت تكتبها كلها. المفتاح الآن يلازم العملية، والحفظ
+  // يكتب ما تغيّر ويحذف ما خرج.
+
+  final _pendingKey = Expando<String>('pendingKey');
+  var _pendingNextKey = 0;
+
+  /// آخر ما كُتب على القرص لكل مفتاح — null: غير معروف، فالكتابة التالية كاملة.
+  Map<String, (int, int)>? _pendingOnDisk;
+
+  String _pendingKeyOf(PendingSync p) => _pendingKey[p] ??= '${_pendingNextKey++}';
+
+  Map<String, dynamic> _pendingRow(PendingSync p) {
+    // ختم المنشأة يُوضع هنا: كل تغيير على الطابور يمر بالحفظ، فلا تبقى
+    // عملية بلا ختم تُرفع لاحقاً إلى سحابة منشأة أخرى
+    if (p.tenantId.isEmpty) p.tenantId = tenantId ?? '';
+    return {'id': _pendingKeyOf(p), ...p.toJson()};
+  }
+
+  static (int, int) _rowPrint(Map<String, dynamic> row) {
+    final text = jsonEncode(row);
+    var h = 0x811c9dc5;
+    for (var i = 0; i < text.length; i++) {
+      h ^= text.codeUnitAt(i);
+      h = (h * 0x01000193) & 0xffffffff;
+    }
+    return (h, text.hashCode ^ text.length);
+  }
+
+  /// طابور القرص كما قُرئ: ترتيبه بمفاتيحه، وذاكرة ما عليه للمقارنة.
+  void _adoptPendingRows(List<Map<String, dynamic>> rows) {
+    final sorted = [...rows]..sort((a, b) {
+        final x = int.tryParse('${a['id']}');
+        final y = int.tryParse('${b['id']}');
+        if (x == null || y == null) return '${a['id']}'.compareTo('${b['id']}');
+        return x.compareTo(y);
+      });
+    pendingSyncs.clear();
+    final onDisk = <String, (int, int)>{};
+    for (final row in sorted) {
+      final p = PendingSync.fromJson(row);
+      final key = '${row['id'] ?? ''}';
+      pendingSyncs.add(p);
+      if (key.isEmpty) continue;
+      _pendingKey[p] = key;
+      onDisk[key] = _rowPrint(_pendingRow(p));
+      final n = int.tryParse(key);
+      if (n != null && n >= _pendingNextKey) _pendingNextKey = n + 1;
+    }
+    _pendingOnDisk = onDisk;
+  }
+
+  Future<void> _flushPending() async {
+    final current = <String, Map<String, dynamic>>{};
+    for (final p in pendingSyncs) {
+      final row = _pendingRow(p);
+      current['${row['id']}'] = row;
+    }
+    final prints = {for (final e in current.entries) e.key: _rowPrint(e.value)};
+    final known = _pendingOnDisk;
+    // حفظان متداخلان: الأحدث وحده يعتمد ذاكرته، وإلا تُنسى فتكون الكتابة التالية كاملة
+    final gen = ++_pendingGen;
+    _pendingOnDisk = null;
+    try {
+      if (known == null) {
+        await db.saveTable(_pendingTable, current.values.toList());
+      } else {
+        final gone = [for (final k in known.keys) if (!current.containsKey(k)) k];
+        final changed = [for (final e in current.entries) if (known[e.key] != prints[e.key]) e.value];
+        if (gone.isNotEmpty) await db.deleteRecords(_pendingTable, gone);
+        if (changed.isNotEmpty) await db.saveRecords(_pendingTable, changed);
+      }
+      if (gen == _pendingGen) _pendingOnDisk = prints;
+    } catch (_) {
+      _pendingOnDisk = null;
+      rethrow;
+    }
+  }
+
+  var _pendingGen = 0;
+
   /// كـ [_rowsForPersist] مع إفساح كل بضع مئات صفوف كي لا يتوقف مؤشر الزر.
   Future<List<Map<String, dynamic>>> _rowsForPersistYielding(String table, {Set<String>? only}) async {
+    if (table == _stampsTable && only != null && only.isNotEmpty) return _rowsForPersist(table, only: only);
     if (only != null && only.isNotEmpty) {
       final out = <Map<String, dynamic>>[];
       var n = 0;
@@ -794,6 +958,12 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
     await db.wipeData();
     _dirty.clear();
+    _dirtyRecords.clear();
+    _deletedRecords.clear();
+    _pullIds.clear();
+    _pullDeletedIds.clear();
+    // القرص فارغ الآن: الطابور التالي يُقارن بلا شيء
+    _pendingOnDisk = {};
     loadedTables.clear();
     notifyListeners();
   }
@@ -997,15 +1167,38 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _applyingPull = true;
     _batchNotify = true;
     _pullTouched.clear();
+    _pullIds.clear();
+    _pullDeletedIds.clear();
   }
 
   @override
   Future<void> endPullApply() async {
     _applyingPull = false;
     _batchNotify = false;
-    if (_pullTouched.isNotEmpty) {
-      _dirty.addAll(_pullTouched);
-      _pullTouched.clear();
+    // صف حضورٍ واحد من جهاز معلم كان يعيد كتابة كل جدول الحضور: الصفوف التي
+    // لمسها السحب تُكتب وحدها، والجدول كله حين لمسه مسارٌ جملةً أو تغيّر جلّه
+    final whole = {..._pullTouched};
+    final tables = {..._pullIds.keys, ..._pullDeletedIds.keys}..removeAll(whole);
+    for (final table in tables) {
+      final ids = _pullIds.remove(table) ?? const <String>{};
+      final gone = _pullDeletedIds.remove(table) ?? const <String>{};
+      final count = ids.length + gone.length;
+      if (count > _recordWriteLimit && count > _tableSize(table) ~/ 3) {
+        whole.add(table);
+        continue;
+      }
+      if (gone.isNotEmpty) _markIds(table, gone, deleted: true);
+      if (ids.isNotEmpty) _markIds(table, ids);
+    }
+    _pullIds.clear();
+    _pullDeletedIds.clear();
+    _pullTouched.clear();
+    if (whole.isNotEmpty) {
+      _dirty.addAll(whole);
+      for (final t in whole) {
+        _dirtyRecords.remove(t);
+        _deletedRecords.remove(t);
+      }
       _scheduleFlush();
     }
     if (_queuedNotify) {
@@ -1084,9 +1277,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
             serverStamps.putIfAbsent(parts[0], () => {})[parts[1]] = '${row['stamp'] ?? ''}';
           }
         } else if (table == _pendingTable) {
-          pendingSyncs
-            ..clear()
-            ..addAll(rows.map(PendingSync.fromJson));
+          _adoptPendingRows(rows);
         } else if (table == 'tenants') {
           tenants
             ..clear()
@@ -2379,12 +2570,24 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   // ── التقييمات والدرجات (المقابل لـ evaluations.service.ts) ────────────────
 
   /// كل التقييمات، الأحدث تاريخاً أولاً.
+  ///
+  /// محفوظة حتى يتغيّر جدولها: كانت تُحوَّل كلها وتُرتَّب في كل استدعاء، والشاشات
+  /// تستدعيها مراراً في كل إعادة رسم. تُعاد نسخةٌ قابلة للتعديل كما كانت.
   List<Evaluation> get evaluations {
-    final rows = extraCloud['student_evaluations'] ?? const [];
-    final out = rows.map(Evaluation.fromCloud).toList();
-    out.sort((a, b) => b.evaluationDate.compareTo(a.evaluationDate));
-    return out;
+    final rows = extraCloud['student_evaluations'] ?? const <Map<String, dynamic>>[];
+    final stamp = _listStamp('student_evaluations', rows);
+    var cached = _evaluationsCache;
+    if (cached == null || _evaluationsStamp != stamp) {
+      cached = rows.map(Evaluation.fromCloud).toList();
+      cached.sort((a, b) => b.evaluationDate.compareTo(a.evaluationDate));
+      _evaluationsCache = cached;
+      _evaluationsStamp = stamp;
+    }
+    return List.of(cached);
   }
+
+  List<Evaluation>? _evaluationsCache;
+  int _evaluationsStamp = 0;
 
   List<Evaluation> evaluationsOfStudent(String studentId) => evaluations.where((e) => e.studentId == studentId).toList();
 
@@ -2449,7 +2652,6 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       _queue('student_evaluations', e.id, 'INSERT', row);
     }
 
-    markDirty('student_evaluations');
     notifyListeners();
     return scores.length;
   }
@@ -2480,7 +2682,6 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     };
     bucket[idx] = row;
     _queue('student_evaluations', id, 'UPDATE', row);
-    markDirty('student_evaluations');
     notifyListeners();
   }
 
@@ -2501,7 +2702,6 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     bucket.removeWhere((e) => '${e['id']}' == id);
     if (bucket.length == before) return;
     _queue('student_evaluations', id, 'DELETE', null);
-    markDirty('student_evaluations');
     notifyListeners();
   }
 
@@ -3584,7 +3784,6 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     }
 
     if (changed > 0) {
-      markDirty('student_evaluations');
       notifyListeners();
     }
     return changed;
@@ -5742,7 +5941,6 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         installments.add(inst);
         _queue('installments', inst.id, 'INSERT', inst.toCloud());
       }
-      markDirty('installments');
       _persistStudentLedger(incoming);
       // دفعة حجز سابقة بلا قسط: تُربط بأول قسط بعد إنشاء الخطة
       applySeatCreditToFirstInstallment(incoming.id);
@@ -6301,7 +6499,6 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     );
     payments.insert(0, payment);
     _queue('payments', payment.id, 'INSERT', payment.toCloud());
-    markDirty('payments');
     notifyListeners();
     return GeneralIncome.fromPayment(payment);
   }
@@ -6461,7 +6658,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final dueInsts = installments.where((i) => i.studentId == studentId && isInstallmentDue(i));
     p.remainingAfter = ((dueInsts.fold<double>(0, (s, i) => s + math.max(0.0, chargeableAmount(i) - i.paidAmount)) * 100).round() / 100);
     if (!deferSync) queuePendingSync(pendingSyncs, tableName: 'payments', recordId: p.id, action: 'INSERT', payload: p.toCloud());
-    markDirty('payments');
+    markRecord('payments', p.id);
     markDirty(_pendingTable);
     if (disc > cent) {
       _recordFinanceAudit(
@@ -6897,7 +7094,6 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     final student = studentById(studentId)!;
     _persistStudentLedger(student);
     _recordFinanceAudit(action: 'extra_charge', summary: 'رسم خاص «${row.title}» ${money(value)}', studentId: studentId, entityId: row.id, amount: value);
-    markDirty('installments');
     notifyListeners();
     return row;
   }
@@ -7396,7 +7592,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       inst.updatedAt = now;
       inst.syncStatus = 'pending';
       queuePendingSync(pendingSyncs, tableName: 'installments', recordId: inst.id, action: 'UPDATE', payload: inst.toCloud(), tenantId: tenantId ?? '');
-      markDirty('installments');
+      markRecord('installments', inst.id);
       queued = true;
     }
 
@@ -7406,7 +7602,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       student.updatedAt = now;
       student.syncStatus = 'pending';
       queuePendingSync(pendingSyncs, tableName: 'students', recordId: student.id, action: 'UPDATE', payload: student.toCloud(), tenantId: tenantId ?? '');
-      markDirty('students');
+      markRecord('students', student.id);
       queued = true;
     }
     if (queued) markDirty(_pendingTable);
@@ -7523,11 +7719,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   // ── المجموعات والتسجيلات (المقابل لـ schedule.service.ts) ───────────────────
 
-  Group? groupById(String id) => groups.where((g) => g.id == id).firstOrNull;
+  Group? groupById(String id) => _byId('groups', groups, id, (g) => g.id);
 
-  SubjectItem? subjectById(String id) => subjects.where((s) => s.id == id).firstOrNull;
+  SubjectItem? subjectById(String id) => _byId('subjects', subjects, id, (s) => s.id);
 
-  Classroom? roomById(String id) => rooms.where((r) => r.id == id).firstOrNull;
+  Classroom? roomById(String id) => _byId('rooms', rooms, id, (r) => r.id);
 
   String subjectName(String id) => subjectById(id)?.name ?? 'غير محدد';
 
@@ -9332,7 +9528,8 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         final e = _byId('audit_log', financeAudit, id, (e) => e.id);
         return e == null ? null : _row(e.toCloud(), e.syncStatus);
       default:
-        return extraCloud[table]?.where((e) => '${e['id']}' == id).firstOrNull;
+        final bucket = extraCloud[table];
+        return bucket == null ? null : _byId(table, bucket, id, (e) => '${e['id']}');
     }
   }
 
@@ -9457,7 +9654,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     // فهارس الحضور صالحة الآن؟ إذاً تُرقَّع بالصفوف الواصلة بدل بنائها من جديد
     // الجلسات تُعاد فهرستها كاملةً: تغيّر تاريخ جلسة أو شعبتها يترك مفاتيح قديمة
     final marksValid = table == 'attendance' && _indexRev == _markStamp;
-    markDirty(table);
+    if (table == 'tenants' || table == 'student_attachments') {
+      markDirty(table);
+    } else {
+      // الصفوف الواصلة وحدها تُكتب — لمسٌ واحد للختم كي تبقى خريطة المعرّفات صالحة بين الدفعات
+      _touchTable(table);
+      _markIds(table, [for (final r in rows) '${r['id'] ?? ''}']);
+    }
     // الصف الذي حالته `synced` يمثّل ما في السحابة، سواء وصل منها أو من القرص
     for (final r in rows) {
       final id = '${r['id'] ?? ''}';
@@ -9588,7 +9791,12 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       unawaited(db.deleteRecords(table, ids));
       return;
     }
-    markDirty(table);
+    if (table == 'tenants' || table == 'student_attachments') {
+      markDirty(table);
+    } else {
+      _touchTable(table);
+      _markIds(table, ids, deleted: true);
+    }
     forgetServerStamps(table, ids);
     final set = ids.toSet();
     switch (table) {
@@ -9633,9 +9841,19 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   @override
   void markSynced(String table, String id) {
-    markDirty(table);
+    // السجل المرفوع وحده يُكتب: كان كل رفعٍ يعيد كتابة جدوله كاملاً على القرص،
+    // ويبحث عن السجل بمسحٍ خطي — رفع ألف رصد كان ألف مسحٍ لخمسين ألف صف
+    final row = recordOf(table, id);
+    if (table == 'tenants') {
+      markDirty(table);
+    } else if (row != null) {
+      markRecord(table, id);
+    } else if (loadedTables.contains(table)) {
+      // حذفٌ رُفع: تعليمه «للكتابة» كان سيُلغي حذفه المنتظر فيعود الصف من القرص
+      markRecord(table, id, deleted: true);
+    }
     markDirty(_pendingTable);
-    _rememberSynced(table, id, recordOf(table, id));
+    _rememberSynced(table, id, row);
     void stamp(dynamic rec) {
       try {
         rec.syncStatus = 'synced';
@@ -9650,33 +9868,33 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       case 'teachers':
         stamp(teacherById(id));
       case 'subjects':
-        stamp(subjects.where((e) => e.id == id).firstOrNull);
+        stamp(_byId('subjects', subjects, id, (e) => e.id));
       case 'rooms':
-        stamp(rooms.where((e) => e.id == id).firstOrNull);
+        stamp(_byId('rooms', rooms, id, (e) => e.id));
       case 'grade_fees':
-        stamp(gradeFees.where((e) => e.id == id).firstOrNull);
+        stamp(_byId('grade_fees', gradeFees, id, (e) => e.id));
       case 'users':
-        stamp(users.where((e) => e.id == id).firstOrNull);
+        stamp(_byId('users', users, id, (e) => e.id));
       case 'payments':
-        stamp(payments.where((e) => e.id == id).firstOrNull);
+        stamp(_byId('payments', payments, id, (e) => e.id));
       case 'installments':
-        stamp(installments.where((e) => e.id == id).firstOrNull);
+        stamp(_byId('installments', installments, id, (e) => e.id));
       case 'attendance':
-        stamp(attendance.where((e) => e.id == id).firstOrNull);
+        stamp(_byId('attendance', attendance, id, (e) => e.id));
       case 'groups':
-        stamp(groups.where((e) => e.id == id).firstOrNull);
+        stamp(_byId('groups', groups, id, (e) => e.id));
       case 'enrollments':
-        stamp(enrollments.where((e) => e.id == id).firstOrNull);
+        stamp(_byId('enrollments', enrollments, id, (e) => e.id));
       case 'sessions':
-        stamp(sessions.where((e) => e.id == id).firstOrNull);
+        stamp(_byId('sessions', sessions, id, (e) => e.id));
       case 'academic_years':
-        stamp(academicYears.where((e) => e.id == id).firstOrNull);
+        stamp(_byId('academic_years', academicYears, id, (e) => e.id));
       case 'student_years':
-        stamp(studentYears.where((e) => e.id == id).firstOrNull);
+        stamp(_byId('student_years', studentYears, id, (e) => e.id));
       case 'finance_requests':
-        stamp(financeRequests.where((e) => e.id == id).firstOrNull);
+        stamp(_byId('finance_requests', financeRequests, id, (e) => e.id));
       case 'audit_log':
-        stamp(financeAudit.where((e) => e.id == id).firstOrNull);
+        stamp(_byId('audit_log', financeAudit, id, (e) => e.id));
     }
   }
 
@@ -9687,12 +9905,76 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 }
 
-class StoreScope extends InheritedNotifier<AppStore> {
-  const StoreScope({super.key, required AppStore store, required super.child}) : super(notifier: store);
+/// المخزن لكل الشاشات تحته، ومعه ما يوقظها.
+///
+/// [notifier] مُبلّغ بديل عن المخزن: قسمٌ مخفي يُعطى مُبلّغاً لا يمرّر إخطارات
+/// المخزن ما دام مخفياً، فلا تُعاد رسمه مع كل دفعة مزامنة. بدونه يوقظها المخزن نفسه.
+class StoreScope extends InheritedWidget {
+  const StoreScope({super.key, required this.store, Listenable? notifier, required super.child}) : _listenable = notifier;
+
+  final AppStore store;
+  final Listenable? _listenable;
+
+  Listenable get listenable => _listenable ?? store;
+
+  /// المخزن — للمستدعين الذين يقرؤونه بلا اشتراك (`getInheritedWidgetOfExactType`).
+  AppStore? get notifier => store;
 
   static AppStore of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<StoreScope>();
     assert(scope != null, 'StoreScope missing');
-    return scope!.notifier!;
+    return scope!.store;
+  }
+
+  static AppStore? maybeOf(BuildContext context) => context.dependOnInheritedWidgetOfExactType<StoreScope>()?.store;
+
+  @override
+  bool updateShouldNotify(StoreScope oldWidget) =>
+      !identical(oldWidget.store, store) || !identical(oldWidget.listenable, listenable);
+
+  @override
+  InheritedElement createElement() => _StoreScopeElement(this);
+}
+
+/// كعنصر `InheritedNotifier`: كل إخطار من [StoreScope.listenable] يعيد بناء المشتركين.
+class _StoreScopeElement extends InheritedElement {
+  _StoreScopeElement(StoreScope widget) : super(widget) {
+    widget.listenable.addListener(_handleUpdate);
+  }
+
+  bool _dirty = false;
+
+  @override
+  void update(StoreScope newWidget) {
+    final oldListenable = (widget as StoreScope).listenable;
+    final newListenable = newWidget.listenable;
+    if (!identical(oldListenable, newListenable)) {
+      oldListenable.removeListener(_handleUpdate);
+      newListenable.addListener(_handleUpdate);
+    }
+    super.update(newWidget);
+  }
+
+  @override
+  Widget build() {
+    if (_dirty) notifyClients(widget as StoreScope);
+    return super.build();
+  }
+
+  void _handleUpdate() {
+    _dirty = true;
+    markNeedsBuild();
+  }
+
+  @override
+  void notifyClients(StoreScope oldWidget) {
+    super.notifyClients(oldWidget);
+    _dirty = false;
+  }
+
+  @override
+  void unmount() {
+    (widget as StoreScope).listenable.removeListener(_handleUpdate);
+    super.unmount();
   }
 }

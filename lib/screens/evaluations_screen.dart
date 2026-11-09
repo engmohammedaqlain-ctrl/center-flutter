@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -50,8 +52,38 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
   /// يُفتح على شعبة واحدة (أول صف وأول شعبة) وعلى الفصل الحالي مرة واحدة، لا على كل الكشوف.
   bool _scopeReady = false;
 
+  /// البحث يُطبَّق بعد توقف الكتابة: كل حرف كان يعيد فلترة كل العلامات.
+  Timer? _searchDebounce;
+
+  /// شعبة كل طالب محفوظة حتى يتغيّر الطلاب أو الشعب: مطابقتها كل طالب بكل شعبة ثقيلة.
+  Object? _roomOfStudentKey;
+  Map<String, String> _roomOfStudent = const {};
+
+  Map<String, String> _roomsOfStudents(AppStore store, List<Classroom> rooms) {
+    final students = store.studentsInViewedYear;
+    final key = Object.hash(
+      store.tableRev('students'),
+      store.tableRev('student_years'),
+      store.tableRev('rooms'),
+      store.tableRev('academic_years'),
+      store.viewedAcademicYearId,
+      students.length,
+      rooms.length,
+    );
+    if (key != _roomOfStudentKey) {
+      _roomOfStudentKey = key;
+      _roomOfStudent = {
+        for (final s in students)
+          if (s.section.trim().isNotEmpty)
+            if (rooms.where((r) => studentBelongsToRoom(s, r)).firstOrNull case final r?) s.id: r.id,
+      };
+    }
+    return _roomOfStudent;
+  }
+
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     search.dispose();
     super.dispose();
   }
@@ -120,11 +152,8 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
     }
 
     // شعبة كل طالب: طالب معروفة شعبته يُحكم بها، فلا يظهر طلاب شعبة أخرى من مادة مشتركة
-    final roomOfStudent = <String, String>{
-      for (final s in store.studentsInViewedYear)
-        if (s.section.trim().isNotEmpty)
-          if (rooms.where((r) => studentBelongsToRoom(s, r)).firstOrNull case final r?) s.id: r.id,
-    };
+    final roomOfStudent = _roomsOfStudents(store, rooms);
+    final groupsById = {for (final g in store.groups) g.id: g};
 
     final groups = store.groupsInViewedYear.where((g) {
       if (gradeFilter != 'all' && g.gradeLevel.isNotEmpty && !isSameGrade(g.gradeLevel, gradeFilter)) {
@@ -141,7 +170,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
       if (isMonthlyAverage(e)) return false;
 
       final student = store.studentById(e.studentId);
-      final group = store.groupById(e.groupId);
+      final group = groupsById[e.groupId];
 
       if (gradeFilter != 'all') {
         final studentOk = student != null && isSameGrade(student.gradeLevel, gradeFilter);
@@ -169,17 +198,19 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
       byGroup.putIfAbsent(e.groupId, () => []).add(e);
     }
     String groupTitle(String id) {
-      final g = store.groupById(id);
+      final g = groupsById[id];
       if (g == null) return 'بلا مادة';
       final subject = store.subjectName(g.subjectId);
       return subject.isNotEmpty && subject != 'غير محدد' ? subject : g.name;
     }
 
     // المواد بترتيب صفوفها كما في الإعدادات، ثم بأسمائها
+    final titles = {for (final id in byGroup.keys) id: groupTitle(id)};
+    final ranks = {for (final id in byGroup.keys) id: gradeRank(groupsById[id]?.gradeLevel ?? '')};
     final groupIds = byGroup.keys.toList()
       ..sort((a, b) {
-        final byGrade = gradeRank(store.groupById(a)?.gradeLevel ?? '').compareTo(gradeRank(store.groupById(b)?.gradeLevel ?? ''));
-        return byGrade != 0 ? byGrade : compareArabicNames(groupTitle(a), groupTitle(b));
+        final byGrade = ranks[a]!.compareTo(ranks[b]!);
+        return byGrade != 0 ? byGrade : compareArabicNames(titles[a]!, titles[b]!);
       });
     final classSelected = gradeFilter != 'all' || roomFilter != 'all';
 
@@ -263,7 +294,12 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                           child: SearchField(
                             controller: search,
                             hint: 'اسم الطالب أو عنوان الاختبار',
-                            onChanged: (_) => setState(() => listVisible = kListPageSize),
+                            onChanged: (_) {
+                              _searchDebounce?.cancel();
+                              _searchDebounce = Timer(const Duration(milliseconds: 250), () {
+                                if (mounted) setState(() => listVisible = kListPageSize);
+                              });
+                            },
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -326,8 +362,8 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 8),
                             child: _GroupSection(
-                              title: groupTitle(page[i]),
-                              group: store.groupById(page[i]),
+                              title: titles[page[i]]!,
+                              group: groupsById[page[i]],
                               evaluations: byGroup[page[i]]!,
                               sortByResult: sortByResult,
                               onDelete: store.canEditGrades ? (e) => _delete(context, store, e) : null,

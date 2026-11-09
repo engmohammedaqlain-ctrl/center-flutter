@@ -48,6 +48,44 @@ class SupabaseConfig {
       };
 }
 
+/// مهلة صمت الشبكة: طلبٌ لا يصل منه ولا إليه بايت خلالها يُعدّ منقطعاً.
+///
+/// ليست مهلة كلية — صفحة كبيرة على شبكة بطيئة تكتمل ما دامت البايتات تتدفق،
+/// والطلب المعلّق يسقط بـ `TimeoutException` بدل أن يحبس المزامنة دقائق.
+const cloudIdleTimeout = Duration(seconds: 25);
+
+/// طلب إلى السحابة بمهلة صمت [idle]: انتظار الردّ يتسع بحجم الجسم المرفوع
+/// (5KB/ث على الأقل)، ثم كل فجوة بين دفعات الرد لا تتجاوز [idle]. انقضاؤها
+/// يغلق الاتصال فعلاً، فلا يبقى طلبٌ معلّق يستهلك شبكة ضعيفة في الخلفية.
+Future<http.Response> cloudRequest(
+  String method,
+  Uri url, {
+  Map<String, String>? headers,
+  String? body,
+  Duration idle = cloudIdleTimeout,
+}) async {
+  final request = http.Request(method, url);
+  if (headers != null) request.headers.addAll(headers);
+  if (body != null) request.body = body;
+  final client = http.Client();
+  try {
+    final upload = Duration(milliseconds: request.contentLength ~/ 5);
+    final streamed = await client.send(request).timeout(idle + upload);
+    final bytes = await http.ByteStream(streamed.stream.timeout(idle)).toBytes();
+    return http.Response.bytes(
+      bytes,
+      streamed.statusCode,
+      request: request,
+      headers: streamed.headers,
+      isRedirect: streamed.isRedirect,
+      persistentConnection: streamed.persistentConnection,
+      reasonPhrase: streamed.reasonPhrase,
+    );
+  } finally {
+    client.close();
+  }
+}
+
 /// فحص سريع لوصول السحابة قبل المزامنة التلقائية. أي ردّ من الخادم — ولو رفضاً —
 /// يعني أن الشبكة تعمل؛ الانقطاع وحده يُرجع `false`. بلا الفحص كانت كل محاولة
 /// رفع أو سحب تدور حتى تنتهي مهلتها، فيبقى مؤشر المزامنة يدور بلا نهاية.
@@ -192,7 +230,9 @@ abstract final class SupabaseAuth {
       return false;
     }
     try {
-      final res = await http.post(
+      // كل طلب مزامنة ينتظر التجديد قبله: تجديدٌ معلّق كان يحبسها كلها
+      final res = await cloudRequest(
+        'POST',
         Uri.parse('${SupabaseConfig.url}/auth/v1/token?grant_type=refresh_token'),
         headers: {'apikey': SupabaseConfig.key, 'Content-Type': 'application/json'},
         body: jsonEncode({'refresh_token': token}),
@@ -451,7 +491,7 @@ Future<List<Map<String, dynamic>>?> supabaseSelect(
   if (offset != null) params['offset'] = '$offset';
   final uri = Uri.parse('${SupabaseConfig.url}/rest/v1/$table').replace(queryParameters: params);
   try {
-    final res = await http.get(uri, headers: {...SupabaseConfig.headers, ...extraHeaders});
+    final res = await cloudRequest('GET', uri, headers: {...SupabaseConfig.headers, ...extraHeaders});
     if (res.statusCode >= 400) return null;
     final data = jsonDecode(res.body);
     if (data is! List) return [];
@@ -472,7 +512,9 @@ Future<void> supabaseUpsert(
   final uri = Uri.parse('${SupabaseConfig.url}/rest/v1/$table').replace(
     queryParameters: {'on_conflict': onConflict},
   );
-  final res = await http.post(
+  // دمجٌ بالمفتاح: إعادته بعد مهلةٍ وصل طلبها لا تكرّر صفاً
+  final res = await cloudRequest(
+    'POST',
     uri,
     headers: {
       ...SupabaseConfig.headers,
@@ -487,7 +529,7 @@ Future<void> supabaseUpsert(
 
 Future<void> supabaseDelete(String table, Map<String, String> filters) async {
   final uri = Uri.parse('${SupabaseConfig.url}/rest/v1/$table').replace(queryParameters: filters);
-  final res = await http.delete(uri, headers: SupabaseConfig.headers);
+  final res = await cloudRequest('DELETE', uri, headers: SupabaseConfig.headers);
   if (res.statusCode >= 400) {
     throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
   }
@@ -497,7 +539,7 @@ Future<void> supabaseDelete(String table, Map<String, String> filters) async {
 Future<void> supabaseUpdate(String table, Map<String, String> filters, Map<String, dynamic> patch) async {
   await SupabaseAuth.ensureFresh();
   final uri = Uri.parse('${SupabaseConfig.url}/rest/v1/$table').replace(queryParameters: filters);
-  final res = await http.patch(uri, headers: SupabaseConfig.headers, body: jsonEncode(patch));
+  final res = await cloudRequest('PATCH', uri, headers: SupabaseConfig.headers, body: jsonEncode(patch));
   if (res.statusCode >= 400) {
     throw Exception(res.body.isEmpty ? 'HTTP ${res.statusCode}' : res.body);
   }

@@ -1145,16 +1145,78 @@ class _FrozenWhenHidden extends StatefulWidget {
 class _FrozenWhenHiddenState extends State<_FrozenWhenHidden> {
   Widget? _frozen;
   var _visited = false;
+  _StoreGate? _gate;
+
+  @override
+  void didUpdateWidget(_FrozenWhenHidden old) {
+    super.didUpdateWidget(old);
+    if (old.visible == widget.visible) return;
+    if (!widget.visible) {
+      _gate?.open = false;
+    } else {
+      // الفتح بعد الإطار: إخطار ما فات أثناء البناء يعيد بناء أبناءٍ يُبنون الآن
+      WidgetsBinding.instance.addPostFrameCallback((_) => _gate?.reopen());
+    }
+  }
+
+  @override
+  void dispose() {
+    _gate?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.visible && !_visited) return const SizedBox.shrink();
+    final Widget child;
     if (widget.visible) {
       _visited = true;
       _frozen = null;
-      return widget.child;
+      child = widget.child;
+    } else {
+      // إخفاء بعد زيارة: نحتفظ بآخر شجرة دون إعادة بناء، وتتوقف حركاتها ومؤشراتها
+      child = _frozen ??= widget.child;
     }
-    if (!_visited) return const SizedBox.shrink();
-    // إخفاء بعد زيارة: نحتفظ بآخر شجرة دون إعادة بناء
-    return _frozen ??= widget.child;
+    final store = context.getInheritedWidgetOfExactType<StoreScope>()?.store;
+    if (store == null) return TickerMode(enabled: widget.visible, child: child);
+    // القسم المخفي لا يسمع إخطارات المخزن (مزامنة، تقدّم، رصد على جهاز آخر)
+    // فلا يعيد بناء قائمة لا يراها أحد؛ ويُبنى مرة واحدة عند ظهوره إن فاته شيء
+    final gate = _gate ??= _StoreGate(store);
+    return TickerMode(
+      enabled: widget.visible,
+      child: StoreScope(store: store, notifier: gate, child: child),
+    );
+  }
+}
+
+/// يمرّر إخطارات المخزن ما دام القسم ظاهراً، ويحفظ أن شيئاً فات وهو مخفي.
+class _StoreGate extends ChangeNotifier {
+  _StoreGate(this._source) {
+    _source.addListener(_onSource);
+  }
+
+  final Listenable _source;
+  bool open = true;
+  bool _missed = false;
+
+  void _onSource() {
+    if (open) {
+      notifyListeners();
+    } else {
+      _missed = true;
+    }
+  }
+
+  void reopen() {
+    open = true;
+    if (!_missed) return;
+    _missed = false;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _source.removeListener(_onSource);
+    super.dispose();
   }
 }

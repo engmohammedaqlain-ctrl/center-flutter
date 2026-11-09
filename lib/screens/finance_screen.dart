@@ -176,9 +176,26 @@ class _FinanceScreenState extends State<FinanceScreen> {
       paymentsBasis == 'installment' ? {for (final i in store.installments) i.id: i} : null;
 
   /// سندات الفترة — أساس «المقبوضات» في البطاقة والصافي، وسجل المقبوضات قبل البحث والفلاتر.
+  /// محفوظة حتى تتغير السندات أو الأقساط أو الفترة: تُطلب في البطاقة والعدّ والسجل لكل رسم.
+  Object? _periodPaymentsKey;
+  List<Payment> _periodPaymentsValue = const [];
+
   List<Payment> _periodPayments(AppStore store) {
-    final index = _installmentIndex(store);
-    return store.payments.where((p) => _paymentInPeriod(store, p, index)).toList();
+    final key = Object.hash(
+      store.netInputStamp,
+      store.duesInputStamp,
+      paymentsBasis,
+      financeYearFilter,
+      termFilter,
+      customFrom,
+      customTo,
+    );
+    if (key != _periodPaymentsKey) {
+      final index = _installmentIndex(store);
+      _periodPaymentsValue = store.payments.where((p) => _paymentInPeriod(store, p, index)).toList();
+      _periodPaymentsKey = key;
+    }
+    return _periodPaymentsValue;
   }
 
   /// المصروفات التشغيلية بتاريخها ضمن السنة والفصل — كما في الويب.

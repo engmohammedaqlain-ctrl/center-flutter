@@ -9,18 +9,24 @@ import 'school_calendar.dart';
 
 const _dayStatusRank = {'present': 1, 'excused': 2, 'absent': 3};
 
+/// خريطة الجلسات بمعرّفها — تُبنى مرة وتُمرَّر لـ [dailyAttendance] لكل طالب.
+Map<String, ClassSession> sessionMap(Iterable<ClassSession> sessions) => {for (final s in sessions) s.id: s};
+
 /// حضور مجمّع يوماً بيوم.
 List<({String date, String status})> dailyAttendance(
   Iterable<AttendanceMark> records,
   Iterable<ClassSession> sessions, {
   // يوم العطلة لا يُحسب غياباً ولا حضوراً
   Iterable<CalendarEvent> calendar = const [],
+  // خريطة الجلسات مبنية مرة واحدة للمستدعي الذي يمرّ على كل الطلاب: بناؤها لكل طالب
+  // كان يكرر آلاف الجلسات آلاف المرات. حين تُمرَّر تُهمَل [sessions].
+  Map<String, ClassSession>? sessionById,
 }) {
-  final sessionById = {for (final s in sessions) s.id: s};
+  final byId = sessionById ?? sessionMap(sessions);
   final byDay = <String, ({String status, int at, bool room})>{};
 
   for (final r in records) {
-    final session = sessionById[r.sessionId];
+    final session = byId[r.sessionId];
     final date = session != null && session.sessionDate.isNotEmpty
         ? session.sessionDate
         : (r.date.isNotEmpty ? r.date : (r.createdAt ?? '').split('T').first);
