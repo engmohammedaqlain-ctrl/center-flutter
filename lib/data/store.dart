@@ -3437,12 +3437,17 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       return _projectRemainingCached!;
     }
 
+    // الأقساط مجمّعة بالطالب في مرور واحد: البحث في كل الأقساط لكل طالب كان
+    // 2000 × 12 ألف مقارنة، ثانيتين إلى ثلاث متصلة في رسم بطاقة المالية على جوال قديم
+    final scheduledBy = <String, double>{};
+    for (final i in installments) {
+      if (!isInstallmentDue(i, day)) {
+        scheduledBy[i.studentId] = (scheduledBy[i.studentId] ?? 0) + math.max(0.0, i.remaining);
+      }
+    }
     var total = 0.0;
     for (final student in students.where((s) => s.status == 'active')) {
-      var scheduled = 0.0;
-      for (final i in installments.where((i) => i.studentId == student.id)) {
-        if (!isInstallmentDue(i, day)) scheduled += math.max(0.0, i.remaining);
-      }
+      final scheduled = scheduledBy[student.id] ?? 0.0;
       final credit = student.balance > 0 ? student.balance : 0.0;
       final projected = scheduled - credit;
       if (projected > 0) total += projected;

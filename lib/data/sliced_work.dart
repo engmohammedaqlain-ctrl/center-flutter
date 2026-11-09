@@ -96,13 +96,15 @@ void runAll(Iterable<void> steps) {
   for (final _ in steps) {}
 }
 
-/// `isoDate` محفوظاً مع تاريخه لكل سجل: يتكرر لآلاف السندات والأقساط في كل حساب.
-final _isoCache = Expando<(DateTime, String)>('isoDateOf');
+/// `isoDate` محفوظاً باليوم: يتكرر لآلاف السندات والأقساط في كل حساب، والأيام
+/// المختلفة مئات فقط. كان محفوظاً لكل سجل (Expando)، وإعادة ترتيبها حين تكبر لعشرات
+/// الآلاف كانت تجمّد خيط الواجهة ~70ms دفعة واحدة على جوال قديم.
+final _isoByDay = <int, String>{};
 
 String isoDateOf(Object owner, DateTime date) {
-  final cached = _isoCache[owner];
-  if (cached != null && cached.$1 == date) return cached.$2;
-  final s = isoDate(date);
-  _isoCache[owner] = (date, s);
-  return s;
+  final key = date.year * 10000 + date.month * 100 + date.day;
+  final cached = _isoByDay[key];
+  if (cached != null) return cached;
+  if (_isoByDay.length > 20000) _isoByDay.clear();
+  return _isoByDay[key] = isoDate(date);
 }
