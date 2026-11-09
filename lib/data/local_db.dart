@@ -177,18 +177,14 @@ class SqflitePersistence implements Persistence {
           ReadStats.rows += rows.length;
           ReadStats.pages++;
           after = (rows.last['rid'] as num).toInt();
-          final encoded = <(String, String)>[
-            for (final r in rows) ('${r['table_name']}', '${r['data']}'),
-          ];
-          Map<String, List<Map<String, dynamic>>> decoded;
-          try {
-            // فك JSON خارج خيط الواجهة
-            decoded = await offThread(() => _decodeRecordRows(encoded));
-          } catch (_) {
-            // فشل الخيط المنفصل (ذاكرة/منصّة): فكّ على الخيط الحالي بدل إسقاط التحميل
-            decoded = _decodeRecordRows(encoded);
+          // الفك هنا صفاً صفاً بالميزانية المشتركة، لا بخيط جديد لكل صفحة: قيس على جوال
+          // قديم (Redmi Note 9) أن فتح خيط وإغلاقه لكل صفحة أخذ 211ms للصفحة (31 ثانية
+          // لجداول الرئيسية) ويوقف خيط الواجهة معه، والفك نفسه جزء صغير من ذلك
+          for (var i = 0; i < rows.length; i++) {
+            final r = rows[i];
+            _decodeInto(out, '${r['table_name']}', '${r['data']}');
+            if ((i & 15) == 15 && UiBudget.exhausted) await UiBudget.pause();
           }
-          decoded.forEach((t, list) => out.putIfAbsent(t, () => []).addAll(list));
           ReadStats.decodeUs += sw.elapsedMicroseconds - lap;
           if (rows.length < _readPage) break;
           await UiBudget.yieldIfNeeded();
@@ -320,21 +316,16 @@ class SqflitePersistence implements Persistence {
 }
 
 /// فك صفوف القرص في isolate منفصل — يُستدعى من [SqflitePersistence.loadAll] فقط.
-Map<String, List<Map<String, dynamic>>> _decodeRecordRows(List<(String, String)> encoded) {
-  final out = <String, List<Map<String, dynamic>>>{};
-  for (final (table, data) in encoded) {
-    try {
-      final decoded = jsonDecode(data);
-      if (decoded is Map<String, dynamic>) {
-        out.putIfAbsent(table, () => []).add(decoded);
-      } else if (decoded is Map) {
-        out.putIfAbsent(table, () => []).add(Map<String, dynamic>.from(decoded));
-      }
-    } catch (_) {
-      // صف تالف على القرص — تخطَّه بدل إسقاط الجدول كله
+/// صف واحد من القرص إلى [out] — التالف يُتخطّى بدل إسقاط الجدول كله.
+void _decodeInto(Map<String, List<Map<String, dynamic>>> out, String table, String data) {
+  try {
+    final decoded = jsonDecode(data);
+    if (decoded is Map<String, dynamic>) {
+      out.putIfAbsent(table, () => []).add(decoded);
+    } else if (decoded is Map) {
+      out.putIfAbsent(table, () => []).add(Map<String, dynamic>.from(decoded));
     }
-  }
-  return out;
+  } catch (_) {}
 }
 
 /// عدّادات قراءة القرص لسجل الأداء: زمن الاستعلام (قناة sqflite) وفكّ JSON.
