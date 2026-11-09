@@ -1,4 +1,5 @@
-# بناء قياس الأداء (profile): Actions ← Profile build ← Run workflow (أي فرع).
+# بناء قياس الأداء (profile): يشتغل بدفع أي كوميت إلى فرع profile-build
+# (git push origin dev:profile-build)، أو يدوياً بعد وصول الملف إلى main.
 #
 # لا ينشر شيئاً لأحد. حزمة واحدة في صفحة التشغيل (Artifacts) تُثبَّت على جوال
 # موصول بالكمبيوتر، ثم `flutter attach --profile` و DevTools يقيسان كل إطار ويحددان
@@ -7,6 +8,8 @@
 name: Profile build
 
 on:
+  push:
+    branches: [profile-build]
   workflow_dispatch:
 
 jobs:
