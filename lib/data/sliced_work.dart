@@ -60,7 +60,13 @@ abstract final class UiBudget {
 
   /// انتظار رسم الإطار التالي أولاً. بلا إطارات (التطبيق في الخلفية أو
   /// الاختبارات) يكفي دور في حلقة الأحداث، ولا يُنتظر إطار أكثر من 50ms.
+  /// زمن الانتظار الكلي في [pause] (للقياس): كم أخّر الإفساح العمل نفسه.
+  static int pausedUs = 0;
+  static int pauses = 0;
+
   static Future<void> pause() async {
+    final t0 = _clock.elapsedMicroseconds;
+    pauses++;
     final b = _framed;
     if (b == null) {
       await Future<void>.delayed(Duration.zero);
@@ -69,6 +75,7 @@ abstract final class UiBudget {
       await Future.any([b.endOfFrame, Future<void>.delayed(const Duration(milliseconds: 50))]);
     }
     _resumedUs = _clock.elapsedMicroseconds;
+    pausedUs += _resumedUs - t0;
   }
 
   /// يُفسح فقط إن استُهلكت الميزانية — للحلقات وبين الجداول والصفحات.

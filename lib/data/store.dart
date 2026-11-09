@@ -223,7 +223,11 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   }
 
   Future<void> _loadTablesFromDisk(List<String> tables) async {
+    final clock = Stopwatch()..start();
+    final q0 = ReadStats.queryUs, d0 = ReadStats.decodeUs, p0 = UiBudget.pausedUs, n0 = UiBudget.pauses, r0 = ReadStats.rows, g0 = ReadStats.pages;
     final data = await db.loadTables(tables);
+    final readMs = clock.elapsedMilliseconds;
+    final pRead = UiBudget.pausedUs;
     _loading = true;
     try {
       for (final table in tables) {
@@ -241,6 +245,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     } finally {
       _loading = false;
     }
+    PerfLog.mark('قرص ${tables.join('+')}: ${clock.elapsedMilliseconds}ms — صفوف ${ReadStats.rows - r0} بـ${ReadStats.pages - g0} صفحة، '
+        'قراءة ${readMs}ms (استعلام ${(ReadStats.queryUs - q0) ~/ 1000}ms، فك ${(ReadStats.decodeUs - d0) ~/ 1000}ms، انتظار ${(pRead - p0) ~/ 1000}ms)، '
+        'إدخال ${clock.elapsedMilliseconds - readMs}ms (انتظار ${(UiBudget.pausedUs - pRead) ~/ 1000}ms)، إفساحات ${UiBudget.pauses - n0}');
     if (tables.any((t) => t == 'payments' || t == 'installments') &&
         tablesReady(const ['payments', 'installments'])) {
       // لا ننتظر إعادة الحساب هنا: مع آلاف الطلاب كانت شاشة المالية تبقى على

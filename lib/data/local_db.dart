@@ -159,6 +159,8 @@ class SqflitePersistence implements Persistence {
     await _require.transaction((txn) async {
       for (final table in tables ?? const <String?>[null]) {
         var after = 0;
+        final sw = Stopwatch()..start();
+        var lap = 0;
         while (true) {
           final rows = table == null
               ? await txn.rawQuery(
@@ -169,7 +171,11 @@ class SqflitePersistence implements Persistence {
                   'SELECT rowid AS rid, table_name, data FROM records WHERE table_name = ? AND rowid > ? ORDER BY rowid LIMIT ?',
                   [table, after, _readPage],
                 );
+          ReadStats.queryUs += sw.elapsedMicroseconds - lap;
+          lap = sw.elapsedMicroseconds;
           if (rows.isEmpty) break;
+          ReadStats.rows += rows.length;
+          ReadStats.pages++;
           after = (rows.last['rid'] as num).toInt();
           final encoded = <(String, String)>[
             for (final r in rows) ('${r['table_name']}', '${r['data']}'),
@@ -183,8 +189,10 @@ class SqflitePersistence implements Persistence {
             decoded = _decodeRecordRows(encoded);
           }
           decoded.forEach((t, list) => out.putIfAbsent(t, () => []).addAll(list));
+          ReadStats.decodeUs += sw.elapsedMicroseconds - lap;
           if (rows.length < _readPage) break;
           await UiBudget.yieldIfNeeded();
+          lap = sw.elapsedMicroseconds;
         }
       }
     });
@@ -327,4 +335,12 @@ Map<String, List<Map<String, dynamic>>> _decodeRecordRows(List<(String, String)>
     }
   }
   return out;
+}
+
+/// عدّادات قراءة القرص لسجل الأداء: زمن الاستعلام (قناة sqflite) وفكّ JSON.
+abstract final class ReadStats {
+  static int queryUs = 0;
+  static int decodeUs = 0;
+  static int rows = 0;
+  static int pages = 0;
 }
