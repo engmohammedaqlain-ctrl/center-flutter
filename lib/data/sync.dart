@@ -8,6 +8,7 @@ import 'error_report.dart';
 import 'user_message.dart';
 
 import 'off_thread.dart';
+import 'sliced_work.dart';
 
 /// مطابق لـ TABLE_ALLOWED_COLUMNS في sync.ts
 const tableAllowedColumns = <String, List<String>>{
@@ -1233,6 +1234,9 @@ abstract class SyncLocalStore {
   /// أختام جدول كامل — لمقارنة ما تغيّر في السحابة بما عندنا.
   Map<String, String> serverStampsOf(String table);
 
+  /// الأختام تُحمَّل من القرص عند أول حاجة لا مع الإقلاع: السحب والرفع ينتظرانها.
+  Future<void> ensureStampsLoaded() async {}
+
   void rememberServerStamps(String table, Map<String, String> stamps);
 
   void forgetServerStamps(String table, Iterable<String> ids);
@@ -1384,6 +1388,7 @@ class SyncService {
       var tableFailed = false;
       try {
         cursor = await _cursor(tenantId, cloud);
+        await local.ensureStampsLoaded();
         final localStamps = local.serverStampsOf(cloud);
         var from = 0;
         while (true) {
@@ -1555,6 +1560,7 @@ class SyncService {
   /// [refreshRemote] يفحص بعد الرفع ما تغيّر في السحابة لعدّاد الواجهة — جولة
   /// على كل الجداول. الرفع التلقائي يستغني عنها: السحب يليه عند أي إشارة.
   Future<SyncResult> push({bool refreshRemote = true}) async {
+    await local.ensureStampsLoaded();
     if (_syncing)
       return SyncResult(success: false, message: 'عملية مزامنة أخرى جارية');
     if (local.isMaster) {
@@ -1692,6 +1698,7 @@ class SyncService {
   }
 
   Future<({int pushed, int failed})> pushPendingChanges(String tenantId) async {
+    await local.ensureStampsLoaded();
     // عمليات منشأة أخرى لا تُرفع إلى سحابة هذه: بقايا جهاز انتقل بين منشأتين
     final all = [
       ...local.pendingSyncs.where(
@@ -1999,6 +2006,7 @@ class SyncService {
     String tenantId, {
     PullProgressCallback? onProgress,
   }) async {
+    await local.ensureStampsLoaded();
     var totalPulled = 0;
     var totalRemoved = 0;
     final failedTables = <String, String>{};
@@ -2151,7 +2159,7 @@ class SyncService {
           phase: PullProgressPhase.applying,
           records: totalPulled,
         );
-        await Future<void>.delayed(Duration.zero);
+        await UiBudget.yieldIfNeeded();
         continue;
       }
       final rows = f.rows;
@@ -2164,7 +2172,7 @@ class SyncService {
           phase: PullProgressPhase.applying,
           records: totalPulled,
         );
-        await Future<void>.delayed(Duration.zero);
+        await UiBudget.yieldIfNeeded();
         continue;
       }
 
@@ -2220,7 +2228,7 @@ class SyncService {
             records: totalPulled,
           );
           await _setCursor(tenantId, cloud, f.maxStamp);
-          await Future<void>.delayed(Duration.zero);
+          await UiBudget.yieldIfNeeded();
           continue;
         }
         if (toWrite.isNotEmpty) await local.prepareApply(cloud);
@@ -2247,7 +2255,7 @@ class SyncService {
               phase: PullProgressPhase.applying,
               records: totalPulled,
             );
-            await Future<void>.delayed(Duration.zero);
+            await UiBudget.yieldIfNeeded();
           }
           rowsApplied = baseRows + tableRows;
           local.rememberServerStamps(cloud, stamps);
@@ -2285,7 +2293,7 @@ class SyncService {
         );
       }
 
-      await Future<void>.delayed(Duration.zero);
+      await UiBudget.yieldIfNeeded();
     }
 
     report(
@@ -2296,7 +2304,7 @@ class SyncService {
       records: totalPulled,
     );
     totalRemoved += await _applyRemoteDeletes(tenantId);
-    await Future<void>.delayed(Duration.zero);
+    await UiBudget.yieldIfNeeded();
 
     // مطابقة العدد مع السحابة: أي جدول أقل من `count:exact` يُصفَّر مؤشّره ويُعدّ ناقصاً
     report(

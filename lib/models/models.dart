@@ -320,16 +320,31 @@ void sortPayments(List<Payment> list) {
     return int.tryParse(parts[1]) ?? 0;
   }
 
-  list.sort((a, b) {
-    final ta =
-        DateTime.tryParse(a.createdAt ?? '')?.millisecondsSinceEpoch ??
-        a.date.millisecondsSinceEpoch;
-    final tb =
-        DateTime.tryParse(b.createdAt ?? '')?.millisecondsSinceEpoch ??
-        b.date.millisecondsSinceEpoch;
-    if (ta != tb) return tb.compareTo(ta);
-    return serial(b.receiptNumber).compareTo(serial(a.receiptNumber));
+  // المفتاح يُحسب مرة لكل سند لا في كل مقارنة: تحويل التاريخ داخل المقارنة
+  // كان مليوني تحويل لستين ألف سند في كل رسم لتبويب المقبوضات
+  final keyed = [
+    for (final p in list) (p: p, t: _paymentTime(p), s: serial(p.receiptNumber)),
+  ];
+  keyed.sort((a, b) {
+    if (a.t != b.t) return b.t.compareTo(a.t);
+    return b.s.compareTo(a.s);
   });
+  for (var i = 0; i < keyed.length; i++) {
+    list[i] = keyed[i].p;
+  }
+}
+
+/// وقت `created_at` للسند، محفوظاً مع نصه فلا يُحوَّل النص إلا مرة. `null` حين لا يُقرأ.
+final _paymentTimeCache = Expando<(String, int?)>('paymentTime');
+
+int _paymentTime(Payment p) {
+  final raw = p.createdAt ?? '';
+  var cached = _paymentTimeCache[p];
+  if (cached == null || cached.$1 != raw) {
+    cached = (raw, DateTime.tryParse(raw)?.millisecondsSinceEpoch);
+    _paymentTimeCache[p] = cached;
+  }
+  return cached.$2 ?? p.date.millisecondsSinceEpoch;
 }
 
 class StoreException implements Exception {

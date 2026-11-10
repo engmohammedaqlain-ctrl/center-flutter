@@ -32,12 +32,14 @@ import 'phone.dart';
 import 'realtime.dart';
 import 'school_brand.dart';
 import 'supabase.dart';
+import 'perf_log.dart';
 import 'sync.dart';
 import 'tenant_service.dart';
 import 'user_message.dart';
 import 'followup.dart';
 import 'year_closing.dart';
 import 'year_structure_clone.dart';
+import 'sliced_work.dart';
 
 class AppStore extends ChangeNotifier implements SyncLocalStore {
   AppStore._() {
@@ -52,6 +54,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// مخزن مستقل للاختبارات — لا يشارك الحالة مع [instance] ولا يلمس الشبكة.
   @visibleForTesting
   factory AppStore.forTesting({int? installedBuildCode}) => AppStore._()
+    ..holdFirstPullForScreen = false
     ..tenantApi = const OfflineTenantService()
     ..networkEnabled = false
     .._overrideBuildCode = installedBuildCode;
@@ -75,8 +78,9 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   final loadedTables = <String>{};
 
   /// نواة الإقلاع: ما يكفي لتسجيل الدخول والهيكل (طلاب/صفوف) بلا حضور ومالية.
+  /// أختام السيرفر ليست هنا: عشرات آلاف الصفوف لا تلزم إلا المزامنة، فتُحمَّل
+  /// مقطّعةً عند أول حاجة ([ensureStampsLoaded]) لا مع كل فتح للتطبيق.
   static const bootstrapCoreTables = <String>[
-    _stampsTable,
     _pendingTable,
     'tenants',
     'users',
@@ -159,66 +163,108 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return run;
   }
 
-  /// صفوف تُدخل بين فحصَي وقت — صغيرة بما يكفي ألّا تتجاوز الدفعةُ الميزانية.
-  static const _diskApplyStep = 500;
+  /// جداول تدخل حساب الأرصدة.
+  static const _ledgerTables = {'students', 'payments', 'installments', 'enrollments'};
 
-  /// ميزانية الشريحة قبل الإفساح للرسم — دون إطار الستّين هرتز.
-  static const _diskApplySliceMs = 6;
+  /// عدّاد كتابات الدفاتر التي لم تمرّ على حساب الأرصدة في الذاكرة (سحبٌ إلى القرص
+  /// وحده، استعادة نسخة، مسح)، محفوظاً لكل مدرسة. يساويه ختم آخر تحقق = الأرصدة سليمة.
+  String get _kLedgerGen => 'ledger_outside_gen_${tenantId ?? ''}';
+  String get _kBalancesChecked => 'balances_checked_gen_${tenantId ?? ''}';
+  String get _ledgerGen => db.settings[_kLedgerGen] ?? '0';
+  bool get _balancesNeedCheck => db.settings[_kBalancesChecked] != _ledgerGen;
+
+  Future<void> _bumpLedgerGen() async {
+    final n = (int.tryParse(_ledgerGen) ?? 0) + 1;
+    await db.setSetting(_kLedgerGen, '$n');
+  }
+
+  /// صفوف تُدخل بين فحصَي وقت — صغيرة بما يكفي ألّا تتجاوز الدفعةُ الميزانية.
+  static const _diskApplyStep = 100;
+
+  /// صفوف جدول قُرئت من القرص إلى الذاكرة، مقطّعةً بالميزانية المشتركة لكل إطار ([UiBudget]).
+  ///
+  /// الإفساح بحساب الوقت لا بعدد ثابت: دفعات الخمسة والعشرين كانت تُنتج آلاف
+  /// الإفساحات لجدولٍ من مئة ألف صف، وكلفتها نفسها تُقعد المستخدم أمام المؤشر.
+  Future<void> _applyDiskRows(String table, List<Map<String, dynamic>> rows) async {
+    if (table == _stampsTable) {
+      final slice = Stopwatch()..start();
+      for (var i = 0; i < rows.length; i++) {
+        final key = '${rows[i]['id'] ?? ''}';
+        final cut = key.indexOf('|');
+        if (cut > 0 && !_stampsForgotten.contains(key)) {
+          serverStamps.putIfAbsent(key.substring(0, cut), () => {})[key.substring(cut + 1)] = '${rows[i]['stamp'] ?? ''}';
+        }
+        if ((i & 255) == 0 && UiBudget.exhausted) {
+          await UiBudget.yieldIfNeeded();
+          slice.reset();
+        }
+      }
+      _stampsLoaded = true;
+    } else if (table == _pendingTable) {
+      await _adoptPendingRowsYielding(rows);
+    } else if (table == 'tenants') {
+      tenants
+        ..clear()
+        ..addAll(rows.map(Tenant.fromCloud));
+    } else if (rows.isEmpty) {
+      // لا شيء
+    } else {
+      await prepareApply(table);
+      final slice = Stopwatch()..start();
+      for (var i = 0; i < rows.length; i += _diskApplyStep) {
+        final end = i + _diskApplyStep > rows.length ? rows.length : i + _diskApplyStep;
+        putRows(table, end - i == rows.length ? rows : rows.sublist(i, end));
+        if (UiBudget.exhausted) {
+          await UiBudget.yieldIfNeeded();
+          slice.reset();
+        }
+      }
+    }
+  }
 
   Future<void> _loadTablesFromDisk(List<String> tables) async {
+    final clock = Stopwatch()..start();
+    final q0 = ReadStats.queryUs, d0 = ReadStats.decodeUs, p0 = UiBudget.pausedUs, n0 = UiBudget.pauses, r0 = ReadStats.rows, g0 = ReadStats.pages;
     final data = await db.loadTables(tables);
+    final readMs = clock.elapsedMilliseconds;
+    final pRead = UiBudget.pausedUs;
     _loading = true;
     try {
       for (final table in tables) {
         try {
           final rows = data[table] ?? const <Map<String, dynamic>>[];
-          if (table == _stampsTable) {
-            for (final row in rows) {
-              final parts = '${row['id'] ?? ''}'.split('|');
-              if (parts.length != 2) continue;
-              serverStamps.putIfAbsent(parts[0], () => {})[parts[1]] = '${row['stamp'] ?? ''}';
-            }
-          } else if (table == _pendingTable) {
-            _adoptPendingRows(rows);
-          } else if (table == 'tenants') {
-            tenants
-              ..clear()
-              ..addAll(rows.map(Tenant.fromCloud));
-          } else if (rows.isEmpty) {
-            // لا شيء
-          } else {
-            // الإفساح بحساب الوقت لا بعدد ثابت. دفعات الخمسة والعشرين كانت
-            // تُنتج آلاف الإفساحات لجدولٍ من مئة ألف صف، وكلفة الإفساحات نفسها
-            // — لا إدخال الصفوف — هي ما يُقعد المستخدم أمام المؤشر ثوانيَ.
-            await prepareApply(table);
-            final slice = Stopwatch()..start();
-            for (var i = 0; i < rows.length; i += _diskApplyStep) {
-              final end = i + _diskApplyStep > rows.length ? rows.length : i + _diskApplyStep;
-              putRows(table, rows.sublist(i, end));
-              if (slice.elapsedMilliseconds >= _diskApplySliceMs) {
-                await Future<void>.delayed(Duration.zero);
-                slice.reset();
-              }
-            }
-          }
+          await _applyDiskRows(table, rows);
           loadedTables.add(table);
         } catch (e, st) {
           // جدول فاسد لا يمنع فتح الشاشة — نُعلّمه محمّلاً بما تيسّر
           debugPrint('ensureTables($table): $e\n$st');
           loadedTables.add(table);
         }
-        await Future<void>.delayed(Duration.zero);
+        await UiBudget.yieldIfNeeded();
       }
     } finally {
       _loading = false;
     }
+    PerfLog.mark('قرص ${tables.join('+')}: ${clock.elapsedMilliseconds}ms — صفوف ${ReadStats.rows - r0} بـ${ReadStats.pages - g0} صفحة، '
+        'قراءة ${readMs}ms (استعلام ${(ReadStats.queryUs - q0) ~/ 1000}ms، فك ${(ReadStats.decodeUs - d0) ~/ 1000}ms، انتظار ${(pRead - p0) ~/ 1000}ms)، '
+        'إدخال ${clock.elapsedMilliseconds - readMs}ms (انتظار ${(UiBudget.pausedUs - pRead) ~/ 1000}ms)، إفساحات ${UiBudget.pauses - n0}');
     if (tables.any((t) => t == 'payments' || t == 'installments') &&
         tablesReady(const ['payments', 'installments'])) {
       // لا ننتظر إعادة الحساب هنا: مع آلاف الطلاب كانت شاشة المالية تبقى على
       // «جارٍ تحميل…» دقائق. نفتح الشاشة فوراً ونحدّث الأرصدة في الخلفية.
       unawaited(() async {
         try {
+          // الأرصدة محفوظة في صفوف الطلاب، وتعديلات الجهاز تحدّثها في حينها. إعادة
+          // حسابها كلها (ثوانٍ على جوال قديم) تلزم فقط حين وصلت دفاتر من خارج الذاكرة
+          if (!_balancesNeedCheck) {
+            PerfLog.mark('الأرصدة محفوظة — لا إعادة حساب');
+            return;
+          }
+          final gen = _ledgerGen;
+          PerfLog.mark('بدء إعادة حساب الأرصدة');
           await recalculateAllBalancesYielding();
+          await db.setSetting(_kBalancesChecked, gen);
+          PerfLog.mark('انتهت إعادة حساب الأرصدة');
         } catch (e, st) {
           debugPrint('recalculateAllBalancesYielding: $e\n$st');
         }
@@ -398,7 +444,25 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   @override
   void notifyListeners() {
     _rev++;
-    super.notifyListeners();
+    // إخطار واحد لكل دفعة متزامنة: رصد أربعين طالباً، أو وصول سلسلة أحداث
+    // realtime، كان يعيد بناء الهيكل والشاشة مع كل سجل. الذاكرات تُبطَل فوراً
+    // (`_rev`)، وإعادة البناء مرة واحدة قبل الإطار التالي.
+    if (_notifyScheduled) return;
+    _notifyScheduled = true;
+    scheduleMicrotask(() {
+      _notifyScheduled = false;
+      if (_disposed) return;
+      super.notifyListeners();
+    });
+  }
+
+  bool _notifyScheduled = false;
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 
   ({Map<String, double> due, Map<String, double> scheduled})? _bucketsCache;
@@ -617,6 +681,46 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// سجل تغيّر في السحابة فعلاً بدل جلب الجداول كاملةً في كل مرة.
   final serverStamps = <String, Map<String, String>>{};
 
+  /// أُخرجت الأختام من النواة: حتى تُحمَّل، الذاكرة لا تمثّل القرص.
+  bool _stampsLoaded = false;
+  Future<void>? _stampsLoading;
+
+  /// أختام نُسيت قبل التحميل: لا يُعيدها التحميل من القرص إن سبق الحذفَ.
+  final _stampsForgotten = <String>{};
+
+  /// تحميل أختام السيرفر من القرص مرة واحدة، مقطّعاً بإفساح للرسم. السحب والرفع
+  /// ينتظرانه قبل قراءة الأختام. ما وصل إلى الذاكرة قبل التحميل أحدث مما على القرص.
+  @override
+  Future<void> ensureStampsLoaded() {
+    if (_stampsLoaded) return Future<void>.value();
+    return _stampsLoading ??= () async {
+      PerfLog.mark('بدء تحميل أختام المزامنة');
+      try {
+        final rows = await db.loadTable(_stampsTable);
+        final slice = Stopwatch()..start();
+        for (var i = 0; i < rows.length; i++) {
+          final key = '${rows[i]['id'] ?? ''}';
+          final cut = key.indexOf('|');
+          if (cut > 0 && !_stampsForgotten.contains(key)) {
+            serverStamps.putIfAbsent(key.substring(0, cut), () => {}).putIfAbsent(
+                  key.substring(cut + 1),
+                  () => '${rows[i]['stamp'] ?? ''}',
+                );
+          }
+          if ((i & 255) == 0 && UiBudget.exhausted) {
+            await UiBudget.yieldIfNeeded();
+            slice.reset();
+          }
+        }
+        _stampsLoaded = true;
+        _stampsForgotten.clear();
+        PerfLog.mark('انتهى تحميل أختام المزامنة (${rows.length})');
+      } finally {
+        _stampsLoading = null;
+      }
+    }();
+  }
+
   @override
   String? serverStamp(String table, String id) => serverStamps[table]?[id];
 
@@ -642,10 +746,20 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   @override
   void forgetServerStamps(String table, Iterable<String> ids) {
     final bucket = serverStamps[table];
-    if (bucket == null) return;
     final removed = <String>[];
-    for (final id in ids) {
-      if (bucket.remove(id) != null) removed.add(_stampKey(table, id));
+    if (!_stampsLoaded) {
+      // الأختام على القرص لم تُقرأ بعد: يُحذف ختم كل معرّف هناك، ولا يُعيده التحميل
+      for (final id in ids) {
+        bucket?.remove(id);
+        final key = _stampKey(table, id);
+        _stampsForgotten.add(key);
+        removed.add(key);
+      }
+    } else {
+      if (bucket == null) return;
+      for (final id in ids) {
+        if (bucket.remove(id) != null) removed.add(_stampKey(table, id));
+      }
     }
     if (removed.isEmpty) return;
     _touchTable(_stampsTable);
@@ -676,35 +790,33 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   /// الحقول المتغيّرة دائماً لا تدخل البصمة، وإلا لاختلفت من غير سبب.
   static const _volatile = {'updated_at', 'created_at', 'sync_status', 'synced_at', 'tenant_id'};
 
-  /// بصمة FNV-1a بـ 32 بتّاً على المفاتيح مرتبةً وقيمها، بلا بناء نصّ JSON.
+  /// بصمة السجل: مجموع بصمات أزواجه (مفتاح، نوع، قيمة) بلا ترتيب المفاتيح ولا
+  /// المرور على حروفها — `hashCode` النصوص أصلي ومحفوظ في الآلة.
   ///
-  /// 32 بت كافٍ للمقارنة المحلية (نفس السجل قبل/بعد)، ويعمل على الويب حيث
-  /// JavaScript لا يمثّل ثوابت 64 بت بدقّة. كل قيمة تُسبق بوسم نوعها.
+  /// تُحسب لكل صف يُقرأ من القرص أو يصل من السحابة، فكانت (بفرز المفاتيح ومزج
+  /// كل حرف) أغلى ما في تحميل خمسين ألف رصد. تُقارَن داخل التشغيل نفسه فقط
+  /// (السجل قبل التعديل وبعده)، فلا يلزمها ثبات بين تشغيلين.
   int _fingerprint(Map<String, dynamic> row) {
-    final keys = row.keys.where((k) => !_volatile.contains(k)).toList()..sort();
-    var h = 0x811c9dc5;
-    void mix(String text) {
-      for (var i = 0; i < text.length; i++) {
-        h ^= text.codeUnitAt(i);
-        h = (h * 0x01000193) & 0xffffffff;
-      }
-      h ^= 0x1f; // فاصل بين الأجزاء
-      h = (h * 0x01000193) & 0xffffffff;
+    var sum = 0;
+    var mix = 0;
+    var n = 0;
+    for (final e in row.entries) {
+      final k = e.key;
+      if (_volatile.contains(k)) continue;
+      final v = e.value;
+      final pair = switch (v) {
+        null => Object.hash(k, 1),
+        String() => Object.hash(k, 2, v),
+        int() => Object.hash(k, 3, v),
+        double() => Object.hash(k, 4, v),
+        bool() => Object.hash(k, 5, v),
+        _ => Object.hash(k, 6, jsonEncode(v)),
+      };
+      sum = (sum + pair) & 0x3fffffff;
+      mix ^= (pair * 0x9e3779b1) & 0x3fffffff;
+      n++;
     }
-
-    for (final k in keys) {
-      final v = row[k];
-      mix(k);
-      mix(switch (v) {
-        null => 'n',
-        String() => 's$v',
-        int() => 'i$v',
-        double() => 'd$v',
-        bool() => 'b$v',
-        _ => 'o${jsonEncode(v)}',
-      });
-    }
-    return h;
+    return Object.hash(sum, mix, n) & 0x3fffffff;
   }
 
   void _rememberSynced(String table, String id, Map<String, dynamic>? row) {
@@ -762,14 +874,16 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         await _flushPending();
         continue;
       }
+      // كتابة الأختام كاملةً من ذاكرة لم تقرأ القرص بعد تمحو ما لم يُحمَّل
+      if (t == _stampsTable && !_stampsLoaded) await ensureStampsLoaded();
       // بناء الصفوف قد يطول على جداول كبيرة — إفساح قبل وبعد الكتابة
       final rows = await _rowsForPersistYielding(t);
       await db.saveTable(t, rows);
-      await Future<void>.delayed(Duration.zero);
+      await UiBudget.yieldIfNeeded();
     }
     for (final entry in deletes.entries) {
       await db.deleteRecords(entry.key, entry.value.toList());
-      await Future<void>.delayed(Duration.zero);
+      await UiBudget.yieldIfNeeded();
     }
     for (final entry in records.entries) {
       final rows = await _rowsForPersistYielding(entry.key, only: entry.value);
@@ -780,7 +894,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         final missing = [for (final id in entry.value) if (!kept.contains(id)) id];
         if (missing.isNotEmpty) await db.deleteRecords(entry.key, missing);
       }
-      await Future<void>.delayed(Duration.zero);
+      await UiBudget.yieldIfNeeded();
     }
   }
 
@@ -841,6 +955,50 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       h = (h * 0x01000193) & 0xffffffff;
     }
     return (h, text.hashCode ^ text.length);
+  }
+
+  /// كـ [_adoptPendingRows] مقطّعاً: الطابور يُبنى جانباً ثم يحلّ محل القديم دفعة واحدة،
+  /// فلا يرى أحدٌ نصف طابور بين الإفساحات.
+  Future<void> _adoptPendingRowsYielding(List<Map<String, dynamic>> rows) async {
+    if (rows.length < 300) {
+      _adoptPendingRows(rows);
+      return;
+    }
+    final sorted = [...rows]..sort((a, b) {
+        final x = int.tryParse('${a['id']}');
+        final y = int.tryParse('${b['id']}');
+        if (x == null || y == null) return '${a['id']}'.compareTo('${b['id']}');
+        return x.compareTo(y);
+      });
+    final parsed = <PendingSync>[];
+    final keys = <(PendingSync, String)>[];
+    final onDisk = <String, (int, int)>{};
+    var next = _pendingNextKey;
+    final slice = Stopwatch()..start();
+    for (var i = 0; i < sorted.length; i++) {
+      final row = sorted[i];
+      final p = PendingSync.fromJson(row);
+      final key = '${row['id'] ?? ''}';
+      parsed.add(p);
+      if (key.isNotEmpty) {
+        keys.add((p, key));
+        onDisk[key] = _rowPrint(_pendingRow(p));
+        final n = int.tryParse(key);
+        if (n != null && n >= next) next = n + 1;
+      }
+      if ((i & 63) == 0 && UiBudget.exhausted) {
+        await UiBudget.yieldIfNeeded();
+        slice.reset();
+      }
+    }
+    pendingSyncs
+      ..clear()
+      ..addAll(parsed);
+    for (final (p, k) in keys) {
+      _pendingKey[p] = k;
+    }
+    if (next > _pendingNextKey) _pendingNextKey = next;
+    _pendingOnDisk = onDisk;
   }
 
   /// طابور القرص كما قُرئ: ترتيبه بمفاتيحه، وذاكرة ما عليه للمقارنة.
@@ -904,7 +1062,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       for (final id in only) {
         final row = recordOf(table, id);
         if (row != null) out.add(row);
-        if (++n % 200 == 0) await Future<void>.delayed(Duration.zero);
+        if (++n % 200 == 0) await UiBudget.yieldIfNeeded();
       }
       return out;
     }
@@ -919,7 +1077,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       final out = <Map<String, dynamic>>[];
       for (var i = 0; i < all.length; i++) {
         out.add(all[i]);
-        if ((i + 1) % 200 == 0) await Future<void>.delayed(Duration.zero);
+        if ((i + 1) % 200 == 0) await UiBudget.yieldIfNeeded();
       }
       return out;
     }
@@ -928,7 +1086,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     for (var i = 0; i < list.length; i++) {
       final row = recordOf(table, idOf(list[i]));
       if (row != null) out.add(row);
-      if ((i + 1) % 200 == 0) await Future<void>.delayed(Duration.zero);
+      if ((i + 1) % 200 == 0) await UiBudget.yieldIfNeeded();
     }
     return out;
   }
@@ -953,10 +1111,13 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     attachmentsByStudent.clear();
     pendingSyncs.clear();
     serverStamps.clear();
+    _stampsForgotten.clear();
+    _stampsLoaded = true;
     for (final k in extraCloud.keys) {
       extraCloud[k]!.clear();
     }
     await db.wipeData();
+    await _bumpLedgerGen();
     _dirty.clear();
     _dirtyRecords.clear();
     _deletedRecords.clear();
@@ -1129,6 +1290,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
 
   /// إدراج صفوف قادمة من نسخة احتياطية (تشمل `tenants` التي لا يمرّرها [putRows]).
   void putRowsFromBackup(String table, List<Map<String, dynamic>> rows) {
+    if (_ledgerTables.contains(table)) unawaited(_bumpLedgerGen());
     if (table == 'tenants') {
       for (final r in rows) {
         final t = Tenant.fromCloud(r);
@@ -1215,6 +1377,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   Future<void> persistPullOnly(String table, List<Map<String, dynamic>> rows) async {
     if (rows.isEmpty) return;
     await db.saveRecords(table, rows);
+    if (_ledgerTables.contains(table)) await _bumpLedgerGen();
     // الجدول كان «محمّلاً» فارغاً قبل انتهاء السحب (بعد خروج/دخول):
     // بلا هذه الخطوة تبقى الشاشة فارغة رغم وجود الصفوف على القرص.
     if (!loadedTables.contains(table)) return;
@@ -1267,27 +1430,22 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _loading = true;
     try {
       // النواة فقط — الحضور والمالية تُحمَّل عند فتح شاشاتها
+      PerfLog.mark('بدء تحميل النواة');
       final data = await db.loadTables(bootstrapCoreTables);
       for (final table in bootstrapCoreTables) {
         final rows = data[table] ?? const <Map<String, dynamic>>[];
-        if (table == _stampsTable) {
-          for (final row in rows) {
-            final parts = '${row['id'] ?? ''}'.split('|');
-            if (parts.length != 2) continue;
-            serverStamps.putIfAbsent(parts[0], () => {})[parts[1]] = '${row['stamp'] ?? ''}';
-          }
-        } else if (table == _pendingTable) {
-          _adoptPendingRows(rows);
-        } else if (table == 'tenants') {
-          tenants
-            ..clear()
-            ..addAll(rows.map(Tenant.fromCloud));
-        } else if (rows.isNotEmpty || table != 'institution_settings') {
+        if (table == _pendingTable || table == 'tenants') {
+          await _applyDiskRows(table, rows);
+        } else if (rows.isNotEmpty) {
+          await _applyDiskRows(table, rows);
+        } else if (table != 'institution_settings') {
+          // جدول فارغ يمرّ على putRows كما كان، فيُعلَّم محمّلاً ويُلمس ختمه
           putRows(table, rows);
         }
         loadedTables.add(table);
-        await Future<void>.delayed(Duration.zero);
+        await UiBudget.yieldIfNeeded();
       }
+      PerfLog.mark('انتهى تحميل النواة');
       // institution_settings قد تكون فارغة — تبقى مُعلَّمة محمّلة
       if (!loadedTables.contains('institution_settings')) {
         loadedTables.add('institution_settings');
@@ -1672,12 +1830,34 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         'status': snap.status,
       }));
     }
-    // كل الكشوف تأخذ الطلاب من هنا، فترتيبهم الأبجدي هنا يصل لكلها
-    result.sort((a, b) => compareArabicNames(a.fullName, b.fullName));
+    // كل الكشوف تأخذ الطلاب من هنا، فترتيبهم الأبجدي هنا يصل لكلها. الترتيب
+    // برتبة الاسم المحسوبة مرة: توحيد الاسم داخل المقارنة كان يتكرر آلاف المرات
+    // مع كل سند (السند يلمس جدول الطلاب فيُعاد الترتيب)
+    final ranks = _nameRanksFor(result);
+    result.sort((a, b) => ranks[a.fullName.trim()]!.compareTo(ranks[b.fullName.trim()]!));
     _studentsYearCache = result;
     _studentsYearRev = _studentsStamp;
     _studentsYearCacheId = yearId;
     return result;
+  }
+
+  /// رتبة كل اسم في الترتيب الأبجدي العربي، تبقى صالحة ما دامت الأسماء نفسها.
+  Map<String, int> _nameRanks = const {};
+
+  /// رتب أسماء [list] — تُعاد بفرز الأسماء المختلفة بـ [compareArabicNames] فقط
+  /// حين يظهر اسم جديد، فإعادة الترتيب بعد سند أو رصد لا تمرّ على المقارنة العربية.
+  Map<String, int> _nameRanksFor(List<Student> list) {
+    var fresh = true;
+    for (final st in list) {
+      if (!_nameRanks.containsKey(st.fullName.trim())) {
+        fresh = false;
+        break;
+      }
+    }
+    if (fresh) return _nameRanks;
+    final names = {for (final st in list) st.fullName.trim(), ..._nameRanks.keys}.toList()..sort(compareArabicNames);
+    _nameRanks = {for (var i = 0; i < names.length; i++) names[i]: i};
+    return _nameRanks;
   }
 
   List<Installment>? _instYearCache;
@@ -3257,12 +3437,17 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       return _projectRemainingCached!;
     }
 
+    // الأقساط مجمّعة بالطالب في مرور واحد: البحث في كل الأقساط لكل طالب كان
+    // 2000 × 12 ألف مقارنة، ثانيتين إلى ثلاث متصلة في رسم بطاقة المالية على جوال قديم
+    final scheduledBy = <String, double>{};
+    for (final i in installments) {
+      if (!isInstallmentDue(i, day)) {
+        scheduledBy[i.studentId] = (scheduledBy[i.studentId] ?? 0) + math.max(0.0, i.remaining);
+      }
+    }
     var total = 0.0;
     for (final student in students.where((s) => s.status == 'active')) {
-      var scheduled = 0.0;
-      for (final i in installments.where((i) => i.studentId == student.id)) {
-        if (!isInstallmentDue(i, day)) scheduled += math.max(0.0, i.remaining);
-      }
+      final scheduled = scheduledBy[student.id] ?? 0.0;
       final credit = student.balance > 0 ? student.balance : 0.0;
       final projected = scheduled - credit;
       if (projected > 0) total += projected;
@@ -4678,11 +4863,29 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     return (delay: null, stalled: false);
   }
 
+  /// أول سحب بعد أن تظهر الرئيسية بأرقامها: كان يبدأ بعد 0.8 ثانية من الدخول،
+  /// فيحمّل الأختام (86 ألف صف) ويطبّق ما وصل وسط تحميل الرئيسية، فتتقطع الشاشة
+  /// كلها حتى ينتهيا. الرئيسية تُعلم بـ [markFirstScreenReady]، وإلا بعد 10 ثوانٍ.
+  bool holdFirstPullForScreen = true;
+  final _firstScreen = Completer<void>();
+
+  void markFirstScreenReady() {
+    if (!_firstScreen.isCompleted) _firstScreen.complete();
+  }
+
   void startAutoSync() {
     if (autoSync || !networkEnabled || !loggedIn || isMasterAdmin) return;
     autoSync = true;
-    // مهلة بعد الرسم الأول — سحب فوري كان يجمّد الواجهة فور الدخول
-    scheduleAutoPull(const Duration(milliseconds: 800));
+    if (holdFirstPullForScreen && !_firstScreen.isCompleted) {
+      PerfLog.mark('المزامنة الأولى تنتظر الرئيسية');
+      unawaited(_firstScreen.future.timeout(const Duration(seconds: 10), onTimeout: () {}).then((_) {
+        PerfLog.mark('بدء المزامنة الأولى');
+        if (autoSync) scheduleAutoPull(const Duration(milliseconds: 800));
+      }));
+    } else {
+      // مهلة بعد الرسم الأول — سحب فوري كان يجمّد الواجهة فور الدخول
+      scheduleAutoPull(const Duration(milliseconds: 800));
+    }
     scheduleAutoPush(const Duration(seconds: 2));
     _safetyPull?.cancel();
     _safetyPull = Timer.periodic(const Duration(minutes: 1), (_) => safetyPullTick());
@@ -7479,28 +7682,34 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
   Future<int> recalculateAllBalancesYielding() async {
     if (!tablesReady(const ['students', 'payments', 'installments'])) return 0;
     var corrected = 0;
-    var installmentsFixed = false;
-    var n = 0;
-    final paymentsByStudent = <String, List<Payment>>{};
+    // الإفساح بالوقت: كل خمسة عشر طالباً أو مئتين وخمسين صفاً قد يتجاوز الإطار على جوال قديم
+    final slice = Stopwatch()..start();
+    Future<void> breathe() async {
+      if (!UiBudget.exhausted) return;
+      await UiBudget.yieldIfNeeded();
+      slice.reset();
+    }
+
+    final fixedInstallments = <String>[];
+    final correctedStudents = <String>[];
     var bi = 0;
+    final paymentsByStudent = <String, List<Payment>>{};
     for (final p in payments) {
       if (p.studentId.isEmpty) continue;
       (paymentsByStudent[p.studentId] ??= []).add(p);
-      if (++bi % 250 == 0) await Future<void>.delayed(Duration.zero);
+      if ((++bi & 127) == 0) await breathe();
     }
     final installmentsByStudent = <String, List<Installment>>{};
-    bi = 0;
     for (final i in installments) {
       if (i.studentId.isEmpty) continue;
       (installmentsByStudent[i.studentId] ??= []).add(i);
-      if (++bi % 250 == 0) await Future<void>.delayed(Duration.zero);
+      if ((++bi & 127) == 0) await breathe();
     }
     final enrollmentsByStudent = <String, List<StudentEnrollment>>{};
-    bi = 0;
     for (final e in enrollments) {
       if (e.studentId.isEmpty) continue;
       (enrollmentsByStudent[e.studentId] ??= []).add(e);
-      if (++bi % 250 == 0) await Future<void>.delayed(Duration.zero);
+      if ((++bi & 127) == 0) await breathe();
     }
     const none = <Never>[];
     for (final student in students) {
@@ -7514,19 +7723,29 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
         if ((inst.paidAmount - paid).abs() <= cent && inst.status == status) continue;
         inst.paidAmount = paid;
         inst.status = status;
-        installmentsFixed = true;
+        fixedInstallments.add(inst.id);
       }
       final computed = balanceFrom(enrollments: enrs, installments: insts, payments: pays);
       if ((student.balance - computed).abs() > 0.01) {
         student.balance = computed;
         student.updatedAt = _nowIso();
         corrected++;
+        correctedStudents.add(student.id);
       }
-      if (++n % 15 == 0) await Future<void>.delayed(Duration.zero);
+      await breathe();
     }
-    if (installmentsFixed) markDirty('installments');
-    if (corrected > 0) markDirty('students');
-    if (corrected > 0 || installmentsFixed) notifyListeners();
+    // ما صُحّح وحده يُكتب: كان التصحيح يعيد ترميز جدولي الأقساط والطلاب كاملين
+    if (fixedInstallments.isNotEmpty) {
+      _touchTable('installments');
+      _markIds('installments', fixedInstallments);
+      _scheduleFlush();
+    }
+    if (correctedStudents.isNotEmpty) {
+      _touchTable('students');
+      _markIds('students', correctedStudents);
+      _scheduleFlush();
+    }
+    if (corrected > 0 || fixedInstallments.isNotEmpty) notifyListeners();
     return corrected;
   }
 
@@ -7660,6 +7879,86 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
     _dueRev = stamp;
     _dueCache = _computeDueItems();
     return _dueCache;
+  }
+
+  /// كـ [dueItems] بالنتيجة والذاكرة نفسيهما، لكن الحساب يُفسح للرسم كل
+  /// [UiBudget]: التحميل المسبق للمالية كان يجمّد الدوّارة ثوانيَ.
+  Future<List<DueItem>> dueItemsYielding() async {
+    final stamp = Object.hash(
+      _listStamp('installments', installments),
+      _listStamp('students', students),
+      tableRev('academic_years'),
+      viewedAcademicYearId,
+    );
+    if (_dueRev == stamp) return _dueCache;
+    final slice = Stopwatch()..start();
+    Future<void> breathe() async {
+      if (!UiBudget.exhausted) return;
+      await UiBudget.yieldIfNeeded();
+      slice.reset();
+    }
+
+    final today = dateOnly(DateTime.now());
+    final todayKey = dayKey(today);
+    final yearInstallments = installmentsInViewedYear;
+    await breathe();
+    final studentsWithPlan = <String>{};
+    for (var i = 0; i < yearInstallments.length; i++) {
+      studentsWithPlan.add(yearInstallments[i].studentId);
+      if ((i & 511) == 0) await breathe();
+    }
+    _rebuildStudentIndex();
+    await breathe();
+    final list = <DueItem>[];
+    for (var k = 0; k < yearInstallments.length; k++) {
+      final inst = yearInstallments[k];
+      if ((k & 255) == 0) await breathe();
+      final dueKey = dayKey(inst.dueDate);
+      if (dueKey > todayKey) continue;
+      final unpaid = math.max(0.0, chargeableAmount(inst) - inst.paidAmount);
+      if (unpaid <= cent) continue;
+      final student = _studentIndex[inst.studentId];
+      if (student == null) continue;
+      list.add(
+        DueItem(
+          id: inst.id,
+          student: student,
+          title: inst.title,
+          amount: unpaid,
+          dueDate: inst.dueDate,
+          late: dueKey < todayKey,
+          scheduled: false,
+          installmentId: inst.id,
+        ),
+      );
+    }
+    final yearStudents = studentsInViewedYear;
+    await breathe();
+    for (var k = 0; k < yearStudents.length; k++) {
+      final s = yearStudents[k];
+      if ((k & 255) == 0) await breathe();
+      if (s.balance >= 0 || studentsWithPlan.contains(s.id)) continue;
+      list.add(DueItem(
+        id: 'debt-${s.id}',
+        student: s,
+        title: 'رسوم مستحقة',
+        amount: s.balance.abs(),
+        dueDate: today,
+        late: false,
+      ));
+    }
+    list.sort((a, b) => a.dueDate.compareTo(b.dueDate));
+    // تغيّرت المدخلات أثناء الإفساح: النتيجة لا تمثّلها، فيحسبها المستدعي التالي
+    final after = Object.hash(
+      _listStamp('installments', installments),
+      _listStamp('students', students),
+      tableRev('academic_years'),
+      viewedAcademicYearId,
+    );
+    if (after != stamp) return dueItems();
+    _dueRev = stamp;
+    _dueCache = list;
+    return list;
   }
 
   List<DueItem> _computeDueItems() {
@@ -9632,7 +9931,7 @@ class AppStore extends ChangeNotifier implements SyncLocalStore {
       for (var i = 0; i < list.length; i++) {
         map[idOf(list[i])] = i;
         if ((i + 1) % slice == 0) {
-          await Future<void>.delayed(Duration.zero);
+          await UiBudget.yieldIfNeeded();
           if (tableRev(table) != rev || !identical(list, _listFor(table)?.$1)) {
             aborted = true; // عُدّل الجدول أثناء البناء: من جديد
             break;

@@ -8,6 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data/dashboard_stats.dart';
+import '../data/perf_log.dart';
+import '../data/sliced_work.dart';
 import '../data/followup.dart';
 import '../data/phone.dart';
 import '../data/portal_usage.dart';
@@ -153,7 +155,7 @@ class _Snapshot {
 /// الرئيسية — `Dashboard.tsx` بتصميم الجوال: بطاقة اليوم، والفترة والمرحلة، وبطاقات الأرقام،
 /// و«يحتاج تدخلاً»، والرسم لآخر 30 يوماً وحلقة الحضور، ثم التفاصيل. الحساب عند الفتح ثم بتجميع ثانيتين.
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key, required this.onSection, required this.onReport, required this.active});
+  const HomeScreen({super.key, required this.onSection, required this.onReport, required this.active, this.onFirstStats});
 
   /// الرئيسية ظاهرة الآن: وهي مخفية خلف قسم آخر لا تعيد حسابها مع كل مزامنة.
   final ValueListenable<bool> active;
@@ -164,8 +166,11 @@ class HomeScreen extends StatelessWidget {
   /// فتح تقرير بعينه (`alerts`، `completion`...).
   final ValueChanged<String> onReport;
 
+  /// أول أرقام حُسبت: الهيكل يبدأ بعدها ما يؤجّله (تحميل المالية مسبقاً).
+  final VoidCallback? onFirstStats;
+
   @override
-  Widget build(BuildContext context) => _Home(onSection: onSection, onReport: onReport, active: active);
+  Widget build(BuildContext context) => _Home(onSection: onSection, onReport: onReport, active: active, onFirstStats: onFirstStats);
 }
 
 /// جداول الكروت الأربعة: الرئيسية تنتظرها وحدها، وما تحتاجه البنود الأخرى يُحمَّل بعد ظهورها.
@@ -186,9 +191,10 @@ const _heavyTables = [
 ];
 
 class _Home extends StatefulWidget {
-  const _Home({required this.onSection, required this.onReport, required this.active});
+  const _Home({required this.onSection, required this.onReport, required this.active, this.onFirstStats});
 
   final ValueListenable<bool> active;
+  final VoidCallback? onFirstStats;
   final ValueChanged<String> onSection;
   final ValueChanged<String> onReport;
 
@@ -210,6 +216,15 @@ class _HomeState extends State<_Home> {
   /// أختام المدخلات: إخطار لم يغيّر جدولاً منها لا يعيد الحساب.
   int? _statStamp;
   int? _heavyStamp;
+
+  /// الحسابان مقطّعان خارج الرسم: تبقى الأرقام الحالية (أو اللقطة) معروضة بشريط
+  /// تحديث رفيع حتى ينتهيا. طلبٌ أثناء حساب جارٍ يُعيده بعد انتهائه بدل إلغائه،
+  /// فلا تمنع مزامنة متلاحقة ظهور الأرقام أبداً.
+  bool _statRunning = false;
+  bool _statAgain = false;
+  bool _heavyRunning = false;
+  bool _heavyAgain = false;
+  bool _reportedFirst = false;
 
   /// البنود الثقيلة محسوبة خارج الرسم: تبديل الفترة أو فتح سطر لا يعيدها.
   List<AbsenceAlert> _alerts = const [];
@@ -242,7 +257,7 @@ class _HomeState extends State<_Home> {
     if (!widget.active.value || !mounted) return;
     if (_stale) {
       _stale = false;
-      if (stats != null) setState(_refresh);
+      if (stats != null) _refresh();
     }
     unawaited(_loadStaff(_store!));
   }
@@ -269,8 +284,10 @@ class _HomeState extends State<_Home> {
   /// المحفوظة إن وُجدت) فلا تبقى الشاشة بيضاء أثناءه. بقية الجداول بعدها.
   Future<void> _start(AppStore store) async {
     if (mounted && _loadError != null) setState(() => _loadError = null);
+    PerfLog.mark('بدء تحميل جداول الرئيسية');
     try {
       if (!store.tablesReady(_cardTables)) await store.ensureTables(_cardTables);
+      PerfLog.mark('انتهى تحميل جداول الرئيسية');
     } catch (e, st) {
       debugPrint('Home ensureTables: $e\n$st');
       if (!store.tablesReady(_cardTables)) {
@@ -281,17 +298,16 @@ class _HomeState extends State<_Home> {
     if (!mounted || _store != store) return;
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted || _store != store) return;
-    setState(() {
-      _recompute();
-      _recomputeHeavy();
-    });
+    await _recompute();
+    if (!mounted || _store != store) return;
+    unawaited(_recomputeHeavy());
     if (!store.tablesReady(_laterTables)) {
       try {
         await store.ensureTables(_laterTables);
       } catch (e) {
         debugPrint('Home later tables: $e');
       }
-      if (mounted && _store == store) setState(_recomputeHeavy);
+      if (mounted && _store == store) unawaited(_recomputeHeavy());
     }
   }
 
@@ -338,7 +354,7 @@ class _HomeState extends State<_Home> {
     }
     _debounce?.cancel();
     _debounce = Timer(const Duration(seconds: 2), () {
-      if (mounted) setState(_refresh);
+      if (mounted) _refresh();
     });
   }
 
@@ -365,50 +381,125 @@ class _HomeState extends State<_Home> {
   /// بعد إخطار: يُعاد ما تغيّرت مدخلاته فقط.
   void _refresh() {
     final store = _store!;
-    if (_tablesStamp(store, _statTables) != _statStamp) _recompute();
-    if (_heavyStampOf(store) != _heavyStamp) _recomputeHeavy();
+    if (_tablesStamp(store, _statTables) != _statStamp) unawaited(_recompute());
+    if (_heavyStampOf(store) != _heavyStamp) unawaited(_recomputeHeavy());
   }
 
-  void _recomputeHeavy() {
-    final store = _store!;
-    _heavyStamp = _heavyStampOf(store);
-    final now = DateTime.now();
-    final showAttendance = store.isFeatureOn('attendance') && store.can('attendance');
-    // الإنذارات تحتاج سجل ما أُرسل، والاكتمال والاعتماد تحتاج العلامات
-    _alerts = showAttendance && store.tablesReady(const ['audit_log']) ? loadAbsenceAlerts(store) : const [];
-    final evalsReady = store.tablesReady(const ['student_evaluations']);
-    _completion = evalsReady && store.isFeatureOn('evaluations') && store.isAdminUser ? loadCompletion(store).rows : const [];
-    _approvals = evalsReady && store.can('evaluations') ? store.pendingApprovals.length : 0;
-    final month = isoDate(now).substring(0, 7);
-    _expectedMonth = store.installments.where((i) => isoDate(i.dueDate).startsWith(month)).fold<double>(0, (n, i) => n + i.amount);
-    _birthdayList = _birthdays(store, now);
+  bool get _busy => _statRunning || _heavyRunning;
+
+  /// الإنذارات واكتمال الرصد والاعتماد ومتوقع الشهر وأعياد الميلاد — مقطّعة.
+  Future<void> _recomputeHeavy() async {
+    if (_heavyRunning) {
+      _heavyAgain = true;
+      return;
+    }
+    _heavyRunning = true;
+    if (mounted && stats != null) setState(() {});
+    try {
+      do {
+        _heavyAgain = false;
+        final store = _store!;
+        _heavyStamp = _heavyStampOf(store);
+        PerfLog.mark('بدء الحساب الثقيل للرئيسية');
+        final now = DateTime.now();
+        final showAttendance = store.isFeatureOn('attendance') && store.can('attendance');
+        // الإنذارات تحتاج سجل ما أُرسل، والاكتمال والاعتماد تحتاج العلامات
+        final alerts = showAttendance && store.tablesReady(const ['audit_log']) ? await loadAbsenceAlertsAsync(store) : const <AbsenceAlert>[];
+        if (!mounted || _store != store) return;
+        final evalsReady = store.tablesReady(const ['student_evaluations']);
+        final completion = evalsReady && store.isFeatureOn('evaluations') && store.isAdminUser
+            ? (await loadCompletionAsync(store)).rows
+            : const <CompletionRow>[];
+        if (!mounted || _store != store) return;
+        await UiBudget.yieldIfNeeded();
+        if (!mounted || _store != store) return;
+        final approvals = evalsReady && store.can('evaluations') ? store.pendingApprovals.length : 0;
+        final month = isoDate(now).substring(0, 7);
+        var expected = 0.0;
+        await runSliced(_expectedSteps(List.of(store.installments), month, (v) => expected = v));
+        if (!mounted || _store != store) return;
+        final birthdays = _birthdays(store, now);
+        setState(() {
+          _alerts = alerts;
+          _completion = completion;
+          _approvals = approvals;
+          _expectedMonth = expected;
+          _birthdayList = birthdays;
+        });
+        PerfLog.mark('انتهى الحساب الثقيل للرئيسية');
+      } while (_heavyAgain && mounted);
+    } finally {
+      _heavyRunning = false;
+      if (mounted) setState(() {});
+    }
   }
 
-  void _recompute() {
-    final store = _store!;
-    _statStamp = _tablesStamp(store, _statTables);
-    stats = buildDashboard(
-      today: isoDate(DateTime.now()),
-      students: store.students,
-      rooms: store.roomsInViewedYear,
-      sessions: store.sessions,
-      attendance: store.attendance,
-      installments: store.installments,
-      payments: store.payments,
-      expenses: store.can('finance.expenses') ? store.expenses : const [],
-      calendar: store.settings.calendar,
-      days: int.parse(period),
-      grade: grade,
-      chronicPercent: store.settings.followup.chronicPercent,
-    );
+  /// المستحق في الشهر من الأقساط — لنسبة «من المتوقع».
+  static Iterable<void> _expectedSteps(List<Installment> installments, String month, void Function(double) done) sync* {
+    var total = 0.0;
+    var n = 0;
+    for (final i in installments) {
+      if (++n % 512 == 0) yield null;
+      if (isoDateOf(i, i.dueDate).startsWith(month)) total += i.amount;
+    }
+    done(total);
+  }
+
+  /// أرقام الفترة مقطّعة. نتيجة فترة أو مرحلة تغيّرت أثناء الحساب لا تُعرض، ويُعاد بها.
+  Future<void> _recompute() async {
+    if (_statRunning) {
+      _statAgain = true;
+      return;
+    }
+    _statRunning = true;
+    if (mounted && stats != null) setState(() {});
+    try {
+      do {
+        _statAgain = false;
+        final store = _store!;
+        _statStamp = _tablesStamp(store, _statTables);
+        final p = period;
+        final g = grade;
+        PerfLog.mark('بدء حساب الرئيسية');
+        final result = await buildDashboardAsync(
+          today: isoDate(DateTime.now()),
+          students: store.students,
+          rooms: store.roomsInViewedYear,
+          sessions: store.sessions,
+          attendance: store.attendance,
+          installments: store.installments,
+          payments: store.payments,
+          expenses: store.can('finance.expenses') ? store.expenses : const [],
+          calendar: store.settings.calendar,
+          days: int.parse(p),
+          grade: g,
+          chronicPercent: store.settings.followup.chronicPercent,
+        );
+        if (!mounted || _store != store) return;
+        if (p == period && g == grade) {
+          setState(() => stats = result);
+          PerfLog.mark('انتهى حساب الرئيسية');
+          if (!_reportedFirst) {
+            _reportedFirst = true;
+            widget.onFirstStats?.call();
+            _store?.markFirstScreenReady();
+          }
+        } else {
+          _statAgain = true;
+        }
+      } while (_statAgain && mounted);
+    } finally {
+      _statRunning = false;
+      if (mounted) setState(() {});
+    }
   }
 
   void _update({String? period, String? grade}) {
     setState(() {
       if (period != null) this.period = period;
       if (grade != null) this.grade = grade;
-      _recompute();
     });
+    unawaited(_recompute());
   }
 
   /// المعلم الغائب أو المُجاز اليوم: شعبه بلا معلم، وأعداد الموظفين اليوم.
@@ -599,7 +690,7 @@ class _HomeState extends State<_Home> {
       );
     }
     final snap = _snap;
-    if (snap == null) return const NoonLoading(text: 'جارٍ تحميل الرئيسية...');
+    if (snap == null) return const Center(child: NoonLoading(text: 'جارٍ تحميل الرئيسية...'));
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
       children: [
@@ -941,7 +1032,18 @@ class _HomeState extends State<_Home> {
           unit: 'طالب نشط',
           chips: heroChips,
         ),
-        const SizedBox(height: 12),
+        // شريط تحديث رفيع أثناء إعادة الحساب، بمكان محجوز فلا تقفز الشاشة
+        const SizedBox(height: 5),
+        SizedBox(
+          height: 2,
+          child: _busy
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: LinearProgressIndicator(minHeight: 2, color: AdminNoon.teal, backgroundColor: AdminNoon.band),
+                )
+              : null,
+        ),
+        const SizedBox(height: 5),
         Row(children: [
           Expanded(
             child: NoonSegment<String>(

@@ -94,9 +94,8 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
     return TableGate(
       tables: const ['student_evaluations', 'rooms', 'students', 'groups'],
       message: 'جارٍ تحميل العلامات...',
-      child: ListenableBuilder(
-        listenable: store,
-        builder: (context, _) {
+      child: Builder(
+        builder: (context) {
           if (!store.features.enableEvaluations || !store.can('evaluations')) {
             return Scaffold(
               appBar: AppBar(title: const Text('العلامات')),
@@ -755,9 +754,8 @@ class _MonthlyGradesPanelState extends State<_MonthlyGradesPanel> {
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
-    return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
+    return Builder(
+      builder: (context) {
         final rules = store.gradingForViewedYear.monthlyDiscountRules;
         final rooms = [...store.roomsInViewedYear]
           ..sort((a, b) {

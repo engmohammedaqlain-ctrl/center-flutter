@@ -18,9 +18,32 @@ String toWesternDigits(String text) {
   return out.toString();
 }
 
+/// ذاكرة نتائج التوحيد: الاسم نفسه يُوحَّد مع كل حرف بحث وفي كل مقارنة ترتيب،
+/// لآلاف الطلاب. محدودة الحجم وتُفرَّغ عند الامتلاء فلا تنمو بلا حد.
+const _memoLimit = 20000;
+final _normalized = <String, String>{};
+final _sortKeys = <String, String>{};
+final _digits = <String, String>{};
+
+String _remember(Map<String, String> memo, String key, String Function() compute) {
+  final hit = memo[key];
+  if (hit != null) return hit;
+  if (memo.length >= _memoLimit) memo.clear();
+  return memo[key] = compute();
+}
+
+final _spaces = RegExp(r'\s+');
+final _joinPrefix = RegExp(r'(^|\s)(عبد|ابو) (?=\S)');
+final _digitNoise = RegExp(r'[\s\-_()]');
+final _anyDigit = RegExp(r'\d');
+
 /// توحيد الهمزات والتاء المربوطة والياء، وإسقاط التشكيل والتطويل والترقيم.
 String normalizeArabic(String? text) {
   if (text == null || text.isEmpty) return '';
+  return _remember(_normalized, text, () => _normalize(text));
+}
+
+String _normalize(String text) {
   final out = StringBuffer();
   for (final rune in toWesternDigits(text.toLowerCase()).runes) {
     // التشكيل والتنوين والألف الخنجرية والتطويل: تُسقط
@@ -34,13 +57,16 @@ String normalizeArabic(String? text) {
       final ch => ch,
     });
   }
-  return out.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+  return out.toString().replaceAll(_spaces, ' ').trim();
 }
 
 /// مفتاح الترتيب الأبجدي: نفس توحيد البحث، مع وصل «عبد» و«أبو» بما بعدها حتى يتجاور
 /// «عبد الرحمن» و«عبدالرحمن» في الكشف — `arabicSortKey`.
-String _arabicSortKey(String name) =>
-    normalizeArabic(name).replaceAllMapped(RegExp(r'(^|\s)(عبد|ابو) (?=\S)'), (m) => '${m[1]}${m[2]}');
+String _arabicSortKey(String name) => _remember(
+      _sortKeys,
+      name,
+      () => normalizeArabic(name).replaceAllMapped(_joinPrefix, (m) => '${m[1]}${m[2]}'),
+    );
 
 /// مقارنة اسمين بالترتيب الأبجدي العربي — `compareArabicNames`. الاسم الخام يفصل بين
 /// المتطابقين بعد التوحيد، والفارغ آخر الكشف لا أوله.
@@ -86,8 +112,11 @@ bool matchArabicName(String? fullName, String? query) {
 }
 
 /// أرقام فقط — لمقارنة الهواتف والهويات بلا فواصل ولا مسافات.
-String _digitsOnly(String? value) =>
-    toWesternDigits(value ?? '').replaceAll(RegExp(r'[\s\-_()]'), '');
+String _digitsOnly(String? value) {
+  final v = value ?? '';
+  if (v.isEmpty) return '';
+  return _remember(_digits, v, () => toWesternDigits(v).replaceAll(_digitNoise, ''));
+}
 
 /// بحث الطالب كاملاً: الهواتف والهوية أولاً، ثم اسمه واسم وليّه.
 bool matchStudentSearch({
@@ -103,7 +132,7 @@ bool matchStudentSearch({
   if (q.isEmpty) return true;
 
   final asNumber = _digitsOnly(q);
-  if (asNumber.isNotEmpty && RegExp(r'\d').hasMatch(asNumber)) {
+  if (asNumber.isNotEmpty && _anyDigit.hasMatch(asNumber)) {
     for (final field in [phone, parentPhone, nationalId, parentNationalId]) {
       final digits = _digitsOnly(field);
       if (digits.isNotEmpty && digits.contains(asNumber)) return true;

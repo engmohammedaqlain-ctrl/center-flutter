@@ -9,6 +9,19 @@ import 'school_calendar.dart';
 
 const _dayStatusRank = {'present': 1, 'excused': 2, 'absent': 3};
 
+/// وقت آخر كتابة للرصد بالملّي ثانية، محفوظاً مع نصه: تحويل نص التاريخ هو أغلى ما في
+/// الحساب، ويتكرر لخمسين ألف رصد مع كل حساب للرئيسية والإنذارات والتقارير.
+final _stampCache = Expando<(String, int)>('attendanceStamp');
+
+int _writtenAt(AttendanceMark r) {
+  final raw = r.updatedAt ?? r.createdAt ?? '';
+  final cached = _stampCache[r];
+  if (cached != null && cached.$1 == raw) return cached.$2;
+  final at = DateTime.tryParse(raw)?.millisecondsSinceEpoch ?? 0;
+  _stampCache[r] = (raw, at);
+  return at;
+}
+
 /// خريطة الجلسات بمعرّفها — تُبنى مرة وتُمرَّر لـ [dailyAttendance] لكل طالب.
 Map<String, ClassSession> sessionMap(Iterable<ClassSession> sessions) => {for (final s in sessions) s.id: s};
 
@@ -24,18 +37,20 @@ List<({String date, String status})> dailyAttendance(
 }) {
   final byId = sessionById ?? sessionMap(sessions);
   final byDay = <String, ({String status, int at, bool room})>{};
+  final cal = calendar.isEmpty ? null : calendar;
+  final holiday = <String, bool>{};
 
   for (final r in records) {
     final session = byId[r.sessionId];
     final date = session != null && session.sessionDate.isNotEmpty
         ? session.sessionDate
         : (r.date.isNotEmpty ? r.date : (r.createdAt ?? '').split('T').first);
-    if (date.isEmpty || holidayEventOn(calendar, date) != null) continue;
+    if (date.isEmpty) continue;
+    if (cal != null && (holiday[date] ??= holidayEventOn(cal, date) != null)) continue;
 
-    final parsed = DateTime.tryParse(r.updatedAt ?? r.createdAt ?? '');
     final candidate = (
       status: r.status,
-      at: parsed?.millisecondsSinceEpoch ?? 0,
+      at: _writtenAt(r),
       room: session != null && session.groupId.isEmpty,
     );
     final prev = byDay[date];

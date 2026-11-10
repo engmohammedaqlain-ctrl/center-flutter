@@ -722,7 +722,9 @@ class NoonLoading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    // بعرض مكانه كله: داخل Column أو ListView كان يلتصق بطرف الشاشة
+    return Container(
+      width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 56),
       child: Column(
         mainAxisSize: MainAxisSize.min,

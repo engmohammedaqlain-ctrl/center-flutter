@@ -3,8 +3,10 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite/sqflite.dart';
+
 import 'off_thread.dart';
+import 'sliced_work.dart';
 
 /// التخزين المحلي الدائم — المقابل لـ `lib/db.ts` (Dexie/IndexedDB) في النسخة المكتبية.
 ///
@@ -143,59 +145,68 @@ class SqflitePersistence implements Persistence {
     }
   }
 
-  @override
-  Future<Map<String, List<Map<String, dynamic>>>> loadAll() async {
-    final rows = await _require.query('records', columns: ['table_name', 'data']);
-    if (rows.isEmpty) return {};
-    // فك JSON خارج خيط الواجهة: مدرسة بـ 11 ألف طالب كانت تجمّد السبلاش ثوانٍ
-    final encoded = <(String, String)>[
-      for (final r in rows) ('${r['table_name']}', '${r['data']}'),
-    ];
-    return offThread(() => _decodeRecordRows(encoded));
+  /// صفوف صفحة القراءة الواحدة.
+  ///
+  /// استعلامٌ واحد لجداول الرئيسية (حضور وسندات وأقساط وجلسات) كان يعيد عشرات
+  /// آلاف الصفوف في رسالة واحدة، وفكّ الرسالة على خيط الواجهة لا يُقطَّع: على
+  /// جوال قديم تتجمّد الشاشة ثوانيَ. الصفحات تُفكّ واحدة واحدة ويُرسم بينها.
+  static const _readPage = 500;
+
+  /// قراءة صفوف [tables] (أو كل الجداول إن كانت `null`) بالترتيب المخزَّن نفسه
+  /// (`rowid`)، صفحةً صفحة، داخل معاملة واحدة فلا تنقل كتابةٌ متزامنة صفاً بين صفحتين.
+  Future<Map<String, List<Map<String, dynamic>>>> _readPaged(List<String>? tables) async {
+    final out = <String, List<Map<String, dynamic>>>{};
+    await _require.transaction((txn) async {
+      for (final table in tables ?? const <String?>[null]) {
+        var after = 0;
+        final sw = Stopwatch()..start();
+        var lap = 0;
+        while (true) {
+          final rows = table == null
+              ? await txn.rawQuery(
+                  'SELECT rowid AS rid, table_name, data FROM records WHERE rowid > ? ORDER BY rowid LIMIT ?',
+                  [after, _readPage],
+                )
+              : await txn.rawQuery(
+                  'SELECT rowid AS rid, table_name, data FROM records WHERE table_name = ? AND rowid > ? ORDER BY rowid LIMIT ?',
+                  [table, after, _readPage],
+                );
+          ReadStats.queryUs += sw.elapsedMicroseconds - lap;
+          lap = sw.elapsedMicroseconds;
+          if (rows.isEmpty) break;
+          ReadStats.rows += rows.length;
+          ReadStats.pages++;
+          after = (rows.last['rid'] as num).toInt();
+          // الفك هنا صفاً صفاً بالميزانية المشتركة، لا بخيط جديد لكل صفحة: قيس على جوال
+          // قديم (Redmi Note 9) أن فتح خيط وإغلاقه لكل صفحة أخذ 211ms للصفحة (31 ثانية
+          // لجداول الرئيسية) ويوقف خيط الواجهة معه، والفك نفسه جزء صغير من ذلك
+          for (var i = 0; i < rows.length; i++) {
+            final r = rows[i];
+            _decodeInto(out, '${r['table_name']}', '${r['data']}');
+            if ((i & 15) == 15 && UiBudget.exhausted) await UiBudget.pause();
+          }
+          ReadStats.decodeUs += sw.elapsedMicroseconds - lap;
+          if (rows.length < _readPage) break;
+          await UiBudget.yieldIfNeeded();
+          lap = sw.elapsedMicroseconds;
+        }
+      }
+    });
+    return out;
   }
 
   @override
-  Future<List<Map<String, dynamic>>> loadTable(String table) async {
-    final rows = await _require.query(
-      'records',
-      columns: ['data'],
-      where: 'table_name = ?',
-      whereArgs: [table],
-    );
-    if (rows.isEmpty) return const [];
-    final encoded = <(String, String)>[
-      for (final r in rows) (table, '${r['data']}'),
-    ];
-    try {
-      final decoded = await offThread(() => _decodeRecordRows(encoded));
-      return decoded[table] ?? const [];
-    } catch (_) {
-      return _decodeRecordRows(encoded)[table] ?? const [];
-    }
-  }
+  Future<Map<String, List<Map<String, dynamic>>>> loadAll() => _readPaged(null);
+
+  @override
+  Future<List<Map<String, dynamic>>> loadTable(String table) async =>
+      (await _readPaged([table]))[table] ?? const [];
 
   @override
   Future<Map<String, List<Map<String, dynamic>>>> loadTables(Iterable<String> tables) async {
     final wanted = tables.where((t) => t.isNotEmpty).toSet();
     if (wanted.isEmpty) return {};
-    final placeholders = List.filled(wanted.length, '?').join(',');
-    final rows = await _require.query(
-      'records',
-      columns: ['table_name', 'data'],
-      where: 'table_name IN ($placeholders)',
-      whereArgs: wanted.toList(),
-    );
-    if (rows.isEmpty) return {for (final t in wanted) t: <Map<String, dynamic>>[]};
-    final encoded = <(String, String)>[
-      for (final r in rows) ('${r['table_name']}', '${r['data']}'),
-    ];
-    Map<String, List<Map<String, dynamic>>> decoded;
-    try {
-      decoded = await offThread(() => _decodeRecordRows(encoded));
-    } catch (_) {
-      // فشل الخيط المنفصل (ذاكرة/منصّة): فكّ على الخيط الحالي بدل إسقاط التحميل
-      decoded = _decodeRecordRows(encoded);
-    }
+    final decoded = await _readPaged(wanted.toList());
     return {for (final t in wanted) t: decoded[t] ?? <Map<String, dynamic>>[]};
   }
 
@@ -237,7 +248,7 @@ class SqflitePersistence implements Persistence {
         final batch = txn.batch();
         _insertChunk(batch, table, encoded.ids, encoded.data, i, end);
         await batch.commit(noResult: true);
-        await Future<void>.delayed(Duration.zero);
+        await UiBudget.yieldIfNeeded();
       }
     });
   }
@@ -251,7 +262,7 @@ class SqflitePersistence implements Persistence {
       final batch = _require.batch();
       _insertChunk(batch, table, encoded.ids, encoded.data, i, end);
       await batch.commit(noResult: true);
-      await Future<void>.delayed(Duration.zero);
+      await UiBudget.yieldIfNeeded();
     }
   }
 
@@ -305,19 +316,22 @@ class SqflitePersistence implements Persistence {
 }
 
 /// فك صفوف القرص في isolate منفصل — يُستدعى من [SqflitePersistence.loadAll] فقط.
-Map<String, List<Map<String, dynamic>>> _decodeRecordRows(List<(String, String)> encoded) {
-  final out = <String, List<Map<String, dynamic>>>{};
-  for (final (table, data) in encoded) {
-    try {
-      final decoded = jsonDecode(data);
-      if (decoded is Map<String, dynamic>) {
-        out.putIfAbsent(table, () => []).add(decoded);
-      } else if (decoded is Map) {
-        out.putIfAbsent(table, () => []).add(Map<String, dynamic>.from(decoded));
-      }
-    } catch (_) {
-      // صف تالف على القرص — تخطَّه بدل إسقاط الجدول كله
+/// صف واحد من القرص إلى [out] — التالف يُتخطّى بدل إسقاط الجدول كله.
+void _decodeInto(Map<String, List<Map<String, dynamic>>> out, String table, String data) {
+  try {
+    final decoded = jsonDecode(data);
+    if (decoded is Map<String, dynamic>) {
+      out.putIfAbsent(table, () => []).add(decoded);
+    } else if (decoded is Map) {
+      out.putIfAbsent(table, () => []).add(Map<String, dynamic>.from(decoded));
     }
-  }
-  return out;
+  } catch (_) {}
+}
+
+/// عدّادات قراءة القرص لسجل الأداء: زمن الاستعلام (قناة sqflite) وفكّ JSON.
+abstract final class ReadStats {
+  static int queryUs = 0;
+  static int decodeUs = 0;
+  static int rows = 0;
+  static int pages = 0;
 }

@@ -38,6 +38,42 @@ import 'student_credit_sheet.dart';
 import 'student_subjects_card.dart';
 import 'student_form_screen.dart';
 
+/// سندات الطالب وأقساطه وأيام حضوره، محفوظة حتى يتغير جدول منها أو التقويم.
+///
+/// الملف يُعاد رسمه مع كل إخطار من المخزن (مزامنة، رصد على جهاز آخر)، وكان كل
+/// رسم يمسح خمسين ألف رصد وستين ألف سند ويبني خريطة كل الجلسات لطالب واحد.
+({Object key, List<Payment> pays, List<Installment> insts, List<({String date, String status})> days})? _ledger;
+
+int _stampOf(AppStore store, String table, List<Object?> list) =>
+    Object.hash(store.tableRev(table), identityHashCode(list), list.length);
+
+({Object key, List<Payment> pays, List<Installment> insts, List<({String date, String status})> days}) _ledgerOf(
+  AppStore store,
+  String studentId,
+) {
+  final calendar = store.settings.calendar;
+  final key = Object.hash(
+    studentId,
+    _stampOf(store, 'payments', store.payments),
+    _stampOf(store, 'installments', store.installments),
+    _stampOf(store, 'attendance', store.attendance),
+    _stampOf(store, 'sessions', store.sessions),
+    store.tableRev('institution_settings'),
+    calendar.length,
+  );
+  final hit = _ledger;
+  if (hit != null && hit.key == key) return hit;
+  final rawMarks = store.attendance.where((a) => a.studentId == studentId).toList();
+  final fresh = (
+    key: key,
+    pays: store.paymentsOf(studentId),
+    insts: store.installments.where((i) => i.studentId == studentId).toList()..sort(compareInstallments),
+    days: dailyAttendance(rawMarks, store.sessions, calendar: calendar),
+  );
+  _ledger = fresh;
+  return fresh;
+}
+
 /// اقتراحات سبب خصم القسط — مطابق لـ InstallmentActionModals.
 const _installmentReasonChips = ['ظرف مادي', 'أخوة', 'أبناء كادر', 'منحة', 'تفوق'];
 
@@ -94,12 +130,12 @@ class StudentDetailScreen extends StatelessWidget {
             );
           }
 
+        final ledger = _ledgerOf(store, student.id);
         // الأحدث أولاً: آخر سند هو ما يُبحث عنه عادةً
-        final pays = store.paymentsOf(student.id);
-        final insts = store.installments.where((i) => i.studentId == student.id).toList()..sort(compareInstallments);
-        final rawMarks = store.attendance.where((a) => a.studentId == student.id).toList();
+        final pays = ledger.pays;
+        final insts = ledger.insts;
         // الإحصاء بالأيام لا بالسجلات: كشف شعبة + مواد كان يضاعف الغياب
-        final days = dailyAttendance(rawMarks, store.sessions, calendar: store.settings.calendar);
+        final days = ledger.days;
         final marks = [
           for (final d in days)
             AttendanceMark(id: d.date, studentId: student.id, date: d.date, status: d.status),

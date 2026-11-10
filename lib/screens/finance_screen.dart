@@ -54,6 +54,10 @@ class _FinanceScreenState extends State<FinanceScreen> {
   /// التنقّل بين الأقسام سحباً بالإصبع، لا بالضغط على المفتاح وحده
   final _pages = PageController();
   final search = TextEditingController();
+
+  /// نص البحث المطبَّق: يتأخر 250ms عن آخر حرف، فلا يُعاد فلترة آلاف البنود مع كل حرف.
+  String _query = '';
+  Timer? _searchTimer;
   String method = '';
   String status = '';
 
@@ -261,6 +265,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
   void dispose() {
     financeAgingRequest.removeListener(_takeAging);
     _pages.dispose();
+    _searchTimer?.cancel();
     search.dispose();
     super.dispose();
   }
@@ -302,6 +307,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
       tab = next;
       // لكل تبويب بحثه: نص يبحث عن وصل لا معنى له في المستحقات
       search.clear();
+      _searchTimer?.cancel();
+      _query = '';
       visibleCount = kListPageSize;
       auditVisible = kListPageSize;
     });
@@ -376,9 +383,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
       tables: const ['payments', 'installments', 'expenses', 'teacher_payouts'],
       message: 'جارٍ التحميل...',
       spinner: false,
-      child: ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
+      child: Builder(
+      builder: (context) {
         if (!store.canOpenSection('finance')) {
           return NoAccess(section: 'finance', roleName: store.roleName);
         }
@@ -387,7 +393,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
         final showExpenses = store.features.enableExpenses && store.can('finance.expenses');
         if ((tab == _Tab.expenses || tab == _Tab.profits) && !showExpenses) tab = _Tab.dues;
 
-        final q = search.text.trim().toLowerCase();
+        final q = _query;
         final List<DueItem> allDues;
         if (tab == _Tab.dues) {
           _scheduleDues(store);
@@ -640,6 +646,29 @@ class _FinanceScreenState extends State<FinanceScreen> {
     return n;
   }
 
+  void _onSearch(String value) {
+    _searchTimer?.cancel();
+    final next = value.trim().toLowerCase();
+    // المسح فوري، وظهور زر المسح مع أول حرف كذلك؛ الفلترة نفسها بعد توقف الكتابة
+    if (next.isEmpty || _query.isEmpty && search.text.length == 1) {
+      if (next.isEmpty) {
+        setState(() {
+          _query = '';
+          visibleCount = kListPageSize;
+        });
+        return;
+      }
+      setState(() {});
+    }
+    _searchTimer = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      setState(() {
+        _query = search.text.trim().toLowerCase();
+        visibleCount = kListPageSize;
+      });
+    });
+  }
+
   Widget _toolbar({required String hint, required int shown, required int total, required AppStore store, String? unit}) {
     return Row(
       children: [
@@ -647,7 +676,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
           child: SearchField(
             controller: search,
             hint: hint,
-            onChanged: (_) => setState(() => visibleCount = kListPageSize),
+            onChanged: _onSearch,
             trailing: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(color: AdminNoon.mist, borderRadius: BorderRadius.circular(10)),
@@ -988,10 +1017,12 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   // ── المقبوضات ─────────────────────────────────────────────────────────────
 
-  ({Widget? toolbar, List<Widget> slivers}) _payments(BuildContext context, AppStore store, String q) {
-    // «حسب سنة الرسوم»: السند المربوط بقسط يُنسب لسنة قسطه (دين العام الماضي
-    // المدفوع اليوم يُحسب على العام الماضي)، والدفعة غير المربوطة بسنة دفعها
-    final periodPays = _periodPayments(store);
+  /// سجل المقبوضات بعد البحث والفلاتر مرتباً — محفوظ في [_paysValue] حتى يتغير
+  /// مفتاحه، فلا تُفلتر ولا تُرتب ستون ألف سند مع كل إعادة رسم.
+  Object? _paysKey;
+  List<Payment> _paysValue = const [];
+
+  List<Payment> _filterPayments(AppStore store, List<Payment> periodPays, String q) {
     final pays = periodPays.where((p) {
       final studentName = store.studentById(p.studentId)?.fullName ?? '${p.payerName} ${p.incomeCategory}';
       // البحث يشمل البيان والمحوِّل وجهة التحويل، كما في Finance.tsx
@@ -1010,6 +1041,28 @@ class _FinanceScreenState extends State<FinanceScreen> {
       return matchQ && matchM && matchS && matchSource;
     }).toList();
     sortPayments(pays);
+    return pays;
+  }
+
+  ({Widget? toolbar, List<Widget> slivers}) _payments(BuildContext context, AppStore store, String q) {
+    // «حسب سنة الرسوم»: السند المربوط بقسط يُنسب لسنة قسطه (دين العام الماضي
+    // المدفوع اليوم يُحسب على العام الماضي)، والدفعة غير المربوطة بسنة دفعها
+    final periodPays = _periodPayments(store);
+    final paysKey = Object.hash(
+      identityHashCode(periodPays),
+      periodPays.length,
+      store.tableRev('payments'),
+      store.tableRev('students'),
+      q,
+      method,
+      status,
+      sourceFilter,
+    );
+    if (paysKey != _paysKey) {
+      _paysKey = paysKey;
+      _paysValue = _filterPayments(store, periodPays, q);
+    }
+    final pays = _paysValue;
 
     // رسوم الفترة بحسب سنة الرسوم: المطلوب منها وما سُدّد وما بقي
     Widget? feesLine;

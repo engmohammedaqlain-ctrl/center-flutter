@@ -9,6 +9,7 @@ import 'app_settings.dart';
 import 'attendance_days.dart';
 import 'grading.dart';
 import 'notes.dart';
+import 'sliced_work.dart';
 import 'store.dart';
 
 final _dateRe = RegExp(r'^\d{4}-\d{2}-\d{2}$');
@@ -147,35 +148,68 @@ String absenceMessage(String template, {required String name, required int days,
 
 /// أعلى مستوى أُرسل لكل طالب، من سجل الحركات (المعرّف «<العام>:<المستوى>»).
 Map<String, int> sentAlertLevels(Iterable<FinanceAuditEntry> entries, String yearId) {
+  late Map<String, int> out;
+  runAll(_sentAlertSteps(entries, yearId, (r) => out = r));
+  return out;
+}
+
+Iterable<void> _sentAlertSteps(Iterable<FinanceAuditEntry> entries, String yearId, void Function(Map<String, int>) done) sync* {
   final sent = <String, int>{};
+  var n = 0;
   for (final e in entries) {
+    if (++n % 1024 == 0) yield null;
     if (e.action != absenceAlertAction || e.studentId.isEmpty || e.entityId.isEmpty) continue;
     final parts = e.entityId.split(':');
     if (parts.length != 2 || parts[0] != yearId) continue;
-    final n = int.tryParse(parts[1]);
-    if (n != null && n > (sent[e.studentId] ?? -1)) sent[e.studentId] = n;
+    final level = int.tryParse(parts[1]);
+    if (level != null && level > (sent[e.studentId] ?? -1)) sent[e.studentId] = level;
   }
-  return sent;
+  done(sent);
 }
 
 /// أيام غياب كل طالب منذ بداية العام المعروض حتى اليوم — `absentDaysThisYear`.
 Map<String, int> absentDaysThisYear(AppStore store) {
   final year = store.viewedAcademicYear;
+  late Map<String, int> out;
+  runAll(_absentDaysSteps(
+    startsOn: year?.startsOn ?? '',
+    endsOn: year?.endsOn ?? '',
+    sessions: store.sessions,
+    attendance: store.attendance,
+    calendar: store.settings.calendar,
+    done: (r) => out = r,
+  ));
+  return out;
+}
+
+Iterable<void> _absentDaysSteps({
+  required String startsOn,
+  required String endsOn,
+  required List<ClassSession> sessions,
+  required List<AttendanceMark> attendance,
+  required List<CalendarEvent> calendar,
+  required void Function(Map<String, int>) done,
+}) sync* {
   final today = isoDate(DateTime.now());
-  final end = year == null || year.endsOn.isEmpty || today.compareTo(year.endsOn) < 0 ? today : year.endsOn;
-  final sessions = store.sessions
-      .where((s) => s.sessionDate.compareTo(end) <= 0 && (year == null || year.startsOn.isEmpty || s.sessionDate.compareTo(year.startsOn) >= 0))
-      .toList();
-  final byId = sessionMap(sessions);
+  final end = endsOn.isEmpty || today.compareTo(endsOn) < 0 ? today : endsOn;
+  final inYear = [
+    for (final s in sessions)
+      if (s.sessionDate.compareTo(end) <= 0 && (startsOn.isEmpty || s.sessionDate.compareTo(startsOn) >= 0)) s,
+  ];
+  final byId = sessionMap(inYear);
+  yield null;
   final byStudent = <String, List<AttendanceMark>>{};
-  for (final r in store.attendance) {
+  var n = 0;
+  for (final r in attendance) {
+    if (++n % 2048 == 0) yield null;
     if (byId.containsKey(r.sessionId)) byStudent.putIfAbsent(r.studentId, () => []).add(r);
   }
-  final calendar = store.settings.calendar;
-  return {
-    for (final e in byStudent.entries)
-      e.key: dailyAttendance(e.value, sessions, calendar: calendar, sessionById: byId).where((d) => d.status == 'absent').length,
-  };
+  final out = <String, int>{};
+  for (final e in byStudent.entries) {
+    yield null;
+    out[e.key] = dailyAttendance(e.value, inYear, calendar: calendar, sessionById: byId).where((d) => d.status == 'absent').length;
+  }
+  done(out);
 }
 
 /// الإنذارات المستحقة الآن — `loadAbsenceAlerts`.
@@ -188,6 +222,29 @@ List<AbsenceAlert> loadAbsenceAlerts(AppStore store) {
     f.levels,
     sentAlertLevels(store.financeAudit, store.viewedAcademicYearId),
   );
+}
+
+/// [loadAbsenceAlerts] نفسها مقطّعةً للرئيسية: لا تتجمّد الشاشة أثناءها. القوائم
+/// تُنسخ أولاً فلا تُسقطها صفوف تضيفها المزامنة أثناء الإفساح.
+Future<List<AbsenceAlert>> loadAbsenceAlertsAsync(AppStore store) async {
+  final f = store.settings.followup;
+  if (!f.absenceEnabled || f.levels.isEmpty) return const [];
+  final year = store.viewedAcademicYear;
+  final yearId = store.viewedAcademicYearId;
+  final students = store.students.where((s) => s.status == 'active').toList();
+  final audit = List.of(store.financeAudit);
+  late Map<String, int> days;
+  await runSliced(_absentDaysSteps(
+    startsOn: year?.startsOn ?? '',
+    endsOn: year?.endsOn ?? '',
+    sessions: List.of(store.sessions),
+    attendance: List.of(store.attendance),
+    calendar: store.settings.calendar,
+    done: (r) => days = r,
+  ));
+  late Map<String, int> sent;
+  await runSliced(_sentAlertSteps(audit, yearId, (r) => sent = r));
+  return dueAbsenceAlerts(students, days, f.levels, sent);
 }
 
 // ── اكتمال رصد العلامات ─────────────────────────────────────────────────────
@@ -230,27 +287,57 @@ class CompletionRow {
 
 /// اكتمال رصد الفصل الحالي لكل مادة وشعبة — `gradeCompletion` + `loadCompletion`.
 ({String term, List<CompletionRow> rows}) loadCompletion(AppStore store) {
+  late ({String term, List<CompletionRow> rows}) out;
+  runAll(_completionSteps(store, store.students, store.evaluations, (r) => out = r));
+  return out;
+}
+
+/// [loadCompletion] مقطّعةً للرئيسية.
+Future<({String term, List<CompletionRow> rows})> loadCompletionAsync(AppStore store) async {
+  late ({String term, List<CompletionRow> rows}) out;
+  await runSliced(_completionSteps(store, List.of(store.students), List.of(store.evaluations), (r) => out = r));
+  return out;
+}
+
+Iterable<void> _completionSteps(
+  AppStore store,
+  List<Student> students,
+  List<Evaluation> evaluations,
+  void Function(({String term, List<CompletionRow> rows})) done,
+) sync* {
   final today = isoDate(DateTime.now());
   final year = store.viewedAcademicYear;
   final term = termForDate(today, term2Start: year?.term2Start);
   final grading = store.gradingForViewedYear;
   // المعدل الشهري لا مكوّنات فيه
-  if (grading.mode == 'monthly') return (term: term, rows: const []);
+  if (grading.mode == 'monthly') {
+    done((term: term, rows: const []));
+    return;
+  }
   final deadlines = store.settings.followup.gradeDeadlines;
   final rooms = store.roomsInViewedYear;
+  // الشعبة ذات المرحلة لا يطابقها إلا طالب من مرحلتها (شرطٌ في كل فروع
+  // studentBelongsToRoom)، فلا تُفحص شعب المراحل الأخرى — والأولى المطابقة هي نفسها
+  final roomGrades = [for (final r in rooms) normalizeAcademicText(r.gradeLevel)];
   final studentRoom = <String, String>{};
-  for (final s in store.students) {
+  var n = 0;
+  for (final s in students) {
+    if (++n % 64 == 0) yield null;
     if (s.status == 'withdrawn' || s.status == 'archived') continue;
-    for (final r in rooms) {
-      if (studentBelongsToRoom(s, r)) {
-        studentRoom[s.id] = r.id;
+    final grade = normalizeAcademicText(s.gradeLevel);
+    for (var i = 0; i < rooms.length; i++) {
+      if (roomGrades[i].isNotEmpty && roomGrades[i] != grade) continue;
+      if (studentBelongsToRoom(s, rooms[i])) {
+        studentRoom[s.id] = rooms[i].id;
         break;
       }
     }
   }
   final recorded = <String, Set<String>>{};
   final loose = <String, int>{};
-  for (final e in store.evaluations) {
+  n = 0;
+  for (final e in evaluations) {
+    if (++n % 1024 == 0) yield null;
     if (e.groupId.isEmpty) continue;
     if (year != null && year.startsOn.isNotEmpty && (e.evaluationDate.compareTo(year.startsOn) < 0 || e.evaluationDate.compareTo(year.endsOn) > 0)) continue;
     final room = studentRoom[e.studentId];
@@ -266,6 +353,7 @@ class CompletionRow {
 
   final rows = <CompletionRow>[];
   for (final g in store.groupsInViewedYear) {
+    yield null;
     if (g.status == 'archived') continue;
     for (final roomId in g.allRoomIds) {
       final room = rooms.where((r) => r.id == roomId).firstOrNull;
@@ -305,7 +393,7 @@ class CompletionRow {
     }
   }
   rows.sort((a, b) => b.late != a.late ? b.late - a.late : (a.done / a.total).compareTo(b.done / b.total));
-  return (term: term, rows: rows);
+  done((term: term, rows: rows));
 }
 
 /// يرسل الإنذار رسالةً للأهل (تصل بوابتهم)، ويسجّله في سجل الحركات حتى لا يتكرر.

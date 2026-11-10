@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'data/perf_log.dart';
+import 'data/perf_school.dart';
 import 'data/activity_ping.dart';
 import 'data/app_installs.dart';
 import 'data/app_update.dart';
@@ -42,6 +44,8 @@ import 'widgets/widgets.dart' show confirmSheet, decodeLogo, launchWaWithText;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  PerfLog.mark('main');
+  PerfLog.watchFrames();
   // كل خطأ غير معالج بعدها يصل المطور (أخطاء الشبكة تُتجاهل)
   ErrorReport.instance.install();
   configureDatabaseFactory();
@@ -65,7 +69,9 @@ Future<void> main() async {
   // ألوان أحدث من السحابة تُطبع فور وصولها — ما لم تكن للجهاز ألوان محفوظة من دخول
   SchoolBrand.instance.addListener(AppStore.instance.applyBrandColors);
 
+  PerfLog.mark('runApp');
   runApp(StoreScope(store: AppStore.instance, child: const CenterApp()));
+  WidgetsBinding.instance.addPostFrameCallback((_) => PerfLog.mark('أول إطار'));
   // ملفات «مشاركة» من تطبيق آخر: عند الإقلاع منها وأثناء العمل
   ShareInbox.instance.start();
 
@@ -76,6 +82,14 @@ Future<void> main() async {
 
 Future<void> _bootstrap() async {
   final store = AppStore.instance;
+  if (perfSchool) {
+    // بناء القياس وحده: قاعدة منفصلة بلا سحابة، ومدرسة بحجم المستر
+    store.networkEnabled = false;
+    await store.bootstrap(SqflitePersistence(fileName: perfSchoolDb));
+    await ensurePerfSchool(store);
+    unawaited(store.afterEnter());
+    return;
+  }
   try {
     await store.bootstrap(SqflitePersistence());
   } catch (_) {
