@@ -16,6 +16,7 @@ import '../widgets/list_paging.dart';
 import '../widgets/table_gate.dart';
 import 'announcement_sheet.dart';
 import 'return_to_grade_plan_sheet.dart';
+import 'sms_sheet.dart';
 import 'student_detail_screen.dart';
 import 'student_form_screen.dart';
 
@@ -318,6 +319,24 @@ class _StudentsScreenState extends State<StudentsScreen> {
                             tooltip: 'إعلان للأسر',
                             size: 44,
                             onPressed: () => showAnnouncementSheet(context, grade: grade, section: section),
+                          ),
+                        ],
+                        // SMS من شريحة المدرسة: للمدير وحده، ووجهته الطلاب المعروضين بالتصفية الحالية
+                        if (store.isAdminUser) ...[
+                          const SizedBox(width: 6),
+                          NoonButton(
+                            icon: Icons.sms_outlined,
+                            tooltip: 'SMS',
+                            size: 44,
+                            onPressed: () => showSmsSheet(
+                              context,
+                              students: list,
+                              target: [grade, section].where((x) => x.isNotEmpty).join(' ').isEmpty
+                                  ? (q.isEmpty ? 'كل الطلاب' : '${list.length} طالب')
+                                  : [grade, section].where((x) => x.isNotEmpty).join(' '),
+                              due: buckets.due,
+                              school: store.institutionName,
+                            ),
                           ),
                         ],
                         if (canSelect) ...[

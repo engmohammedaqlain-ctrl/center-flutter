@@ -34,6 +34,7 @@ import 'payment_form_screen.dart';
 import 'receipt_screen.dart';
 import 'return_to_grade_plan_sheet.dart';
 import 'report_cards_sheet.dart';
+import 'sms_sheet.dart';
 import 'student_credit_sheet.dart';
 import 'student_subjects_card.dart';
 import 'student_form_screen.dart';
@@ -435,6 +436,17 @@ class StudentDetailScreen extends StatelessWidget {
                         builder: (_) => SchoolChatPage(studentId: student.id, title: student.fullName, subtitle: headerMeta, showAuthor: true),
                       ),
                     ),
+                  ),
+                ),
+
+              // رسائل SMS اللي انبعتت لهالطالب من الويب أو الجوال: للمدير، وبتتحمّل لما ينضغط الصف بس
+              if (store.isAdminUser)
+                sec(
+                  MessagesRow(
+                    title: 'رسائل SMS',
+                    subtitle: 'المرسلة بحالتها',
+                    icon: Icons.sms_outlined,
+                    onTap: () => showStudentSmsSheet(context, studentId: student.id, name: student.fullName),
                   ),
                 ),
 

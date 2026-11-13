@@ -10,6 +10,7 @@ import '../data/store.dart';
 import '../data/user_message.dart';
 import '../theme/app_colors.dart';
 import '../widgets/widgets.dart';
+import 'sms_settings_panel.dart';
 
 /// ترتيب المدير: ما يراه هو أولاً، ثم ما يصل الأهل، ثم الإشعارات، ثم المعلم — `SchoolFeatures`.
 const _groups = <({String title, IconData icon, List<String> keys})>[
@@ -188,6 +189,8 @@ class _SchoolSettingsTabState extends State<SchoolSettingsTab> {
           ),
           const SizedBox(height: 12),
         ],
+        // رسائل SMS: للمدير وحده، والحالة بتتحمّل لما ينفتح التبويب بس
+        if (isAdmin) const SmsSettingsPanel(),
         _panel(Icons.workspace_premium_outlined, 'الأوراق والسندات', [
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
